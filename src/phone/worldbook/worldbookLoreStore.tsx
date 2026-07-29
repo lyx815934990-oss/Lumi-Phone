@@ -140,6 +140,7 @@ function schedulePersist() {
       builtinPresets: {
         lumiDoctrineOfLove: snap.builtinPresets.lumiDoctrineOfLove,
         activeConfession: snap.builtinPresets.activeConfession,
+        pureRestrainLove: snap.builtinPresets.pureRestrainLove,
         offlineRichInnerOs: snap.builtinPresets.offlineRichInnerOs,
       },
       weibo: { _reserved: true },

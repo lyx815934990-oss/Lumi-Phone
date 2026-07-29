@@ -71,6 +71,10 @@ import {
   WECHAT_FORWARD_HISTORY_FORGER_APPENDIX,
   LUMI_SYSTEM_OVERRIDE_APPENDIX,
 } from './wechatReplyOutputPrompt'
+import {
+  buildWechatReplyOutputLanguageAppendix,
+  buildWechatSyncTranslationAppendix,
+} from './wechatChatLanguage'
 import { buildWeChatPulseDmScreenshotOutputBlock } from './pulse/pulseDmScreenshotAiDirective'
 import { splitRawByForwardHistory } from './chatHistory/parseForwardHistoryXml'
 import type { WeChatChatHistoryPayload } from './newFriendsPersona/types'
@@ -265,6 +269,7 @@ function buildWeChatStickerAndClassicEmojiPromptBlocks(
 }
 
 /** 微信单聊主回复（含思维链解析路径）completion 上限；仍受模型/API 限制 */
+/** @deprecated 线上私聊/群聊回复已不再传 max_tokens；保留导出以免外部引用断裂 */
 export const WECHAT_PEER_REPLY_MAX_OUTPUT_TOKENS = 30000
 
 export function isWeChatPeerRegenerateReplyBias(replyBias?: string): boolean {
@@ -1333,11 +1338,33 @@ function expandRecallProtocolLine(line: string): string[] {
 /** @deprecated 请使用 `parseWeChatPeerPlainReply` */
 export const parsePersonaWeChatPlainReply = parseWeChatPeerPlainReply
 
-function buildWechatOutputProtocolAppendix(includeThinkingChain?: boolean): string {
+function buildWechatOutputProtocolAppendix(
+  includeThinkingChain?: boolean,
+  replyOutputLanguage?: string,
+  replyVoiceLanguage?: string,
+  translationSyncEnabled?: boolean,
+  translationLanguage?: string,
+  translationDedicatedApi?: boolean,
+): string {
   const toggles = getLoreArchiveBuiltinPresetTogglesSnapshot()
   const output = buildWechatReplyOutputAppendix(toggles)
-  if (!includeThinkingChain) return output
-  return `${output}\n\n${buildWechatThinkingChainAppendix(toggles)}`
+  const lang = buildWechatReplyOutputLanguageAppendix(replyOutputLanguage, replyVoiceLanguage, {
+    translationSyncEnabled,
+    translationLanguage,
+    translationDedicatedApi,
+  })
+  const syncTr =
+    translationSyncEnabled === true
+      ? buildWechatSyncTranslationAppendix(translationLanguage, {
+          speakerName: '角色',
+          listenerName: '用户',
+          replyOutputLanguage,
+          dedicatedApi: translationDedicatedApi === true,
+        })
+      : ''
+  const withLang = [output, lang, syncTr].filter(Boolean).join('\n\n')
+  if (!includeThinkingChain) return withLang
+  return `${withLang}\n\n${buildWechatThinkingChainAppendix(toggles)}`
 }
 
 function appendWorldBookAfterPatchOutputRules(
@@ -1359,6 +1386,12 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   includePulseDmScreenshot?: boolean
   includeProfileImageChange?: boolean
   includeInternetMemeLexicon?: boolean
+  replyOutputLanguage?: string
+  replyVoiceLanguage?: string
+  translationSyncEnabled?: boolean
+  translationLanguage?: string
+  /** true：翻译副接口；false：聊天模型写 [译] */
+  translationDedicatedApi?: boolean
 }): string {
   const profileBlock = params.characterWechatProfileBlock?.trim()
   const pinCatalog = params.characterMomentsPinCatalog?.trim()
@@ -1379,10 +1412,46 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   const memeLexiconBlock = params.includeInternetMemeLexicon
     ? `\n\n${WECHAT_INTERNET_MEME_LEXICON_APPENDIX}`
     : ''
+  const langBlock = buildWechatReplyOutputLanguageAppendix(
+    params.replyOutputLanguage,
+    params.replyVoiceLanguage,
+    {
+      translationSyncEnabled: params.translationSyncEnabled,
+      translationLanguage: params.translationLanguage,
+      translationDedicatedApi: params.translationDedicatedApi,
+    },
+  )
+  const syncTrBlock =
+    params.translationSyncEnabled === true
+      ? buildWechatSyncTranslationAppendix(params.translationLanguage, {
+          speakerName:
+            params.character?.wechatNickname?.trim() || params.character?.name?.trim() || '角色',
+          listenerName: '用户',
+          replyOutputLanguage: params.replyOutputLanguage,
+          dedicatedApi: params.translationDedicatedApi === true,
+          speakerPersonaBrief: [
+            params.character?.wechatNickname?.trim() || params.character?.name?.trim()
+              ? `称呼：${params.character?.wechatNickname?.trim() || params.character?.name?.trim()}`
+              : '',
+            String(params.character?.identity ?? '').trim()
+              ? `身份：${String(params.character?.identity ?? '').trim()}`
+              : '',
+            String(params.characterWechatProfileBlock ?? '').trim().slice(0, 900),
+          ]
+            .filter(Boolean)
+            .join('\n'),
+          relationHint: /学长|学姐|学弟|学妹|先輩|後輩|社团|部活|同校|校园/.test(
+            `${params.character?.identity ?? ''} ${params.characterWechatProfileBlock ?? ''}`,
+          )
+            ? '人设含校园/社团辈分：先輩→学长/学姐，後輩→学弟/学妹；禁止译成「前辈」「小孩」'
+            : undefined,
+        })
+      : ''
+  const langAppend = [langBlock, syncTrBlock].filter(Boolean).map((s) => `\n\n${s}`).join('')
   return appendWorldBookAfterPatchOutputRules(
     params.character,
     false,
-    `${buildWechatReplyOutputAppendix(toggles)}${forwardBlock}${pulseDmShotBlock}${thinkingBlock}${profileImageBlock}${memeLexiconBlock}\n\n${WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX}${pinCatalog ? `\n\n${pinCatalog}` : ''}${userMomentsCatalog ? `\n\n${userMomentsCatalog}` : ''}\n\n${WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_PIN_APPENDIX}`,
+    `${buildWechatReplyOutputAppendix(toggles)}${forwardBlock}${pulseDmShotBlock}${thinkingBlock}${profileImageBlock}${memeLexiconBlock}${langAppend}\n\n${WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX}${pinCatalog ? `\n\n${pinCatalog}` : ''}${userMomentsCatalog ? `\n\n${userMomentsCatalog}` : ''}\n\n${WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_PIN_APPENDIX}`,
   )
 }
 
@@ -1445,7 +1514,8 @@ async function callWeChatPeerReplyChat(
     memoryMomentImages?: string[]
     characterSelfProfileVisionParts?: ReturnType<typeof buildCharacterSelfProfileVisionParts>
     temperature: number
-    max_tokens: number
+    /** 缺省不传：不限制输出 token，由模型/线路自行决定 */
+    max_tokens?: number
   },
 ): Promise<string> {
   const memUrls = (opts.memoryMomentImages ?? []).map((u) => u.trim()).filter(Boolean)
@@ -1458,22 +1528,18 @@ async function callWeChatPeerReplyChat(
     visionBlocks.push({ message: buildMemoryMomentImagesUserMessage(memUrls) })
   }
 
+  const chatOpts = {
+    temperature: opts.temperature,
+    ...(opts.max_tokens != null ? { max_tokens: opts.max_tokens } : {}),
+  }
+
   if (!visionBlocks.length) {
-    return openAiCompatibleChat(cfg, messages, {
-      temperature: opts.temperature,
-      max_tokens: opts.max_tokens,
-    })
+    return openAiCompatibleChat(cfg, messages, chatOpts)
   }
   try {
-    return await openAiCompatibleChatAny(cfg, injectPreHistoryVisionMessages(messages, visionBlocks), {
-      temperature: opts.temperature,
-      max_tokens: opts.max_tokens,
-    })
+    return await openAiCompatibleChatAny(cfg, injectPreHistoryVisionMessages(messages, visionBlocks), chatOpts)
   } catch {
-    return openAiCompatibleChat(cfg, messages, {
-      temperature: opts.temperature,
-      max_tokens: opts.max_tokens,
-    })
+    return openAiCompatibleChat(cfg, messages, chatOpts)
   }
 }
 
@@ -1506,6 +1572,15 @@ export async function requestWeChatPeerReplyBubbles(params: {
   replyBias?: string
   busyContext?: BusyRuntimeContext
   includeThinkingChain?: boolean
+  /** 本会话角色文字气泡输出语言（如 ja）；缺省简体中文 */
+  replyOutputLanguage?: string
+  /** 本会话角色语音脚本输出语言；缺省跟随文字语言 */
+  replyVoiceLanguage?: string
+  /** 同步输出翻译：与回复同轮产出 `[译]` */
+  translationSyncEnabled?: boolean
+  translationLanguage?: string
+  /** true：API 设置「翻译」副接口开启；false：由聊天模型写 [译] */
+  translationDedicatedApi?: boolean
   includeForwardHistoryCard?: boolean
   includePulseDmScreenshot?: boolean
   includeProfileImageChange?: boolean
@@ -1656,6 +1731,11 @@ export async function requestWeChatPeerReplyBubbles(params: {
           characterMomentsPinCatalog: params.characterMomentsPinCatalog,
           userMomentsViewerCatalog: params.userMomentsViewerCatalog,
           includeThinkingChain: params.includeThinkingChain === true,
+          replyOutputLanguage: params.replyOutputLanguage,
+          replyVoiceLanguage: params.replyVoiceLanguage,
+          translationSyncEnabled: params.translationSyncEnabled === true,
+          translationLanguage: params.translationLanguage,
+          translationDedicatedApi: params.translationDedicatedApi === true,
           includeForwardHistoryCard: params.includeForwardHistoryCard === true,
           includePulseDmScreenshot: params.includePulseDmScreenshot === true,
           includeProfileImageChange: params.includeProfileImageChange === true,
@@ -1733,7 +1813,6 @@ export async function requestWeChatPeerReplyBubbles(params: {
         : isWeChatPeerRegenerateReplyBias(params.replyBias)
           ? 0.9
           : 0.82,
-    max_tokens: WECHAT_PEER_REPLY_MAX_OUTPUT_TOKENS,
   })
   const parsed = parseWeChatPeerReplyWithThinking(text)
   // 线上已切换为“后台内隐 CoT”，不再要求可见思维链重试。
@@ -1990,6 +2069,11 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   replyBias?: string
   busyContext?: BusyRuntimeContext
   includeThinkingChain?: boolean
+  replyOutputLanguage?: string
+  replyVoiceLanguage?: string
+  translationSyncEnabled?: boolean
+  translationLanguage?: string
+  translationDedicatedApi?: boolean
   includeForwardHistoryCard?: boolean
   includePulseDmScreenshot?: boolean
   includeProfileImageChange?: boolean
@@ -2158,6 +2242,11 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
         characterMomentsPinCatalog: params.characterMomentsPinCatalog,
         userMomentsViewerCatalog: params.userMomentsViewerCatalog,
         includeThinkingChain: params.includeThinkingChain === true,
+        replyOutputLanguage: params.replyOutputLanguage,
+        replyVoiceLanguage: params.replyVoiceLanguage,
+        translationSyncEnabled: params.translationSyncEnabled === true,
+        translationLanguage: params.translationLanguage,
+        translationDedicatedApi: params.translationDedicatedApi === true,
         includeForwardHistoryCard: params.includeForwardHistoryCard === true,
         includePulseDmScreenshot: params.includePulseDmScreenshot === true,
         includeProfileImageChange: params.includeProfileImageChange === true,
@@ -2199,7 +2288,6 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   try {
     const text = await openAiCompatibleChatAny(cfg, visionMessages, {
       temperature: isLumi ? 0.62 : 0.82,
-      max_tokens: WECHAT_PEER_REPLY_MAX_OUTPUT_TOKENS,
     })
     const p0 = parseWeChatPeerReplyWithThinking(text)
     const b0 = p0.bubbles
@@ -2224,7 +2312,6 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
     const tryAlt = async (messages: unknown[]) => {
       const text = await openAiCompatibleChatAny(cfg, messages, {
         temperature: isLumi ? 0.62 : 0.82,
-        max_tokens: WECHAT_PEER_REPLY_MAX_OUTPUT_TOKENS,
       })
       const p1 = parseWeChatPeerReplyWithThinking(text)
       const b1 = p1.bubbles
@@ -2289,7 +2376,6 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
     ]
     const text = await openAiCompatibleChat(cfg, fallbackMessages, {
       temperature: isLumi ? 0.62 : 0.82,
-      max_tokens: isLumi ? 900 : 768,
     })
     const p2 = parseWeChatPeerReplyWithThinking(text.trim() ? text : '收到。')
     const b2 = p2.bubbles
@@ -2359,7 +2445,6 @@ export async function requestWeChatPeerReply(params: {
   const isLumi = promptMode === 'lumi-assistant'
   const text = await openAiCompatibleChat(cfg, messages, {
     temperature: isLumi ? 0.62 : 0.78,
-    max_tokens: WECHAT_PEER_REPLY_MAX_OUTPUT_TOKENS,
   })
   const cleaned = text.replace(/^\s*【[^】]+】\s*/g, '').trim()
   return cleaned || text.trim()
@@ -4244,6 +4329,13 @@ export function buildWeChatGroupMultiSpeakerSystem(params: {
   playerSchedule?: ScheduleTable | null
   /** 是否注入后台思维链 CoT 附录（默认关） */
   includeThinkingChain?: boolean
+  /** 本会话角色文字气泡输出语言 */
+  replyOutputLanguage?: string
+  /** 本会话角色语音脚本输出语言；缺省跟随文字 */
+  replyVoiceLanguage?: string
+  translationSyncEnabled?: boolean
+  translationLanguage?: string
+  translationDedicatedApi?: boolean
 }): string {
   const isLumi = params.promptMode === 'lumi-assistant'
   const archiveInject = resolveWorldbookLoreInjection({
@@ -4319,7 +4411,14 @@ export function buildWeChatGroupMultiSpeakerSystem(params: {
     : WECHAT_CHARACTER_RECALL_GUIDE
   const outputAppendix = isLumi
     ? WECHAT_LUMI_ASSISTANT_OUTPUT_APPENDIX
-    : buildWechatOutputProtocolAppendix(params.includeThinkingChain === true)
+    : buildWechatOutputProtocolAppendix(
+        params.includeThinkingChain === true,
+        params.replyOutputLanguage,
+        params.replyVoiceLanguage,
+        params.translationSyncEnabled === true,
+        params.translationLanguage,
+        params.translationDedicatedApi === true,
+      )
 
   if (isLumi) {
     return `${LUMI_ASSISTANT_SYSTEM_PROMPT}\n\n${loreLead}${core}${groupUnsum}${offline}${bias}${time}${playerScheduleBlock}\n${params.playerSection}${recallGuide ? `\n\n${recallGuide}` : ''}\n\n${outputAppendix}${danmakuInstr ? `\n\n${danmakuInstr}` : ''}\n\n${stickerCat}`
@@ -4618,7 +4717,6 @@ export async function requestWeChatGroupMultiSpeakerReplyBubbles(params: {
   const text = await callWeChatPeerReplyChat(cfg, messages, {
     memoryMomentImages,
     temperature: params.promptMode === 'lumi-assistant' ? 0.62 : 0.82,
-    max_tokens: WECHAT_PEER_REPLY_MAX_OUTPUT_TOKENS,
   })
   const allowed = new Set(params.allowedCharIds.map((x) => x.trim()).filter(Boolean))
   return parseWeChatGroupMultiSpeakerModelText(text, { allowedCharIds: allowed, nickToId: params.nickToId })
@@ -4667,7 +4765,6 @@ export async function requestWeChatGroupMultiSpeakerReplyBubblesWithImage(params
   try {
     const text = await openAiCompatibleChatAny(cfg, visionMessages, {
       temperature: params.promptMode === 'lumi-assistant' ? 0.62 : 0.82,
-      max_tokens: WECHAT_PEER_REPLY_MAX_OUTPUT_TOKENS,
     })
     return parse(text)
   } catch {
@@ -4688,7 +4785,6 @@ export async function requestWeChatGroupMultiSpeakerReplyBubblesWithImage(params
     ]
     const text = await openAiCompatibleChatAny(cfg, alt1, {
       temperature: params.promptMode === 'lumi-assistant' ? 0.62 : 0.82,
-      max_tokens: WECHAT_PEER_REPLY_MAX_OUTPUT_TOKENS,
     })
     return parse(text)
   } catch {
@@ -4705,7 +4801,6 @@ export async function requestWeChatGroupMultiSpeakerReplyBubblesWithImage(params
   ]
   const text = await openAiCompatibleChat(cfg, fallbackMessages, {
     temperature: params.promptMode === 'lumi-assistant' ? 0.62 : 0.82,
-    max_tokens: 1200,
   })
   return parse(text)
 }

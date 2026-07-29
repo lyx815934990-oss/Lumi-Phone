@@ -73,6 +73,8 @@ export function normalizePersonaAiGenerateForm(raw: unknown): PersonaAiGenerateF
     orientationMutable: !!o.orientationMutable,
     nsfwEnabled: !!o.nsfwEnabled,
     nsfwHint: pickStr('nsfwHint'),
+    referencePersonaHint: pickStr('referencePersonaHint'),
+    referencePersonaDirectGenerate: !!o.referencePersonaDirectGenerate,
     extraNotes: pickStr('extraNotes'),
   }
 }

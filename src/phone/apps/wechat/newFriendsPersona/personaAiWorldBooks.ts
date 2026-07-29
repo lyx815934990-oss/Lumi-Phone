@@ -7,8 +7,8 @@ export const PERSONA_AI_COMPACT_BOOK_TITLE = '角色人设档案'
 export const PERSONA_AI_COMPACT_BOOK_KEY = 'main'
 
 /**
- * 单本世界书固定 8 条（顺序即 item01–item08）。
- * 前 7 条默认序言介入；「对你现在」为尾声延展（可随剧情更新）。
+ * 单本世界书固定 9 条（顺序即 item01–…）。
+ * 前 8 条默认序言介入；「对你现在」为尾声延展（可随剧情更新）。
  * 取向「可变」时另增「取向认同的当前快照」为尾声延展（插在「性格内核」后）。
  * 填写过往感情史时另增「过往感情史」为序言介入（插在「亲密与恋爱观」后）。
  */
@@ -20,6 +20,7 @@ export const PERSONA_AI_COMPACT_ENTRY_NAMES = [
   '亲密与恋爱观',
   '人际与秘密',
   '周边NPC',
+  '相遇羁绊',
   '对你现在',
 ] as const
 
@@ -27,6 +28,9 @@ export type PersonaAiCompactEntryName = (typeof PERSONA_AI_COMPACT_ENTRY_NAMES)[
 
 /** 尾声延展条目（对用户当下关系） */
 export const PERSONA_AI_TOWARD_USER_ENTRY_NAME: PersonaAiCompactEntryName = '对你现在'
+
+/** {{char}} 与 {{user}} 如何相识、及形成当下看法的成因（序言） */
+export const PERSONA_AI_MEETING_BOND_ENTRY_NAME: PersonaAiCompactEntryName = '相遇羁绊'
 
 /** 围绕角色的具名 NPC 简要档案 */
 export const PERSONA_AI_NPC_ROSTER_ENTRY_NAME: PersonaAiCompactEntryName = '周边NPC'
@@ -144,7 +148,12 @@ function mkItem(
 
 function buildTowardUserDefault(relationToUser: string): string {
   const rel = relationToUser.trim() || '普通熟人'
-  return `{{char}}与{{user}}的开局关系是「${rel}」。称呼、回消息节奏、相处边界与内心真实分量必须严格按该原文的投入程度来写：原文偏淡就写不咋在意/低投入，原文已是暧昧或恋爱再写对应亲近。禁止默认往好感、暗恋、嘴硬心软或「其实有点在意」抬；也禁止写成与原文矛盾的陌生人话术。可写维持该关系下的雷区。`
+  return `{{char}}对{{user}}的**当前**态度：称呼、回消息节奏、相处边界与内心真实分量，须严格按开局关系「${rel}」的投入程度来写：原文偏淡就写不咋在意/低投入，原文已是暧昧或恋爱再写对应亲近。禁止默认往好感、暗恋、嘴硬心软或「其实有点在意」抬；也禁止写成与原文矛盾的陌生人话术。相识过程与看法成因见「相遇羁绊」，本条勿整段复述相识故事。`
+}
+
+function buildMeetingBondDefault(relationToUser: string): string {
+  const rel = relationToUser.trim() || '普通熟人'
+  return `写清{{char}}与{{user}}如何相识（场合、契机、早期互动），以及这些经历如何导向「对你现在」里的当前看法；开局关系标签为「${rel}」。本条写过程与成因，当前态度细节留给「对你现在」，勿两处整段重复。`
 }
 
 const SECTION_DEFAULTS: Record<PersonaAiCompactEntryName, (rel: string) => string> = {
@@ -161,7 +170,8 @@ const SECTION_DEFAULTS: Record<PersonaAiCompactEntryName, (rel: string) => strin
   人际与秘密: () =>
     '{{char}}对不同关系（家人/友人/同事/对立面）的态度差异；自身秘密、软肋与反差萌。点到关系即可，具名人物细则见「周边NPC」。禁止写与{{user}}相关的秘密。',
   周边NPC: () =>
-    '围绕{{char}}的具名配角简要档案（家人/友人/同事/对立面等）：每人写姓名、与{{char}}关系、一两句性格与近况，须贴合人脉偏向。禁止写成{{user}}；禁止整段照搬「人际与秘密」。',
+    '围绕{{char}}的具名配角简要档案：每人写姓名、与{{char}}关系、一两句性格与近况。原创都市档约 3–5 人；原著/参考人物直接生成时不设人数上限，开篇与日常圈具名配角尽量写全；名单内配角彼此若有原著关系（室友/好感/死党等）须双方互相写清。禁止把配角写成{{user}}本人。若绑定身份为同作相关角色，每人还须写对{{user}}的关系与看法。禁止整段照搬「人际与秘密」。',
+  相遇羁绊: (rel) => buildMeetingBondDefault(rel),
   对你现在: (rel) => buildTowardUserDefault(rel),
 }
 
@@ -169,7 +179,7 @@ const SECTION_DEFAULTS: Record<PersonaAiCompactEntryName, (rel: string) => strin
 export function canonicalizePersonaAiCompactEntryName(raw: string): PersonaAiCompactEntryName | null {
   const name = String(raw ?? '').trim()
   if (!name) return null
-  // 独立附加条：勿并入八条模板
+  // 独立附加条：勿并入九条模板
   if (isPersonaAiOrientationEpilogueName(name)) return null
   if (isPersonaAiRelationshipHistoryEntryName(name)) return null
   if ((PERSONA_AI_COMPACT_ENTRY_NAMES as readonly string[]).includes(name)) {
@@ -186,6 +196,7 @@ export function canonicalizePersonaAiCompactEntryName(raw: string): PersonaAiCom
   if (/能力|日常|口语|习惯|爱好|技能/.test(name)) return '能力与日常'
   if (/亲密|恋爱|欲念|fetish|contrast|反差/.test(name) && !/反差萌/.test(name)) return '亲密与恋爱观'
   if (/周边NPC|NPC简|关联人物|身边的人|周边人物|配角档案|人物简档/.test(name)) return '周边NPC'
+  if (/相遇|相识过程|相识背景|如何相识|羁绊由来|初遇|结识/.test(name)) return '相遇羁绊'
   if (/人际|家庭|友人|秘密|软肋|反差萌|圈子/.test(name)) return '人际与秘密'
   if (
     name === PERSONA_AI_TOWARD_USER_ENTRY_NAME ||
@@ -308,13 +319,13 @@ function buildRelationshipHistoryDefault(hint?: string): string {
 
 /**
  * 将 AI 人设写成**一本**世界书、固定条目。
- * 「对你现在」恒为尾声延展；取向「可变」时另增取向快照尾声；有感情史种子时另增「过往感情史」序言。
+ * 「对你现在」恒为尾声延展；「相遇羁绊」为序言；取向「可变」时另增取向快照尾声；有感情史种子时另增「过往感情史」序言。
  */
 export function buildPersonaAiWorldBooks(
   characterId: string,
   nickname: string,
-  /** @deprecated 旧九维入参已忽略；请传 sections */
-  _personaOrUnused: unknown,
+  /** 真实姓名（用于裸名→{{char}}；勿再传旧九维对象） */
+  realNameOrUnused: string | null | unknown,
   now: number,
   sectionsOrEpilogue: PersonaAiEpilogueEntry[] | null,
   userDisplayName?: string,
@@ -332,7 +343,11 @@ export function buildPersonaAiWorldBooks(
   const includeHistory = opts?.includeRelationshipHistory === true
   const relationToUser = String(opts?.relationToUser ?? '').trim()
   const sections = normalizePersonaAiCompactSections(sectionsOrEpilogue, { relationToUser })
-  const rn = nickname
+  // 旧调用曾把九维对象塞进第 3 参；仅接受非空字符串作为真实姓名
+  const rn =
+    typeof realNameOrUnused === 'string' && realNameOrUnused.trim()
+      ? realNameOrUnused.trim()
+      : nickname
   const itemOpts = userDisplayName?.trim() ? { userDisplayName: userDisplayName.trim() } : undefined
 
   let orientationExtra: string | null = null

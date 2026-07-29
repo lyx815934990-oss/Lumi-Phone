@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { copyTextToClipboard } from '../../../utils/copyToClipboard'
+import { formatApiClientError } from '../addFriend/friendRequestApiError'
 import { WeChatCenterToast } from '../WeChatCenterToast'
 import { useExpandedStoryTimelineSnapshot } from '../memory/useExpandedStoryTimelineSnapshot'
 import { useDating } from './DatingContext'
@@ -122,7 +123,9 @@ export function StoryBlock({
   branchChoices,
   narrativePerspective = 'second',
 }: Props) {
-  const { generatePlotDimension, currentArchive, currentCharacterId } = useDating()
+  const { generatePlotDimension, backfillPlotTranslations, currentArchive, currentCharacterId } =
+    useDating()
+  const [backfillBusy, setBackfillBusy] = useState(false)
   const aiSplit = useMemo(() => {
     if (plot.type !== 'ai') return { thinkingText: '', displayBody: plot.content }
     return resolveDatingPlotDisplayFromItem(plot)
@@ -251,6 +254,15 @@ export function StoryBlock({
     onSaveBodyEdit(draft.trimEnd())
     setEditing(false)
     setCtxOpen(false)
+    // 正文改过后原文键可能对不上旧译文：若已开同步翻译则自动补译
+    if (
+      plot.type === 'ai' &&
+      (currentArchive.dialogueTranslationSyncEnabled || currentArchive.innerOsTranslationSyncEnabled)
+    ) {
+      window.setTimeout(() => {
+        void handleBackfillTranslations()
+      }, 0)
+    }
   }
 
   const cancelEdit = () => {
@@ -269,13 +281,30 @@ export function StoryBlock({
       ? currentArchive.datingLengthTargetChars
       : 500
 
+  const handleBackfillTranslations = useCallback(async () => {
+    if (plot.type !== 'ai' || backfillBusy) return
+    setBackfillBusy(true)
+    try {
+      await backfillPlotTranslations(plot.id)
+      showCopyToast('已补全缺失译文')
+    } catch (e) {
+      showCopyToast(formatApiClientError(e, '补译失败，请稍后重试'))
+    } finally {
+      setBackfillBusy(false)
+    }
+  }, [backfillBusy, backfillPlotTranslations, plot.id, plot.type, showCopyToast])
+
   const openDimensionPanel = useCallback((kind: PlotDimensionKind) => {
     setDimensionError(null)
     setDimensionPanel(kind)
   }, [])
 
   const handleDimensionGenerate = useCallback(
-    async (writingGuide: string, lengthTargetChars: number) => {
+    async (
+      writingGuide: string,
+      lengthTargetChars: number,
+      languages: import('./types').PlotDimensionLanguageBundle,
+    ) => {
       if (!dimensionPanel) return
       setDimensionLoading(true)
       setDimensionError(null)
@@ -286,9 +315,10 @@ export function StoryBlock({
           writingGuide,
           lengthTargetChars,
           narrativePerspective,
+          languages,
         )
       } catch (e) {
-        setDimensionError(e instanceof Error ? e.message : '生成失败，请稍后重试')
+        setDimensionError(formatApiClientError(e, '生成失败，请稍后重试'))
       } finally {
         setDimensionLoading(false)
       }
@@ -389,6 +419,21 @@ export function StoryBlock({
                       }}
                     >
                       重新回复
+                    </button>
+                  ) : null}
+                  {plot.type === 'ai' &&
+                  (currentArchive.dialogueTranslationSyncEnabled ||
+                    currentArchive.innerOsTranslationSyncEnabled) ? (
+                    <button
+                      type="button"
+                      className="flex w-full px-3.5 py-2.5 text-left text-[13px] text-stone-700 transition-colors hover:bg-white/60 disabled:opacity-40"
+                      disabled={interactionLocked || isRegenerating || backfillBusy}
+                      onClick={() => {
+                        setCtxOpen(false)
+                        void handleBackfillTranslations()
+                      }}
+                    >
+                      {backfillBusy ? '补译中…' : '补全缺失译文'}
                     </button>
                   ) : null}
                   {onDelete ? (
@@ -554,6 +599,13 @@ export function StoryBlock({
         kind="parallel"
         artifact={plot.parallelEvent}
         defaultLengthTarget={defaultDimensionLength}
+        defaultLanguages={{
+          plotOutputLanguage: currentArchive.plotOutputLanguage,
+          dialogueLanguage: currentArchive.dialogueLanguage,
+          innerOsLanguage: currentArchive.innerOsLanguage,
+        }}
+        dialogueTranslationSyncEnabled={currentArchive.dialogueTranslationSyncEnabled === true}
+        innerOsTranslationSyncEnabled={currentArchive.innerOsTranslationSyncEnabled === true}
         loading={dimensionLoading}
         error={dimensionError}
         onClose={() => {
@@ -567,6 +619,13 @@ export function StoryBlock({
         kind="if"
         artifact={plot.ifLine}
         defaultLengthTarget={defaultDimensionLength}
+        defaultLanguages={{
+          plotOutputLanguage: currentArchive.plotOutputLanguage,
+          dialogueLanguage: currentArchive.dialogueLanguage,
+          innerOsLanguage: currentArchive.innerOsLanguage,
+        }}
+        dialogueTranslationSyncEnabled={currentArchive.dialogueTranslationSyncEnabled === true}
+        innerOsTranslationSyncEnabled={currentArchive.innerOsTranslationSyncEnabled === true}
         loading={dimensionLoading}
         error={dimensionError}
         onClose={() => {
@@ -644,9 +703,27 @@ export function StoryBlock({
                     plotImages={plot.plotImages}
                     characterId={albumCharacterId}
                     plotId={plot.id}
+                    dialogueTranslations={plot.dialogueTranslations}
+                    innerOsTranslations={plot.innerOsTranslations}
+                    onBackfillMissingTranslations={() => void handleBackfillTranslations()}
+                    onRegenerateForMissingTranslation={
+                      canRegenerate && onRegenerate ? onRegenerate : undefined
+                    }
+                    backfillBusy={backfillBusy}
                   />
                 ) : (
-                  <PlotRichParagraph content={displayBody} />
+                  <PlotRichParagraph
+                    content={displayBody}
+                    dialogueTranslations={plot.type === 'ai' ? plot.dialogueTranslations : undefined}
+                    innerOsTranslations={plot.type === 'ai' ? plot.innerOsTranslations : undefined}
+                    onBackfillMissingTranslations={
+                      plot.type === 'ai' ? () => void handleBackfillTranslations() : undefined
+                    }
+                    onRegenerateForMissingTranslation={
+                      plot.type === 'ai' && canRegenerate && onRegenerate ? onRegenerate : undefined
+                    }
+                    backfillBusy={backfillBusy}
+                  />
                 )}
               </motion.div>
             )}

@@ -12,6 +12,7 @@ import {
 import { SILICONFLOW_ASR_DEFAULT_BASE_URL } from '../wechat/voiceCall/siliconflowAsr'
 import { normalizeModelPricingMap } from './modelPricingUtils'
 import type { ApiConfig, ApiPreset, ApiStore, LinkPreviewSettings, SubApiType } from './types'
+import { normalizeTranslationSubFields, resolveTranslationRuntime, type TranslationRuntime } from './translationProviders'
 
 const STORAGE_KEY = API_STORE_STORAGE_KEY
 
@@ -62,13 +63,25 @@ function normalizePreset(raw: unknown): ApiPreset | null {
   const normalizeSub = (k: SubApiType) => {
     const src = subRaw[k]
     const normalizedApi = normalizeApiConfig(src?.apiConfig ?? createEmptyApiConfig())
+    const translationFields = k === 'translation' ? normalizeTranslationSubFields(src as never) : {}
     return {
-      enabled: typeof src?.enabled === 'boolean' ? src.enabled : true,
-      useMainApi: k === 'voiceAsr' ? false : typeof src?.useMainApi === 'boolean' ? src.useMainApi : true,
+      enabled:
+        typeof src?.enabled === 'boolean'
+          ? src.enabled
+          : k === 'translation'
+            ? false
+            : true,
+      useMainApi:
+        k === 'voiceAsr' || k === 'translation'
+          ? false
+          : typeof src?.useMainApi === 'boolean'
+            ? src.useMainApi
+            : true,
       apiConfig:
         k === 'voiceAsr'
           ? { ...normalizedApi, apiUrl: normalizedApi.apiUrl.trim() || SILICONFLOW_ASR_DEFAULT_BASE_URL }
           : normalizedApi,
+      ...translationFields,
     }
   }
   return {
@@ -82,6 +95,7 @@ function normalizePreset(raw: unknown): ApiPreset | null {
       chatCard: normalizeSub('chatCard'),
       danmaku: normalizeSub('danmaku'),
       voiceAsr: normalizeSub('voiceAsr'),
+      translation: normalizeSub('translation'),
     },
     imageGen: normalizeImageGenSettings(r.imageGen),
     createdAt: typeof r.createdAt === 'number' ? r.createdAt : base.createdAt,
@@ -130,6 +144,7 @@ type Ctx = {
   duplicatePreset: (sourceId: string) => string | null
   getResolvedConfig: (subType?: SubApiType) => ApiConfig | null
   isSubApiEnabled: (subType: SubApiType) => boolean
+  getTranslationRuntime: () => TranslationRuntime | null
 }
 
 const ApiSettingsContext = createContext<Ctx | null>(null)
@@ -308,6 +323,12 @@ export function ApiSettingsProvider({ children }: { children: ReactNode }) {
     [currentPreset],
   )
 
+  const getTranslationRuntime = useCallback((): TranslationRuntime | null => {
+    const preset = currentPreset
+    if (!preset) return null
+    return resolveTranslationRuntime({ main: preset.main, sub: preset.sub.translation })
+  }, [currentPreset])
+
   const value = useMemo(
     (): Ctx => ({
       presets,
@@ -325,6 +346,7 @@ export function ApiSettingsProvider({ children }: { children: ReactNode }) {
       duplicatePreset,
       getResolvedConfig,
       isSubApiEnabled,
+      getTranslationRuntime,
     }),
     [
       presets,
@@ -342,6 +364,7 @@ export function ApiSettingsProvider({ children }: { children: ReactNode }) {
       duplicatePreset,
       getResolvedConfig,
       isSubApiEnabled,
+      getTranslationRuntime,
     ],
   )
 
@@ -363,5 +386,11 @@ export function useCurrentApiConfig(subType?: SubApiType) {
 export function useIsSubApiEnabled(subType: SubApiType) {
   const { isSubApiEnabled } = useApiSettings()
   return isSubApiEnabled(subType)
+}
+
+/** 翻译副接口：含服务商与凭证；未配好时为 null（调用方可回退 chatCard） */
+export function useTranslationRuntime() {
+  const { getTranslationRuntime } = useApiSettings()
+  return getTranslationRuntime()
 }
 

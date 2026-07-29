@@ -10,11 +10,10 @@ import {
   mergeApiStoreLinkPreview,
 } from './linkPreviewSettingsUtils'
 import { normalizeModelPricingMap } from './modelPricingUtils'
-import type { ApiPreset, ApiStore } from './types'
-import { createEmptyPreset } from './mock'
+import type { ApiConfig, ApiPreset, ApiStore, SubApiType } from './types'
+import { createEmptyApiConfig, createEmptyPreset } from './mock'
 import { SILICONFLOW_ASR_DEFAULT_BASE_URL } from '../wechat/voiceCall/siliconflowAsr'
-import type { ApiConfig, SubApiType } from './types'
-import { createEmptyApiConfig } from './mock'
+import { normalizeTranslationSubFields } from './translationProviders'
 
 const STORAGE_KEY = API_STORE_STORAGE_KEY
 
@@ -48,13 +47,21 @@ function normalizePreset(raw: unknown): ApiPreset | null {
   const normalizeSub = (k: SubApiType) => {
     const src = subRaw[k]
     const normalizedApi = normalizeApiConfig(src?.apiConfig ?? createEmptyApiConfig())
+    const translationFields = k === 'translation' ? normalizeTranslationSubFields(src as never) : {}
     return {
-      enabled: typeof src?.enabled === 'boolean' ? src.enabled : true,
-      useMainApi: k === 'voiceAsr' ? false : typeof src?.useMainApi === 'boolean' ? src.useMainApi : true,
+      enabled:
+        typeof src?.enabled === 'boolean' ? src.enabled : k === 'translation' ? false : true,
+      useMainApi:
+        k === 'voiceAsr' || k === 'translation'
+          ? false
+          : typeof src?.useMainApi === 'boolean'
+            ? src.useMainApi
+            : true,
       apiConfig:
         k === 'voiceAsr'
           ? { ...normalizedApi, apiUrl: normalizedApi.apiUrl.trim() || SILICONFLOW_ASR_DEFAULT_BASE_URL }
           : normalizedApi,
+      ...translationFields,
     }
   }
   return {
@@ -68,6 +75,7 @@ function normalizePreset(raw: unknown): ApiPreset | null {
       chatCard: normalizeSub('chatCard'),
       danmaku: normalizeSub('danmaku'),
       voiceAsr: normalizeSub('voiceAsr'),
+      translation: normalizeSub('translation'),
     },
     imageGen: normalizeImageGenSettings(r.imageGen),
     createdAt: typeof r.createdAt === 'number' ? r.createdAt : base.createdAt,

@@ -25,7 +25,7 @@ export function parsePlotDimensionLengthTarget(raw: number | string, fallback = 
 /** 送入约会剧情模型的上下文预算（词符/token；仍受 API/模型实际上限） */
 export const DATING_AI_MAX_CONTEXT_TOKENS = 200_000
 
-/** 剧情续写单次 completion 最大回复（词符/token；仍受所选模型/API 限制） */
+/** 剧情续写单次 completion 曾用上限；现已改为请求不传 max_tokens，由线路自行决定。保留常量供兼容引用。 */
 export const DATING_AI_MAX_OUTPUT_TOKENS = 30_000
 
 /**
@@ -145,6 +145,12 @@ export type WorldBookAfterRevertEntry = {
   contentAfterPatch?: string
 }
 
+/** 角色对白句的同步译文（与正文中对白出现顺序对齐） */
+export type PlotDialogueTranslation = {
+  source: string
+  translatedText: string
+}
+
 export type PlotItem = {
   id: string
   type: PlotItemType
@@ -177,6 +183,14 @@ export type PlotItem = {
   versionTimelineSnapshots?: (string | undefined)[]
   /** 与 `versions` 等长时，各版对应的 timeline JSON 增量（重建 IndexedDB 行表用） */
   versionTimelineDeltas?: (StoryTimelineSummaryDelta | undefined)[]
+  /** 与 `versions` 等长：各版对白同步译文 */
+  versionDialogueTranslations?: (PlotDialogueTranslation[] | undefined)[]
+  /** 当前展示版本的对白同步译文（与 versionDialogueTranslations[current] 同步） */
+  dialogueTranslations?: PlotDialogueTranslation[]
+  /** 与 `versions` 等长：各版内心 OS 同步译文 */
+  versionInnerOsTranslations?: (PlotDialogueTranslation[] | undefined)[]
+  /** 当前展示版本的内心 OS 同步译文 */
+  innerOsTranslations?: PlotDialogueTranslation[]
   /** 当前展示版本对应的剧情时间轴表（折叠面板） */
   timelineSnapshot?: string
   /** 当前展示版本对应的 timeline JSON 增量 */
@@ -206,8 +220,25 @@ export type PlotDimensionArtifact = {
   writingGuide: string
   lengthTargetChars: number
   updatedAt: number
+  /** 生成时旁白语言（如 zh-CN / ja）；缺省跟随档案旁白语言 */
+  outputLanguage?: string
+  /** 生成时对白语言；缺省跟随档案对白语言 */
+  dialogueLanguage?: string
+  /** 生成时内心 OS 语言；缺省跟随档案内心 OS 语言 */
+  innerOsLanguage?: string
+  /** 对白同步译文（与主线剧情相同逻辑） */
+  dialogueTranslations?: PlotDialogueTranslation[]
+  /** 内心 OS 同步译文 */
+  innerOsTranslations?: PlotDialogueTranslation[]
   /** 平行事件写入剧情摘要表时的结构化 delta（非原文） */
   timelineDelta?: import('../memory/storyTimelineTypes').StoryTimelineSummaryDelta
+}
+
+/** 平行 / IF 生成时的旁白·对白·内心 OS 语言（与主线分设一致） */
+export type PlotDimensionLanguageBundle = {
+  plotOutputLanguage: string
+  dialogueLanguage: string
+  innerOsLanguage: string
 }
 
 export type BranchOption = {
@@ -223,11 +254,11 @@ export type CharacterArchive = {
   plots: PlotItem[]
   currentProgress: number
   modePreference: DateMode
-  /** 上帝视角：旁白推进，不直接对「你」说话、不与玩家互动 */
+  /** 上帝视角：勾选后本轮全篇屏外旁白，不直接对「你」说话、玩家不得同场；未勾选时与侧幕均可由模型短切混用 */
   godPerspective: boolean
   /**
-   * 主角色不在场：本轮只写玩家与 NPC/人脉互动，约会主角色不得出场。
-   * 与上帝视角互斥（开启其一会自动关闭另一）。
+   * 侧幕叙写（主角色不在场）：勾选后本轮全篇只写玩家与 NPC/人脉，约会主角色不得出场。
+   * 与上帝视角互斥（开启其一会自动关闭另一）；二者皆未勾选时允许混合视角续写。
    */
   mainCharacterOffstage?: boolean
   branchEnabled: boolean
@@ -255,6 +286,18 @@ export type CharacterArchive = {
   /** 每轮剧情配图张数范围 */
   plotImageCountMin?: number
   plotImageCountMax?: number
+  /** 旁白（叙述）输出语言，默认简体中文；内心 OS 见 innerOsLanguage */
+  plotOutputLanguage?: string
+  /** 角色对白语言；空则跟随旁白语言 */
+  dialogueLanguage?: string
+  /** 内心 OS（**…**）语言；空则跟随旁白语言 */
+  innerOsLanguage?: string
+  /** 是否随生成同步产出对白译文 */
+  dialogueTranslationSyncEnabled?: boolean
+  /** 是否随生成同步产出内心 OS 译文 */
+  innerOsTranslationSyncEnabled?: boolean
+  /** 对白 / 内心 OS 同步翻译的目标语言 */
+  dialogueTranslationLanguage?: string
 }
 
 export type ArchivesStore = Record<string, CharacterArchive>

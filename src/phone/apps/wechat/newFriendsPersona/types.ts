@@ -245,6 +245,26 @@ export type ChatConversationSettingsRow = {
   classicEmojiBannedNames?: string[]
   /** 角色每轮回复是否出现语音的目标概率 0–100（门槛，非条数上限；命中后仍可多条 [语音]）；缺省 = 不覆写系统协议（约 30%） */
   voiceRoundTriggerPercent?: number
+  /**
+   * 本会话角色「文字气泡」输出语言（如 ja / en）；缺省或 zh-CN = 简体中文。
+   * @see WECHAT_CHAT_LANGUAGE_OPTIONS
+   */
+  replyOutputLanguage?: string
+  /**
+   * 本会话角色「语音消息脚本」输出语言；缺省 = 跟随 replyOutputLanguage。
+   * 与音色无关（音色仍用声纹库角色全局绑定）。
+   */
+  replyVoiceLanguage?: string
+  /** @deprecated 不再用于设置页；音色始终走声纹库绑定 */
+  replyVoiceId?: string
+  /** 是否同步生成/支持气泡下方译文（长按「翻译」或自动展开） */
+  translationSyncEnabled?: boolean
+  /** 译文目标语言；缺省 zh-CN */
+  translationLanguage?: string
+  /** 有译文时是否默认展开（逻辑同语音转文字展开） */
+  translationAutoExpand?: boolean
+  /** @deprecated 不再用于设置页；译文朗读用声纹库绑定 */
+  translationVoiceId?: string
   /** 角色每次发图张数下限 1–9；缺省 1。发图本身按语境适量（须「支持发图」开启） */
   imageRoundCountMin?: number
   /** 角色每次发图张数上限 1–9；缺省 1 */
@@ -1093,6 +1113,14 @@ export type WeChatChatMessage = {
   callStatus?: WeChatCallStatusPayload
   /** 语音消息：与 content 并存 */
   voice?: WeChatVoicePayload
+  /** 气泡译文（与主文语言不同；展开逻辑类似语音转文字） */
+  translatedText?: string
+  /** 译文语言 code */
+  translationLang?: string
+  /** 是否展开显示译文 */
+  translationExpanded?: boolean
+  /** 译文 TTS 音频（可选） */
+  translationAudioUrl?: string
   /** 同频共听邀约 / 接受 / 拒绝卡片 */
   musicSync?: WeChatMusicSyncPayload
   /** 小游戏邀约 / 接受 / 拒绝卡片 */

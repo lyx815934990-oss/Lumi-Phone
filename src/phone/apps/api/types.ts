@@ -1,6 +1,16 @@
 import type { MomentsImageGenSettings } from '../../../components/moments/useMomentsSettingsStore'
 
-export type SubApiType = 'xinyu' | 'chatCard' | 'danmaku' | 'voiceAsr'
+export type SubApiType = 'xinyu' | 'chatCard' | 'danmaku' | 'voiceAsr' | 'translation'
+
+/** 气泡/缺译/同步翻译所用服务商 */
+export type TranslationProviderId =
+  | 'openai'
+  | 'deepl'
+  | 'google'
+  | 'azure'
+  | 'baidu'
+  | 'youdao'
+  | 'tencent'
 
 /** 拉取模型列表时附带的费率（按百万 token 或平台原始单位解析） */
 export type ApiModelPricing = {
@@ -31,6 +41,16 @@ export type SubApiConfig = {
   enabled: boolean
   useMainApi: boolean
   apiConfig: ApiConfig
+  /** 仅 translation：服务商 */
+  translationProvider?: TranslationProviderId
+  /** DeepL Free / Pro 端点 */
+  deeplPlan?: 'free' | 'pro'
+  /** Azure Translator 区域，如 eastasia */
+  azureRegion?: string
+  /** 腾讯云地域，如 ap-guangzhou */
+  tencentRegion?: string
+  /** 百度 APP ID / 有道应用ID / 腾讯 SecretId */
+  translationAppId?: string
 }
 
 export type ApiPreset = {
@@ -64,4 +84,3 @@ export type ApiStore = {
   currentPresetId: string
   linkPreview: LinkPreviewSettings
 }
-

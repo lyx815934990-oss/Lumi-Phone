@@ -75,7 +75,7 @@ import { chatDisplayFontCssVars, resolveChatDisplayFontFamily } from './wechatBu
 import { resolveMessengerBubbleStyle } from './wechatMessengerSpecialBubbles'
 import { weChatChatSkinCssProperties } from './wechatChatSkinVars'
 import './wechatChatSkinScope.css'
-import { useCurrentApiConfig, useIsSubApiEnabled } from '../api/ApiSettingsContext'
+import { useCurrentApiConfig, useIsSubApiEnabled, useTranslationRuntime } from '../api/ApiSettingsContext'
 import type { ApiConfig } from '../api/types'
 import { DEFAULT_IMAGE_GEN_SETTINGS } from '../api/imageGenPresetUtils'
 import { loadResolvedImageGenSettings } from '../api/loadResolvedImageGenSettings'
@@ -573,6 +573,15 @@ import { stickerUrlToImagePayload, arrayBufferToBase64ForMedia } from './wechatS
 import { ChatInputBar } from './voiceInput/ChatInputBar'
 import { VoiceOverlay, type VoiceGestureZone } from './voiceInput/VoiceOverlay'
 import { VoiceMessageBubble } from './VoiceMessageBubble'
+import { MessageTranslationUnderBubble } from './MessageTranslationUnderBubble'
+import {
+  batchTranslateWeChatBubbleTexts,
+  createWeChatSyncTranslationLookup,
+  normalizeLeakedWeChatTranslationBubbles,
+  parseWeChatSyncTranslationLine,
+  peelWeChatSyncTranslationLines,
+  weChatSyncTranslationKeyFromBubbleLine,
+} from './wechatChatLanguage'
 import {
   readMiniMaxCredentialsFromLocalStorage,
   readMiniMaxSpeechModelFromLocalStorage,
@@ -1062,6 +1071,10 @@ function mapWeChatMessagesToChatItems(msgs: WeChatChatMessage[]): ChatMsg[] {
       transfer: m.transfer,
       callStatus: m.callStatus,
       voice: m.voice,
+      translatedText: m.translatedText,
+      translationLang: m.translationLang,
+      translationExpanded: m.translationExpanded,
+      translationAudioUrl: m.translationAudioUrl,
       musicSync: m.musicSync,
       miniGameInvite: m.miniGameInvite,
       listenCommentShare: m.listenCommentShare,
@@ -1741,6 +1754,10 @@ type ChatMsg = {
     transcriptText?: string
     voicePlayed?: boolean
   }
+  translatedText?: string
+  translationLang?: string
+  translationExpanded?: boolean
+  translationAudioUrl?: string
   musicSync?: WeChatMusicSyncPayload
   miniGameInvite?: WeChatMiniGamePayload
   listenCommentShare?: WeChatListenCommentSharePayload
@@ -2509,6 +2526,13 @@ export function ChatRoomInner({
   const danmakuApiConfig = useCurrentApiConfig('danmaku')
   const voiceAsrApiConfig = useCurrentApiConfig('voiceAsr')
   const voiceAsrEnabled = useIsSubApiEnabled('voiceAsr')
+  /** API 设置「翻译」副接口开启：同步翻译走服务商，模型勿写 [译] */
+  const translationDedicatedApi = useIsSubApiEnabled('translation')
+  const translationDedicatedApiRef = useRef(translationDedicatedApi)
+  translationDedicatedApiRef.current = translationDedicatedApi
+  const translationRuntime = useTranslationRuntime()
+  const translationRuntimeRef = useRef(translationRuntime)
+  translationRuntimeRef.current = translationRuntime
 
   const conversationKey = useMemo(
     () =>
@@ -2727,6 +2751,7 @@ export function ChatRoomInner({
       voiceCharacterId: string,
       ttsScript: string,
       emotion?: (typeof VOICE_ALLOWED_EMOTIONS)[number],
+      voiceIdOverride?: string,
     ): Promise<string> => {
       try {
         const cid = voiceCharacterId.trim()
@@ -2734,7 +2759,8 @@ export function ChatRoomInner({
         const creds = readMiniMaxCredentialsFromLocalStorage()
         if (!creds.apiKey.trim()) return ''
         const speechModel = readMiniMaxSpeechModelFromLocalStorage()
-        const voiceId = await lookupBoundVoiceIdForCharacter(cid)
+        const voiceId =
+          voiceIdOverride?.trim() || (await lookupBoundVoiceIdForCharacter(cid))
         if (!voiceId) return ''
         const blob = await synthesizeMiniMaxVoiceAudioBlob(creds, {
           voice_id: voiceId,
@@ -3067,6 +3093,14 @@ export function ChatRoomInner({
     stickerTargetedEntries?: import('./wechatMediaSendFrequency').StickerTargetedEntryMap
     stickerBannedRefs?: string[]
     classicEmojiBannedNames?: string[]
+  }>({})
+  /** 回复语言 / 翻译（音色始终走声纹库绑定） */
+  const convReplyLangRef = useRef<{
+    replyOutputLanguage?: string
+    replyVoiceLanguage?: string
+    translationSyncEnabled?: boolean
+    translationLanguage?: string
+    translationAutoExpand?: boolean
   }>({})
   /** 与 ref 同步，供列表渲染兜底：即使 items 曾短暂含「仅 UI 清空」区间消息，也不在前端露出（回收站快照对应内容） */
   const [uiOnlyHiddenCutForView, setUiOnlyHiddenCutForView] = useState<number | null>(null)
@@ -4469,6 +4503,13 @@ export function ChatRoomInner({
         stickerTargetedEntries: convSt?.stickerTargetedEntries,
         stickerBannedRefs: convSt?.stickerBannedRefs,
         classicEmojiBannedNames: convSt?.classicEmojiBannedNames,
+      }
+      convReplyLangRef.current = {
+        replyOutputLanguage: convSt?.replyOutputLanguage,
+        replyVoiceLanguage: convSt?.replyVoiceLanguage,
+        translationSyncEnabled: convSt?.translationSyncEnabled === true,
+        translationLanguage: convSt?.translationLanguage,
+        translationAutoExpand: convSt?.translationAutoExpand === true,
       }
       const peerCid = (personaCharacterId?.trim() || conversationCharacterId.trim()) || undefined
       const msgsForWeChat = stripLegacyMeetImportedWeChatMessages(msgs, peerCid)
@@ -6446,7 +6487,29 @@ export function ChatRoomInner({
           return
         }
         case 'translate': {
-          showCenterToast('翻译中...')
+          if (!convReplyLangRef.current.translationSyncEnabled) {
+            showCenterToast('请先在聊天信息中开启「同步输出翻译」')
+            return
+          }
+          const row = await personaDb.getWeChatChatMessageById(mid)
+          if (!row || row.isRecalled) {
+            showCenterToast('该消息无法翻译')
+            return
+          }
+          const cached = row.translatedText?.trim() || ''
+          if (cached) {
+            const next = !(row.translationExpanded === true)
+            await personaDb.patchWeChatChatMessageById(mid, { translationExpanded: next })
+            setItems((prev) =>
+              rebuildWithCurrentTime(
+                extractMessages(prev).map((msg) =>
+                  msg.id === mid ? { ...msg, translationExpanded: next } : msg,
+                ),
+              ),
+            )
+            return
+          }
+          showCenterToast('本条尚无同步译文（开启后新回复会随气泡一并生成）')
           return
         }
         case 'edit': {
@@ -8508,6 +8571,13 @@ export function ChatRoomInner({
                   stickerBannedRefs,
                   classicEmojiBannedNames,
                 }
+                convReplyLangRef.current = {
+                  replyOutputLanguage: freshConv?.replyOutputLanguage,
+                  replyVoiceLanguage: freshConv?.replyVoiceLanguage,
+                  translationSyncEnabled: freshConv?.translationSyncEnabled === true,
+                  translationLanguage: freshConv?.translationLanguage,
+                  translationAutoExpand: freshConv?.translationAutoExpand === true,
+                }
               } catch {
                 /* keep ref */
               }
@@ -8921,6 +8991,11 @@ export function ChatRoomInner({
                 danmakuInstruction: shouldSplitDanmakuCall ? undefined : danmakuInstruction || undefined,
                 chatMemberIds: [...wbGroupIds],
                 includeThinkingChain,
+                replyOutputLanguage: convReplyLangRef.current.replyOutputLanguage,
+                replyVoiceLanguage: convReplyLangRef.current.replyVoiceLanguage,
+                translationSyncEnabled: convReplyLangRef.current.translationSyncEnabled === true,
+                translationLanguage: convReplyLangRef.current.translationLanguage,
+                translationDedicatedApi: translationDedicatedApiRef.current === true,
               })
               const grpWbExtra = buildAggregateGroupChatAfterPatchItemsSection(groupMemberCharactersForWbPatch)
               if (grpWbExtra.trim()) systemContentFinal += `\n\n${grpWbExtra}`
@@ -9027,6 +9102,11 @@ export function ChatRoomInner({
                 replyBias: traceReplyBias || undefined,
                 busyContext,
                 includeThinkingChain,
+                replyOutputLanguage: convReplyLangRef.current.replyOutputLanguage,
+                replyVoiceLanguage: convReplyLangRef.current.replyVoiceLanguage,
+                translationSyncEnabled: convReplyLangRef.current.translationSyncEnabled === true,
+                translationLanguage: convReplyLangRef.current.translationLanguage,
+                translationDedicatedApi: translationDedicatedApiRef.current === true,
                 includeForwardHistoryCard,
                 includePulseDmScreenshot,
                 includeProfileImageChange,
@@ -9137,6 +9217,11 @@ export function ChatRoomInner({
                 replyBias: traceReplyBias || undefined,
                 busyContext,
                 includeThinkingChain,
+                replyOutputLanguage: convReplyLangRef.current.replyOutputLanguage,
+                replyVoiceLanguage: convReplyLangRef.current.replyVoiceLanguage,
+                translationSyncEnabled: convReplyLangRef.current.translationSyncEnabled === true,
+                translationLanguage: convReplyLangRef.current.translationLanguage,
+                translationDedicatedApi: translationDedicatedApiRef.current === true,
                 includeForwardHistoryCard,
                 includePulseDmScreenshot,
                 includeProfileImageChange,
@@ -9862,7 +9947,29 @@ export function ChatRoomInner({
             }
         > = []
         if (roomType === 'group' && groupId?.trim() && groupMultiOrderedItems?.length) {
+          const mergedGroupItems: Array<(typeof groupMultiOrderedItems)[number]> = []
+          const pendingGroupTr = new Map<string, string>()
           for (const it of groupMultiOrderedItems) {
+            if (it.kind === 'meta') {
+              mergedGroupItems.push(it)
+              continue
+            }
+            const trOnly = parseWeChatSyncTranslationLine(it.text)
+            if (trOnly != null) {
+              for (let gi = mergedGroupItems.length - 1; gi >= 0; gi -= 1) {
+                const prev = mergedGroupItems[gi]!
+                if (prev.kind === 'meta') continue
+                const prevText = String(prev.text ?? '')
+                if (parseWeChatSyncTranslationLine(prevText) != null) continue
+                const key = weChatSyncTranslationKeyFromBubbleLine(prevText)
+                if (key && trOnly.trim()) pendingGroupTr.set(`${prev.characterId}::${key}`, trOnly.trim())
+                break
+              }
+              continue
+            }
+            mergedGroupItems.push(it)
+          }
+          for (const it of mergedGroupItems) {
             if (it.kind === 'meta') {
               bubbleRuns.push({ kind: 'meta', action: it.action })
               continue
@@ -9870,6 +9977,11 @@ export function ChatRoomInner({
             const bubs = dedupeBubbleLines([it.text])
             if (!bubs.length) continue
             const cidRun = it.characterId.trim()
+            const key = weChatSyncTranslationKeyFromBubbleLine(bubs[0]!)
+            const pendingTr = key ? pendingGroupTr.get(`${cidRun}::${key}`) : undefined
+            if (pendingTr && key) {
+              bubs.push(`[译]${pendingTr}`)
+            }
             bubbleRuns.push({
               kind: 'messages',
               characterId: cidRun,
@@ -9917,6 +10029,155 @@ export function ChatRoomInner({
             }
           }
           flushBatch()
+        }
+
+        /** 同步翻译：先吸收漏写 `[译]` 的中文气泡，再剥离；展开时不再调 API */
+        const syncTranslationOn = convReplyLangRef.current.translationSyncEnabled === true
+        /** 副接口开：客户端翻译；关：优先模型 [译]，缺译再补全 */
+        const translationDedicatedOn = translationDedicatedApiRef.current === true
+        const syncTranslationLang =
+          convReplyLangRef.current.translationLanguage?.trim() || 'zh-CN'
+        const replyLangForNorm = convReplyLangRef.current.replyOutputLanguage
+        const syncTranslationLookup = createWeChatSyncTranslationLookup()
+        const takeSyncTranslation = (sourceKey: string): string | undefined =>
+          syncTranslationLookup.take(sourceKey)
+        const syncTranslationPatch = (sourceKey: string) => {
+          const tr = takeSyncTranslation(sourceKey)?.trim()
+          if (!tr) return {} as {
+            translatedText?: string
+            translationLang?: string
+            translationExpanded?: boolean
+          }
+          return {
+            translatedText: tr,
+            translationLang: syncTranslationLang,
+            translationExpanded: false,
+          }
+        }
+
+        // 回复非中文时：把漏发的译文语言气泡收成 [译]（同步开）或丢弃（同步关），避免中日混聊
+        for (const run of bubbleRuns) {
+          if (run.kind !== 'messages') continue
+          run.bubbles = normalizeLeakedWeChatTranslationBubbles(run.bubbles, {
+            replyLanguage: replyLangForNorm,
+            translationLanguage: syncTranslationLang,
+            syncEnabled: syncTranslationOn,
+            isSpecialLine: (line) => {
+              const t = String(line ?? '').trim()
+              if (/^(?:\[语音\]|【语音】)/.test(t)) return false
+              return bubbleLineNeedsSpecialBubbleHandler(t)
+            },
+          })
+        }
+
+        if (syncTranslationOn) {
+          const needBackfill: string[] = []
+          const modelTrFallback = new Map<string, string>()
+          const isTranslatableLine = (line: string) => {
+            const t = String(line ?? '').trim()
+            if (!t) return false
+            if (/^(?:\[语音\]|【语音】)\s*\S/.test(t)) return true
+            if (bubbleLineNeedsSpecialBubbleHandler(t)) return false
+            return true
+          }
+          for (const run of bubbleRuns) {
+            if (run.kind !== 'messages') continue
+            const peeled = peelWeChatSyncTranslationLines(run.bubbles)
+            run.bubbles = peeled.lines
+            for (let li = 0; li < peeled.lines.length; li += 1) {
+              const line = peeled.lines[li]!
+              if (!isTranslatableLine(line)) continue
+              const key = weChatSyncTranslationKeyFromBubbleLine(line)
+              if (!key) continue
+              const tr = peeled.translations[li]?.trim()
+              if (translationDedicatedOn) {
+                // 副接口：一律走翻译 API；模型偶发 [译] 仅作失败兜底
+                if (tr) modelTrFallback.set(key, tr)
+                needBackfill.push(key)
+              } else if (tr) {
+                syncTranslationLookup.offer(key, tr)
+              } else {
+                needBackfill.push(key)
+              }
+            }
+          }
+          const trRuntime = translationDedicatedOn ? translationRuntimeRef.current : null
+          const openaiCfg =
+            trRuntime?.provider === 'openai'
+              ? trRuntime.openaiConfig
+              : translationDedicatedOn
+                ? null
+                : apiConfig
+          const canCallNative = !!trRuntime && trRuntime.provider !== 'openai'
+          const canCallOpenai =
+            !!openaiCfg?.apiUrl?.trim() &&
+            !!openaiCfg?.apiKey?.trim() &&
+            !!openaiCfg?.modelId?.trim()
+          if (needBackfill.length > 0 && (canCallNative || canCallOpenai)) {
+            try {
+              let speakerName = ''
+              let speakerPersonaBrief = ''
+              let speakerGender: 'male' | 'female' | 'other' | null = null
+              let listenerGender: 'male' | 'female' | 'other' | null = null
+              const peerCid =
+                (personaCharacterId?.trim() || conversationCharacterId.trim() || '').trim()
+              if (peerCid && peerCid !== WECHAT_GROUP_BOT_CHARACTER_ID) {
+                const ch = await personaDb.getCharacter(peerCid)
+                if (ch) {
+                  speakerName = ch.wechatNickname?.trim() || ch.name?.trim() || ''
+                  if (ch.gender === 'male' || ch.gender === 'female' || ch.gender === 'other') {
+                    speakerGender = ch.gender
+                  }
+                  // 翻译只需要称呼线索，避免长人设诱使模型加戏
+                  speakerPersonaBrief = [
+                    speakerName ? `称呼：${speakerName}` : '',
+                    String(ch.identity ?? '').trim() ? `身份：${String(ch.identity).trim().slice(0, 120)}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join('\n')
+                }
+              }
+              const piid = playerIdentityId.trim()
+              if (piid) {
+                const pi = await personaDb
+                  .getPlayerIdentityForWechatAccount(piid, currentAccountId)
+                  .catch(() => null)
+                if (pi?.gender === 'male' || pi?.gender === 'female' || pi?.gender === 'other') {
+                  listenerGender = pi.gender
+                }
+              }
+              const filled = await batchTranslateWeChatBubbleTexts({
+                apiConfig: openaiCfg ?? undefined,
+                translationRuntime: trRuntime,
+                texts: needBackfill,
+                targetLanguage: syncTranslationLang,
+                speakerName,
+                listenerName: '用户',
+                speakerPersonaBrief,
+                speakerGender,
+                listenerGender,
+                relationHint: /学长|学姐|学弟|学妹|先輩|後輩|せんぱい|こうはい|社团|部活|同校|校园|班级/.test(
+                  speakerPersonaBrief,
+                )
+                  ? '人设含校园/社团辈分：先輩优先译学长/学姐，後輩优先译学弟/学妹；禁止译成笼统「前辈」或「小孩」'
+                  : undefined,
+              })
+              for (let fi = 0; fi < needBackfill.length; fi += 1) {
+                const key = needBackfill[fi]!
+                const got = filled[fi]?.trim() || modelTrFallback.get(key) || ''
+                if (got) syncTranslationLookup.offer(key, got)
+              }
+            } catch (err) {
+              for (const [key, tr] of modelTrFallback) {
+                syncTranslationLookup.offer(key, tr)
+              }
+              logConsole('ai', `同步翻译同轮补全失败：${String(err)}`)
+            }
+          } else {
+            for (const [key, tr] of modelTrFallback) {
+              syncTranslationLookup.offer(key, tr)
+            }
+          }
         }
 
         if (!bubbleRuns.length) {
@@ -10367,7 +10628,15 @@ export function ChatRoomInner({
             allowPlaintextBatch = false
           }
           if (allowPlaintextBatch) {
-            type PlanRow = { oid: string; ts: number; charId: string; text: string; replyToId?: string }
+            type PlanRow = {
+              oid: string
+              ts: number
+              charId: string
+              text: string
+              replyToId?: string
+              translatedText?: string
+              translationLang?: string
+            }
             const plans: PlanRow[] = []
             let pendingInline: string | undefined
             let bi = 0
@@ -10453,7 +10722,15 @@ export function ChatRoomInner({
               bi += 1
               const replyToId = pendingInline
               pendingInline = undefined
-              plans.push({ oid, ts, charId: emitCharacterId, text: segForStore, replyToId })
+              const syncTr = syncTranslationPatch(weChatSyncTranslationKeyFromBubbleLine(rawLine))
+              plans.push({
+                oid,
+                ts,
+                charId: emitCharacterId,
+                text: segForStore,
+                replyToId,
+                ...syncTr,
+              })
             }
             if (!abortPlaintextBatch && plans.length > 0) {
               const replyIds = [...new Set(plans.map((p) => p.replyToId).filter((x): x is string => !!x?.trim()))]
@@ -10475,6 +10752,13 @@ export function ChatRoomInner({
                 timestamp: p.ts,
                 replyTo: p.replyToId ? metaById.get(p.replyToId) : undefined,
                 otherAnimated: true,
+                ...(p.translatedText
+                  ? {
+                      translatedText: p.translatedText,
+                      translationLang: p.translationLang,
+                      translationExpanded: false as const,
+                    }
+                  : {}),
               }))
               const batchRevealSteps = newMsgs.map((m) =>
                 markEmittedThisRound(m.id, m.timestamp, m.text),
@@ -10521,6 +10805,13 @@ export function ChatRoomInner({
                         conversationKey: revealConvKey,
                         notifyPeerTitle:
                           p.charId === WECHAT_GROUP_BOT_CHARACTER_ID ? '群管家' : notifyTitle,
+                        ...(m.translatedText
+                          ? {
+                              translatedText: m.translatedText,
+                              translationLang: m.translationLang,
+                              translationExpanded: false,
+                            }
+                          : {}),
                       })
                       .catch(() => {})
                   },
@@ -10742,6 +11033,9 @@ export function ChatRoomInner({
                 transcriptText: seg || '（语音）',
               }
               const thinkingVoice = !thinkingAttached && thinking ? thinking : undefined
+              const voiceSyncTr = syncTranslationPatch(
+                weChatSyncTranslationKeyFromBubbleLine(currentLine),
+              )
               const incoming: ChatMsg = {
                 id: oid,
                 kind: 'msg',
@@ -10753,6 +11047,7 @@ export function ChatRoomInner({
                 replyTo: replyToMeta ?? undefined,
                 voice,
                 otherAnimated: true,
+                ...voiceSyncTr,
               }
               if (thinkingVoice) thinkingAttached = true
               const voiceStep = markEmittedThisRound(oid, ts, seg || '[语音]')
@@ -10793,6 +11088,13 @@ export function ChatRoomInner({
                         conversationKey: revealConvKey,
                         notifyPeerTitle: notifyPeerRound.trim() || undefined,
                         voice,
+                        ...(incoming.translatedText
+                          ? {
+                              translatedText: incoming.translatedText,
+                              translationLang: incoming.translationLang,
+                              translationExpanded: false,
+                            }
+                          : {}),
                       })
                       .catch(() => {
                         /* ignore */
@@ -11680,6 +11982,9 @@ export function ChatRoomInner({
               }
             }
             const thinkingForRow = !thinkingAttached && thinking ? thinking : undefined
+            const plainSyncTr = syncTranslationPatch(
+              weChatSyncTranslationKeyFromBubbleLine(currentLineRaw || currentLine),
+            )
             const incoming: ChatMsg = {
               id: oid,
               kind: 'msg',
@@ -11690,6 +11995,7 @@ export function ChatRoomInner({
               timestamp: ts,
               replyTo: replyToMeta ?? undefined,
               otherAnimated: true,
+              ...plainSyncTr,
             }
             if (thinkingForRow) thinkingAttached = true
             const plainStep = markEmittedThisRound(oid, ts, segForStore)
@@ -11730,6 +12036,13 @@ export function ChatRoomInner({
                           timestamp: incoming.timestamp,
                           isRead: true,
                           conversationKey: revealConvKey,
+                          ...(incoming.translatedText
+                            ? {
+                                translatedText: incoming.translatedText,
+                                translationLang: incoming.translationLang,
+                                translationExpanded: false,
+                              }
+                            : {}),
                         },
                         pendingWorldBookRevertByCharRef.current,
                       ),
@@ -14634,6 +14947,26 @@ export function ChatRoomInner({
           : undefined
       const chatOtherAvatarRankBadge = otherSpeakerRankBadge
       const chatSelfAvatarRankBadge = selfSpeakerRankBadge
+      const toggleMsgTranslation = (msg: ChatMsg) => {
+        const next = !(msg.translationExpanded === true)
+        void personaDb.patchWeChatChatMessageById(msg.id, { translationExpanded: next })
+        setItems((prev) =>
+          rebuildWithCurrentTime(
+            extractMessages(prev).map((x) =>
+              x.id === msg.id ? { ...x, translationExpanded: next } : x,
+            ),
+          ),
+        )
+      }
+      const translationPropsFor = (msg: ChatMsg) => {
+        const text = msg.translatedText?.trim()
+        if (!text) return {}
+        return {
+          translationText: text,
+          translationExpanded: msg.translationExpanded === true,
+          onTranslationToggle: () => toggleMsgTranslation(msg),
+        }
+      }
       const wrap = (node: ReactNode, replyNode?: ReactNode, msgFingerprint?: string) => {
         const hi = highlightedMessageId === m.id
         const recallAnim = recallAnimatingIds.has(m.id)
@@ -14668,6 +15001,8 @@ export function ChatRoomInner({
                     imageGenAwaitingConfirm: m.imageGenAwaitingConfirm,
                     imageGenFailed: m.imageGenFailed,
                     images: m.images,
+                    translatedText: m.translatedText,
+                    translationExpanded: m.translationExpanded,
                     miniGameInvite: m.miniGameInvite,
                   })
                 : undefined
@@ -14795,6 +15130,7 @@ export function ChatRoomInner({
           voiceShowAvatarColumn,
         )
         const bubbleNode = (
+          <div className={`flex min-w-0 flex-col ${isSelf ? 'items-end' : 'items-start'}`}>
           <VoiceMessageBubble
             isUser={isSelf}
             duration={d}
@@ -14832,6 +15168,15 @@ export function ChatRoomInner({
               })
             }}
           />
+          {m.translatedText?.trim() ? (
+            <MessageTranslationUnderBubble
+              open={m.translationExpanded === true}
+              text={m.translatedText}
+              isSelf={isSelf}
+              onToggle={() => toggleMsgTranslation(m)}
+            />
+          ) : null}
+          </div>
         )
         const voiceRow = (
           isSelf ? (
@@ -15521,7 +15866,8 @@ export function ChatRoomInner({
       }
       if (!isSelf) {
         return wrap(
-          <WeChatMessageBubbleRow
+          <>
+            <WeChatMessageBubbleRow
               messageText={m.text}
               luxuryDarkAdminBubble={!!sharedRowProps.luxuryDarkAdminBubble}
               isSelf={false}
@@ -15546,14 +15892,17 @@ export function ChatRoomInner({
                   : (rect) => openActionPanelFor({ id: m.id, isSelf: false, text: messagePlainPreview(m), ts: m.timestamp, anchorRect: rect })
               }
               multiSelectAvatar={msAvatar}
-            />,
+              {...translationPropsFor(m)}
+            />
+          </>,
           renderDetachedReply(m, false),
         )
       }
 
       const st = m.status ?? 'sent'
       return wrap(
-        <WeChatMessageBubbleRow
+        <>
+          <WeChatMessageBubbleRow
             messageText={m.text}
             isSelf
             bubble={bubble}
@@ -15577,7 +15926,9 @@ export function ChatRoomInner({
                 : (rect) => openActionPanelFor({ id: m.id, isSelf: true, text: messagePlainPreview(m), ts: m.timestamp, anchorRect: rect })
             }
             multiSelectAvatar={msAvatar}
-          />,
+            {...translationPropsFor(m)}
+          />
+        </>,
         renderDetachedReply(m, true),
       )
     })

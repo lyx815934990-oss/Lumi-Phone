@@ -5,6 +5,7 @@ import {
   buildPersonaAiOrientationMutableSemanticsRule,
   buildPersonaAiPlayerIdentityContextBlock,
   buildPersonaAiPlayerUserGenderRules,
+  buildPersonaAiReferencePersonaRules,
   buildPersonaAiRelationContextRules,
   PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS,
   buildPersonaAiCompactEntryLengthRules,
@@ -751,9 +752,14 @@ export function buildPersonaAiRepairSystemPrompt(opts: {
   relationToUser?: string
   mode?: 'complete' | 'fix'
   includeRelationshipHistory?: boolean
+  referencePersonaDirectGenerate?: boolean
+  referencePersonaHint?: string
 }): string {
   const rel = opts.relationToUser?.trim() || '普通熟人'
   const includeHistory = opts.includeRelationshipHistory === true
+  const refDirect =
+    Boolean(opts.referencePersonaDirectGenerate) && Boolean((opts.referencePersonaHint ?? '').trim())
+  const refSeed = (opts.referencePersonaHint ?? '').trim()
   const entryList = [
     ...PERSONA_AI_COMPACT_ENTRY_NAMES.map((n) => `- ${n}`),
     ...(opts.orientationMutable ? [`- ${PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME}（取向可变 · 尾声）`] : []),
@@ -769,9 +775,13 @@ export function buildPersonaAiRepairSystemPrompt(opts: {
   const historyHostLine = includeHistory
     ? `过往感情史写在序言「${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}」；禁止写成与 {{user}} 当前关系。`
     : ''
-  return `你是中文都市向角色档案修复助手。用户已有一次生成结果，但部分字段缺失或为占位稿。
+  const refNpcLine = refDirect
+    ? `\n【直接生成 · 周边NPC】参考「${refSeed}」：**不设 3–5 上限**，原著开篇/日常圈具名配角尽量写全；每人须含原著身份/学年、年龄或年级、与 {{char}} 关系；配角彼此有原著关系（室友/好感/死党等）须双方互相写清；若 {{user}} 为同作相关角色，每人还须写「对 {{user}}」（护短配角禁止当陌生人）；禁止保安/编辑部/便利店等都市魔改。\n`
+    : ''
+  return `${refDirect ? '你是中文角色档案修复助手（直接生成原著人物模式）。' : '你是中文都市向角色档案修复助手。'}用户已有一次生成结果，但部分字段缺失或为占位稿。
 必须按【输出格式】写**纯文本标记**；**禁止 JSON**、禁止 Markdown 围栏、禁止解释。
 ${modeLine}
+${refNpcLine}
 **增量铁律（最高优先级）**：
 1. 只输出需要补全/纠正的键值行与【段落】；不要输出整份人设。
 2. 快照里写「已完整·勿改」的键/段：一句都不要再写。
@@ -780,11 +790,13 @@ ${modeLine}
 ${entryList}
 角色用 {{char}}、绑定玩家用 {{user}}，禁止写汉字真名。
 与 {{user}} 的关系为「${rel}」；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」勿把 {{user}} 写成暗恋/性幻想对象；${orientHostLine}${historyHostLine ? ` ${historyHostLine}` : ''}
-「对你现在」须先读懂关系原文「${rel}」的投入程度，心里分量与之对齐；原文未表达好感时禁止补写成潜在心动、嘴硬心软或暗中关注。
+「相遇羁绊」写如何相识及看法成因；「对你现在」写当前态度，须先读懂关系原文「${rel}」的投入程度并对齐；原文未表达好感时禁止补写成潜在心动、嘴硬心软或暗中关注；两处禁止整段互相复述。
 ${buildPersonaAiIntimatePartnerWordingRules()}
 ${opts.nsfwEnabled ? 'NSFW 已开启：补写「亲密与恋爱观」须直白描绘；指恋人写「对方」；禁止超雄 caricature。' : 'NSFW 未开启：补写「亲密与恋爱观」须清水恋爱观，禁止露骨；指恋人写「对方」。'}
 ${opts.orientationMutable ? `${buildPersonaAiOrientationMutableSemanticsRule(true)}` : ''}
-${buildPersonaAiCompactEntryLengthRules()}
+${buildPersonaAiCompactEntryLengthRules({
+  referencePersonaDirectGenerate: Boolean(opts.referencePersonaDirectGenerate),
+})}
 补写正文须用**中性朴实**描述，禁止超雄/极端用语与八股油腻形容词。
 
 ${buildPersonaAiHealthyToneRules()}
@@ -795,6 +807,7 @@ ${buildPersonaAiHealthyToneRules()}
 座右铭：……
 【对你现在】
 ……正文……
+补「相遇羁绊」时标题须为【相遇羁绊】。
 不要输出示例里未列出的其他键或【段落】。`.trim()
 }
 
@@ -872,12 +885,14 @@ export function buildPersonaAiRepairUserPrompt(params: {
   const playerGender = params.playerIdentity?.gender ?? params.playerGender ?? null
   const genderRules = buildPersonaAiPlayerUserGenderRules(playerGender)
   if (genderRules.trim()) lines.push('', '【绑定玩家性别 · {{user}}】', genderRules)
+  const referenceRules = buildPersonaAiReferencePersonaRules(form)
+  if (referenceRules.trim()) lines.push('', referenceRules)
   if (params.worldBackgroundPrompt?.trim()) {
     lines.push('', `【世界背景参考】\n${params.worldBackgroundPrompt.trim()}`)
   }
   lines.push(
     '',
-    '纠正/补全须遵守：完整参考上方【绑定玩家身份】与世界书；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」指恋人写「对方」；「对你现在」明确指 {{user}}；{{user}} 身体描写须与绑定玩家性别一致。',
+    '纠正/补全须遵守：完整参考上方【绑定玩家身份】与世界书；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」指恋人写「对方」；「相遇羁绊」写相识过程与看法成因；「对你现在」明确指 {{user}} 当前态度；{{user}} 身体描写须与绑定玩家性别一致。',
     `补写世界书条目约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字；描述用中性词，禁止超雄/极端用语与八股油腻形容词。`,
     '**全局禁止**：不得出现超雄、极端、病态 caricature，也不得堆砌花里胡哨网文标签。',
     '**只输出白名单内的键值行与【段落】**；禁止 JSON；禁止重复「已完整·勿改」内容。',

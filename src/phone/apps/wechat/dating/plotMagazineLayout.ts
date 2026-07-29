@@ -6,21 +6,15 @@ export type PlotMagazineSegment =
   | { type: 'text'; content: string }
   | { type: 'image'; image: PlotImageItem; float: PlotMagazineFloat }
 
-/** 将剧情正文拆成可穿插配图的段落块 */
+/** 将剧情正文拆成可穿插配图的段落块（禁止在未闭合引号/对白内切开） */
 export function splitPlotBodyParagraphs(body: string): string[] {
   const t = String(body ?? '').trim()
   if (!t) return []
 
-  const byDouble = t
-    .split(/\n\s*\n+/)
-    .map((p) => p.trim())
-    .filter(Boolean)
+  const byDouble = splitPreservingDialogueQuotes(t, /\n\s*\n+/)
   if (byDouble.length > 1) return byDouble
 
-  const bySingle = t
-    .split(/\n+/)
-    .map((p) => p.trim())
-    .filter(Boolean)
+  const bySingle = splitPreservingDialogueQuotes(t, /\n+/)
   if (bySingle.length > 1) return bySingle
 
   const sentences = t.split(/(?<=[。！？!?…]+)/).map((s) => s.trim()).filter(Boolean)
@@ -37,6 +31,42 @@ export function splitPlotBodyParagraphs(body: string): string[] {
   }
   if (buf.trim()) groups.push(buf.trim())
   return groups.length > 1 ? groups : [t]
+}
+
+/** 按换行拆段，但若落在未闭合的「」/“”/"…" 内则并入上一段，避免一对白被拆成两块 */
+function splitPreservingDialogueQuotes(text: string, re: RegExp): string[] {
+  const rawParts = text.split(re)
+  if (rawParts.length <= 1) return rawParts.map((p) => p.trim()).filter(Boolean)
+
+  const out: string[] = []
+  let buf = ''
+  for (const part of rawParts) {
+    const next = buf ? `${buf}\n${part}` : part
+    if (hasUnclosedDialogueQuote(next)) {
+      buf = next
+      continue
+    }
+    const trimmed = next.trim()
+    if (trimmed) out.push(trimmed)
+    buf = ''
+  }
+  if (buf.trim()) out.push(buf.trim())
+  return out
+}
+
+function hasUnclosedDialogueQuote(s: string): boolean {
+  let corner = 0
+  let curve = 0
+  let ascii = false
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i]
+    if (ch === '「') corner += 1
+    else if (ch === '」') corner = Math.max(0, corner - 1)
+    else if (ch === '\u201C' || ch === '\u201F') curve += 1
+    else if (ch === '\u201D' || ch === '\uFF02') curve = Math.max(0, curve - 1)
+    else if (ch === '"') ascii = !ascii
+  }
+  return corner > 0 || curve > 0 || ascii
 }
 
 /**

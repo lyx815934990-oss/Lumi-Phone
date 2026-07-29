@@ -9,6 +9,7 @@ import {
   createEmptyLinkPreviewSettings,
   mergeApiStoreLinkPreview,
 } from './linkPreviewSettingsUtils'
+import { normalizeTranslationSubFields } from './translationProviders'
 
 const STORAGE_KEY = API_STORE_STORAGE_KEY
 
@@ -42,13 +43,21 @@ function normalizePreset(raw: unknown): ApiPreset | null {
   const normalizeSub = (k: SubApiType) => {
     const src = subRaw[k]
     const normalizedApi = normalizeApiConfig(src?.apiConfig ?? createEmptyApiConfig())
+    const translationFields = k === 'translation' ? normalizeTranslationSubFields(src as never) : {}
     return {
-      enabled: typeof src?.enabled === 'boolean' ? src.enabled : true,
-      useMainApi: k === 'voiceAsr' ? false : typeof src?.useMainApi === 'boolean' ? src.useMainApi : true,
+      enabled:
+        typeof src?.enabled === 'boolean' ? src.enabled : k === 'translation' ? false : true,
+      useMainApi:
+        k === 'voiceAsr' || k === 'translation'
+          ? false
+          : typeof src?.useMainApi === 'boolean'
+            ? src.useMainApi
+            : true,
       apiConfig:
         k === 'voiceAsr'
           ? { ...normalizedApi, apiUrl: normalizedApi.apiUrl.trim() || SILICONFLOW_ASR_DEFAULT_BASE_URL }
           : normalizedApi,
+      ...translationFields,
     }
   }
   return {
@@ -62,6 +71,7 @@ function normalizePreset(raw: unknown): ApiPreset | null {
       chatCard: normalizeSub('chatCard'),
       danmaku: normalizeSub('danmaku'),
       voiceAsr: normalizeSub('voiceAsr'),
+      translation: normalizeSub('translation'),
     },
     imageGen: normalizeImageGenSettings(r.imageGen),
     createdAt: typeof r.createdAt === 'number' ? r.createdAt : base.createdAt,
@@ -114,6 +124,20 @@ export async function loadResolvedApiConfig(subType: SubApiType = 'chatCard'): P
     } catch {
       // ignore
     }
+    return null
+  }
+}
+
+/** 读取当前预设的翻译运行时（含服务商）；失败或未配置则 null */
+export async function loadResolvedTranslationRuntime() {
+  const { resolveTranslationRuntime } = await import('./translationProviders')
+  try {
+    const raw = await pullPhoneKvWithLocalStorageLegacy(STORAGE_KEY, [STORAGE_KEY])
+    const store = parseApiStore(raw)
+    const preset = store.presets.find((p) => p.id === store.currentPresetId) ?? store.presets[0] ?? null
+    if (!preset) return null
+    return resolveTranslationRuntime({ main: preset.main, sub: preset.sub.translation })
+  } catch {
     return null
   }
 }

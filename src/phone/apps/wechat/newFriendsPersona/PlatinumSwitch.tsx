@@ -5,11 +5,13 @@ export function PlatinumSwitch({
   checked,
   onChange,
   className,
+  disabled,
   'aria-label': ariaLabel,
 }: {
   checked: boolean
   onChange: (next: boolean) => void
   className?: string
+  disabled?: boolean
   'aria-label'?: string
 }) {
   return (
@@ -18,9 +20,13 @@ export function PlatinumSwitch({
       role="switch"
       aria-checked={checked}
       aria-label={ariaLabel}
-      className={`relative inline-flex h-7 w-12 shrink-0 rounded-full outline-none transition-colors ${className ?? ''}`}
+      disabled={disabled}
+      className={`relative inline-flex h-7 w-12 shrink-0 rounded-full outline-none transition-colors ${
+        disabled ? 'cursor-not-allowed opacity-40' : ''
+      } ${className ?? ''}`}
       onClick={(e) => {
         e.stopPropagation()
+        if (disabled) return
         onChange(!checked)
       }}
     >

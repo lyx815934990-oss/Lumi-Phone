@@ -2,19 +2,74 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Loader2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import {
+  normalizeWeChatChatLanguageCode,
+  weChatChatLanguageLabel,
+  WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE,
+  WECHAT_CHAT_LANGUAGE_OPTIONS,
+} from '../wechatChatLanguage'
 import { PlotRichParagraph } from './plotRichText'
 import { PLOT_DIMENSION_LABELS } from './datingPlotDimensionAi'
-import { parsePlotDimensionLengthTarget, type PlotDimensionArtifact, type PlotDimensionKind } from './types'
+import {
+  parsePlotDimensionLengthTarget,
+  type PlotDimensionArtifact,
+  type PlotDimensionKind,
+  type PlotDimensionLanguageBundle,
+} from './types'
 
 type Props = {
   open: boolean
   kind: PlotDimensionKind
   artifact: PlotDimensionArtifact | null | undefined
   defaultLengthTarget: number
+  /** 默认旁白 / 对白 / 内心 OS（通常取自约会「语言与翻译」） */
+  defaultLanguages?: Partial<PlotDimensionLanguageBundle> | null
+  /** 档案是否开启对白 / OS 同步翻译（用于提示） */
+  dialogueTranslationSyncEnabled?: boolean
+  innerOsTranslationSyncEnabled?: boolean
   loading: boolean
   error: string | null
   onClose: () => void
-  onGenerate: (writingGuide: string, lengthTargetChars: number) => void
+  onGenerate: (
+    writingGuide: string,
+    lengthTargetChars: number,
+    languages: PlotDimensionLanguageBundle,
+  ) => void
+}
+
+function LangSelect({ value, onChange }: { value: string; onChange: (code: string) => void }) {
+  return (
+    <select
+      value={normalizeWeChatChatLanguageCode(value)}
+      onChange={(e) => onChange(normalizeWeChatChatLanguageCode(e.target.value))}
+      className="mt-1.5 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-[13px] text-stone-800 outline-none focus:border-stone-400"
+    >
+      {WECHAT_CHAT_LANGUAGE_OPTIONS.map((o) => (
+        <option key={o.code} value={o.code}>
+          {o.label}（{o.native}）
+        </option>
+      ))}
+    </select>
+  )
+}
+
+function resolveDefaults(
+  artifact: PlotDimensionArtifact | null | undefined,
+  defaults?: Partial<PlotDimensionLanguageBundle> | null,
+): PlotDimensionLanguageBundle {
+  const plot = normalizeWeChatChatLanguageCode(
+    artifact?.outputLanguage?.trim() || defaults?.plotOutputLanguage,
+    WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE,
+  )
+  const dialogue = normalizeWeChatChatLanguageCode(
+    artifact?.dialogueLanguage?.trim() || defaults?.dialogueLanguage?.trim() || plot,
+    plot,
+  )
+  const innerOs = normalizeWeChatChatLanguageCode(
+    artifact?.innerOsLanguage?.trim() || defaults?.innerOsLanguage?.trim() || plot,
+    plot,
+  )
+  return { plotOutputLanguage: plot, dialogueLanguage: dialogue, innerOsLanguage: innerOs }
 }
 
 export function PlotDimensionPanel({
@@ -22,6 +77,9 @@ export function PlotDimensionPanel({
   kind,
   artifact,
   defaultLengthTarget,
+  defaultLanguages,
+  dialogueTranslationSyncEnabled,
+  innerOsTranslationSyncEnabled,
   loading,
   error,
   onClose,
@@ -30,15 +88,47 @@ export function PlotDimensionPanel({
   const label = PLOT_DIMENSION_LABELS[kind]
   const [writingGuide, setWritingGuide] = useState('')
   const [lengthTargetDraft, setLengthTargetDraft] = useState(String(defaultLengthTarget))
+  const [plotLanguage, setPlotLanguage] = useState(
+    () => resolveDefaults(artifact, defaultLanguages).plotOutputLanguage,
+  )
+  const [dialogueLanguage, setDialogueLanguage] = useState(
+    () => resolveDefaults(artifact, defaultLanguages).dialogueLanguage,
+  )
+  const [innerOsLanguage, setInnerOsLanguage] = useState(
+    () => resolveDefaults(artifact, defaultLanguages).innerOsLanguage,
+  )
 
   useEffect(() => {
     if (!open) return
     setWritingGuide(artifact?.writingGuide ?? '')
     const n = artifact?.lengthTargetChars ?? defaultLengthTarget
     setLengthTargetDraft(String(n))
-  }, [open, artifact?.writingGuide, artifact?.lengthTargetChars, defaultLengthTarget])
+    const next = resolveDefaults(artifact, defaultLanguages)
+    setPlotLanguage(next.plotOutputLanguage)
+    setDialogueLanguage(next.dialogueLanguage)
+    setInnerOsLanguage(next.innerOsLanguage)
+  }, [
+    open,
+    artifact?.writingGuide,
+    artifact?.lengthTargetChars,
+    artifact?.outputLanguage,
+    artifact?.dialogueLanguage,
+    artifact?.innerOsLanguage,
+    defaultLengthTarget,
+    defaultLanguages?.plotOutputLanguage,
+    defaultLanguages?.dialogueLanguage,
+    defaultLanguages?.innerOsLanguage,
+  ])
 
   if (typeof document === 'undefined') return null
+
+  const langSummary = (() => {
+    const p = weChatChatLanguageLabel(plotLanguage)
+    const d = weChatChatLanguageLabel(dialogueLanguage)
+    const o = weChatChatLanguageLabel(innerOsLanguage)
+    if (p === d && p === o) return p
+    return `旁白${p} · 对白${d} · OS${o}`
+  })()
 
   return createPortal(
     <AnimatePresence>
@@ -86,11 +176,30 @@ export function PlotDimensionPanel({
                 <div className="mb-4 rounded-xl border border-stone-100 bg-stone-50/80 p-3">
                   <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-stone-400">已生成正文</p>
                   <div className="mt-2 text-[16px] font-normal leading-[1.85] text-[#262626]">
-                    <PlotRichParagraph content={artifact.content} />
+                    <PlotRichParagraph
+                      content={artifact.content}
+                      dialogueTranslations={artifact.dialogueTranslations}
+                      innerOsTranslations={artifact.innerOsTranslations}
+                    />
                   </div>
+                  {artifact.dialogueTranslations?.some((t) => t.translatedText?.trim()) ||
+                  artifact.innerOsTranslations?.some((t) => t.translatedText?.trim()) ? (
+                    <p className="mt-2 text-[11px] text-stone-400">
+                      点击带底纹的对白或灰色内心句可查看译文。
+                    </p>
+                  ) : dialogueTranslationSyncEnabled || innerOsTranslationSyncEnabled ? (
+                    <p className="mt-2 text-[11px] text-[#c27c3e]">
+                      已开启同步翻译，但本段尚未落库译文（可能是生成中断或模型未写 [译]）。请再点一次「重新生成」。
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-stone-400">
+                      若要在此查看译文，请先在约会「语言」里开启「同步翻译对白 / 内心 OS」，再重新生成本段。
+                    </p>
+                  )}
                   {artifact.updatedAt ? (
                     <p className="mt-2 text-right text-[10px] text-stone-400">
                       更新于 {new Date(artifact.updatedAt).toLocaleString()}
+                      {` · ${langSummary}`}
                     </p>
                   ) : null}
                 </div>
@@ -114,6 +223,27 @@ export function PlotDimensionPanel({
                 className="mt-1.5 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-[13px] leading-relaxed text-stone-800 outline-none transition-colors focus:border-stone-400"
               />
               <p className="mt-1 text-right text-[11px] text-stone-400">{writingGuide.length}/480</p>
+
+              <p className="mt-3 text-[12px] font-medium text-stone-700">输出语言（与主线相同分设）</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-stone-400">
+                旁白、对白、内心 OS 可各自选择；打开面板时默认带入约会「语言与翻译」当前值。同步翻译仍跟随该设置与 API 翻译副接口。
+              </p>
+
+              <label className="mt-2.5 block text-[12px] font-medium text-stone-600">旁白语言</label>
+              <LangSelect
+                value={plotLanguage}
+                onChange={(code) => {
+                  setPlotLanguage(code)
+                  if (dialogueLanguage === plotLanguage) setDialogueLanguage(code)
+                  if (innerOsLanguage === plotLanguage) setInnerOsLanguage(code)
+                }}
+              />
+
+              <label className="mt-2.5 block text-[12px] font-medium text-stone-600">对白语言</label>
+              <LangSelect value={dialogueLanguage} onChange={setDialogueLanguage} />
+
+              <label className="mt-2.5 block text-[12px] font-medium text-stone-600">内心 OS 语言</label>
+              <LangSelect value={innerOsLanguage} onChange={setInnerOsLanguage} />
 
               <label className="mt-3 block text-[12px] font-medium text-stone-700">目标字数（汉字）</label>
               <input
@@ -158,6 +288,11 @@ export function PlotDimensionPanel({
                   onGenerate(
                     writingGuide.trim(),
                     parsePlotDimensionLengthTarget(lengthTargetDraft, defaultLengthTarget),
+                    {
+                      plotOutputLanguage: plotLanguage,
+                      dialogueLanguage,
+                      innerOsLanguage,
+                    },
                   )
                 }
                 className="inline-flex items-center gap-1.5 rounded-xl bg-stone-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-stone-800 disabled:opacity-60"

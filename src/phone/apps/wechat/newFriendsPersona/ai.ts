@@ -1,6 +1,7 @@
 import { buildPersonaAiHealthyToneRules } from './personaAiGeneratePrompt'
 import {
   PERSONA_AI_AFFECTION_GUIDE_EPILOGUE_NAME,
+  PERSONA_AI_MEETING_BOND_ENTRY_NAME,
   PERSONA_AI_NPC_ROSTER_ENTRY_NAME,
 } from './personaAiWorldBooks'
 import type { Character, PlayerIdentity, WorldBook, WorldBookItem } from './types'
@@ -627,10 +628,10 @@ function parseOpenAiChoiceMessage(data: unknown): string {
 
   const diag = describeChatCompletionParseFailure(data)
   const emptyHint = /content长度=0|content长度=[1-9][^0-9]|仅为空白/.test(diag)
-    ? ' 本次响应几乎无正文，多为：输出 token 预算不足（瞬时生成建议 ≥3600）、上下文过长被截断、使用了思考模型导致 token 耗尽、线路限流、或 API 配置有误。'
+    ? ' 常见原因：思考/推理模型把额度耗在内部推理、上下文过长被截断、线路限流，或 API 配错。'
     : ''
   throw new Error(
-    `返回格式不符合预期（未解析到模型正文）。诊断：${diag}。客户端已尝试：嵌套 JSON、choices[].message 为字符串、answer/response、tool_calls、Gemini 结构。${emptyHint} 约会剧情只要求写正文，记忆在生成成功后后台写入；请换稳定聊天模型或检查 API 地址是否为非流式 chat/completions。`,
+    `模型没有返回可用正文。${diag ? `（${diag}）` : ''}${emptyHint} 约会剧情只需纯文本正文，不必也不应输出记忆 JSON。请换稳定聊天模型，或检查是否为非流式 chat/completions 地址。`,
   )
 }
 
@@ -1208,7 +1209,14 @@ export async function generateWorldBookItemContent(params: {
     !forId &&
     (/对你现在/.test(params.item.name) ||
       (/当前对你的态度/.test(params.worldBook.name) && /称呼|聊天分寸/.test(params.item.name)))
-      ? `【本条特殊要求】「对你现在」须写清对 {{user}} 的称呼、回消息节奏、相处边界与心里分量；心里分量必须与档案关系设定一致。若关系为低投入/不咋在意，禁止写成潜在好感、嘴硬心软或暗中关注。勿重复「能力与日常」里的通用口语习惯。\n`
+      ? `【本条特殊要求】「对你现在」须写清对 {{user}} 的**当前**称呼、回消息节奏、相处边界与心里分量；心里分量必须与档案关系设定一致。若关系为低投入/不咋在意，禁止写成潜在好感、嘴硬心软或暗中关注。相识过程与看法成因属「相遇羁绊」，本条勿整段复述相识故事。勿重复「能力与日常」里的通用口语习惯。\n`
+      : ''
+
+  const meetingBondExtra =
+    !forId &&
+    (params.item.name === PERSONA_AI_MEETING_BOND_ENTRY_NAME ||
+      /相遇羁绊|相识过程|如何相识|初遇|结识/.test(params.item.name))
+      ? `【本条特殊要求】「相遇羁绊」写 {{char}} 与 {{user}} 如何相识（场合、契机、早期互动），以及这些经历如何导向「对你现在」中的当前看法。本条写过程与成因；当前态度细节留给「对你现在」，禁止两处整段重复。\n`
       : ''
 
   const generalSpeechExtra =
@@ -1236,7 +1244,7 @@ export async function generateWorldBookItemContent(params: {
   const npcRosterExtra =
     !forId &&
     (params.item.name === PERSONA_AI_NPC_ROSTER_ENTRY_NAME || /周边NPC|NPC简|关联人物|周边人物/.test(params.item.name))
-      ? `【本条特殊要求】「周边NPC」写 3–5 个围绕 {{char}} 的**具名**配角简档：每人含姓名、与 {{char}} 关系、一两句性格与近况。禁止写 {{user}}；禁止写成完整人设或重复「人际与秘密」的态度长文；中性朴实。\n`
+      ? `【本条特殊要求】「周边NPC」写围绕 {{char}} 的**具名**配角简档：每人含姓名、与 {{char}} 关系、一两句性格与近况。若本档案为原著/参考人物直接生成：不设 3–5 上限，开篇与日常圈具名配角尽量写全；名单内配角彼此若有原著关系（室友/好感/死党等）须双方互相写清，禁止只写各自与 {{char}}。禁止把配角写成 {{user}} 本人。若「对你现在」/绑定身份显示 {{user}} 为同作相关角色，每人必须另写「对 {{user}}」；禁止原著本该认识 {{user}} 的配角写成路人。禁止写成完整人设或重复「人际与秘密」；中性朴实。\n`
       : ''
 
   const vol05DesireExtra =
@@ -1274,7 +1282,7 @@ export async function generateWorldBookItemContent(params: {
     { role: 'system', content: systemContent },
     {
       role: 'user',
-      content: `${baseHint}${pronounWriterNote}${npcBlock}${context}${coherenceBlock}${wbgBlock}${styleBlock}${attitudeBookExtra}${userChatMannerExtra}${generalSpeechExtra}${intimateSpeechExtra}${orientationOriginExtra}${affectionGuideExtra}${npcRosterExtra}${vol05DesireExtra}${vol07ContrastExtra}${lengthHardRule}请生成本条目的正文内容。`,
+      content: `${baseHint}${pronounWriterNote}${npcBlock}${context}${coherenceBlock}${wbgBlock}${styleBlock}${attitudeBookExtra}${userChatMannerExtra}${meetingBondExtra}${generalSpeechExtra}${intimateSpeechExtra}${orientationOriginExtra}${affectionGuideExtra}${npcRosterExtra}${vol05DesireExtra}${vol07ContrastExtra}${lengthHardRule}请生成本条目的正文内容。`,
     },
   ]
   let body = sanitizeWorldBookGeneratedBody(await openAiCompatibleChat(cfg, messages, { max_tokens: maxTokens }))

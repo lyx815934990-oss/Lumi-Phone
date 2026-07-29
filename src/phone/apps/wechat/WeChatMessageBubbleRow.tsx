@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 
 import type { WeChatBubbleTheme } from '../../types'
 import {
@@ -168,6 +168,13 @@ export type WeChatMessageBubbleRowProps = {
   messageTimestampMs?: number
   /** Telegram：己方双勾已读 */
   telegramShowReadChecks?: boolean
+  /**
+   * 气泡译文（与语音「转文字」同交互）：有值时旁侧显示灰底「翻译」按钮，
+   * 展开后面板贴在文字气泡下方并衔接圆角。
+   */
+  translationText?: string
+  translationExpanded?: boolean
+  onTranslationToggle?: () => void
 }
 
 function BubbleMessageTail({
@@ -299,6 +306,9 @@ export function WeChatMessageBubbleRow({
   replyPreviewInsetStyle,
   messageTimestampMs,
   telegramShowReadChecks = true,
+  translationText,
+  translationExpanded = false,
+  onTranslationToggle,
 }: WeChatMessageBubbleRowProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const singleLine = useMessageBubbleSingleLine(contentRef, messageText)
@@ -313,7 +323,12 @@ export function WeChatMessageBubbleRow({
   const showAvatarVisual = showAvatar && showAvatarColumn
   /** 合并组内无头像行仍占头像+间距宽，与首条气泡对齐 */
   const reserveAvatarGutter = showAvatar
-  const alignWithAvatarMid = Boolean(singleLine && reserveAvatarGutter && !isTalkmakerTail)
+  const hasTranslation = Boolean(translationText?.trim()) && typeof onTranslationToggle === 'function'
+  const translationOpen = hasTranslation && translationExpanded === true
+  /** 单行时头像与气泡垂直居中；译文展开后高度变大，须顶对齐以免头像下移 */
+  const alignWithAvatarMid = Boolean(
+    singleLine && reserveAvatarGutter && !isTalkmakerTail && !translationOpen,
+  )
   const isAltMessengerTail = isImessageTail || isTelegramTail || isTalkmakerTail
   const showTail =
     showBubbleTail && !multiSelectAvatar && (isAltMessengerTail || isWechatTail ? true : showAvatarVisual)
@@ -408,6 +423,10 @@ export function WeChatMessageBubbleRow({
     onLongPress: () => onLongPress(),
   })
 
+  const translationTrimmed = translationText?.trim() || ''
+  const translationFirstChar = translationTrimmed.charAt(0)
+  const translationRest = translationTrimmed.slice(1)
+
   const bubbleSurfaceStyle: CSSProperties = {
     ...(chatBubbleSurfaceStyle?.background
       ? {}
@@ -415,7 +434,9 @@ export function WeChatMessageBubbleRow({
           backgroundColor: variant === 'chat' ? bubbleBgChatResolved : bubbleBgPreview,
         }),
     color: variant === 'chat' ? bubbleTextResolved : bubbleTextPreview,
-    borderRadius: bubbleRadius,
+    borderRadius: translationOpen
+      ? `${bubbleRadiusPx}px ${bubbleRadiusPx}px 0 0`
+      : bubbleRadius,
     ...(isTelegramTail ? { boxShadow: '0 1px 2px rgba(0, 0, 0, 0.15)' } : {}),
     ...(isWechatTail ? { boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)' } : {}),
     userSelect: variant === 'chat' ? 'none' : undefined,
@@ -465,6 +486,50 @@ export function WeChatMessageBubbleRow({
   const bubbleTailColor =
     variant === 'preview' ? bubbleBgPreview : solidChatBg ? solidChatBg : isSelf ? bubble.selfBubbleBg : bubble.otherBubbleBg
 
+  const translationPanelClassName = isSelf
+    ? 'border-[#7ed957] bg-[var(--wx-self-bubble-bg,#95EC69)] text-[#191919]'
+    : 'border-[#ececec] bg-[var(--wx-other-bubble-bg,#ffffff)] text-[#191919]'
+
+  const translationPanel = hasTranslation ? (
+    <AnimatePresence initial={false}>
+      {translationOpen ? (
+        <motion.div
+          key="wx-text-translation-panel"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+          className={`w-fit max-w-full overflow-hidden border border-t-0 ${translationPanelClassName}`}
+          style={{
+            borderWidth: 0.5,
+            borderBottomLeftRadius: bubbleRadiusPx,
+            borderBottomRightRadius: bubbleRadiusPx,
+          }}
+        >
+          <div className="border-t border-dashed border-black/10 px-3 py-2.5 text-[13px] leading-[1.7] break-words">
+            {translationFirstChar ? (
+              <span className="mr-[1px] text-[17px] leading-none text-[#191919]">{translationFirstChar}</span>
+            ) : null}
+            <span>{translationRest}</span>
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  ) : null
+
+  const translationToggleBtn = hasTranslation ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onTranslationToggle?.()
+      }}
+      className="shrink-0 self-center rounded bg-[#E5E5E5] px-2 py-0.5 text-[12px] text-gray-600 active:opacity-70"
+    >
+      翻译
+    </button>
+  ) : null
+
   const bubbleBlock = (
     <div
       data-wx-bubble-side={isSelf ? 'self' : 'other'}
@@ -484,43 +549,51 @@ export function WeChatMessageBubbleRow({
           color={variant === 'preview' ? bubbleBgPreview : solidChatBg ? solidChatBg : undefined}
         />
       ) : null}
-      {variant === 'chat' ? (
-        <motion.div
-          ref={contentRef}
-          className={`relative z-[2] inline-block max-w-full overflow-visible ${bubblePadCls} leading-[1.4] select-none ${textCls} ${bubbleContentClassName}`}
-          style={{
-            ...bubbleSurfaceStyle,
-            ...chatBubbleTransformOrigin(isSelf, tailStyle),
-          }}
-          initial={CHAT_BUBBLE_ENTER_INITIAL}
-          animate={CHAT_BUBBLE_ENTER_ANIMATE}
-          transition={CHAT_BUBBLE_ENTER_SPRING}
-          whileTap={onBubbleLongPress ? { scale: 0.98, opacity: 0.9 } : undefined}
-          {...bind}
-        >
-          {isImessageTail && showTail ? (
-            <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
-          ) : null}
-          {isWechatTail && showTail ? (
-            <WechatBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
-          ) : null}
-          {bubbleInner}
-        </motion.div>
-      ) : (
-        <div
-          ref={contentRef}
-          className={`relative z-[2] inline-block max-w-full overflow-visible ${bubblePadCls} leading-[1.4] select-none transition-[transform,opacity,background-color] duration-150 ease-out ${textCls} ${bubbleContentClassName}`}
-          style={bubbleSurfaceStyle}
-        >
-          {isImessageTail && showTail ? (
-            <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
-          ) : null}
-          {isWechatTail && showTail ? (
-            <WechatBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
-          ) : null}
-          {bubbleInner}
+      <div className={`inline-flex max-w-full ${isSelf ? 'items-end' : 'items-start'}`}>
+        <div className={`flex items-start gap-1.5 ${isSelf ? 'flex-row-reverse' : 'flex-row'}`}>
+          <div className={`flex min-w-0 flex-col ${isSelf ? 'items-end' : 'items-start'}`}>
+            {variant === 'chat' ? (
+              <motion.div
+                ref={contentRef}
+                className={`relative z-[2] inline-block max-w-full overflow-visible ${bubblePadCls} leading-[1.4] select-none ${textCls} ${bubbleContentClassName}`}
+                style={{
+                  ...bubbleSurfaceStyle,
+                  ...chatBubbleTransformOrigin(isSelf, tailStyle),
+                }}
+                initial={CHAT_BUBBLE_ENTER_INITIAL}
+                animate={CHAT_BUBBLE_ENTER_ANIMATE}
+                transition={CHAT_BUBBLE_ENTER_SPRING}
+                whileTap={onBubbleLongPress ? { scale: 0.98, opacity: 0.9 } : undefined}
+                {...bind}
+              >
+                {isImessageTail && showTail ? (
+                  <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
+                ) : null}
+                {isWechatTail && showTail ? (
+                  <WechatBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
+                ) : null}
+                {bubbleInner}
+              </motion.div>
+            ) : (
+              <div
+                ref={contentRef}
+                className={`relative z-[2] inline-block max-w-full overflow-visible ${bubblePadCls} leading-[1.4] select-none transition-[transform,opacity,background-color] duration-150 ease-out ${textCls} ${bubbleContentClassName}`}
+                style={bubbleSurfaceStyle}
+              >
+                {isImessageTail && showTail ? (
+                  <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
+                ) : null}
+                {isWechatTail && showTail ? (
+                  <WechatBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
+                ) : null}
+                {bubbleInner}
+              </div>
+            )}
+            {translationPanel}
+          </div>
+          {translationToggleBtn}
         </div>
-      )}
+      </div>
       {variant === 'chat' && isSelf ? chatBubbleOverlay : null}
     </div>
   )

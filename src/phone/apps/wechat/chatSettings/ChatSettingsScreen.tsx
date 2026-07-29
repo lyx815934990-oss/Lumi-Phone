@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronRight, Phone, Plus } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Phone, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
@@ -38,6 +38,10 @@ import {
   summarizeChatImageGenSettings,
   type ChatImageGenSettingsPatch,
 } from './ChatImageGenSettingsScreen'
+import {
+  ChatReplyLanguageSettingsBlock,
+  summarizeChatReplyLanguageSettingsRow,
+} from './ChatReplyLanguageSettingsBlock'
 import { personaDb } from '../newFriendsPersona/idb'
 import { ChatFindChatHistoryScreen } from './ChatFindChatHistoryScreen'
 import {
@@ -239,6 +243,7 @@ export function ChatSettingsScreen({
   const [chatBgCropSrc, setChatBgCropSrc] = useState<string | null>(null)
   const [clearOpen, setClearOpen] = useState(false)
   const [inviteGroupOpen, setInviteGroupOpen] = useState(false)
+  const [replyLangOpen, setReplyLangOpen] = useState(false)
   const chatBgFileRef = useRef<HTMLInputElement | null>(null)
 
   const peerForInvite = inviteGroupFromPeerCharacterId?.trim() || ''
@@ -366,6 +371,10 @@ export function ChatSettingsScreen({
           | 'classicEmojiRoundTriggerPercent'
           | 'classicEmojiBannedNames'
           | 'voiceRoundTriggerPercent'
+          | 'replyOutputLanguage'
+          | 'replyVoiceLanguage'
+          | 'translationSyncEnabled'
+          | 'translationLanguage'
           | 'imageRoundTriggerPercent'
           | 'imageRoundCountMin'
           | 'imageRoundCountMax'
@@ -755,6 +764,41 @@ export function ChatSettingsScreen({
         </div>
 
         {/* 功能列表 */}
+        <SettingsListCard>
+          <ListRow stacked borderBottom={false}>
+            <button
+              type="button"
+              aria-expanded={replyLangOpen}
+              onClick={() => setReplyLangOpen((v) => !v)}
+              className="flex w-full items-start justify-between gap-3 text-left"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-[16px] font-semibold text-black">回复语言与翻译</p>
+                <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                  {replyLangOpen
+                    ? '设定角色文字与语音消息的输出语言，以及气泡下方译文。'
+                    : summarizeChatReplyLanguageSettingsRow(effective)}
+                </p>
+              </div>
+              {replyLangOpen ? (
+                <ChevronDown className="mt-1 size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
+              ) : (
+                <ChevronRight className="mt-1 size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
+              )}
+            </button>
+            {replyLangOpen ? (
+              <div className="mt-3 -mx-4 overflow-hidden rounded-xl border border-[#f0f0f0]">
+                <ChatReplyLanguageSettingsBlock
+                  settings={effective}
+                  onPatch={async (partial) => {
+                    await patch(partial)
+                  }}
+                />
+              </div>
+            ) : null}
+          </ListRow>
+        </SettingsListCard>
+
         <SettingsListCard>
           <ListRow onClick={() => setFindHistoryOpen(true)} borderBottom>
             <span className="text-[16px] text-black">查找聊天记录</span>

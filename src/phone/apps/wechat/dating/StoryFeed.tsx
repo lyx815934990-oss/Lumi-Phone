@@ -35,6 +35,10 @@ type Props = {
         | 'versionTimelineSnapshots'
         | 'timelineSnapshot'
         | 'currentVersionIndex'
+        | 'dialogueTranslations'
+        | 'innerOsTranslations'
+        | 'versionDialogueTranslations'
+        | 'versionInnerOsTranslations'
       >
     >,
   ) => void
@@ -131,6 +135,10 @@ export function StoryFeed({
                 versionTimelineSnapshots: next.versionTimelineSnapshots,
                 timelineSnapshot: next.timelineSnapshot,
                 currentVersionIndex: next.currentVersionIndex,
+                dialogueTranslations: next.dialogueTranslations,
+                innerOsTranslations: next.innerOsTranslations,
+                versionDialogueTranslations: next.versionDialogueTranslations,
+                versionInnerOsTranslations: next.versionInnerOsTranslations,
               })
             }}
             onRegenerate={canRegenerate && onRegeneratePlot ? () => onRegeneratePlot(p.id) : undefined}

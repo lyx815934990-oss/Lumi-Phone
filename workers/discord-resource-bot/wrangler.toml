@@ -1,0 +1,27 @@
+name = "discord-resource-bot"
+main = "src/index.ts"
+compatibility_date = "2026-07-28"
+compatibility_flags = ["nodejs_compat"]
+
+# 部署后把 workers.dev URL 填到 Discord → General → Interactions Endpoint URL
+# 例：https://discord-resource-bot.<你的子域>.workers.dev/interactions
+# 多文件存在 Workers KV（无需开通 R2 / 无需绑卡）
+
+[vars]
+DISCORD_GUILD_ID = "1495319174044712993"
+DISCORD_APPLICATION_ID = "1518902669085904936"
+
+# wrangler secret put DISCORD_PUBLIC_KEY
+# wrangler secret put DISCORD_BOT_TOKEN
+
+[[d1_databases]]
+binding = "DB"
+database_name = "discord-resource-bot"
+database_id = "dbf2ba2e-042f-42ea-bb00-1c9d9344befb"
+
+[[kv_namespaces]]
+binding = "FILES"
+id = "a75eeb5a066c44d8a35f678c4b7bd7c1"
+
+[observability]
+enabled = true

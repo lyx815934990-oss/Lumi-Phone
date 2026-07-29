@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion'
 import { ChevronDown, Loader2, Pause, Volume2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { DatingDialogueTranslationBubble } from './DatingDialogueTranslationBubble'
 import { VNNameTag } from './VNNameTag'
 
 type Props = {
@@ -16,6 +18,8 @@ type Props = {
   showContinueHint?: boolean
   onContinue: () => void
   children: string
+  /** 有值时可点对白显隐上方译文；此时点正文不推进，点箭头继续 */
+  translationText?: string
 }
 
 export function VNDialogBox({
@@ -32,7 +36,16 @@ export function VNDialogBox({
   showContinueHint = false,
   onContinue,
   children,
+  translationText,
 }: Props) {
+  const textRef = useRef<HTMLDivElement | null>(null)
+  const [translationOpen, setTranslationOpen] = useState(false)
+  const hasTranslation = Boolean(translationText?.trim())
+
+  useEffect(() => {
+    setTranslationOpen(false)
+  }, [children, translationText])
+
   return (
     <motion.section
       initial={{ y: 20, opacity: 0 }}
@@ -81,7 +94,6 @@ export function VNDialogBox({
       <div
         className={`relative min-h-[132px] overflow-hidden px-4 pb-3 ${showNameTag ? 'pt-8' : 'pt-3'}`}
         style={{
-          // 默认：纯白为主，轻微毛玻璃即可（不要高透强模糊）
           background: innerVoice ? 'rgba(18,18,20,0.82)' : 'rgba(255,255,255,0.92)',
           backdropFilter: 'blur(6px)',
           WebkitBackdropFilter: 'blur(6px)',
@@ -94,30 +106,56 @@ export function VNDialogBox({
           borderRadius: 10,
         }}
       >
-        <button
-          type="button"
-          onClick={onContinue}
-          className="w-full text-left"
-        >
-          <div
-            className="min-h-[58px] whitespace-pre-wrap break-words text-[17px] leading-[1.7]"
-            style={{ color: innerVoice ? '#E8D7AA' : '#1F2937' }}
+        {hasTranslation ? (
+          <button
+            type="button"
+            onClick={() => setTranslationOpen((v) => !v)}
+            className="w-full text-left"
+            title="点击查看/隐藏译文"
           >
-            {loading ? '剧情准备中...' : children}
-          </div>
-        </button>
-        {showContinueHint ? (
-          <motion.div
-            animate={{ y: [0, 4, 0], opacity: [0.45, 1, 0.45] }}
-            transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-            className="pointer-events-none absolute bottom-1.5 right-2"
+            <div
+              ref={textRef}
+              className="min-h-[58px] cursor-pointer whitespace-pre-wrap break-words text-[17px] leading-[1.7]"
+              style={{ color: innerVoice ? '#E8D7AA' : '#1F2937' }}
+            >
+              {loading ? '剧情准备中...' : children}
+            </div>
+          </button>
+        ) : (
+          <button type="button" onClick={onContinue} className="w-full text-left">
+            <div
+              className="min-h-[58px] whitespace-pre-wrap break-words text-[17px] leading-[1.7]"
+              style={{ color: innerVoice ? '#E8D7AA' : '#1F2937' }}
+            >
+              {loading ? '剧情准备中...' : children}
+            </div>
+          </button>
+        )}
+        {showContinueHint || hasTranslation ? (
+          <button
+            type="button"
+            onClick={onContinue}
+            className="absolute bottom-1.5 right-2 rounded-full p-1"
             style={{ color: innerVoice ? '#E8D7AA' : '#475569' }}
+            title="继续"
+            aria-label="继续"
           >
-            <ChevronDown className="size-4" strokeWidth={1.5} />
-          </motion.div>
+            <motion.div
+              animate={{ y: [0, 4, 0], opacity: [0.45, 1, 0.45] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <ChevronDown className="size-4" strokeWidth={1.5} />
+            </motion.div>
+          </button>
         ) : null}
       </div>
+      {translationOpen && hasTranslation ? (
+        <DatingDialogueTranslationBubble
+          text={translationText!}
+          anchor={textRef.current}
+          onClose={() => setTranslationOpen(false)}
+        />
+      ) : null}
     </motion.section>
   )
 }
-

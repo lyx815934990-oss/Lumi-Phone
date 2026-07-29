@@ -1635,6 +1635,27 @@ function normalizeWeChatChatMessage(input: unknown): WeChatChatMessage | null {
     transfer,
     callStatus,
     voice,
+    ...((): Partial<WeChatChatMessage> => {
+      const translatedText =
+        typeof (m as { translatedText?: unknown }).translatedText === 'string'
+          ? (m as { translatedText: string }).translatedText.trim().slice(0, 8000)
+          : ''
+      const translationLang =
+        typeof (m as { translationLang?: unknown }).translationLang === 'string'
+          ? (m as { translationLang: string }).translationLang.trim().slice(0, 16)
+          : ''
+      const translationAudioUrl =
+        typeof (m as { translationAudioUrl?: unknown }).translationAudioUrl === 'string'
+          ? (m as { translationAudioUrl: string }).translationAudioUrl.trim()
+          : ''
+      const translationExpanded = (m as { translationExpanded?: unknown }).translationExpanded === true
+      return {
+        ...(translatedText ? { translatedText } : {}),
+        ...(translationLang ? { translationLang } : {}),
+        ...(translationExpanded ? { translationExpanded: true } : {}),
+        ...(translationAudioUrl ? { translationAudioUrl } : {}),
+      }
+    })(),
     musicSync,
     miniGameInvite,
     listenCommentShare,
@@ -1783,6 +1804,32 @@ function normalizeChatConversationSettingsRow(input: unknown): ChatConversationS
         ? !!(r as { showGroupRankBadgesInChat?: boolean }).showGroupRankBadgesInChat
         : false,
     chatBackground: typeof r.chatBackground === 'string' ? r.chatBackground : '',
+    ...(typeof (r as { replyOutputLanguage?: unknown }).replyOutputLanguage === 'string' &&
+    (r as { replyOutputLanguage: string }).replyOutputLanguage.trim()
+      ? { replyOutputLanguage: (r as { replyOutputLanguage: string }).replyOutputLanguage.trim().slice(0, 16) }
+      : {}),
+    ...(typeof (r as { replyVoiceLanguage?: unknown }).replyVoiceLanguage === 'string' &&
+    (r as { replyVoiceLanguage: string }).replyVoiceLanguage.trim()
+      ? { replyVoiceLanguage: (r as { replyVoiceLanguage: string }).replyVoiceLanguage.trim().slice(0, 16) }
+      : {}),
+    ...(typeof (r as { replyVoiceId?: unknown }).replyVoiceId === 'string' &&
+    (r as { replyVoiceId: string }).replyVoiceId.trim()
+      ? { replyVoiceId: (r as { replyVoiceId: string }).replyVoiceId.trim().slice(0, 120) }
+      : {}),
+    ...(typeof (r as { translationSyncEnabled?: unknown }).translationSyncEnabled === 'boolean'
+      ? { translationSyncEnabled: !!(r as { translationSyncEnabled: boolean }).translationSyncEnabled }
+      : {}),
+    ...(typeof (r as { translationLanguage?: unknown }).translationLanguage === 'string' &&
+    (r as { translationLanguage: string }).translationLanguage.trim()
+      ? { translationLanguage: (r as { translationLanguage: string }).translationLanguage.trim().slice(0, 16) }
+      : {}),
+    ...(typeof (r as { translationAutoExpand?: unknown }).translationAutoExpand === 'boolean'
+      ? { translationAutoExpand: !!(r as { translationAutoExpand: boolean }).translationAutoExpand }
+      : {}),
+    ...(typeof (r as { translationVoiceId?: unknown }).translationVoiceId === 'string' &&
+    (r as { translationVoiceId: string }).translationVoiceId.trim()
+      ? { translationVoiceId: (r as { translationVoiceId: string }).translationVoiceId.trim().slice(0, 120) }
+      : {}),
     ...((): Partial<ChatConversationSettingsRow> => {
       const stickerRaw =
         (r as { stickerRoundTriggerPercent?: unknown }).stickerRoundTriggerPercent ??
@@ -5302,6 +5349,10 @@ export class PersonaDb {
       | 'storyTime'
       | 'storyTimeLabel'
       | 'systemRecordedAt'
+      | 'translatedText'
+      | 'translationLang'
+      | 'translationExpanded'
+      | 'translationAudioUrl'
       >
     > & {
       redPacket?: Partial<WeChatRedPacketPayload>
@@ -9452,6 +9503,13 @@ export class PersonaDb {
         | 'classicEmojiRoundTriggerPercent'
         | 'classicEmojiBannedNames'
         | 'voiceRoundTriggerPercent'
+        | 'replyOutputLanguage'
+        | 'replyVoiceLanguage'
+        | 'replyVoiceId'
+        | 'translationSyncEnabled'
+        | 'translationLanguage'
+        | 'translationAutoExpand'
+        | 'translationVoiceId'
         | 'imageRoundTriggerPercent'
         | 'imageRoundCountMin'
         | 'imageRoundCountMax'
@@ -9532,6 +9590,45 @@ export class PersonaDb {
           : existing?.voiceRoundTriggerPercent !== undefined
             ? { voiceRoundTriggerPercent: existing.voiceRoundTriggerPercent }
             : {}),
+      ...(typeof params.replyOutputLanguage === 'string'
+        ? { replyOutputLanguage: params.replyOutputLanguage.trim().slice(0, 16) }
+        : existing?.replyOutputLanguage
+          ? { replyOutputLanguage: existing.replyOutputLanguage }
+          : {}),
+      ...(typeof params.replyVoiceLanguage === 'string'
+        ? { replyVoiceLanguage: params.replyVoiceLanguage.trim().slice(0, 16) }
+        : existing?.replyVoiceLanguage
+          ? { replyVoiceLanguage: existing.replyVoiceLanguage }
+          : {}),
+      ...(typeof params.replyVoiceId === 'string'
+        ? params.replyVoiceId.trim()
+          ? { replyVoiceId: params.replyVoiceId.trim().slice(0, 120) }
+          : {}
+        : existing?.replyVoiceId
+          ? { replyVoiceId: existing.replyVoiceId }
+          : {}),
+      ...(typeof params.translationSyncEnabled === 'boolean'
+        ? { translationSyncEnabled: params.translationSyncEnabled }
+        : existing?.translationSyncEnabled != null
+          ? { translationSyncEnabled: existing.translationSyncEnabled }
+          : {}),
+      ...(typeof params.translationLanguage === 'string'
+        ? { translationLanguage: params.translationLanguage.trim().slice(0, 16) }
+        : existing?.translationLanguage
+          ? { translationLanguage: existing.translationLanguage }
+          : {}),
+      ...(typeof params.translationAutoExpand === 'boolean'
+        ? { translationAutoExpand: params.translationAutoExpand }
+        : existing?.translationAutoExpand != null
+          ? { translationAutoExpand: existing.translationAutoExpand }
+          : {}),
+      ...(typeof params.translationVoiceId === 'string'
+        ? params.translationVoiceId.trim()
+          ? { translationVoiceId: params.translationVoiceId.trim().slice(0, 120) }
+          : {}
+        : existing?.translationVoiceId
+          ? { translationVoiceId: existing.translationVoiceId }
+          : {}),
       ...(params.clearClassicEmojiRoundTriggerPercent
         ? {}
         : typeof params.classicEmojiRoundTriggerPercent === 'number' &&

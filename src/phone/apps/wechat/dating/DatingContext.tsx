@@ -54,8 +54,8 @@ import {
 import { resolveOnlineMessageTimeBoundsForConversation } from '../wechatCrossChannelTimeline'
 import { getAiPlotActiveTimelineDelta } from './plotTimelineDelta'
 import { formatPlotPromptTimeBracket } from './plotStoryTimeLabel'
-import { loadStoryTimelinePromptBlock, loadStoryTimelineOpenAnchorsBlockForSummary, rebuildStoryTimelineFromDatingPlots } from '../memory/storyTimelinePersist'
-import { buildStoryTimelineCalendarContextBlock, resolveStoryCalendarAnchorFloorMs, resolveStoryCalendarAnchorFromPlotItems, resolveStoryCalendarAnchorFromPlots, STORY_TIMELINE_CALENDAR_CHRONOLOGY_RULES } from '../memory/storyTimelineCalendarContext'
+import { loadStoryTimelinePromptBlock, rebuildStoryTimelineFromDatingPlots } from '../memory/storyTimelinePersist'
+import { resolveStoryCalendarAnchorFloorMs, resolveStoryCalendarAnchorFromPlotItems, resolveStoryCalendarAnchorFromPlots, STORY_TIMELINE_CALENDAR_CHRONOLOGY_RULES } from '../memory/storyTimelineCalendarContext'
 import {
   buildDatingStoryTimelineFallbackMaterial,
 } from '../memory/storyTimelineSummaryFallback'
@@ -82,7 +82,6 @@ import {
   syncStoryTimelineNowFromOnlineClock,
 } from '../time/applyOnlineChatTimeFusion'
 import { normalizeWeChatTimeConfig, resolveWeChatCurrentTimeMs } from '../time/wechatTimeUtils'
-import { peekWillSummarizeOnNextAiRound } from '../memory/memoryAutoSummaryInterval'
 import { isOfflineDatingRowPerRoundMode, isLinkedMemoryAutoSummaryEnabled } from '../memory/memoryRowPerRoundMode'
 import {
   clearOfflinePlotContextVectorsForCharacter,
@@ -91,7 +90,7 @@ import {
 } from './datingPlotContextSync'
 import { isOpenAiEmptyAssistantParseError, openAiCompatibleChatLenient } from '../newFriendsPersona/ai'
 import { formatApiClientError } from '../addFriend/friendRequestApiError'
-import { useCurrentApiConfig } from '../../api/ApiSettingsContext'
+import { useCurrentApiConfig, useIsSubApiEnabled, useTranslationRuntime } from '../../api/ApiSettingsContext'
 import type { ApiConfig, ApiConfigCore } from '../../api/types'
 import { useCustomization } from '../../../CustomizationContext'
 import type {
@@ -120,7 +119,6 @@ import {
   clampDatingLengthTargetChars,
   parsePlotDimensionLengthTarget,
   DATING_AI_HISTORY_PROMPT_MAX,
-  DATING_AI_MAX_OUTPUT_TOKENS,
   DATING_AI_OFFLINE_UNSUMMARIZED_CHAR_CAP,
   DATING_AI_REFERENCE_SECTION_CHAR_CAP,
 } from './types'
@@ -132,10 +130,25 @@ import { PROSE_FORBIDDEN_LEXICON_PROMPT } from '../proseForbiddenLexiconPrompt'
 import { MBTI_OUTPUT_BAN_RULE } from '../mbtiOutputBan'
 import { buildDatingStyleSystemPrompt } from './lumiThinkingChainRules'
 import { getLoreArchiveBuiltinPresetTogglesSnapshot } from '../../../worldbook/worldbookLoreStore'
-import { appendAiRegenerateVersion, initialAiPlotVersions, plotWithVersionIndex } from './plotVersions'
+import {
+  appendAiRegenerateVersion,
+  getAiPlotVersionSlices,
+  initialAiPlotVersions,
+  plotWithCurrentVersionTranslations,
+  plotWithVersionIndex,
+} from './plotVersions'
 import { buildDatingStyleSystemAppend } from './datingStylePrompt'
+import {
+  buildDatingLanguageAppendix,
+  finalizeDatingPlotDialogueTranslations,
+  inferDatingRelationHintForTranslation,
+} from './datingLanguagePrompt'
+import {
+  normalizeDatingLanguageSettings,
+  type DatingLanguageSettingsPatch,
+} from './DatingLanguageSettingsPanel'
 import { generateDatingBranchesAi } from './datingBranchesAi'
-import { generateDatingPlotDimensionAi } from './datingPlotDimensionAi'
+import { generateDatingPlotDimensionAi, buildDimensionLanguageSettingsFromArchive, finalizeDatingDimensionTranslations } from './datingPlotDimensionAi'
 import { buildVnBackgroundPromptBlock } from './vnBackgroundCatalog'
 import { buildVnAtmospherePromptBlock } from './vnAtmospherePromptBlock'
 import { buildVnBgmPromptBlock } from './vnBgmCatalog'
@@ -150,7 +163,6 @@ import { buildWorldbookContext } from '../../../worldbook/buildWorldbookContext'
 import { getWorldbookLoreEntriesSnapshot } from '../../../worldbook/worldbookLoreStore'
 import { resolveEffectiveDanmakuVisuals } from '../danmakuResolve'
 import {
-  buildDatingCombinedMemoryUserAppendix,
   requestWeChatDanmakuVarietyShow,
   splitDatingAiResponseAndUnifiedMemoryJson,
   type ChatTranscriptTurn,
@@ -247,7 +259,7 @@ type DatingTurnModelExtras = {
   regeneratingWorldBookBaseline?: boolean
 }
 
-/** 约会单轮 completion：仅正文；合并记忆 JSON 在落库后由 finalize 后台写。 */
+/** 约会单轮 completion：只写剧情正文；记忆 / 时间轴由落库后 finalize 后台写，不再同轮夹尾部 markup。 */
 async function buildDatingTurnModelExtras(params: {
   char: CharacterInfo
   plotsSnapshotForGather: DatingPlotSnapshotItem[]
@@ -284,45 +296,10 @@ async function buildDatingTurnModelExtras(params: {
     }
   }
 
-  const ck = gather.conversationKey.trim()
-  const summaryRoundDue =
-    datingMemOn &&
-    params.skipMemoryRoundBump !== true &&
-    !isOfflineDatingRowPerRoundMode(memSettings) &&
-    peekWillSummarizeOnNextAiRound(memSettings, ck)
-
-  let unifiedMemoryAppendix = ''
-  try {
-    const roster = await buildEligibleLinkedMemoryRosterForDatingAppendix(
-      gather.plotsArchiveId,
-      params.char.id,
-    )
-    const storyCalendarAnchor = resolveStoryCalendarAnchorFromPlots(params.plotsSnapshotForGather)
-    const calendarContextBlock = await buildStoryTimelineCalendarContextBlock({
-      peerCharacterId: params.char.id,
-      sessionPlayerIdentityId: params.sessionPlayerIdentityId,
-      storyCalendarAnchor,
-    })
-    const priorOpenAnchorsBlock = await loadStoryTimelineOpenAnchorsBlockForSummary(params.char.id)
-    unifiedMemoryAppendix = buildDatingCombinedMemoryUserAppendix({
-      onlineTranscript: gather.onlineTranscript,
-      peerLabel: params.char.realName.trim() || '对方',
-      offlinePriorBlock: gather.offlineBlock,
-      npcLinkedExcerptsBlock: gather.npcLinked.block,
-      datingPeerCharacterId: params.char.id,
-      eligibleLinkedNpcRoster: roster,
-      summaryRoundDue,
-      calendarContextBlock,
-      priorOpenAnchorsBlock,
-    })
-  } catch {
-    unifiedMemoryAppendix = ''
-  }
-
+  // 故意不注入 unifiedMemoryAppendix：同轮夹记忆尾块易诱发空正文/截断；记忆走 finalize 后台
   return {
     datingExtras: {
       ...(regeneratingWorldBookBaseline ? { regeneratingWorldBookBaseline: true } : {}),
-      ...(unifiedMemoryAppendix.trim() ? { unifiedMemoryAppendix } : {}),
     },
     memoryGather: gather,
   }
@@ -418,6 +395,8 @@ type Ctx = {
     plotImageCountMin?: number
     plotImageCountMax?: number
   }) => void
+  /** 旁白/对白/内心 OS 语言与同步翻译 */
+  patchDatingLanguageSettings: (patch: DatingLanguageSettingsPatch) => void
   /** @returns 是否已成功写入 AI 剧情（失败时为 false，便于界面保留输入并重试） */
   sendPlayerInput: (text: string, perspective?: NarrativePerspective, genOptions?: NarrativeGenOptions) => Promise<boolean>
   /** 选中分支卡片：写入续写执导，由页面把 card 注入输入框 */
@@ -447,6 +426,10 @@ type Ctx = {
         | 'currentVersionIndex'
         | 'parallelEvent'
         | 'ifLine'
+        | 'dialogueTranslations'
+        | 'innerOsTranslations'
+        | 'versionDialogueTranslations'
+        | 'versionInnerOsTranslations'
       >
     >,
   ) => void
@@ -454,6 +437,8 @@ type Ctx = {
   setPlotVersionIndex: (plotId: string, index: number) => void
   /** 删除一条剧情节点 */
   deletePlotItem: (plotId: string) => void
+  /** 对当前版本正文重新 peel + 补全缺失对白/内心译文（不重写剧情） */
+  backfillPlotTranslations: (plotId: string) => Promise<void>
   regenerateAiPlot: (
     plotId: string,
     perspective?: NarrativePerspective,
@@ -467,6 +452,7 @@ type Ctx = {
     writingGuide: string,
     lengthTargetChars: number,
     perspective?: NarrativePerspective,
+    languages?: import('./types').PlotDimensionLanguageBundle,
   ) => Promise<void>
 }
 
@@ -731,6 +717,37 @@ function mergeArchives(chars: CharacterInfo[], parsed: unknown | null): Archives
           typeof (saved as { generateIfLineOnSend?: unknown }).generateIfLineOnSend === 'boolean'
             ? (saved as { generateIfLineOnSend: boolean }).generateIfLineOnSend
             : merged[c.id].generateIfLineOnSend,
+        plotOutputLanguage:
+          typeof (saved as { plotOutputLanguage?: unknown }).plotOutputLanguage === 'string'
+            ? String((saved as { plotOutputLanguage: string }).plotOutputLanguage).trim() ||
+              merged[c.id].plotOutputLanguage
+            : merged[c.id].plotOutputLanguage,
+        dialogueLanguage:
+          typeof (saved as { dialogueLanguage?: unknown }).dialogueLanguage === 'string'
+            ? String((saved as { dialogueLanguage: string }).dialogueLanguage).trim() ||
+              merged[c.id].dialogueLanguage
+            : merged[c.id].dialogueLanguage,
+        innerOsLanguage:
+          typeof (saved as { innerOsLanguage?: unknown }).innerOsLanguage === 'string'
+            ? String((saved as { innerOsLanguage: string }).innerOsLanguage).trim() ||
+              merged[c.id].innerOsLanguage
+            : merged[c.id].innerOsLanguage,
+        dialogueTranslationSyncEnabled:
+          typeof (saved as { dialogueTranslationSyncEnabled?: unknown }).dialogueTranslationSyncEnabled ===
+          'boolean'
+            ? (saved as { dialogueTranslationSyncEnabled: boolean }).dialogueTranslationSyncEnabled
+            : merged[c.id].dialogueTranslationSyncEnabled,
+        innerOsTranslationSyncEnabled:
+          typeof (saved as { innerOsTranslationSyncEnabled?: unknown }).innerOsTranslationSyncEnabled ===
+          'boolean'
+            ? (saved as { innerOsTranslationSyncEnabled: boolean }).innerOsTranslationSyncEnabled
+            : merged[c.id].innerOsTranslationSyncEnabled,
+        dialogueTranslationLanguage:
+          typeof (saved as { dialogueTranslationLanguage?: unknown }).dialogueTranslationLanguage ===
+          'string'
+            ? String((saved as { dialogueTranslationLanguage: string }).dialogueTranslationLanguage).trim() ||
+              merged[c.id].dialogueTranslationLanguage
+            : merged[c.id].dialogueTranslationLanguage,
       }
     }
     return merged
@@ -846,7 +863,6 @@ async function requestDatingPlotCompletion(params: {
   apiConfig: { apiUrl?: string; apiKey?: string; modelId?: string }
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
   slimMessages: Array<{ role: 'system' | 'user'; content: string }>
-  maxTokens: number
   timeoutPromise: Promise<string>
   charUserNames: CharUserNames
   /** 重新生成时略抬高随机度，降低复读旧稿概率 */
@@ -873,7 +889,6 @@ async function requestDatingPlotCompletion(params: {
       const raw = await Promise.race([
         openAiCompatibleChatLenient(params.apiConfig as any, msgs, {
           temperature: params.isRegenerate ? 0.84 : 0.68,
-          max_tokens: params.maxTokens,
         }),
         params.timeoutPromise,
       ])
@@ -956,6 +971,8 @@ function aiPlotPersistFields(
   parsed: { logicPass: string; planSummary: string; content: string },
   timelineSnapshot?: string,
   timelineDelta?: import('../memory/storyTimelineTypes').StoryTimelineSummaryDelta,
+  dialogueTranslations?: import('./types').PlotDialogueTranslation[],
+  innerOsTranslations?: import('./types').PlotDialogueTranslation[],
 ): Pick<
   PlotItem,
   | 'content'
@@ -965,6 +982,10 @@ function aiPlotPersistFields(
   | 'versionLogicPasses'
   | 'versionTimelineSnapshots'
   | 'versionTimelineDeltas'
+  | 'versionDialogueTranslations'
+  | 'dialogueTranslations'
+  | 'versionInnerOsTranslations'
+  | 'innerOsTranslations'
   | 'currentVersionIndex'
   | 'timelineSnapshot'
   | 'timelineDelta'
@@ -975,6 +996,8 @@ function aiPlotPersistFields(
     parsed.planSummary,
     timelineSnapshot,
     timelineDelta,
+    dialogueTranslations,
+    innerOsTranslations,
   )
   const snap = timelineSnapshot?.trim() || undefined
   const delta = timelineDelta && Object.keys(timelineDelta).length ? timelineDelta : undefined
@@ -1039,6 +1062,8 @@ async function enrichAiPlotWithOptionalDimensions(params: {
   mergedGen?: NarrativeGenOptions
   perspective: NarrativePerspective
   apiConfig: ApiConfigCore | null
+  translationRuntime?: import('../../api/translationProviders').TranslationRuntime | null
+  translationDedicatedApi?: boolean
 }): Promise<PlotItem> {
   const wantParallel =
     params.mergedGen?.generateParallelOnSend ?? params.archiveSnap.generateParallelOnSend ?? false
@@ -1053,12 +1078,25 @@ async function enrichAiPlotWithOptionalDimensions(params: {
   )
   const playerName =
     playerIdentity?.wechatNickname?.trim() || playerIdentity?.name?.trim() || null
+  const listenerGenderForTr =
+    playerIdentity?.gender === 'male' ||
+    playerIdentity?.gender === 'female' ||
+    playerIdentity?.gender === 'other'
+      ? playerIdentity.gender
+      : null
   const lengthTarget = parsePlotDimensionLengthTarget(
     params.mergedGen?.lengthTargetChars ?? params.archiveSnap.datingLengthTargetChars ?? 500,
     500,
   )
   const apiCfg =
     params.apiConfig?.apiUrl?.trim() && params.apiConfig?.apiKey?.trim() ? params.apiConfig : null
+  const languageSettings = buildDimensionLanguageSettingsFromArchive({
+    archive: params.archiveSnap,
+    character: params.char,
+    playerName,
+    translationDedicatedApi: params.translationDedicatedApi === true,
+  })
+  const listenerName = playerName || '用户'
 
   let plot = params.aiPlot
   const genBase = {
@@ -1072,14 +1110,31 @@ async function enrichAiPlotWithOptionalDimensions(params: {
     perspective: params.perspective,
     apiConfig: apiCfg,
     playerIdentityCardName: playerName,
+    outputLanguage: languageSettings.plotOutputLanguage,
+    isVnMode: params.archiveSnap.modePreference === 'vn',
+    languageSettings,
   }
 
   if (wantParallel) {
-    const content = await generateDatingPlotDimensionAi({ ...genBase, kind: 'parallel' })
+    const rawContent = await generateDatingPlotDimensionAi({ ...genBase, kind: 'parallel' })
+    const finalized = await finalizeDatingDimensionTranslations({
+      content: rawContent,
+      languageSettings,
+      apiConfig: apiCfg as import('../../api/types').ApiConfig | null,
+      translationRuntime: params.translationRuntime,
+      speakerName: params.char.realName,
+      listenerName,
+      listenerGender: listenerGenderForTr,
+    })
     const parallelEventBase = {
-      content,
+      content: finalized.content,
       writingGuide: '',
       lengthTargetChars: lengthTarget,
+      outputLanguage: languageSettings.plotOutputLanguage,
+      dialogueLanguage: languageSettings.dialogueLanguage ?? undefined,
+      innerOsLanguage: languageSettings.innerOsLanguage ?? undefined,
+      dialogueTranslations: finalized.dialogueTranslations,
+      innerOsTranslations: finalized.innerOsTranslations,
       updatedAt: Date.now(),
     }
     const timelineDelta = await resolveParallelEventSummaryDelta({
@@ -1097,13 +1152,27 @@ async function enrichAiPlotWithOptionalDimensions(params: {
     }
   }
   if (wantIf) {
-    const content = await generateDatingPlotDimensionAi({ ...genBase, kind: 'if' })
+    const rawContent = await generateDatingPlotDimensionAi({ ...genBase, kind: 'if' })
+    const finalized = await finalizeDatingDimensionTranslations({
+      content: rawContent,
+      languageSettings,
+      apiConfig: apiCfg as import('../../api/types').ApiConfig | null,
+      translationRuntime: params.translationRuntime,
+      speakerName: params.char.realName,
+      listenerName,
+      listenerGender: listenerGenderForTr,
+    })
     plot = {
       ...plot,
       ifLine: {
-        content,
+        content: finalized.content,
         writingGuide: '',
         lengthTargetChars: lengthTarget,
+        outputLanguage: languageSettings.plotOutputLanguage,
+        dialogueLanguage: languageSettings.dialogueLanguage ?? undefined,
+        innerOsLanguage: languageSettings.innerOsLanguage ?? undefined,
+        dialogueTranslations: finalized.dialogueTranslations,
+        innerOsTranslations: finalized.innerOsTranslations,
         updatedAt: Date.now(),
       },
     }
@@ -1521,6 +1590,14 @@ async function generateDatingAi(
     perspective: NarrativePerspective
     isVnMode?: boolean
     vnVoiceDisabled?: boolean
+    plotOutputLanguage?: string
+    dialogueLanguage?: string
+    innerOsLanguage?: string
+    dialogueTranslationSyncEnabled?: boolean
+    innerOsTranslationSyncEnabled?: boolean
+    dialogueTranslationLanguage?: string
+    /** true：API 设置「翻译」副接口开启 */
+    translationDedicatedApi?: boolean
   },
   onlineCtx?: {
     /** 已废弃注入：约会 prompt 不再贴「线上近期聊天」，与「尚未总结·私聊」去重；字段保留兼容旧调用 */
@@ -1571,8 +1648,43 @@ ${character.realName}把步子放慢半拍，先看了一眼门口，再把手�
   }
   const { godPerspective, mainCharacterOffstage, perspective, isVnMode = false, vnVoiceDisabled = false } =
     opts
+  const langSettings = normalizeDatingLanguageSettings({
+    plotOutputLanguage: opts.plotOutputLanguage,
+    dialogueLanguage: opts.dialogueLanguage,
+    innerOsLanguage: opts.innerOsLanguage,
+    dialogueTranslationSyncEnabled: opts.dialogueTranslationSyncEnabled,
+    innerOsTranslationSyncEnabled: opts.innerOsTranslationSyncEnabled,
+    dialogueTranslationLanguage: opts.dialogueTranslationLanguage,
+  })
   const userDisplayName =
     playerIdentity?.wechatNickname?.trim() || playerIdentity?.name?.trim() || '用户'
+  const relationHintForTranslation = inferDatingRelationHintForTranslation({
+    characterName: character.realName,
+    playerName: userDisplayName,
+    characterPrompt: character.prompt,
+    characterIdentity: (character.identityTags ?? []).join('、'),
+  })
+  const datingLanguageAppendix = buildDatingLanguageAppendix({
+    ...langSettings,
+    isVnMode,
+    characterName: character.realName,
+    playerName: userDisplayName,
+    relationHint: relationHintForTranslation,
+    characterPersonaBrief: [
+      character.realName ? `姓名：${character.realName}` : '',
+      (character.identityTags ?? []).length ? `标签：${character.identityTags.join('、')}` : '',
+      String(character.prompt || '').trim().slice(0, 1100),
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    playerGender:
+      playerIdentity?.gender === 'male' ||
+      playerIdentity?.gender === 'female' ||
+      playerIdentity?.gender === 'other'
+        ? playerIdentity.gender
+        : null,
+    translationDedicatedApi: opts.translationDedicatedApi === true,
+  })
   const historyBlock = formatRecentPlotsForPrompt(history, character.realName, DATING_AI_HISTORY_PROMPT_MAX)
   const aiPlotCount = countAiPlotsInDatingHistory(history)
   const earlyDatingRound = isEarlyDatingPlotRound(history)
@@ -1583,22 +1695,30 @@ ${character.realName}把步子放慢半拍，先看了一眼门口，再把手�
         ? '关系阶段参考：熟悉推进期（须有事件与玩家行为支撑，禁止无动因跨级靠近）'
         : '关系阶段参考：稳定互动期（在既有关系上推进新矛盾或新选择）'
   const roleMode = godPerspective
-    ? '上帝视角：只写用户当前看不见、也不知晓的非面对面角色/NPC场景；**玩家本人不得出场、不得与约会对象/NPC 同场同框**；旁白一律第三人称写约会对象与 NPC（须在思维链【代写边界卡】与预检维度 8 中闭环）；禁止描写用户当下可见现场，禁止与用户直接对话；**与抢话互斥，不得代写玩家当轮言行**。**不得把「尚未总结」摘录或「长期记忆」里已出现的气泡/事实，改写成旁白里又发给用户/又讲一遍同款行程**；须写屏幕外或未写过的信息。'
+    ? '【视角锁定·上帝·全篇】只写用户当前看不见、也不知晓的非面对面角色/NPC场景；**玩家本人不得出场、不得与约会对象/NPC 同场同框**；旁白一律第三人称写约会对象与 NPC（须在思维链【代写边界卡】与预检维度 8 中闭环）；禁止描写用户当下可见现场，禁止与用户直接对话；**与抢话互斥，不得代写玩家当轮言行**。**不得把「尚未总结」摘录或「长期记忆」里已出现的气泡/事实，改写成旁白里又发给用户/又讲一遍同款行程**；须写屏幕外或未写过的信息。本轮**禁止**切回当面约会主镜头，也**禁止**写成侧幕（玩家与 NPC、主角色缺席）为主。'
     : mainCharacterOffstage
-      ? `主角色缺席：本轮约会主角色 ${character.realName} **不在场**；正文只写玩家与 NPC/人脉角色之间的互动与场景，**禁止** ${character.realName} 出场、开口对白、被写成在场者（仅允许他人转述、手机/消息侧写、回忆等**非同框**信息，且不得把镜头切到其所在现场）。玩家可正常在场并与 NPC 互动。`
-      : '角色视角：允许自然对白互动，但保持克制真实，不油腻；**线上微信聊天已说定内容为既定事实**，线下须服从（见【线上聊天事实铁律】），不得把已聊事实当新料对用户重复宣布。'
+      ? `【视角锁定·侧幕·全篇】本轮约会主角色 ${character.realName} **全程不在场**；正文只写玩家与 NPC/人脉角色之间的互动与场景，**禁止** ${character.realName} 出场、开口对白、被写成在场者（仅允许他人转述、手机/消息侧写、回忆等**非同框**信息，且不得把镜头切到其所在现场）。玩家可正常在场并与 NPC 互动。本轮**禁止**写成上帝式纯屏外（玩家不在场）为主，也**禁止**把主镜头切回玩家与 ${character.realName} 当面约会。`
+      : `【视角未锁定·混合开放】未勾选「上帝视角」也未勾选「侧幕叙写」。请按上下文与玩家输入**由模型自行判断**续写：通常以玩家与 ${character.realName} 的当面互动为主轴，但**允许**按剧情需要自然混入——①少量屏外/信息差镜头（上帝式侧写：对象或 NPC 在别处做什么）；②主角色暂时不在眼前时的侧幕（玩家与人脉/路人互动）。可「当面为主、屏外/侧幕点缀」，也可在本轮内短切混合；**不必**整篇锁死单一视角。保持克制真实、不油腻。**线上微信聊天已说定内容为既定事实**，线下须服从（见【线上聊天事实铁律】），不得把已聊事实当新料对用户重复宣布。若用户要**全篇**纯上帝或纯侧幕，须勾选对应开关。`
   const perspectiveRule = godPerspective
-    ? `人称要求（本轮·上帝视角）：旁白以第三人称（他/她/${character.realName}等）写约会对象与在场他人；**禁止**旁白用「你」指${character.realName}或其动作。**禁止**描写玩家本人出场、在场、肢体动作或引号对白；玩家仅允许以心念、回忆、未在场的发消息侧写、他人转述等**屏外**方式被侧面提及，且「你」不得当作镜头前的互动对象。**禁止**用身份卡姓名「${userDisplayName}」直呼玩家（例：须写「他想到了你」，禁止「他想到了${userDisplayName}」）。${character.realName}的内心 OS：${DATING_INNER_OS_MARKUP_RULE}（完整第一人称心声，我=${character.realName}）；**禁止** OS 内写「他怎么……」类第三人称；**禁止**单独一行「我……」占位。`
-    : perspective === 'first'
-      ? '人称要求：以下一段以第一人称为主（我/我们），除对白外避免第三人称叙事。'
-      : perspective === 'second'
-        ? '人称要求：以下一段以第二人称互动为主（你/你们），保持对象感。'
-        : '人称要求：以下一段以第三人称叙事为主（他/她/他们），像镜头旁观。'
+    ? `人称要求（本轮·上帝视角·全篇）：旁白以第三人称（他/她/${character.realName}等）写约会对象与在场他人；**禁止**旁白用「你」指${character.realName}或其动作。**禁止**描写玩家本人出场、在场、肢体动作或引号对白；玩家仅允许以心念、回忆、未在场的发消息侧写、他人转述等**屏外**方式被侧面提及，且「你」不得当作镜头前的互动对象。**禁止**用身份卡姓名「${userDisplayName}」直呼玩家（例：须写「他想到了你」，禁止「他想到了${userDisplayName}」）。${character.realName}的内心 OS：${DATING_INNER_OS_MARKUP_RULE}（完整第一人称心声，我=${character.realName}）；**禁止** OS 内写「他怎么……」类第三人称；**禁止**单独一行「我……」占位。`
+    : mainCharacterOffstage
+      ? perspective === 'first'
+        ? '人称要求（本轮·侧幕·全篇）：以第一人称为主写玩家与 NPC 互动（我/我们）；主角色不在场，勿切回与约会对象当面。'
+        : perspective === 'second'
+          ? '人称要求（本轮·侧幕·全篇）：以第二人称写玩家与 NPC 互动（你/你们）；主角色不在场，勿切回与约会对象当面。'
+          : '人称要求（本轮·侧幕·全篇）：以第三人称叙事写玩家与 NPC 互动；主角色不在场，勿切回与约会对象当面。'
+      : perspective === 'first'
+        ? '人称要求（混合开放）：主轴可用第一人称（我/我们）；穿插屏外镜头时对该处可用第三人称旁观，切回当面后再回到主轴人称。'
+        : perspective === 'second'
+          ? '人称要求（混合开放）：主轴以第二人称互动为主（你/你们）；穿插屏外镜头时对该处可用他/她旁观，切回当面后旁白指玩家仍用「你」。'
+          : '人称要求（混合开放）：主轴可用第三人称旁观（他/她/他们）；当面互动与屏外/侧幕短切时人称可随镜头自然切换，保持可读即可。'
   const perspectiveStrictRule = godPerspective
-    ? `【上帝视角·当轮硬约束】约会对象=${character.realName}：旁白主语须为他/她/其名；**禁止**「你把手机…」「你盯着屏幕…」类把约会对象写成「你」。**玩家出场禁令**：禁止玩家与${character.realName}/NPC 同处一室、对视、对话、肢体接触；禁止「你走过来/你开口/你们相对而坐」等同框描写。「你」仅可用于角色**不在场**时惦记玩家（如想到了你、给你发消息），**禁止**把「你」写成镜头前的面对面对象。界面「第二人称」仅为全书代入基调，**不**覆盖本轮上帝段写 NPC 的人称。`
-    : perspective === 'second'
-      ? '【第二人称硬约束】正文**旁白**叙述玩家时**只能**用「你/你的/你们」，**禁止**用身份卡姓名、小名、昵称、姓氏单独作主语、职衔等替代「你」（旁白里写成「某某某怎样」=把玩家当旁观对象，**破坏代入**）。**仅**在**双引号对白**中，角色可合理直呼或称呼玩家（须与身份卡不矛盾）。'
-      : ''
+    ? `【上帝视角·当轮硬约束·全篇】约会对象=${character.realName}：旁白主语须为他/她/其名；**禁止**「你把手机…」「你盯着屏幕…」类把约会对象写成「你」。**玩家出场禁令**：禁止玩家与${character.realName}/NPC 同处一室、对视、对话、肢体接触；禁止「你走过来/你开口/你们相对而坐」等同框描写。「你」仅可用于角色**不在场**时惦记玩家（如想到了你、给你发消息），**禁止**把「你」写成镜头前的面对面对象。界面「第二人称」仅为全书代入基调，**不**覆盖本轮上帝段写 NPC 的人称。`
+    : mainCharacterOffstage
+      ? `【侧幕叙写·当轮硬约束·全篇】约会主角色 ${character.realName} **不得**出场或同框；只写玩家与 NPC/人脉。禁止把镜头切到 ${character.realName} 所在现场当主戏；禁止写成玩家不在场的纯上帝屏外篇。`
+      : perspective === 'second'
+        ? '【第二人称硬约束】正文**旁白**叙述玩家时**只能**用「你/你的/你们」，**禁止**用身份卡姓名、小名、昵称、姓氏单独作主语、职衔等替代「你」（旁白里写成「某某某怎样」=把玩家当旁观对象，**破坏代入**）。**仅**在**双引号对白**中，角色可合理直呼或称呼玩家（须与身份卡不矛盾）。屏外短切段可用他/她写不在场者，切回当面后旁白指玩家仍须用「你」。'
+        : ''
   const autoUserReaction = !godPerspective && genOptions?.autoUserReaction === true
   const directorModeActive = genOptions?.directorMode === true
   const playerInputIntentMode: 'canon' | 'paraphrase' = directorModeActive ? 'paraphrase' : 'canon'
@@ -1645,10 +1765,12 @@ ${character.realName}把步子放慢半拍，先看了一眼门口，再把手�
     `3. 节奏：对白衔接自然；神态句宜短、贴在对白前后，禁止大段与对白无关的铺垫或连续纯神态堆叠。` +
     `4. 禁用：禁止与对话核心无关的背景铺垫、无意义环境描写、重复心理活动；禁止为凑篇幅堆砌无效内容。` +
     (godPerspective
-      ? `（本轮上帝视角：不向玩家当面喊话或假定玩家已开口；对白限于屏外角色/NPC 之间或独处自语式短句，仍须满足上列「对话驱动」要求。）`
-      : autoUserReaction
-        ? `（本轮抢话开：对白可含玩家引号台词；仍须以 ${character.realName}/NPC 对白为主轴。）`
-        : `（本轮不抢话：**对白占比只计 ${character.realName}/NPC 引号对白**，禁止为凑占比新增玩家引号对白。）`)
+      ? `（本轮上帝视角·全篇：不向玩家当面喊话或假定玩家已开口；对白限于屏外角色/NPC 之间或独处自语式短句，仍须满足上列「对话驱动」要求。）`
+      : mainCharacterOffstage
+        ? `（本轮侧幕·全篇：对白限于玩家与 NPC/人脉；禁止 ${character.realName} 对白或同场互动。）`
+        : autoUserReaction
+          ? `（本轮视角混合开放 + 抢话开：对白可含玩家引号台词；当面段以 ${character.realName}/NPC 为主轴，屏外/侧幕短切时对白随镜头切换即可。）`
+          : `（本轮视角混合开放 + 不抢话：当面段对白占比只计 ${character.realName}/NPC 引号对白；屏外/侧幕短切时按该镜头在场者计，禁止为凑占比硬塞玩家引号对白。）`)
   const npcRealNameRule =
     `【NPC命名铁律（最高优先级）】正文中凡 NPC 出场（旁白提及、对白前缀、他人转述）必须使用该 NPC 的真实姓名。` +
     `严禁用纯称呼替代真实姓名（例如：王老师、王女士、老师、经理、同学、阿姨、师傅、保安等）；` +
@@ -1755,8 +1877,10 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   })
   const mainCharacterOffstageVnRule =
     isVnMode && mainCharacterOffstage
-      ? `【VN·主角色缺席（最高优先级）】本轮约会主角色 ${character.realName} **不得**出现任何【对白】/【内心】气泡或被写成在场；只写玩家与 NPC/人脉的【旁白】/【对白】/【内心】。\n`
-      : ''
+      ? `【VN·视角锁定·侧幕·全篇】本轮约会主角色 ${character.realName} **不得**出现任何【对白】/【内心】气泡或被写成在场；只写玩家与 NPC/人脉的【旁白】/【对白】/【内心】。\n`
+      : isVnMode && !godPerspective && !mainCharacterOffstage
+        ? `【VN·视角未锁定·混合开放】未勾选上帝/侧幕时：主镜头可用玩家与 ${character.realName} 当面【对白】/【内心】；允许短切屏外旁白（他/她在别处）或主角色暂离时的 NPC 互动行；切换时用【旁白】过渡即可，不必整篇锁死单一视角。\n`
+        : ''
 
   const autoUserRoleplaySpaceRule =
     !godPerspective && autoUserReaction
@@ -1965,10 +2089,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
         plainUserEntriesOnly: true,
       }).trim()
     : ''
-  const hasUnifiedMemAppendix = Boolean(datingExtras?.unifiedMemoryAppendix?.trim())
-  const combinedMemNote = hasUnifiedMemAppendix
-    ? `【本轮硬性附加】user 消息末尾含「同一回复内合并长期记忆 JSON」说明：完整剧情 / VN 正文写完后（若启用【VN语音参数】块则在其后）**另起一行**输出规定分隔符与 JSON，分隔符之后只允许 JSON。\n`
-    : `【长期记忆】本轮**不要求**在回复末尾输出合并记忆 JSON；请专注剧情正文。记忆由客户端在落库后后台处理。\n`
+  const combinedMemNote = `【长期记忆】本轮**只输出剧情正文**（可含 \`<thinking>\`）；**禁止**在回复末尾追加记忆块、JSON、分隔符或时间轴 markup。记忆与剧情时间轴由客户端在落库后后台写入。\n`
   const charUserNames: CharUserNames = (() => {
     const r = resolveCharUserNamesForPrompt({
       character: mainCharRow,
@@ -2082,7 +2203,8 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `${plotEmotionalDirectionRule}` +
     (plotAntiEchoRule ? `${plotAntiEchoRule}` : '') +
     `${userReactionPromptBlock}\n` +
-    `${autoUserRoleplaySpaceRule}\n`
+    `${autoUserRoleplaySpaceRule}\n` +
+    (datingLanguageAppendix ? `${datingLanguageAppendix}\n` : '')
   const loreAndRelationBlock =
     datingCharProfileBlock +
     datingPhysiqueBlock +
@@ -2169,19 +2291,14 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       content: expandCharUserPlaceholders(userPromptRaw, charUserNames),
     },
   ]
-  /** 最大回复长度（词符/token） */
-  const maxTokens = DATING_AI_MAX_OUTPUT_TOKENS
-  const tokForTimeout = maxTokens
-  const timeoutMs = Math.min(
-    600_000,
-    Math.max(120_000, 90_000 + tokForTimeout * 8),
-  )
+  /** 不传 max_tokens：由模型/线路自行决定输出长度；超时用固定宽限 */
+  const timeoutMs = 600_000
   const timeoutPromise = new Promise<string>((_, reject) => {
     window.setTimeout(
       () =>
         reject(
           new Error(
-            `剧情生成超时（>${Math.round(timeoutMs / 1000)}s）。可尝试：降低「目标字数」、关闭本轮合并记忆要求、或换更快线路/模型后重试。`,
+            `剧情生成超时（>${Math.round(timeoutMs / 1000)}s）。可尝试：降低「目标字数」、换更快线路/模型后重试。`,
           ),
         ),
       timeoutMs,
@@ -2206,7 +2323,6 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     apiConfig: apiConfig!,
     messages,
     slimMessages,
-    maxTokens,
     timeoutPromise,
     charUserNames,
     isRegenerate: datingExtras?.regeneratingWorldBookBaseline === true,
@@ -2295,6 +2411,12 @@ export function DatingProvider({ children }: { children: ReactNode }) {
   const { state } = useCustomization()
   const apiConfig = useCurrentApiConfig('chatCard')
   const danmakuApiConfig = useCurrentApiConfig('danmaku')
+  const translationDedicatedApi = useIsSubApiEnabled('translation')
+  const translationDedicatedApiRef = useRef(translationDedicatedApi)
+  translationDedicatedApiRef.current = translationDedicatedApi
+  const translationRuntime = useTranslationRuntime()
+  const translationRuntimeRef = useRef(translationRuntime)
+  translationRuntimeRef.current = translationRuntime
   const [characters, setCharacters] = useState<CharacterInfo[]>(() => EMPTY_CHARACTERS)
   const [allArchives, setAllArchives] = useState<ArchivesStore>(() => buildDefaultStore(EMPTY_CHARACTERS))
   const [currentCharacterId, setCurrentCharacterId] = useState<string>('')
@@ -2925,6 +3047,34 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     [currentCharacter.id, patchArchive],
   )
 
+  const patchDatingLanguageSettings = useCallback(
+    (patch: DatingLanguageSettingsPatch) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      patchArchive(charId, (p) => {
+        const cur = normalizeDatingLanguageSettings({
+          plotOutputLanguage: p.plotOutputLanguage,
+          dialogueLanguage: p.dialogueLanguage,
+          innerOsLanguage: p.innerOsLanguage,
+          dialogueTranslationSyncEnabled: p.dialogueTranslationSyncEnabled,
+          innerOsTranslationSyncEnabled: p.innerOsTranslationSyncEnabled,
+          dialogueTranslationLanguage: p.dialogueTranslationLanguage,
+        })
+        const next = normalizeDatingLanguageSettings({ ...cur, ...patch })
+        return {
+          ...p,
+          plotOutputLanguage: next.plotOutputLanguage,
+          dialogueLanguage: next.dialogueLanguage,
+          innerOsLanguage: next.innerOsLanguage,
+          dialogueTranslationSyncEnabled: next.dialogueTranslationSyncEnabled,
+          innerOsTranslationSyncEnabled: next.innerOsTranslationSyncEnabled,
+          dialogueTranslationLanguage: next.dialogueTranslationLanguage,
+        }
+      })
+    },
+    [currentCharacter.id, patchArchive],
+  )
+
   const runOfflineDanmakuAfterAi = useCallback(
     async (char: CharacterInfo, arch: CharacterArchive) => {
       if (arch.modePreference === 'vn' || !arch.offlineDanmakuEnabled) return
@@ -3012,6 +3162,13 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         perspective,
         isVnMode: archiveSnap.modePreference === 'vn',
         vnVoiceDisabled: !!archiveSnap.vnVoiceDisabled,
+        plotOutputLanguage: archiveSnap.plotOutputLanguage,
+        dialogueLanguage: archiveSnap.dialogueLanguage,
+        innerOsLanguage: archiveSnap.innerOsLanguage,
+        dialogueTranslationSyncEnabled: archiveSnap.dialogueTranslationSyncEnabled,
+        innerOsTranslationSyncEnabled: archiveSnap.innerOsTranslationSyncEnabled,
+        dialogueTranslationLanguage: archiveSnap.dialogueTranslationLanguage,
+        translationDedicatedApi: translationDedicatedApiRef.current === true,
       }
       const mergedGen: NarrativeGenOptions | undefined = (() => {
         const o: NarrativeGenOptions = { ...(genOptions ?? {}) }
@@ -3086,10 +3243,52 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           const aiTextRaw = aiGen.text
           const plotRawOnly = splitDatingAiResponseAndUnifiedMemoryJson(aiTextRaw).plotRaw
           const parsed = extractAiPlotSections(plotRawOnly)
+          const langNorm = normalizeDatingLanguageSettings({
+            plotOutputLanguage: archiveSnap.plotOutputLanguage,
+            dialogueLanguage: archiveSnap.dialogueLanguage,
+            innerOsLanguage: archiveSnap.innerOsLanguage,
+            dialogueTranslationSyncEnabled: archiveSnap.dialogueTranslationSyncEnabled,
+            innerOsTranslationSyncEnabled: archiveSnap.innerOsTranslationSyncEnabled,
+            dialogueTranslationLanguage: archiveSnap.dialogueTranslationLanguage,
+          })
+          const playerDisplayForTr =
+            playerIdentity?.wechatNickname?.trim() || playerIdentity?.name?.trim() || '用户'
+          const relationHintTr = inferDatingRelationHintForTranslation({
+            characterName: char.realName,
+            playerName: playerDisplayForTr,
+            characterPrompt: char.prompt,
+            characterIdentity: (char.identityTags ?? []).join('、'),
+          })
+          const finalized = await finalizeDatingPlotDialogueTranslations({
+            content: parsed.content,
+            syncEnabled: langNorm.dialogueTranslationSyncEnabled,
+            innerOsSyncEnabled: langNorm.innerOsTranslationSyncEnabled,
+            translationLanguage: langNorm.dialogueTranslationLanguage,
+            apiConfig: apiConfig as import('../../api/types').ApiConfig | null,
+            translationRuntime: translationRuntimeRef.current,
+            translationDedicatedApi: translationDedicatedApiRef.current === true,
+            speakerName: char.realName,
+            listenerName: playerDisplayForTr,
+            listenerGender:
+              playerIdentity?.gender === 'male' ||
+              playerIdentity?.gender === 'female' ||
+              playerIdentity?.gender === 'other'
+                ? playerIdentity.gender
+                : null,
+            speakerPersonaBrief: [
+              char.realName ? `姓名：${char.realName}` : '',
+              (char.identityTags ?? []).length ? `标签：${char.identityTags.join('、')}` : '',
+              String(char.prompt || '').trim().slice(0, 1100),
+            ]
+              .filter(Boolean)
+              .join('\n'),
+            relationHint: relationHintTr,
+          })
+          const parsedForPersist = { ...parsed, content: finalized.content }
           const plotTs = Date.now()
           const { timelineSnap, timelineDelta } = await timelinePersistFieldsFromAiTextRaw(aiTextRaw, plotTs, {
             apiConfig,
-            plotBody: parsed.content,
+            plotBody: parsedForPersist.content,
             offlineBlock: memoryGather?.offlineBlock,
             characterId: char.id,
             characterRealName: char.realName,
@@ -3105,7 +3304,13 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             timestamp: plotTs,
             systemRecordedAt: plotTs,
             highlightText: char.realName,
-            ...aiPlotPersistFields(parsed, timelineSnap, timelineDelta),
+            ...aiPlotPersistFields(
+              parsedForPersist,
+              timelineSnap,
+              timelineDelta,
+              finalized.dialogueTranslations,
+              finalized.innerOsTranslations,
+            ),
             ...storyFields,
             worldBookAfterRevertEntries: wbRevertNew.length ? wbRevertNew : undefined,
           }
@@ -3152,6 +3357,8 @@ export function DatingProvider({ children }: { children: ReactNode }) {
               mergedGen,
               perspective,
               apiConfig,
+              translationRuntime: translationRuntimeRef.current,
+              translationDedicatedApi: translationDedicatedApiRef.current === true,
             })
             plotsWithAiFinal = plotsWithAi.map((p) => (p.id === aiPlot.id ? aiPlot : p))
             if (wantParallelOnSend && aiPlot.parallelEvent?.content?.trim()) {
@@ -3376,6 +3583,10 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         | 'currentVersionIndex'
         | 'parallelEvent'
         | 'ifLine'
+        | 'dialogueTranslations'
+        | 'innerOsTranslations'
+        | 'versionDialogueTranslations'
+        | 'versionInnerOsTranslations'
       >
     >,
   ) => {
@@ -3435,6 +3646,81 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     [apiConfig, applyArchivePatch, currentCharacter.id, enqueueRegenerateBranches],
   )
 
+  const backfillPlotTranslations = useCallback(
+    async (plotId: string) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      const archive = archivesRef.current[charId]
+      const plot = archive?.plots.find((p) => p.id === plotId)
+      if (!plot || plot.type !== 'ai' || !archive) return
+
+      const langNorm = normalizeDatingLanguageSettings({
+        plotOutputLanguage: archive.plotOutputLanguage,
+        dialogueLanguage: archive.dialogueLanguage,
+        innerOsLanguage: archive.innerOsLanguage,
+        dialogueTranslationSyncEnabled: archive.dialogueTranslationSyncEnabled,
+        innerOsTranslationSyncEnabled: archive.innerOsTranslationSyncEnabled,
+        dialogueTranslationLanguage: archive.dialogueTranslationLanguage,
+      })
+      if (!langNorm.dialogueTranslationSyncEnabled && !langNorm.innerOsTranslationSyncEnabled) {
+        throw new Error('请先在约会「语言」里开启「同步翻译对白 / 内心 OS」')
+      }
+
+      const body = getAiPlotVersionSlices(plot).body
+      const memCtx = await resolveDatingMemorySessionContext(charId)
+      const playerIdentity = await loadPlayerIdentityForDating(charId, memCtx.sessionPlayerIdentityId)
+      const playerDisplayForTr =
+        playerIdentity?.wechatNickname?.trim() || playerIdentity?.name?.trim() || '用户'
+      const char = charactersRef.current.find((c) => c.id === charId) ?? currentCharacter
+      const relationHintTr = inferDatingRelationHintForTranslation({
+        characterName: char.realName,
+        playerName: playerDisplayForTr,
+        characterPrompt: char.prompt,
+        characterIdentity: (char.identityTags ?? []).join('、'),
+      })
+      const finalized = await finalizeDatingPlotDialogueTranslations({
+        content: body,
+        syncEnabled: langNorm.dialogueTranslationSyncEnabled,
+        innerOsSyncEnabled: langNorm.innerOsTranslationSyncEnabled,
+        translationLanguage: langNorm.dialogueTranslationLanguage,
+        apiConfig: apiConfig as import('../../api/types').ApiConfig | null,
+        translationRuntime: translationRuntimeRef.current,
+        translationDedicatedApi: translationDedicatedApiRef.current === true,
+        speakerName: char.realName,
+        listenerName: playerDisplayForTr,
+        listenerGender:
+          playerIdentity?.gender === 'male' ||
+          playerIdentity?.gender === 'female' ||
+          playerIdentity?.gender === 'other'
+            ? playerIdentity.gender
+            : null,
+        speakerPersonaBrief: [
+          char.realName ? `姓名：${char.realName}` : '',
+          (char.identityTags ?? []).length ? `标签：${char.identityTags.join('、')}` : '',
+          String(char.prompt || '').trim().slice(0, 1100),
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        relationHint: relationHintTr,
+      })
+
+      await applyArchivePatch(charId, (p) => ({
+        ...p,
+        plots: p.plots.map((x) =>
+          x.id === plotId && x.type === 'ai'
+            ? plotWithCurrentVersionTranslations(
+                x,
+                finalized.dialogueTranslations,
+                finalized.innerOsTranslations,
+                finalized.content,
+              )
+            : x,
+        ),
+      }))
+    },
+    [apiConfig, applyArchivePatch, currentCharacter],
+  )
+
   const regenerateAiPlot = useCallback(
     async (
       plotId: string,
@@ -3487,6 +3773,13 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           perspective,
           isVnMode: archive.modePreference === 'vn',
           vnVoiceDisabled: !!archive.vnVoiceDisabled,
+          plotOutputLanguage: archive.plotOutputLanguage,
+          dialogueLanguage: archive.dialogueLanguage,
+          innerOsLanguage: archive.innerOsLanguage,
+          dialogueTranslationSyncEnabled: archive.dialogueTranslationSyncEnabled,
+          innerOsTranslationSyncEnabled: archive.innerOsTranslationSyncEnabled,
+          dialogueTranslationLanguage: archive.dialogueTranslationLanguage,
+          translationDedicatedApi: translationDedicatedApiRef.current === true,
         }
         const plotSlot = archive.plots[idx]!
         const afterPlots = archive.plots.slice(idx + 1)
@@ -3555,11 +3848,52 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         const aiTextRaw = String(aiGenRegen?.text ?? '')
         const plotRawRegen = splitDatingAiResponseAndUnifiedMemoryJson(aiTextRaw).plotRaw
         const parsed = extractAiPlotSections(plotRawRegen)
+        const langNormRegen = normalizeDatingLanguageSettings({
+          plotOutputLanguage: archive.plotOutputLanguage,
+          dialogueLanguage: archive.dialogueLanguage,
+          innerOsLanguage: archive.innerOsLanguage,
+          dialogueTranslationSyncEnabled: archive.dialogueTranslationSyncEnabled,
+          innerOsTranslationSyncEnabled: archive.innerOsTranslationSyncEnabled,
+          dialogueTranslationLanguage: archive.dialogueTranslationLanguage,
+        })
+        const finalizedRegen = await finalizeDatingPlotDialogueTranslations({
+          content: parsed.content,
+          syncEnabled: langNormRegen.dialogueTranslationSyncEnabled,
+          innerOsSyncEnabled: langNormRegen.innerOsTranslationSyncEnabled,
+          translationLanguage: langNormRegen.dialogueTranslationLanguage,
+          apiConfig: apiConfig as import('../../api/types').ApiConfig | null,
+          translationRuntime: translationRuntimeRef.current,
+          translationDedicatedApi: translationDedicatedApiRef.current === true,
+          speakerName: char.realName,
+          listenerName:
+            playerIdentity?.wechatNickname?.trim() || playerIdentity?.name?.trim() || '用户',
+          listenerGender:
+            playerIdentity?.gender === 'male' ||
+            playerIdentity?.gender === 'female' ||
+            playerIdentity?.gender === 'other'
+              ? playerIdentity.gender
+              : null,
+          speakerPersonaBrief: [
+            char.realName ? `姓名：${char.realName}` : '',
+            (char.identityTags ?? []).length ? `标签：${char.identityTags.join('、')}` : '',
+            String(char.prompt || '').trim().slice(0, 1100),
+          ]
+            .filter(Boolean)
+            .join('\n'),
+          relationHint: inferDatingRelationHintForTranslation({
+            characterName: char.realName,
+            playerName:
+              playerIdentity?.wechatNickname?.trim() || playerIdentity?.name?.trim() || '用户',
+            characterPrompt: char.prompt,
+            characterIdentity: (char.identityTags ?? []).join('、'),
+          }),
+        })
+        const parsedRegen = { ...parsed, content: finalizedRegen.content }
         const plotTsRegen = Date.now()
         const { timelineSnap: timelineSnapRegen, timelineDelta: timelineDeltaRegen } =
           await timelinePersistFieldsFromAiTextRaw(aiTextRaw, plotTsRegen, {
             apiConfig,
-            plotBody: parsed.content,
+            plotBody: parsedRegen.content,
             offlineBlock: memoryGather?.offlineBlock,
             characterId: char.id,
             characterRealName: char.realName,
@@ -3574,11 +3908,13 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         let nextPlot: PlotItem = {
           ...appendAiRegenerateVersion(
             plotSlot,
-            parsed.content,
-            parsed.logicPass || undefined,
-            parsed.planSummary,
+            parsedRegen.content,
+            parsedRegen.logicPass || undefined,
+            parsedRegen.planSummary,
             timelineSnapRegen,
             timelineDeltaRegen,
+            finalizedRegen.dialogueTranslations,
+            finalizedRegen.innerOsTranslations,
           ),
           timestamp: plotTsRegen,
           systemRecordedAt: plotTsRegen,
@@ -3687,6 +4023,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       writingGuide: string,
       lengthTargetChars: number,
       perspective: NarrativePerspective = 'second',
+      languages?: import('./types').PlotDimensionLanguageBundle,
     ) => {
       const charId = currentCharacter.id
       if (!charId) throw new Error('未选择角色')
@@ -3708,7 +4045,28 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       )
       const playerName =
         playerIdentity?.wechatNickname?.trim() || playerIdentity?.name?.trim() || null
-      const content = await generateDatingPlotDimensionAi({
+      const listenerGenderForTr =
+        playerIdentity?.gender === 'male' ||
+        playerIdentity?.gender === 'female' ||
+        playerIdentity?.gender === 'other'
+          ? playerIdentity.gender
+          : null
+      const languageSettings = buildDimensionLanguageSettingsFromArchive({
+        archive,
+        character: char,
+        playerName,
+        translationDedicatedApi: translationDedicatedApiRef.current === true,
+        languageOverride: languages
+          ? {
+              plotOutputLanguage: languages.plotOutputLanguage,
+              dialogueLanguage: languages.dialogueLanguage,
+              innerOsLanguage: languages.innerOsLanguage,
+            }
+          : null,
+      })
+      const apiCfg =
+        apiConfig?.apiUrl?.trim() && apiConfig?.apiKey?.trim() ? apiConfig : null
+      const rawContent = await generateDatingPlotDimensionAi({
         kind,
         character: char,
         anchorPlotBody: anchorBody,
@@ -3718,43 +4076,70 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         godPerspective: archive.godPerspective,
         mainCharacterOffstage: !!archive.mainCharacterOffstage,
         perspective,
-        apiConfig: apiConfig?.apiUrl?.trim() && apiConfig?.apiKey?.trim() ? apiConfig : null,
+        apiConfig: apiCfg,
         playerIdentityCardName: playerName,
+        outputLanguage: languageSettings.plotOutputLanguage,
+        isVnMode: archive.modePreference === 'vn',
+        languageSettings,
+      })
+      const finalized = await finalizeDatingDimensionTranslations({
+        content: rawContent,
+        languageSettings,
+        apiConfig: apiCfg as import('../../api/types').ApiConfig | null,
+        translationRuntime: translationRuntimeRef.current,
+        speakerName: char.realName,
+        listenerName: playerName || '用户',
+        listenerGender: listenerGenderForTr,
       })
       const parallelArtifactBase: PlotDimensionArtifact = {
-        content,
+        content: finalized.content,
         writingGuide: String(writingGuide ?? '').trim(),
         lengthTargetChars: parsePlotDimensionLengthTarget(lengthTargetChars, archive.datingLengthTargetChars ?? 500),
+        outputLanguage: languageSettings.plotOutputLanguage,
+        dialogueLanguage: languageSettings.dialogueLanguage ?? undefined,
+        innerOsLanguage: languageSettings.innerOsLanguage ?? undefined,
+        dialogueTranslations: finalized.dialogueTranslations,
+        innerOsTranslations: finalized.innerOsTranslations,
         updatedAt: Date.now(),
       }
-      let parallelEvent: PlotDimensionArtifact = parallelArtifactBase
-      if (kind === 'parallel') {
-        const timelineDelta = await resolveParallelEventSummaryDelta({
-          apiConfig: apiConfig?.apiUrl?.trim() && apiConfig?.apiKey?.trim() ? apiConfig : null,
-          mainCharacterId: charId,
-          plot: { ...plot, parallelEvent: parallelArtifactBase },
-          anchorPlotBody: anchorBody,
-        })
-        parallelEvent = timelineDelta
-          ? { ...parallelArtifactBase, timelineDelta }
-          : parallelArtifactBase
-      }
+      // 先落库正文，避免时间轴二次请求失败把已生成内容一起丢掉
       const patch =
-        kind === 'parallel' ? { parallelEvent } : { ifLine: parallelArtifactBase }
-      const nextStore = await applyArchivePatch(charId, (p) => ({
+        kind === 'parallel'
+          ? { parallelEvent: parallelArtifactBase }
+          : { ifLine: parallelArtifactBase }
+      let nextStore = await applyArchivePatch(charId, (p) => ({
         ...p,
         plots: p.plots.map((x) => (x.id === plotId ? { ...x, ...patch } : x)),
       }))
       if (kind === 'parallel') {
-        const nextPlots = nextStore[charId]?.plots ?? []
-        const rebuild = await rebuildStoryTimelineFromDatingPlots(charId, nextPlots, {
-          apiConfig: apiConfig?.apiUrl?.trim() && apiConfig?.apiKey?.trim() ? apiConfig : null,
-        })
-        if (rebuild.parallelSummaryPlotIds.includes(plotId)) {
-          const plotWithParallel = nextPlots.find((p) => p.id === plotId)
-          if (plotWithParallel) {
-            await notifyParallelSummaryTableWritten(char.realName, charId, plotWithParallel)
+        try {
+          const timelineDelta = await resolveParallelEventSummaryDelta({
+            apiConfig: apiCfg,
+            mainCharacterId: charId,
+            plot: { ...plot, parallelEvent: parallelArtifactBase },
+            anchorPlotBody: anchorBody,
+          })
+          if (timelineDelta) {
+            const withDelta: PlotDimensionArtifact = { ...parallelArtifactBase, timelineDelta }
+            nextStore = await applyArchivePatch(charId, (p) => ({
+              ...p,
+              plots: p.plots.map((x) =>
+                x.id === plotId ? { ...x, parallelEvent: withDelta } : x,
+              ),
+            }))
           }
+          const nextPlots = nextStore[charId]?.plots ?? []
+          const rebuild = await rebuildStoryTimelineFromDatingPlots(charId, nextPlots, {
+            apiConfig: apiCfg,
+          })
+          if (rebuild.parallelSummaryPlotIds.includes(plotId)) {
+            const plotWithParallel = nextPlots.find((p) => p.id === plotId)
+            if (plotWithParallel) {
+              await notifyParallelSummaryTableWritten(char.realName, charId, plotWithParallel)
+            }
+          }
+        } catch (e) {
+          console.warn('[dating] parallel timeline side-effects failed (正文已保存)', e)
         }
       }
     },
@@ -3781,6 +4166,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     setOfflineDanmakuEnabled,
     setDatingLengthTargetChars,
     patchPlotImageSettings,
+    patchDatingLanguageSettings,
     sendPlayerInput,
     stageBranchChoice,
     branchesLoading,
@@ -3793,6 +4179,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     updatePlotItem,
     setPlotVersionIndex,
     deletePlotItem,
+    backfillPlotTranslations,
     regenerateAiPlot,
     generatePlotDimension,
   }

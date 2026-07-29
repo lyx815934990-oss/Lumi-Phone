@@ -278,6 +278,17 @@ function ChapterShell({
   )
 }
 
+function DirectGenerateLockedNotice() {
+  return (
+    <div className="rounded-xl border border-neutral-200/80 bg-neutral-50 px-4 py-4">
+      <p className="text-[13px] font-medium text-neutral-800">本章已锁定</p>
+      <p className="mt-1 text-[12px] leading-relaxed text-neutral-400">
+        已勾选「直接生成该人物档案」，仅按身份页的参考人物生成。请回到「身份」关闭该开关后再填写本章。
+      </p>
+    </div>
+  )
+}
+
 export function PersonaAiGenerateDossierForm({
   form,
   patch,
@@ -326,6 +337,68 @@ export function PersonaAiGenerateDossierForm({
       >
         {activeTab === '01' ? (
           <ChapterShell code="01" en="IDENTITY" zh="身份锚定">
+            <div>
+              <SoftLabel en="Reference" zh="参考人物" />
+              <SoftArea
+                value={form.referencePersonaHint}
+                onChange={(v) => {
+                  const next = v
+                  patch(
+                    next.trim()
+                      ? { referencePersonaHint: next }
+                      : { referencePersonaHint: next, referencePersonaDirectGenerate: false },
+                  )
+                }}
+                placeholder="填写角色或人物名；可附作品名。多名用顿号或逗号分隔"
+                maxLength={300}
+                rows={2}
+              />
+              <div className="mt-2.5 flex items-center justify-between gap-3 rounded-xl bg-neutral-50 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-medium text-neutral-800">直接生成该人物档案</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-400">
+                    {form.referencePersonaDirectGenerate
+                      ? '已打开：仅按参考人物生成；下方及其他章节已锁定，无需再填'
+                      : '关闭 = 只借气质，可继续填写下方种子；打开 = 只按参考人物生成，锁定其余选项'}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <span
+                    className={`text-[10px] font-medium tracking-wide ${
+                      form.referencePersonaDirectGenerate ? 'text-neutral-800' : 'text-neutral-400'
+                    }`}
+                  >
+                    {form.referencePersonaDirectGenerate ? '原著' : '借鉴'}
+                  </span>
+                  <PlatinumSwitch
+                    checked={form.referencePersonaDirectGenerate}
+                    onChange={(next) => patch({ referencePersonaDirectGenerate: next })}
+                    disabled={!form.referencePersonaHint.trim()}
+                    aria-label="直接生成该人物档案"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div
+              className={`relative space-y-6 ${
+                form.referencePersonaDirectGenerate ? 'pointer-events-none select-none' : ''
+              }`}
+              aria-disabled={form.referencePersonaDirectGenerate || undefined}
+            >
+              {form.referencePersonaDirectGenerate ? (
+                <div className="rounded-xl border border-neutral-200/80 bg-neutral-50 px-4 py-3">
+                  <p className="text-[12px] font-medium text-neutral-800">其余选项已锁定</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-400">
+                    关闭「直接生成」后可继续填写姓名、外貌、亲密等种子
+                  </p>
+                </div>
+              ) : null}
+              <div
+                className={
+                  form.referencePersonaDirectGenerate ? 'opacity-40' : undefined
+                }
+              >
             <div className="flex flex-col items-center">
               <div className="mb-2.5 flex items-baseline justify-center gap-2">
                 <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-neutral-400">
@@ -565,11 +638,16 @@ export function PersonaAiGenerateDossierForm({
                 }
               />
             </div>
+              </div>
+            </div>
           </ChapterShell>
         ) : null}
 
         {activeTab === '02' ? (
           <ChapterShell code="02" en="APPEARANCE" zh="骨相皮囊">
+            {form.referencePersonaDirectGenerate ? (
+              <DirectGenerateLockedNotice />
+            ) : (
             <div className="space-y-3">
               <CollapsiblePresetZone
                 en="Hair Color"
@@ -748,11 +826,15 @@ export function PersonaAiGenerateDossierForm({
                 }
               />
             </div>
+            )}
           </ChapterShell>
         ) : null}
 
         {activeTab === '03' ? (
           <ChapterShell code="03" en="TRAJECTORY" zh="灵魂脉络">
+            {form.referencePersonaDirectGenerate ? (
+              <DirectGenerateLockedNotice />
+            ) : (
             <div className="space-y-3">
               <CollapsiblePresetZone
                 en="Backstory"
@@ -929,11 +1011,15 @@ export function PersonaAiGenerateDossierForm({
                 }
               />
             </div>
+            )}
           </ChapterShell>
         ) : null}
 
         {activeTab === '04' ? (
           <ChapterShell code="04" en="SOCIAL" zh="社交镜像">
+            {form.referencePersonaDirectGenerate ? (
+              <DirectGenerateLockedNotice />
+            ) : (
             <div className="space-y-3">
               <div>
                 <SoftLabel en="Social Circles" zh="人脉偏向" />
@@ -1016,11 +1102,15 @@ export function PersonaAiGenerateDossierForm({
                 }
               />
             </div>
+            )}
           </ChapterShell>
         ) : null}
 
         {activeTab === '05' ? (
           <ChapterShell code="05" en="INTIMACY" zh="亲密与宿命">
+            {form.referencePersonaDirectGenerate ? (
+              <DirectGenerateLockedNotice />
+            ) : (
             <div className="space-y-3">
               <CollapsiblePresetZone
                 en="The Connection"
@@ -1042,11 +1132,11 @@ export function PersonaAiGenerateDossierForm({
                 }
                 footer={
                   <div className="space-y-2">
-                    <p className="text-[11px] text-neutral-400">相识过程</p>
+                    <p className="text-[11px] text-neutral-400">相识过程（写入世界书「相遇羁绊」）</p>
                     <SoftArea
                       value={form.relationDetailHint}
                       onChange={(v) => patch({ relationDetailHint: v })}
-                      placeholder="你们如何认识、最近一次互动…"
+                      placeholder="如何认识、早期互动；将解释「对你现在」里看法的成因…"
                       maxLength={240}
                       rows={2}
                     />
@@ -1267,12 +1357,13 @@ export function PersonaAiGenerateDossierForm({
                 <SoftArea
                   value={form.extraNotes}
                   onChange={(v) => patch({ extraNotes: v })}
-                  placeholder="题材、禁忌、参考气质等…"
+                  placeholder="题材、禁忌、其他补充…"
                   maxLength={600}
                   rows={3}
                 />
               </div>
             </div>
+            )}
           </ChapterShell>
         ) : null}
       </motion.div>

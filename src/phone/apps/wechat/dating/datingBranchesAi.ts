@@ -6,7 +6,7 @@ import {
 import { buildWorldbookContext } from '../../../worldbook/buildWorldbookContext'
 import { getWorldbookLoreEntriesSnapshot } from '../../../worldbook/worldbookLoreStore'
 import type { ApiConfig } from '../../api/types'
-import { DATING_AI_MAX_OUTPUT_TOKENS, type BranchOption, type CharacterInfo } from './types'
+import { type BranchOption, type CharacterInfo } from './types'
 
 function uid(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -211,14 +211,14 @@ export async function generateDatingBranchesAi(params: {
 - 单条 card **必须 ≤20 个字**（按汉字计，含标点也算字符），超长会被直接截断。`
 
   const cardRule = godPerspective
-    ? `四条「card」均为**第三人称旁白**为主的一到两句短卡（用他/她/${character.realName} 等），符合上帝视角：写屏外可见动作或信息差；**禁止**把玩家写成叙事主「我」。凡文案指向玩家（心念、惦记、视线、话语对象），须用「你」，${banPlayerLegalName}；**禁止**用「你」指约会对象${character.realName}。
+    ? `四条「card」均为**第三人称旁白**为主的一到两句短卡（用他/她/${character.realName} 等），符合上帝视角·全篇锁定：写屏外可见动作或信息差；**禁止**把玩家写成叙事主「我」。凡文案指向玩家（心念、惦记、视线、话语对象），须用「你」，${banPlayerLegalName}；**禁止**用「你」指约会对象${character.realName}。
 ${formatBlock}
 - 格式示例（对白用「」，便于 JSON）：他把纸袋往桌角一推。「你定吧。」或：他指尖一顿，忽然想到了你。`
     : mainCharacterOffstage
-      ? `四条「card」均为**玩家视角**的一到两句短卡：只写玩家与 NPC/人脉将要做的事或说出口的话；**禁止** ${character.realName} 出场、被提及为在场或被写成互动对象（仅允许转述/消息侧写类 card）。立足点用「我」，${banPlayerLegalName}。
+      ? `四条「card」均为**玩家视角**的一到两句短卡（侧幕·全篇锁定）：只写玩家与 NPC/人脉将要做的事或说出口的话；**禁止** ${character.realName} 出场、被提及为在场或被写成互动对象（仅允许转述/消息侧写类 card）。立足点用「我」，${banPlayerLegalName}。
 ${formatBlock}
 - 格式示例：我朝王老师点点头。「能借一步说话吗？」`
-      : `四条「card」均为**玩家视角**的一到两句短卡：以玩家将要做的事、说出口的话或心里一闪念为主；**禁止**用第三人称写玩家；立足点用「我」，${banPlayerLegalName}（勿把大名当旁白主语）；**禁止**用「你」指玩家自身（易与约会对象混淆；对白「」内称呼对方除外）。
+      : `四条「card」以玩家将要做的事/说出口的话为主（视角未锁定，可按剧情偏当面、或偏一点屏外/侧幕信息差）；立足点用「我」，${banPlayerLegalName}；**禁止**用「你」指玩家自身（对白「」内称呼对方除外）。
 ${formatBlock}
 - 若玩家当场开口，对白用「…」括起来；**禁止**内心OS；若只有动作/决定，可全旁白。
 - 格式示例：我靠近一步。「别躲。」`
@@ -260,7 +260,7 @@ ${STYLE_ORDER.map((s) => `「${s}」`).join('、')}
     const raw = await openAiCompatibleChat(
       apiConfig as ApiConfig,
       [messagesBase, { role: 'user', content: userPayload }],
-      { temperature: attempt === 0 ? 0.52 : 0.35, max_tokens: DATING_AI_MAX_OUTPUT_TOKENS },
+      { temperature: attempt === 0 ? 0.52 : 0.35 },
     )
     try {
       parsed = parseBranchesJsonArray(raw)

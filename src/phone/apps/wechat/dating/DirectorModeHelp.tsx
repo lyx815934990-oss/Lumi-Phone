@@ -85,7 +85,7 @@ export function DirectorModeHelpPanel(props: { open: boolean; onClose: () => voi
             <div>
               <p className="text-[17px] font-semibold tracking-tight text-stone-900">玩法说明</p>
               <p className="mt-1 text-[12px] leading-relaxed text-stone-500">
-                下面几个开关可以单独开，也可以组合用；不能同时开的会标在卡片上。
+                上帝与侧幕互斥；都不勾时按混合视角续写。其它开关可组合。
               </p>
             </div>
             <button
@@ -116,10 +116,10 @@ export function DirectorModeHelpPanel(props: { open: boolean; onClose: () => voi
           <ModeCard
             icon={<Eye className="size-[18px]" strokeWidth={1.75} />}
             title="上帝视角"
-            badge={<ModeBadge tone="amber">不能和侧幕叙写一起开</ModeBadge>}
+            badge={<ModeBadge tone="amber">勾选后全篇锁定 · 不能和侧幕一起开</ModeBadge>}
           >
             <p>
-              只写「你看不见的地方」：约会对象或路人在别处干什么；这一轮里没有你本人，也不会直接跟你说话。
+              勾选后这一轮**整段**只写「你看不见的地方」：约会对象或路人在别处干什么；没有你本人，也不会直接跟你说话。
             </p>
             <p className="rounded-xl bg-stone-50 px-3 py-2 text-[12px] text-stone-500 ring-1 ring-stone-100">
               开着的时候，AI 不会替你写你这一轮说了什么、做了什么。
@@ -129,12 +129,23 @@ export function DirectorModeHelpPanel(props: { open: boolean; onClose: () => voi
           <ModeCard
             icon={<Users className="size-[18px]" strokeWidth={1.75} />}
             title="侧幕叙写"
-            badge={<ModeBadge tone="violet">不能和上帝视角一起开</ModeBadge>}
+            badge={<ModeBadge tone="violet">勾选后全篇锁定 · 不能和上帝一起开</ModeBadge>}
           >
             <p>
-              这一轮约会对象先不出场，只写你和其他人脉、路人之间的对话和场面；你可以正常在场互动。
+              勾选后这一轮**整段**约会对象先不出场，只写你和其他人脉、路人之间的对话和场面；你可以正常在场互动。
             </p>
             <p className="text-[12px] text-stone-500">适合社团、上班、偶遇路人等「对象不在眼前」的段落。</p>
+          </ModeCard>
+
+          <ModeCard
+            icon={<CircleHelp className="size-[18px]" strokeWidth={1.75} />}
+            title="都不勾选时"
+            badge={<ModeBadge tone="neutral">混合开放 · 默认</ModeBadge>}
+          >
+            <p>
+              不勾上帝、也不勾侧幕时，AI 按剧情自己判断怎么续写：大多还是当面互动，也可以穿插一点屏外镜头或对象不在场时的侧幕，不必整轮锁死一种视角。
+            </p>
+            <p className="text-[12px] text-stone-500">想整轮纯上帝或纯侧幕时，再勾对应开关即可。</p>
           </ModeCard>
 
           <ModeCard
@@ -146,7 +157,7 @@ export function DirectorModeHelpPanel(props: { open: boolean; onClose: () => voi
               同一条剧情正在发生的那个时刻，在另一个地方同时还在发生什么——像「镜头切到隔壁房间」。用旁白写，不是当前这条线里谁的视角。
             </ModePoint>
             <ModePoint label="怎么用：">
-              发剧情前勾选，会跟这一轮一起生成；也可以点某条 AI 剧情右边的「平行事件」单独补写，还能填想写什么、写多长。
+              发剧情前勾选，会跟这一轮一起生成（语言跟随「旁白语言」）；也可以点某条 AI 剧情右边的「平行事件」单独补写，还能填想写什么、写多长、选生成语言。
             </ModePoint>
             <ModePoint label="存到哪里：">
               全文在卡片里能看；还会记进剧情时间轴：约会对象那边只记「不知道的事」，平行里出现的人脉各记一条（他们的打算、伏笔只写本人相关的）。
@@ -168,7 +179,7 @@ export function DirectorModeHelpPanel(props: { open: boolean; onClose: () => voi
               「要是当时选了另一条路会怎样」的假想小片段，纯脑洞，不算真正发生过的事。
             </ModePoint>
             <ModePoint label="怎么用：">
-              发剧情前勾选会一起生成；也可以点剧情卡片右边的「IF线」单独写。
+              发剧情前勾选会一起生成（语言跟随「旁白语言」）；也可以点剧情卡片右边的「IF线」单独写，并可选生成语言。
             </ModePoint>
             <ModePoint label="存到哪里：">
               只存在这张卡片里，自己看；不进剧情时间轴，也不影响后面 AI 怎么写主线。

@@ -1,0 +1,18 @@
+{
+  "name": "discord-resource-bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 execute discord-resource-bot --local --file=./schema.sql",
+    "db:migrate:remote": "wrangler d1 execute discord-resource-bot --remote --file=./schema.sql",
+    "db:migrate:files": "wrangler d1 execute discord-resource-bot --remote --file=./schema-migrate-files.sql",
+    "register-commands": "node ./scripts/register-commands.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260722.1",
+    "typescript": "^5.8.2",
+    "wrangler": "^4.14.0"
+  }
+}

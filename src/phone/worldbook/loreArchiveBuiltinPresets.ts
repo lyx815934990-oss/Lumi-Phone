@@ -3,11 +3,13 @@ import {
   LUMI_DOCTRINE_OF_LOVE_APPENDIX,
 } from '../apps/wechat/wechatReplyOutputPrompt'
 import { OFFLINE_DATING_RICH_INNER_OS_APPENDIX } from '../apps/wechat/dating/offlineDatingRichInnerOsAppendix'
+import { PURE_RESTRAIN_LOVE_APPENDIX } from '../apps/wechat/pureRestrainLoveAppendix'
 
 /** 档案室系统内置预设（仅开关，正文不对用户展示） */
 export type LoreArchiveBuiltinPresetId =
   | 'lumiDoctrineOfLove'
   | 'activeConfession'
+  | 'pureRestrainLove'
   | 'offlineRichInnerOs'
 
 export type LoreArchiveBuiltinPresetToggles = Partial<Record<LoreArchiveBuiltinPresetId, boolean>>
@@ -32,6 +34,12 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
       '系统内置：打破暧昧循环，在适当时机完成情感交付与告白演绎。开启后注入 AI，正文不可查看或编辑。',
   },
   {
+    id: 'pureRestrainLove',
+    title: '纯爱克制',
+    description:
+      '系统内置：好感生效后约束克制纯爱气质——直球但不压迫、暗戳戳心动、尊重边界、禁止强制爱。开启后注入线上/线下 AI，正文不可查看或编辑。',
+  },
+  {
     id: 'offlineRichInnerOs',
     title: '线下约会·多内心 OS 描写',
     description:
@@ -45,6 +53,7 @@ export function resolveLoreArchiveBuiltinPresetToggles(
   return {
     lumiDoctrineOfLove: raw?.lumiDoctrineOfLove !== false,
     activeConfession: raw?.activeConfession !== false,
+    pureRestrainLove: raw?.pureRestrainLove !== false,
     offlineRichInnerOs: raw?.offlineRichInnerOs !== false,
   }
 }
@@ -54,13 +63,14 @@ export function buildWechatReplyRomanceSections(
 ): string {
   const resolved = resolveLoreArchiveBuiltinPresetToggles(toggles)
   const parts: string[] = []
-  if (resolved.lumiDoctrineOfLove || resolved.activeConfession) {
+  if (resolved.lumiDoctrineOfLove || resolved.activeConfession || resolved.pureRestrainLove) {
     parts.push(
-      '【内置恋爱参考·效力说明】下列爱情观/告白引擎为中性相处参考，**低于**角色档案与人设世界书；气质、主动程度与表达方式以人设为准，禁止写成霸总或强势主导。',
+      '【内置恋爱参考·效力说明】下列爱情观/告白/纯爱克制引擎为中性相处参考，**低于**角色档案与人设世界书；气质、主动程度与表达方式以人设为准，禁止写成霸总或强势主导；其中「尊重边界、禁止强制爱」为硬底线。',
     )
   }
   if (resolved.lumiDoctrineOfLove) parts.push(LUMI_DOCTRINE_OF_LOVE_APPENDIX)
   if (resolved.activeConfession) parts.push(CHARACTER_EMOTION_CONFESSION_ENGINE_APPENDIX)
+  if (resolved.pureRestrainLove) parts.push(PURE_RESTRAIN_LOVE_APPENDIX)
   return parts.filter(Boolean).join('\n\n')
 }
 
@@ -82,6 +92,12 @@ export function buildWechatThinkingChainRomanceSteps(
     )
     stepNo += 1
   }
+  if (resolved.pureRestrainLove) {
+    steps.push(
+      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「纯爱克制」（先判关系阶段；直球不压迫；萌而不自知/害羞；情侣亲密须先忍再问；禁止强制爱与非情侣越级；条文已在输出协议；禁止复述）`,
+    )
+    stepNo += 1
+  }
   return steps.join('\n')
 }
 
@@ -99,6 +115,11 @@ ${LUMI_DOCTRINE_OF_LOVE_APPENDIX}`)
     parts.push(`【{{char}} 情感破冰与告白演绎引擎】
 以下为情感推进参考；须在思维链中校准是否触发破冰/告白，但**节奏与语气服从人设世界书**；禁止为「推进」改成霸总腔：
 ${CHARACTER_EMOTION_CONFESSION_ENGINE_APPENDIX}`)
+  }
+  if (resolved.pureRestrainLove) {
+    parts.push(`【纯爱克制】
+以下为纯爱相处参考；须在思维链中对照自检（**先判好感/暧昧/已确立情侣**、直球不压迫、萌而不自知、害羞外显、非情侣禁止吻与吻手等越级亲密、情侣须先忍再问、禁止强制爱），但**气质与表达强度服从人设**；「尊重边界」为硬底线：
+${PURE_RESTRAIN_LOVE_APPENDIX}`)
   }
   if (resolved.offlineRichInnerOs) {
     parts.push(`【线下约会·多内心 OS 描写引擎】

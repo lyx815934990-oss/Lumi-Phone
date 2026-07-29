@@ -10,14 +10,19 @@ import { ApiPresetImageGenSection } from '../components/ApiPresetImageGenSection
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ToggleSwitch } from '../components/ToggleSwitch'
 import { TopNav } from '../components/TopNav'
-import type { ApiPreset, SubApiType } from '../types'
+import type { ApiPreset, SubApiType, TranslationProviderId } from '../types'
 import { API_LINK_PREVIEW_ROUTE } from '../linkPreviewDisplayLabels'
+import { TRANSLATION_PROVIDER_OPTIONS } from '../translationProviders'
 
 const SUB_META: Record<SubApiType, { title: string; desc: string }> = {
   xinyu: { title: '心语', desc: '用于生成约会心语内容' },
   chatCard: { title: '聊天记录卡片', desc: '用于生成聊天记录卡片文案' },
   danmaku: { title: '弹幕', desc: '用于生成弹幕内容' },
   voiceAsr: { title: '语音识别', desc: '用于语音通话长按麦克风转文字' },
+  translation: {
+    title: '翻译',
+    desc: '默认由聊天模型输出译文；勾选「使用副接口」后可接 DeepL / Google / Azure / 百度 / 有道 / 腾讯云或独立 OpenAI 兼容模型',
+  },
 }
 
 type EditTab = 'main' | 'sub' | 'imageGen'
@@ -280,10 +285,23 @@ export function ApiPresetEditPage() {
             {(Object.keys(SUB_META) as SubApiType[]).map((k) => {
               const meta = SUB_META[k]
               const sub = draft.sub[k]
+              if (!sub) return null
+              const provider = (sub.translationProvider || 'openai') as TranslationProviderId
+              const patchTranslation = (patch: Partial<(typeof draft.sub)['translation']>) => {
+                setDirty(true)
+                setDraft((s) => ({
+                  ...s,
+                  updatedAt: Date.now(),
+                  sub: {
+                    ...s.sub,
+                    translation: { ...(s.sub.translation ?? sub), ...patch },
+                  },
+                }))
+              }
               return (
                 <div key={k} className="mx-4 mt-3 rounded-2xl bg-white p-5" style={{ boxShadow: apiTheme.shadow }}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1 pr-2">
                       <p className="text-[16px] font-semibold" style={{ color: apiTheme.text }}>
                         {meta.title}
                       </p>
@@ -291,28 +309,8 @@ export function ApiPresetEditPage() {
                         {meta.desc}
                       </p>
                     </div>
-                    {k !== 'voiceAsr' ? (
-                      <div className="flex items-center gap-2">
-                        <p className="text-[12px]" style={{ color: apiTheme.subText }}>
-                          使用主接口
-                        </p>
-                        <ToggleSwitch
-                          checked={sub.useMainApi}
-                          onChange={(v) => {
-                            setDirty(true)
-                            setDraft((s) => ({
-                              ...s,
-                              updatedAt: Date.now(),
-                              sub: {
-                                ...s.sub,
-                                [k]: { ...s.sub[k], useMainApi: v, apiConfig: v ? s.sub[k].apiConfig : s.sub[k].apiConfig },
-                              },
-                            }))
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
+                    {k === 'voiceAsr' ? (
+                      <div className="flex shrink-0 items-center gap-2">
                         <p className="text-[12px]" style={{ color: apiTheme.subText }}>
                           {sub.enabled ? '开启' : '关闭'}
                         </p>
@@ -340,10 +338,222 @@ export function ApiPresetEditPage() {
                           />
                         </button>
                       </div>
+                    ) : k === 'translation' ? (
+                      <div className="flex shrink-0 items-center gap-2">
+                        <p className="text-[12px] whitespace-nowrap" style={{ color: apiTheme.subText }}>
+                          使用副接口
+                        </p>
+                        <ToggleSwitch
+                          checked={sub.enabled === true}
+                          onChange={(v) =>
+                            patchTranslation({
+                              enabled: v,
+                              useMainApi: false,
+                            })
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex shrink-0 items-center gap-2">
+                        <p className="text-[12px]" style={{ color: apiTheme.subText }}>
+                          使用主接口
+                        </p>
+                        <ToggleSwitch
+                          checked={!!sub.useMainApi}
+                          onChange={(v) => {
+                            setDirty(true)
+                            setDraft((s) => ({
+                              ...s,
+                              updatedAt: Date.now(),
+                              sub: {
+                                ...s.sub,
+                                [k]: { ...s.sub[k], useMainApi: v },
+                              },
+                            }))
+                          }}
+                        />
+                      </div>
                     )}
                   </div>
 
-                  {(k === 'voiceAsr' ? !voiceAsrCollapsed : true) && (k === 'voiceAsr' || !sub.useMainApi) ? (
+                  {k === 'translation' && sub.enabled === true ? (
+                    <div className="mt-4 space-y-3">
+                      <p className="text-[12px] leading-relaxed" style={{ color: apiTheme.subText }}>
+                        已开启翻译副接口：同步翻译将调用下方服务商，不再由聊天模型写译文。关闭则恢复由模型同轮输出。
+                      </p>
+                      <div>
+                        <p className="mb-2 text-[13px]" style={{ color: apiTheme.subText }}>
+                          翻译服务商
+                        </p>
+                        <select
+                          value={provider}
+                          onChange={(e) => {
+                            const next = e.target.value as TranslationProviderId
+                            patchTranslation({
+                              translationProvider: next,
+                              useMainApi: false,
+                            })
+                          }}
+                          className="w-full rounded-xl bg-white px-4 py-3 text-[15px] outline-none"
+                          style={{ border: `1px solid ${apiTheme.border}`, color: apiTheme.text }}
+                        >
+                          {TRANSLATION_PROVIDER_OPTIONS.map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.label} — {o.desc}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {provider === 'openai' ? (
+                        <p className="text-[12px] leading-relaxed" style={{ color: apiTheme.subText }}>
+                          OpenAI 兼容将直接使用本预设的主接口地址、密钥与模型发起翻译请求。
+                        </p>
+                      ) : null}
+
+                      {provider === 'deepl' ? (
+                        <div className="space-y-3">
+                          <label className="block">
+                            <span className="text-[13px]" style={{ color: apiTheme.subText }}>
+                              DeepL Auth Key
+                            </span>
+                            <input
+                              value={sub.apiConfig.apiKey}
+                              onChange={(e) =>
+                                patchTranslation({
+                                  apiConfig: { ...sub.apiConfig, apiKey: e.target.value },
+                                })
+                              }
+                              className="mt-1 w-full rounded-xl px-4 py-3 text-[15px] outline-none"
+                              style={{ border: `1px solid ${apiTheme.border}` }}
+                              placeholder="DeepL-Auth-Key …"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="text-[13px]" style={{ color: apiTheme.subText }}>
+                              套餐端点
+                            </span>
+                            <select
+                              value={sub.deeplPlan === 'pro' ? 'pro' : 'free'}
+                              onChange={(e) =>
+                                patchTranslation({ deeplPlan: e.target.value === 'pro' ? 'pro' : 'free' })
+                              }
+                              className="mt-1 w-full rounded-xl px-4 py-3 text-[15px] outline-none"
+                              style={{ border: `1px solid ${apiTheme.border}` }}
+                            >
+                              <option value="free">Free（api-free.deepl.com）</option>
+                              <option value="pro">Pro（api.deepl.com）</option>
+                            </select>
+                          </label>
+                        </div>
+                      ) : null}
+
+                      {provider === 'google' ? (
+                        <label className="block">
+                          <span className="text-[13px]" style={{ color: apiTheme.subText }}>
+                            Google Cloud Translation API Key
+                          </span>
+                          <input
+                            value={sub.apiConfig.apiKey}
+                            onChange={(e) =>
+                              patchTranslation({
+                                apiConfig: { ...sub.apiConfig, apiKey: e.target.value },
+                              })
+                            }
+                            className="mt-1 w-full rounded-xl px-4 py-3 text-[15px] outline-none"
+                            style={{ border: `1px solid ${apiTheme.border}` }}
+                          />
+                        </label>
+                      ) : null}
+
+                      {provider === 'azure' ? (
+                        <div className="space-y-3">
+                          <label className="block">
+                            <span className="text-[13px]" style={{ color: apiTheme.subText }}>
+                              Azure 订阅密钥
+                            </span>
+                            <input
+                              value={sub.apiConfig.apiKey}
+                              onChange={(e) =>
+                                patchTranslation({
+                                  apiConfig: { ...sub.apiConfig, apiKey: e.target.value },
+                                })
+                              }
+                              className="mt-1 w-full rounded-xl px-4 py-3 text-[15px] outline-none"
+                              style={{ border: `1px solid ${apiTheme.border}` }}
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="text-[13px]" style={{ color: apiTheme.subText }}>
+                              区域（如 eastasia）
+                            </span>
+                            <input
+                              value={sub.azureRegion || 'eastasia'}
+                              onChange={(e) => patchTranslation({ azureRegion: e.target.value })}
+                              className="mt-1 w-full rounded-xl px-4 py-3 text-[15px] outline-none"
+                              style={{ border: `1px solid ${apiTheme.border}` }}
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+
+                      {provider === 'baidu' || provider === 'youdao' || provider === 'tencent' ? (
+                        <div className="space-y-3">
+                          <label className="block">
+                            <span className="text-[13px]" style={{ color: apiTheme.subText }}>
+                              {provider === 'baidu'
+                                ? 'APP ID'
+                                : provider === 'youdao'
+                                  ? '应用 ID（appKey）'
+                                  : 'SecretId'}
+                            </span>
+                            <input
+                              value={sub.translationAppId || ''}
+                              onChange={(e) => patchTranslation({ translationAppId: e.target.value })}
+                              className="mt-1 w-full rounded-xl px-4 py-3 text-[15px] outline-none"
+                              style={{ border: `1px solid ${apiTheme.border}` }}
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="text-[13px]" style={{ color: apiTheme.subText }}>
+                              {provider === 'baidu'
+                                ? '密钥'
+                                : provider === 'youdao'
+                                  ? '应用密钥（appSecret）'
+                                  : 'SecretKey'}
+                            </span>
+                            <input
+                              value={sub.apiConfig.apiKey}
+                              onChange={(e) =>
+                                patchTranslation({
+                                  apiConfig: { ...sub.apiConfig, apiKey: e.target.value },
+                                })
+                              }
+                              className="mt-1 w-full rounded-xl px-4 py-3 text-[15px] outline-none"
+                              style={{ border: `1px solid ${apiTheme.border}` }}
+                            />
+                          </label>
+                          {provider === 'tencent' ? (
+                            <label className="block">
+                              <span className="text-[13px]" style={{ color: apiTheme.subText }}>
+                                地域（如 ap-guangzhou）
+                              </span>
+                              <input
+                                value={sub.tencentRegion || 'ap-guangzhou'}
+                                onChange={(e) => patchTranslation({ tencentRegion: e.target.value })}
+                                className="mt-1 w-full rounded-xl px-4 py-3 text-[15px] outline-none"
+                                style={{ border: `1px solid ${apiTheme.border}` }}
+                              />
+                            </label>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {k !== 'translation' &&
+                  (k === 'voiceAsr' ? !voiceAsrCollapsed : true) &&
+                  (k === 'voiceAsr' || !sub.useMainApi) ? (
                     <div className="mt-4">
                       <ApiConfigBlock
                         title="独立配置"

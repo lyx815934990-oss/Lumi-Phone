@@ -37,6 +37,10 @@ import { formatHeartWhisperGenerateError, HeartWhisperModal } from '../HeartWhis
 import { resolveCharacterAvatarUrl } from '../../../utils/characterAvatarUrl'
 import { useDating, vnRollbackJumpStorageKey } from './DatingContext'
 import {
+  DatingLanguageSettingsButton,
+  normalizeDatingLanguageSettings,
+} from './DatingLanguageSettingsPanel'
+import {
   isDatingPlotContentHintActive,
   subscribeDatingPlotContentHint,
 } from './datingPlotGenerationEvents'
@@ -284,6 +288,8 @@ type VnSplitBubble = {
   text: string
   speaker: string | null
   isInnerThought: boolean
+  /** 可同步翻译的角色对白（非旁白/内心） */
+  isSpokenDialogue: boolean
   bgmCueName: string | null
   backgroundCueName: string | null
   isFlashback: boolean
@@ -424,6 +430,7 @@ function splitVnContentToBubbles(
     const tagged = splitTaggedVnLine(lineForBubble)
     let speaker: string | null = null
     let isInnerThoughtLine = false
+    let isSpokenDialogue = false
     let clean = ''
     if (tagged.mode === 'tagged-narration') {
       clean = sanitizeDanglingThoughtMarker(String(tagged.body || '').replace(/\*\*/g, ''))
@@ -444,6 +451,7 @@ function splitVnContentToBubbles(
       const parsed = parseVnBubble(tagged.body, defaultSpeaker)
       if (!parsed.text) continue
       speaker = String(parsed.speaker || '').trim() || null
+      isSpokenDialogue = true
       clean = sanitizeDanglingThoughtMarker(String(parsed.text || '').replace(/\*\*/g, ''))
       if (userDisplayName?.trim()) {
         clean = stripMisplacedYouInDialogueBody(clean, userDisplayName.trim(), speaker)
@@ -452,6 +460,7 @@ function splitVnContentToBubbles(
       const parsed = parseVnBubble(lineForBubble, defaultSpeaker)
       if (parsed.speaker && parsed.text) {
         speaker = String(parsed.speaker || '').trim() || null
+        isSpokenDialogue = true
         clean = sanitizeDanglingThoughtMarker(String(parsed.text || '').replace(/\*\*/g, ''))
         if (userDisplayName?.trim()) {
           clean = stripMisplacedYouInDialogueBody(clean, userDisplayName.trim(), speaker)
@@ -476,6 +485,7 @@ function splitVnContentToBubbles(
         text: t,
         speaker,
         isInnerThought: isInnerThoughtLine,
+        isSpokenDialogue: isSpokenDialogue && !isInnerThoughtLine,
         bgmCueName: chunkIdx === 0 ? pendingBgmCue : null,
         backgroundCueName: chunkIdx === 0 ? pendingBgCue : null,
         isFlashback: flashbackMode,
@@ -617,6 +627,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     setGenerateIfLineOnSend,
     setDatingLengthTargetChars,
     patchPlotImageSettings,
+    patchDatingLanguageSettings,
     sendPlayerInput,
     stageBranchChoice,
     branchesLoading,
@@ -1863,6 +1874,43 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     return vnCurrentBubble?.speaker ?? null
   }, [vnCurrentBubble])
   const vnBubbleIsInnerThought = useMemo(() => !!vnCurrentBubble?.isInnerThought, [vnCurrentBubble])
+  const vnBubbleTranslationText = useMemo(() => {
+    if (vnCurrentBubble?.isSpokenDialogue) {
+      const list = latestAi?.dialogueTranslations
+      if (!list?.length) return undefined
+      const src = String(vnCurrentBubble.text || '').trim()
+      if (!src) return undefined
+      const byText = list.find((t) => t.source.trim() === src)?.translatedText?.trim()
+      if (byText) return byText
+      let spokenIdx = -1
+      for (let i = 0; i <= vnBubbleIndex && i < vnBubbles.length; i += 1) {
+        if (vnBubbles[i]?.isSpokenDialogue) spokenIdx += 1
+      }
+      if (spokenIdx < 0) return undefined
+      return list[spokenIdx]?.translatedText?.trim() || undefined
+    }
+    if (vnCurrentBubble?.isInnerThought) {
+      const list = latestAi?.innerOsTranslations
+      if (!list?.length) return undefined
+      const src = String(vnCurrentBubble.text || '').trim()
+      if (!src) return undefined
+      const byText = list.find((t) => t.source.trim() === src)?.translatedText?.trim()
+      if (byText) return byText
+      let osIdx = -1
+      for (let i = 0; i <= vnBubbleIndex && i < vnBubbles.length; i += 1) {
+        if (vnBubbles[i]?.isInnerThought) osIdx += 1
+      }
+      if (osIdx < 0) return undefined
+      return list[osIdx]?.translatedText?.trim() || undefined
+    }
+    return undefined
+  }, [
+    latestAi?.dialogueTranslations,
+    latestAi?.innerOsTranslations,
+    vnBubbleIndex,
+    vnBubbles,
+    vnCurrentBubble,
+  ])
   const vnFlashbackOn = useMemo(() => !!vnCurrentBubble?.isFlashback, [vnCurrentBubble])
   const vnEffectiveBackgroundCueName = useMemo(() => {
     // 背景指令应“持续生效”直到下一条背景指令出现，避免闪回中途回弹到旧背景。
@@ -3483,6 +3531,17 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                 </div>
               </div>
               <div className="mb-2 flex flex-wrap items-center gap-2">
+                <DatingLanguageSettingsButton
+                  value={normalizeDatingLanguageSettings({
+                    plotOutputLanguage: currentArchive.plotOutputLanguage,
+                    dialogueLanguage: currentArchive.dialogueLanguage,
+                    innerOsLanguage: currentArchive.innerOsLanguage,
+                    dialogueTranslationSyncEnabled: currentArchive.dialogueTranslationSyncEnabled,
+                    innerOsTranslationSyncEnabled: currentArchive.innerOsTranslationSyncEnabled,
+                    dialogueTranslationLanguage: currentArchive.dialogueTranslationLanguage,
+                  })}
+                  onPatch={patchDatingLanguageSettings}
+                />
                 <div
                   className="inline-flex flex-wrap items-center gap-2 rounded-full border border-stone-200/90 bg-stone-50/70 px-2.5 py-1.5"
                   title={
@@ -3862,6 +3921,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                 onDisabledVoiceClick={() => showVnToast('已禁用语音合成，可在 VN 菜单关闭后恢复')}
                 onContinue={handleVnContinue}
                 showContinueHint={!vnBoxLoading}
+                translationText={vnBubbleTranslationText}
               >
                 {vnBubble.text}
               </VNDialogBox>
@@ -3869,6 +3929,20 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
           </div>
 
           <div className="absolute inset-x-0 bottom-0 z-20 px-4">
+            <div className="mb-2 flex justify-end">
+              <DatingLanguageSettingsButton
+                dark
+                value={normalizeDatingLanguageSettings({
+                  plotOutputLanguage: currentArchive.plotOutputLanguage,
+                  dialogueLanguage: currentArchive.dialogueLanguage,
+                  innerOsLanguage: currentArchive.innerOsLanguage,
+                  dialogueTranslationSyncEnabled: currentArchive.dialogueTranslationSyncEnabled,
+                  innerOsTranslationSyncEnabled: currentArchive.innerOsTranslationSyncEnabled,
+                  dialogueTranslationLanguage: currentArchive.dialogueTranslationLanguage,
+                })}
+                onPatch={patchDatingLanguageSettings}
+              />
+            </div>
             <VNBottomControls
               isAutoPlay={isAutoPlay}
               playSpeed={playSpeed}
@@ -3985,6 +4059,18 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
               </button>
             </div>
             <div className="space-y-2 px-4 py-4">
+              <DatingLanguageSettingsButton
+                value={normalizeDatingLanguageSettings({
+                  plotOutputLanguage: currentArchive.plotOutputLanguage,
+                  dialogueLanguage: currentArchive.dialogueLanguage,
+                  innerOsLanguage: currentArchive.innerOsLanguage,
+                  dialogueTranslationSyncEnabled: currentArchive.dialogueTranslationSyncEnabled,
+                  innerOsTranslationSyncEnabled: currentArchive.innerOsTranslationSyncEnabled,
+                  dialogueTranslationLanguage: currentArchive.dialogueTranslationLanguage,
+                })}
+                onPatch={patchDatingLanguageSettings}
+                className="inline-flex w-full items-center justify-between gap-2 rounded-xl border border-stone-200 bg-stone-50/80 px-3 py-2.5 text-[13px] text-[#262626]"
+              />
               <div className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50/80 px-3 py-2.5">
                 <div className="flex min-w-0 items-center gap-1">
                   <p className="text-[13px] font-medium text-[#262626]">导演模式</p>

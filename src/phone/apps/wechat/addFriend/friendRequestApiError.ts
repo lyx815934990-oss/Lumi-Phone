@@ -18,9 +18,10 @@ export function formatApiClientError(err: unknown, emptyFallback = '请求失败
     lower.includes('failed to fetch') ||
     lower.includes('networkerror') ||
     lower.includes('load failed') ||
+    lower.includes('network request failed') ||
     lower.includes('网络')
   ) {
-    return '网络请求失败，请检查 API 地址、密钥与网络连接后重试。'
+    return '网络请求中断（浏览器未收到完整响应）。网关侧可能已生成成功；请再试一次，或换更稳的线路/缩短目标字数。'
   }
   if (lower.includes('unauthorized') || lower.includes('401') || lower.includes('invalid api key')) {
     return 'API 密钥无效或未授权，请在 API 设置中检查配置。'
@@ -36,6 +37,21 @@ export function formatApiClientError(err: unknown, emptyFallback = '请求失败
   if (!trimmed) return emptyFallback
   if (trimmed.length > 160) return `${trimmed.slice(0, 160)}…`
   return trimmed
+}
+
+/** Safari/Chrome 常见瞬时网络失败（网关可能已出完整结果） */
+export function isTransientNetworkError(err: unknown): boolean {
+  const raw = err instanceof Error ? err.message : String(err ?? '')
+  const lower = raw.toLowerCase()
+  return (
+    lower.includes('failed to fetch') ||
+    lower.includes('networkerror') ||
+    lower.includes('load failed') ||
+    lower.includes('network request failed') ||
+    lower.includes('the network connection was lost') ||
+    lower.includes('ns_error_net') ||
+    lower === 'load failed'
+  )
 }
 
 /** 将模型 API 原始错误转为「新的朋友」场景下的可读说明（勿直接 alert 英文服务端报错） */

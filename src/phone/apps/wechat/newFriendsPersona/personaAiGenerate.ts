@@ -18,6 +18,7 @@ import {
   parsePersonaAiCompactSectionsFromParsed,
 } from './personaAiWorldBooks'
 import { parsePersonaAiModelOutput } from './personaAiGenerateMarkup'
+import { rewriteMeetWorldbookNamesToPlaceholders } from '../../lumiMeet/meetWorldbookPlaceholders'
 import { DEFAULT_WORLD_BACKGROUND_ID } from './worldBackgroundConstants'
 import {
   auditPersonaAiGenerateResult,
@@ -137,7 +138,7 @@ function assemblePersonaCharacter(parsed: Record<string, unknown>, params: Assem
   const worldBooks = buildPersonaAiWorldBooks(
     characterId,
     wechatNickname,
-    null,
+    realName,
     now,
     sections,
     params.playerDisplayName,
@@ -150,11 +151,17 @@ function assemblePersonaCharacter(parsed: Record<string, unknown>, params: Assem
     },
   )
 
-  const bio =
+  const placeholderIds = {
+    nickname: wechatNickname,
+    realName,
+    userDisplayName: params.playerDisplayName,
+  }
+  const bioRaw =
     pickStr(parsed.bio, 400) ||
     (hasComprehensive
       ? buildPersonaSummaryFromComprehensive(comprehensive as ComprehensivePersona)
       : '')
+  const bio = rewriteMeetWorldbookNamesToPlaceholders(bioRaw, placeholderIds)
 
   const openingLines = ''
   // 立体人设生成不产出开场白；若模型仍输出则丢弃，留给用户日后填写
@@ -266,6 +273,8 @@ export async function generatePersonaWithAi(params: {
     relationToUser: params.form.relationToUser,
     nsfwHint: params.form.nsfwHint,
     includeRelationshipHistory: Boolean(params.form.relationshipHistoryHint.trim()),
+    referencePersonaDirectGenerate: Boolean(params.form.referencePersonaDirectGenerate),
+    referencePersonaHint: params.form.referencePersonaHint,
   })
   const user = buildPersonaAiGenerateUserPrompt({
     form: params.form,
@@ -319,6 +328,8 @@ export async function repairPersonaAiWithAi(params: {
     relationToUser: params.form.relationToUser,
     mode: params.mode,
     includeRelationshipHistory: Boolean(params.form.relationshipHistoryHint.trim()),
+    referencePersonaDirectGenerate: Boolean(params.form.referencePersonaDirectGenerate),
+    referencePersonaHint: params.form.referencePersonaHint,
   })
   const user = buildPersonaAiRepairUserPrompt({
     form: params.form,

@@ -16,6 +16,7 @@ import { LUMI_SYSTEM_OVERRIDE_APPENDIX } from '../wechatReplyOutputPrompt'
 import {
   PERSONA_AI_COMPACT_ENTRY_NAMES,
   PERSONA_AI_TOWARD_USER_ENTRY_NAME,
+  PERSONA_AI_MEETING_BOND_ENTRY_NAME,
   PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME,
   PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
   personaAiOrientationHostEntryName,
@@ -59,12 +60,18 @@ export function buildPersonaAiNeutralProseRules(): string {
 /** 世界书条目目标篇幅 */
 export const PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS = 500
 
-export function buildPersonaAiCompactEntryLengthRules(): string {
+export function buildPersonaAiCompactEntryLengthRules(opts?: {
+  referencePersonaDirectGenerate?: boolean
+}): string {
+  const refDirect = opts?.referencePersonaDirectGenerate === true
+  const npcLen = refDirect
+    ? `- 「周边NPC」：**不设 3–5 人上限**；按原著开篇及与 {{char}}（若 {{user}} 同作相关则亦含与 {{user}}）有稳定关系的具名配角**尽量写全**（每人一小段，约 60–120 字，须含与 {{char}}、必要时与 {{user}}、以及与名单内其他配角的原著关系）；本条总字数可达 800–2500，勿为凑「约 500 字」而砍角色。仅露脸一次的无名路人可略。`
+    : `- 「周边NPC」按 3–5 个具名配角分条写满，合计仍约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字。`
   return `
 【世界书条目篇幅】
-- 每条 content **约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字**（含标点，允许 420–580）；信息写满，勿用空形容词凑字。
-- 全部 ${PERSONA_AI_COMPACT_ENTRY_NAMES.length} 条均须达到该量级；禁止只写一两句或标签罗列就结束。
-- 「周边NPC」按 3–5 个具名配角分条写满，合计仍约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字。`.trim()
+- 除「周边NPC」在直接生成模式下的特殊规则外：每条 content **约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字**（含标点，允许 420–580）；信息写满，勿用空形容词凑字。
+- 全部 ${PERSONA_AI_COMPACT_ENTRY_NAMES.length} 条均须达到信息量级；禁止只写一两句或标签罗列就结束。
+${npcLen}`.trim()
 }
 
 /** 亲密偏向：指恋人一律写「对方」 */
@@ -83,7 +90,7 @@ export function buildPersonaAiPlayerIdentityContextBlock(
   if (!playerIdentity) return ''
   const lines: string[] = [
     '【绑定玩家身份 · 必须完整参考】',
-    '撰写「对你现在」等**明确指 {{user}}** 的字段时，须与下列玩家基础资料与世界书一致；禁止把 {{user}} 写成与此矛盾的性别、身份、性格或经历。',
+    '撰写「相遇羁绊」「对你现在」等**明确指 {{user}}** 的字段时，须与下列玩家基础资料与世界书一致；禁止把 {{user}} 写成与此矛盾的性别、身份、性格或经历。',
     '「亲密与恋爱观」指恋人/亲密对象一律写「对方」，禁止男人/女人，不在该条用 {{user}} 代指泛化恋人。',
   ]
   const name = playerIdentity.name?.trim() || playerIdentity.wechatNickname?.trim()
@@ -177,13 +184,13 @@ export function buildPersonaAiPlayerUserGenderRules(playerGender: Gender | undef
   const base = playerIdentityGenderRulesForAi(playerGender)
   if (playerGender === 'male') {
     return `${base}
-【{{user}} 性别铁律 · 男】适用于「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」等明确以 {{user}} 为对象的字段：
+【{{user}} 性别铁律 · 男】适用于「${PERSONA_AI_MEETING_BOND_ENTRY_NAME}」「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」等明确以 {{user}} 为对象的字段：
 - 须按**男性身体**描写；禁止把 {{user}} 写成女性。
 - 「亲密与恋爱观」仍写「对方」，禁止男人/女人；不在该条用 {{user}} 代指泛化恋人。`
   }
   if (playerGender === 'female') {
     return `${base}
-【{{user}} 性别铁律 · 女】适用于「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」等明确以 {{user}} 为对象的字段：
+【{{user}} 性别铁律 · 女】适用于「${PERSONA_AI_MEETING_BOND_ENTRY_NAME}」「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」等明确以 {{user}} 为对象的字段：
 - 须按**女性身体**描写；禁止把 {{user}} 写成男性。
 - 「亲密与恋爱观」仍写「对方」，禁止男人/女人；不在该条用 {{user}} 代指泛化恋人。`
   }
@@ -209,15 +216,16 @@ function buildPersonaAiPlatonicIntimacyRules(relationToUser: string): string {
 【非恋爱关系 · 亲密条目分工】
 先自行判断用户关系原文「${rel}」是否已确立暧昧/恋爱：
 - 若尚未确立： 「亲密与恋爱观」只写一般亲密观/恋爱反差模板（指恋人写「对方」），禁止把 {{user}} 写成当前暗恋或性幻想对象。
-- 对 {{user}} 的当下态度只写在「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」。`.trim()
+- 对 {{user}} 的当下态度只写在「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」；相识过程与看法成因写在「${PERSONA_AI_MEETING_BOND_ENTRY_NAME}」。`.trim()
 }
 
 function buildPersonaAiRelationTowardUserRules(relationToUser: string, orientationMutable: boolean): string {
   const rel = relationToUser.trim() || '普通熟人'
   const lines = [
     `【关系向铁律 · 由你读原文判断投入程度】`,
-    `与 {{user}} 的关系原文是「${rel}」。请先理解其投入程度（陌生 / 认识但不在意 / 熟人 / 朋友 / 暧昧 / 恋人等），再写「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」。`,
-    `- **强度对齐**：心里真实分量、称呼分寸、回消息节奏必须与原文一致；原文偏淡就写淡，原文已亲近就写亲近。禁止无依据抬高或压低。`,
+    `与 {{user}} 的关系原文是「${rel}」。请先理解其投入程度（陌生 / 认识但不在意 / 熟人 / 朋友 / 暧昧 / 恋人等），再写「${PERSONA_AI_MEETING_BOND_ENTRY_NAME}」与「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」。`,
+    `- **分工**：「${PERSONA_AI_MEETING_BOND_ENTRY_NAME}」写如何相识及看法成因；「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」写**当前**态度、称呼分寸、相处边界与心里分量。两处须因果自洽，禁止整段互相复述。`,
+    `- **强度对齐**：「对你现在」里心里真实分量、称呼分寸、回消息节奏必须与原文一致；原文偏淡就写淡，原文已亲近就写亲近。禁止无依据抬高或压低。`,
     `- **禁止默认恋爱化**：关系原文未表达好感/暧昧/恋爱时，禁止写成暗恋、好感萌芽、嘴硬心软、暗中关注、「其实有点在意」，也禁止用「持续加分后可能心动」「勿写死永不可能恋爱」当开局心声。`,
     `- **禁止错位陌生化**：原文已表明互相认识或更近时，禁止写成完全不认识的陌生人话术。`,
     `- 禁止输出【开场白】。`,
@@ -234,6 +242,90 @@ export function buildPersonaAiRelationContextRules(form: PersonaAiGenerateForm):
   ]
     .filter(Boolean)
     .join('\n\n')
+}
+
+/** 参考人物：气质借鉴 vs 直接生成原著人物（含绑定身份对应相关角色时的原著关系） */
+export function buildPersonaAiReferencePersonaRules(form: PersonaAiGenerateForm): string {
+  const seed = form.referencePersonaHint.trim()
+  if (!seed) return ''
+  if (!form.referencePersonaDirectGenerate) {
+    return [
+      '【参考人物使用规则 · 气质借鉴】',
+      `- 参考种子：「${seed}」`,
+      '- 仅提炼性格、口吻、相处节奏、反差与习惯作灵感；须原创姓名与经历，禁止把原作角色名/真实全名当成本角色真名。',
+      '- 禁止大段复述原作剧情或照搬完整人设档案；输出须是可独立使用的原创微信人设。',
+      '- 与上方表单其它明确种子冲突时：以表单字段为准，参考人物只补气质与节奏。',
+    ].join('\n')
+  }
+  return [
+    '【参考人物使用规则 · 直接生成 · 最高优先级硬约束】',
+    `- 用户指定直接生成：「${seed}」`,
+    '- **本输出的 {{char}} 必须就是该人物本体**，不是「受其启发的原创角色」。',
+    '- **姓名落点**：汉字全名/常用名只写在顶层「真实姓名」「微信昵称」；世界书与简介正文里指本角色**只用** `{{char}}`，禁止「佐佐木{{char}}」「{{char}}佐佐木」「佐佐木（{{char}}）」等同指叠写。',
+    '- **禁止另起炉灶**：禁止换成无关姓名、无关性别、无关职业与无关世界观（例如把原作男学生改成便利店女性、都市白领等）。',
+    '- 姓名、性别、年龄层、外貌、性格、口吻、兴趣、身份/学年职业，一律按该人物原著或已知公开形象落实。',
+    '- 世界观、校园/时代背景须贴合该作品；允许非「都市职场」设定。',
+    '- 表单里的默认性别、默认年龄区间、默认「都市接地气职业」**全部无效**，不得据此改写原著人物。',
+    '- 仅当用户在「真实姓名偏向 / 年龄 / 职业 / 外貌 / 性格 / 补充说明」等栏**亲手写了明确改写**时，才可按改写微调；未填写处一律原著。',
+    '- 若只写了姓氏或简称（如「佐佐木」），须识别为该常见原作人物并生成其完整档案，禁止借同名另创路人。',
+    '',
+    '【绑定身份 × 原著关系】',
+    '- 先对照上方【绑定玩家身份】的姓名、简介、职业等，判断 {{user}} 是否对应参考人物所在作品中的相关角色（含同作搭档、同学、恋人线对象等；姓名可简称/谐音/部分匹配）。',
+    '- **若是相关角色**：',
+    '  1) 初始关系、相识背景、互动习惯一律按原著开篇/已知早期关系生成，可覆盖「陌生人/普通熟人」等表单关系标签（除非用户在「初始关系」或「相识过程」明确要求改时间线）。',
+    '  2) 「相遇羁绊」必须写原著开篇时二人如何相识/已有何种交集，以及这些经历如何导向当下看法；「对你现在」写开篇时 {{char}} 对该对应角色的真实看法、距离感与相处状态（含已有好感/在意/照顾欲等，开篇已有则如实写）。',
+    '  3) 世界书须体现原著关系网与日常互动；「周边NPC」见下方【周边NPC · 原著硬约束】与【周边NPC × 绑定身份】：配角除与 {{char}} 的关系外，还须写清对 {{user}} 对应人物的原著看法（护短/熟悉/敌意等），禁止配角对 {{user}} 像路人。',
+    '- **若无关或无法对应**：仍必须生成该参考人物本体；与 {{user}} 的关系按表单「初始关系/相识过程」落实，勿强行塞入原著搭档线；周边配角不必硬写对 {{user}} 的原著关系。',
+    '',
+    buildPersonaAiReferencePersonaNpcRules(form),
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+/** 直接生成模式下「周边NPC」须对齐原著开篇的身份/年龄，禁止都市魔改 */
+export function buildPersonaAiReferencePersonaNpcRules(form: PersonaAiGenerateForm): string {
+  const seed = form.referencePersonaHint.trim()
+  if (!seed || !form.referencePersonaDirectGenerate) return ''
+  return [
+    '【周边NPC · 原著硬约束】',
+    `- 参考作品/人物：「${seed}」`,
+    '- 「周边NPC」须写该作品**原著开篇/故事起点及日常圈**里出现的具名配角，不是另起都市原创路人。',
+    '- **数量：不设 3–5 人硬上限**。凡开篇已出场、或与 {{char}}（及同作 {{user}} 对应人物）有稳定互动/亲属/同学/死党/敌对等关系的具名角色，**尽量全部写入**；宁多勿漏主要配角。仅露脸一次、无名字或无互动的路人可略。',
+    '- **姓名、身份、年龄/年级、与 {{char}} 关系** 四项必须全部对齐原著；禁止「只有名字对、身份年龄瞎编」。',
+    '- 每人简档须含：姓名；**原著身份**（学年/班级/社团职务/家人称谓/同校关系等）；**年龄或年级**；与 {{char}} 的关系；一两句性格与**开篇**状态。',
+    '- **配角彼此关系（硬项）**：名单内配角若在原著中彼此有稳定关系（室友/死党/前后辈/情侣或单向好感/敌对/家人等），**必须在双方简档里互相写清**，不可只写各自与 {{char}} 的关系、把彼此写成无关路人。例：平野与键浦既是室友，也有互相在意/好感向的相处，双方条目都要点到，禁止只写「室友」而抹掉情感线。',
+    '- 写法可用「与××：……」分句；指名单内其他配角用其汉字姓名即可（勿用 {{char}}/{{user}} 指代他们）。',
+    '- **禁止都市化魔改**：不得把原著角色写成保安、编辑部职员、便利店员、公司白领、社畜、物业、路人警察等与原作世界观无关的成年职场身份（除非原著开篇就是该身份）。',
+    '- **禁止年龄漂移**：校园/少年向作品配角须保持学生年龄层或原著设定年龄，不得拉到 20–38 岁成人区间凑字数。',
+    '- **禁止「近况」乱编**：不得写原著未发生的打工、转职、离职、都市社交等后续原创情节来填篇幅。',
+    '- 若某配角原著细节记不清：只写原著确定的最小信息（姓名+已知关系+已知身份），宁可短也不要编都市身份。',
+    '- 「人际与秘密」只写关系类型与态度；具名配角的身份/年龄细节**只在「周边NPC」写，且必须原著一致**。',
+    '',
+    '【周边NPC × 绑定身份 {{user}} · 同作硬约束】',
+    '- 先对照【绑定玩家身份】判断 {{user}} 是否对应参考作品中的相关角色（如宫野↔操作者扮演宫野；姓名可简称/谐音/部分匹配）。',
+    '- **若是同作相关角色（最高优先级）**：',
+    '  1) **禁止**把「{{user}} 对应的那个人」再当作周边 NPC 名单里的另一人重复建档（避免一人两份）。',
+    '  2) 每个周边配角简档除「与 {{char}} 关系」外，**必须另写「对 {{user}}」**：开篇时该配角对 {{user}} 对应人物的关系类型、熟悉度、称呼习惯、护短/关照/敌意/平常相处等原著态度。',
+    '  3) 原著里护着/亲近/敌视 {{user}} 对应人物的配角（例：护宫野的平野），**禁止**写成与 {{user}} 互不相识、路人、或「只认识 {{char}}、当 {{user}} 不存在」。',
+    '  4) 写法可用「对 {{user}}：……」分句；正文指操作者只用 {{user}}，勿写「玩家」。',
+    '- **若无关或无法对应**：周边配角仍只写与 {{char}} 的关系；**不要**硬编对 {{user}} 的原著关系。',
+  ].join('\n')
+}
+
+/** 直接生成时的开篇铁律（置于 user prompt 最前） */
+export function buildPersonaAiReferencePersonaLeadBanner(form: PersonaAiGenerateForm): string {
+  const seed = form.referencePersonaHint.trim()
+  if (!seed || !form.referencePersonaDirectGenerate) return ''
+  return [
+    '════ 最高优先级（先于其后一切默认种子）════',
+    `直接生成原著/已知人物：「${seed}」→ {{char}} 必须是此人，禁止另创毫不相干角色。`,
+    '表单默认「女 / 20–38 岁 / 都市接地气职业」等未手填项一律让位给该人物原著设定（含性别与身份）。',
+    '「周边NPC」：不设 3–5 上限，原著开篇/日常圈具名配角尽量写全；姓名/身份/年龄须对齐原著，禁止保安、编辑部等都市魔改。',
+    '配角彼此若有原著关系（室友/好感/死党等）须在双方简档互相写清，禁止只写各自与 {{char}} 的线。',
+    '若绑定身份是同作相关角色：每个周边配角还须写「对 {{user}}」的原著关系与看法，禁止护短配角把 {{user}} 当陌生人。',
+    '════════════════════════════════════',
+  ].join('\n')
 }
 
 function parseNsfwHintTokens(hint: string): string[] {
@@ -283,10 +375,15 @@ export function buildPersonaAiGenerateSystemPrompt(opts?: {
   relationToUser?: string
   nsfwHint?: string
   includeRelationshipHistory?: boolean
+  referencePersonaDirectGenerate?: boolean
+  referencePersonaHint?: string
 }): string {
   const orientationMutable = opts?.orientationMutable ?? false
   const includeHistory = opts?.includeRelationshipHistory ?? false
   const nsfwEnabled = opts?.nsfwEnabled ?? false
+  const refDirect =
+    Boolean(opts?.referencePersonaDirectGenerate) && Boolean((opts?.referencePersonaHint ?? '').trim())
+  const refSeed = (opts?.referencePersonaHint ?? '').trim()
   const rel = (opts?.relationToUser ?? '').trim() || '普通熟人'
   const nsfwLine = nsfwEnabled
     ? `【NSFW 已开启】「亲密与恋爱观」可直白描写（身体/动作/反应）；指恋人写「对方」；禁止超雄 caricature。用户种子：${(opts?.nsfwHint ?? '').trim() || '（未填，按人设自洽补全）'}`
@@ -323,11 +420,23 @@ ${LUMI_SYSTEM_OVERRIDE_APPENDIX}`.trim()
   const historyEntryRule = includeHistory
     ? `5b. ${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}（序言）：过往感情/前任余波与模式影响；禁止写成与 {{user}} 当前关系\n`
     : ''
+  const roleLine = refDirect
+    ? `你是中文角色档案设计师。用户要求**直接生成已知人物「${refSeed}」本体**，须按原著/公开形象落实，禁止另创毫不相干原创角色；世界观随原作（可为校园等），不限都市职场。`
+    : '你是中文都市向角色档案设计师。用户填写为**创作种子**，须优化扩写、彼此自洽。'
+  const refHardLine = refDirect
+    ? `\n【直接生成硬约束】{{char}} =「${refSeed}」对应人物；姓名/性别/年龄层/身份/外貌气质必须对得上。禁止因表单默认女、默认都市职业等改写成无关角色。未手填改写栏一律原著优先。\n【周边NPC】**不设 3–5 人上限**：原著开篇及与 {{char}}（同作 {{user}} 亦然）有稳定关系的具名配角尽量写全；每人含姓名、原著身份/学年、年龄或年级、与 {{char}} 关系；配角彼此有原著关系（室友/好感/死党等）须双方互相写清；禁止都市魔改。若 {{user}} 为同作相关角色：每人还须写「对 {{user}}」；禁止把本该认识 {{user}} 的配角写成互不相识。\n`
+    : ''
+  const npcEntryLine = refDirect
+    ? `7. 周边NPC：**不设人数硬上限**；写全原著开篇/日常圈具名配角（与 {{char}} 或同作 {{user}} 有稳定关系者宁多勿漏；无名路人可略）。每人须写姓名、**原著身份/学年**、**年龄或年级**、与 {{char}} 关系、性格与开篇状态；配角彼此有原著关系（室友/好感/死党/前后辈等）须在双方简档互相写清，禁止只写各自与 {{char}}；禁止都市魔改。**禁止把配角写成 {{user}} 本人**。若 {{user}} 为同作相关角色：每人必须另写「对 {{user}}」；护短/亲近线禁止写成不认识 {{user}}；勿与「人际与秘密」整段重复`
+    : `7. 周边NPC：3–5 个围绕 {{char}} 的具名配角简档（姓名、与 {{char}} 关系、一两句性格与近况），贴合人脉偏向；禁止写 {{user}}；勿与「人际与秘密」整段重复`
+  const ageRulesBlock = refDirect
+    ? `【年龄例外 · 直接生成】{{char}} 与「周边NPC」的年龄/学年/生日须按原著开篇设定，不受「都市成人常见区间」默认影响；学生配角不得拉到 20–38 岁。\n\n${MEET_ENCOUNTER_AI_AGE_AND_BIRTHDAY_RULES}`
+    : MEET_ENCOUNTER_AI_AGE_AND_BIRTHDAY_RULES
 
   return `
 ${internalCot}
 
-你是中文都市向角色档案设计师。用户填写为**创作种子**，须优化扩写、彼此自洽。
+${roleLine}${refHardLine}
 必须按下方【输出格式】写**纯文本标记**；**禁止 JSON**、禁止 Markdown 围栏、禁止解释。
 
 顶层须齐全：真实姓名、微信昵称、年龄、性别、性取向、职业、座右铭、微信号、个性签名、生日、身高、体重、MBTI、兴趣（3）、雷点（2）、【简介】，以及世界书${wbCount}条（${extraBits ? `${extraBits} + ` : ''}【${PERSONA_AI_COMPACT_ENTRY_NAMES.join('】【')}】）。
@@ -335,15 +444,16 @@ ${internalCot}
 
 ${buildPersonaAiMarkupFormatSpec({ orientationMutable, includeRelationshipHistory: includeHistory })}
 
-正文要求（第三人称；**中性朴实**，拒绝标签堆砌与油腻形容词；每条约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字）：
+正文要求（第三人称；**中性朴实**，拒绝标签堆砌与油腻形容词；除「周边NPC」外每条约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字）：
 1. 名片基础：身份一句话摘要、年龄层、职业、对外标签与雷点；勿写对 {{user}} 态度
 2. 形象与气质：发色/发型、身形、日常·通勤·正式或约会等场合穿搭偏好、气质气场与第一印象（具体可想象，勿堆空词）
 3. 性格内核：面具与底色、三观优缺、身世情绪、反差萌${coreRule}；勿写对 {{user}} 专属态度
 ${orientEntryRule}4. 能力与日常：技能爱好、社交态度、口语口头禅（含 2–4 条引语）、癖好与生活习惯
 5. 亲密与恋爱观：一般亲密观与边界 + **恋爱前 / 恋爱后 / 吃醋 / 与恋人冲突** 四态；指恋人写「对方」；对 {{user}} 当下态度勿写在此${intimateRule}；NSFW 开启时可写亲密 XP
-${historyEntryRule}6. 人际与秘密：对不同关系（家人/友人/同事/对立面）的态度差异；自身秘密软肋反差萌；禁止与 {{user}} 相关；具名细则写「周边NPC」
-7. 周边NPC：3–5 个围绕 {{char}} 的具名配角简档（姓名、与 {{char}} 关系、一两句性格与近况），贴合人脉偏向；禁止写 {{user}}；勿与「人际与秘密」整段重复
-8. 对你现在：对 {{user}} 的当前态度、称呼分寸、相处边界与心里分量；可含相识过程侧写；**先读懂关系原文「${rel}」的投入程度再写**，强度必须对齐，禁止无依据抬成好感/潜在心动
+${historyEntryRule}6. 人际与秘密：对不同关系（家人/友人/同学/社团${refDirect ? '' : '/同事/对立面'}）的态度差异；自身秘密软肋反差萌；禁止与 {{user}} 相关；具名细则写「周边NPC」
+${npcEntryLine}
+8. 相遇羁绊：{{char}} 与 {{user}} 如何相识（场合/契机/早期互动），以及这些经历如何形成「对你现在」里的看法；写过程与成因，勿整段复述当前态度
+9. 对你现在：对 {{user}} 的**当前**态度、称呼分寸、相处边界与心里分量；**先读懂关系原文「${rel}」的投入程度再写**，强度必须对齐，禁止无依据抬成好感/潜在心动；相识故事留给「相遇羁绊」
 
 性别指 {{char}}（男/女/其他）；MBTI 须为 ${MEET_MBTI_SIXTEEN.join('、')} 之一（用户指定则必须采用）。
 【简介】80–220 字，至少 2 次 {{char}}，禁止 {{user}}。
@@ -356,13 +466,15 @@ ${nsfwLine}
 
 ${buildPersonaAiIntimatePartnerWordingRules()}
 
-${buildPersonaAiCompactEntryLengthRules()}
+${buildPersonaAiCompactEntryLengthRules({ referencePersonaDirectGenerate: refDirect })}
 
 占位符：世界书正文指角色用 {{char}}、指玩家用 {{user}}；简介只用 {{char}}。禁止全文出现「玩家」二字。
+禁止把汉字真名与 {{char}}/{{user}} 叠写或括号并注（错误例：佐佐木{{char}}、{{char}}宫野、平野（{{user}}））；真名只出现在顶层姓名字段，正文一律占位符。
+周边NPC 条目里其他配角可写其汉字姓名，但指本角色/玩家仍须用 {{char}}/{{user}}。
 
 ${buildPersonaAiHealthyToneRules()}
 
-${MEET_ENCOUNTER_AI_AGE_AND_BIRTHDAY_RULES}
+${ageRulesBlock}
 
 ${NPC_AI_HEIGHT_WEIGHT_MOTTO_RULES_CORE}
 
@@ -380,22 +492,69 @@ export function buildPersonaAiGenerateUserPrompt(params: {
   worldBackgroundPrompt?: string
 }): string {
   const { form } = params
+  const refDirect = Boolean(form.referencePersonaDirectGenerate && form.referencePersonaHint.trim())
+
+  if (refDirect) {
+    const lines = [
+      '请**仅按参考人物**直接生成完整微信主角人设（纯文本标记格式，禁止 JSON）。',
+      '用户已锁定其余表单：性别/年龄/职业/外貌/性格等表单种子全部无效，禁止参考、禁止据此改写。',
+      '',
+      buildPersonaAiReferencePersonaLeadBanner(form),
+      '',
+      `【参考人物 · 唯一生成依据】${form.referencePersonaHint.trim()}`,
+      '【真实姓名】采用该人物原名（可含姓）',
+      '【性别 / 年龄 / 身份】一律按原著开篇',
+      '【外貌 / 性格 / 口吻 / 兴趣】一律按原著已知形象',
+      '【性取向】按原著已知取向或公开形象自洽设定，写入「性格内核」',
+      '【MBTI】16 型择一，须贴合该人物气质',
+      '【雷点】提炼恰好 2 个，写入顶层与「名片基础」',
+      '【恋爱四态】按该人物气质补全恋爱前/后/吃醋/冲突',
+      '【亲密】清水写法，禁止露骨',
+      '【与 {{user}} 初始关系】若绑定身份对应原著相关角色则按原著开篇；否则按普通熟人低投入（勿写成无依据好感）',
+      '【人脉】「周边NPC」不设 3–5 上限：原著开篇/日常圈具名配角尽量写全；每人含姓名、原著身份/学年、年龄或年级、与 {{char}} 关系；配角彼此原著关系须双方互相写清；若 {{user}} 为同作相关角色，每人还须写「对 {{user}}」；禁止都市魔改身份',
+    ].filter(Boolean)
+
+    const identityContext = buildPersonaAiPlayerIdentityContextBlock(params.playerIdentity)
+    if (identityContext.trim()) lines.push('', identityContext)
+    const playerGender = params.playerIdentity?.gender ?? params.playerGender ?? null
+    const playerGenderRules = buildPersonaAiPlayerUserGenderRules(playerGender)
+    if (playerGenderRules.trim()) lines.push('', '【绑定玩家性别 · {{user}}】', playerGenderRules)
+    const dn = params.playerDisplayName?.trim()
+    if (dn) lines.push(`【绑定玩家展示名参考】${dn}（正文仍用 {{user}}）`)
+    const referenceRules = buildPersonaAiReferencePersonaRules(form)
+    if (referenceRules.trim()) lines.push('', referenceRules)
+    if (params.worldBackgroundPrompt?.trim()) {
+      lines.push(`【世界背景】\n${params.worldBackgroundPrompt.trim()}`)
+    }
+    lines.push(
+      '',
+      `请按【输出格式】输出纯文本：顶层键值行 +【简介】+ 世界书各【段落】。禁止输出【开场白】。禁止 JSON。`,
+      `世界书除「周边NPC」外每条正文约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字；「周边NPC」在直接生成时按人数写全，总字数可更长。描述用中性词，禁止超雄/极端用语与八股油腻形容词。`,
+      '简介不写对 {{user}} 的态度；「相遇羁绊」写如何相识及看法成因；「对你现在」若判定绑定身份为原著相关角色，按原著开篇看法如实写（含已有在意/好感亦须保留），否则按普通熟人低投入。「周边NPC」不设人数硬上限，原著开篇/日常圈具名配角尽量写全；每人须原著身份+年龄/年级+与 {{char}} 关系；配角彼此有原著关系须双方互相写清（如室友兼好感）；若 {{user}} 为同作相关角色，每人还须写「对 {{user}}」（护短配角禁止当 {{user}} 不认识），禁止把配角写成 {{user}} 本人；禁止保安/编辑部等都市魔改；秘密只写角色自身；占位符 {{char}}/{{user}}（禁止真名与占位符叠写）。最后自检：配角名单是否漏掉主要原著角色、配角彼此关系是否只写了与 {{char}}、对 {{user}} 熟悉度是否符合原著，若已漂移必须作废重写。',
+    )
+    return lines.join('\n')
+  }
+
   const mbti = form.mbtiHint.trim()
   const orientation = form.orientationHint.trim()
   const appearanceSeed = composePersonaAiAppearanceSeed(form)
   const socialCircleSeed = composePersonaAiSocialCircleSeed(form)
   const loveContrastSeed = composePersonaAiLoveContrastSeed(form)
+  const genderLabel =
+    form.gender === 'male' ? '男' : form.gender === 'female' ? '女' : '其他'
   const lines = [
     '请根据下列用户设定，生成完整微信主角人设（纯文本标记格式，禁止 JSON）。',
     '',
     '【填写说明】下列均为**创作种子**，须优化扩写、彼此自洽，不得机械照抄。',
     '',
-    `【角色性别 · {{char}}】${form.gender === 'male' ? '男' : form.gender === 'female' ? '女' : '其他'}`,
+    `【角色性别 · {{char}}】${genderLabel}`,
     form.nameHint.trim()
       ? `【真实姓名偏向】${form.nameHint.trim()}`
       : '【真实姓名】由你设定 2–4 字中文姓名',
     form.ageHint.trim() ? `【年龄方向】${form.ageHint.trim()}` : '【年龄方向】20–38 岁常见区间',
-    form.occupationHint.trim() ? `【职业/身份方向】${form.occupationHint.trim()}` : '【职业/身份】都市接地气职业',
+    form.occupationHint.trim()
+      ? `【职业/身份方向】${form.occupationHint.trim()}`
+      : '【职业/身份】都市接地气职业',
     appearanceSeed
       ? `【外貌/形象】${appearanceSeed}（写入「形象与气质」：发色发型、身形、场合穿搭、气质气场）`
       : '【外貌/形象】须写发色发型、身形、场合穿搭偏好与气质，与职业性格自洽',
@@ -426,10 +585,10 @@ export function buildPersonaAiGenerateUserPrompt(params: {
         ? `【性取向】由你设定；单独写入尾声「${PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME}」；「性格内核」勿写取向`
         : '【性取向】由你设定，写入「性格内核」',
     form.relationToUser.trim()
-      ? `【与 {{user}} 初始关系】${form.relationToUser.trim()}（「对你现在」须贴合；内心分量强度不得高于该关系；勿写开场白）`
+      ? `【与 {{user}} 初始关系】${form.relationToUser.trim()}（「相遇羁绊」「对你现在」须贴合；内心分量强度不得高于该关系；勿写开场白）`
       : '【与 {{user}} 初始关系】普通熟人（低投入：心里分量轻，勿写成潜在好感）',
     form.relationDetailHint.trim()
-      ? `【与 {{user}} 相识过程】${form.relationDetailHint.trim()}（写入「对你现在」侧写）`
+      ? `【与 {{user}} 相识过程】${form.relationDetailHint.trim()}（写入「相遇羁绊」；「对你现在」只写当前态度）`
       : '',
     form.relationshipHistoryHint.trim()
       ? `【感情史】${form.relationshipHistoryHint.trim()}（角色过往；须单独写入世界书「${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}」；不是与 {{user}} 当前关系；勿并入「亲密与恋爱观」长文）`
@@ -448,6 +607,9 @@ export function buildPersonaAiGenerateUserPrompt(params: {
         ? `【性癖 XP】${form.nsfwHint.trim()}（写入「亲密与恋爱观」亲密段；指恋人写「对方」）`
         : '【性癖 XP】已开启，自行直白补全「亲密与恋爱观」'
       : '【亲密】清水写法，禁止露骨',
+    form.referencePersonaHint.trim()
+      ? `【参考人物 · 气质借鉴】${form.referencePersonaHint.trim()}`
+      : '',
     form.extraNotes.trim() ? `【补充】${form.extraNotes.trim()}` : '',
   ].filter(Boolean)
 
@@ -462,6 +624,8 @@ export function buildPersonaAiGenerateUserPrompt(params: {
   if (playerGenderRules.trim()) lines.push('', '【绑定玩家性别 · {{user}}】', playerGenderRules)
   const dn = params.playerDisplayName?.trim()
   if (dn) lines.push(`【绑定玩家展示名参考】${dn}（正文仍用 {{user}}）`)
+  const referenceRules = buildPersonaAiReferencePersonaRules(form)
+  if (referenceRules.trim()) lines.push('', referenceRules)
   if (params.worldBackgroundPrompt?.trim()) {
     lines.push(`【世界背景】\n${params.worldBackgroundPrompt.trim()}`)
   }
@@ -469,7 +633,7 @@ export function buildPersonaAiGenerateUserPrompt(params: {
     '',
     `请按【输出格式】输出纯文本：顶层键值行 +【简介】+ 世界书各【段落】。禁止输出【开场白】。禁止 JSON。`,
     `每条世界书正文约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字；描述用中性词，禁止超雄/极端用语与八股油腻形容词。`,
-    '简介不写对 {{user}} 的态度；「对你现在」先读懂关系原文投入程度再写，禁止无依据抬高好感；「周边NPC」写具名配角简档且勿写 {{user}}；秘密只写角色自身；占位符 {{char}}/{{user}}。',
+    '简介不写对 {{user}} 的态度；「相遇羁绊」写如何相识及看法成因；「对你现在」先读懂关系原文投入程度再写，禁止无依据抬高好感；「周边NPC」写具名配角简档且勿写 {{user}}；秘密只写角色自身；占位符 {{char}}/{{user}}（禁止真名与占位符叠写）。',
   )
   return lines.join('\n')
 }

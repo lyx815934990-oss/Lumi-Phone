@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Lumi DC 入门验证：按钮答题、仅本人可见、全对给身份组",
+  "description": "Lumi DC：入门验证 + 论坛资源分享（反应校验 / 下载统计）",
   "scripts": {
     "start": "node src/index.js",
     "register-commands": "node src/register-commands.js"

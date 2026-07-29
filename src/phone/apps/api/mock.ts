@@ -1,6 +1,7 @@
 import { DEFAULT_MOMENTS_SETTINGS } from '../../../components/moments/useMomentsSettingsStore'
 import type { ApiConfig, ApiPreset, SubApiConfig, SubApiType } from './types'
 import { SILICONFLOW_ASR_DEFAULT_BASE_URL } from '../wechat/voiceCall/siliconflowAsr'
+import { createDefaultTranslationSub } from './translationProviders'
 
 function uid(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -28,6 +29,7 @@ export function createEmptyPreset(): ApiPreset {
     chatCard: mkSub(true),
     danmaku: mkSub(true),
     voiceAsr: { enabled: true, useMainApi: false, apiConfig: { ...createEmptyApiConfig(), apiUrl: SILICONFLOW_ASR_DEFAULT_BASE_URL } },
+    translation: createDefaultTranslationSub(),
   }
   return {
     id: newPresetId(),

@@ -75,7 +75,14 @@ export type PersonaAiGenerateForm = {
   nsfwEnabled: boolean
   /** 性癖 XP / 亲密偏好种子（仅 nsfwEnabled 时生效） */
   nsfwHint: string
-  /** 补充说明（题材、禁忌、参考气质等） */
+  /** 参考的动漫角色或真实人物（可多名，逗号/顿号分隔） */
+  referencePersonaHint: string
+  /**
+   * true = 按填写人物直接生成档案（保留原名与已知人设）；
+   * false = 只借气质，须原创姓名与经历
+   */
+  referencePersonaDirectGenerate: boolean
+  /** 补充说明（题材、禁忌等） */
   extraNotes: string
 }
 
@@ -587,6 +594,8 @@ export function emptyPersonaAiGenerateForm(): PersonaAiGenerateForm {
     orientationMutable: false,
     nsfwEnabled: false,
     nsfwHint: '',
+    referencePersonaHint: '',
+    referencePersonaDirectGenerate: false,
     extraNotes: '',
   }
 }

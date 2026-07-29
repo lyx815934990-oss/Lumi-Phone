@@ -37,6 +37,9 @@ import { WeChatThemePageBackdrop } from './WeChatThemePageBackdrop'
 const PAGE_BG = '#FAFAFA'
 
 function countFilledHints(form: PersonaAiGenerateForm): number {
+  if (form.referencePersonaDirectGenerate && form.referencePersonaHint.trim()) {
+    return 1
+  }
   const keys: (keyof PersonaAiGenerateForm)[] = [
     'nameHint',
     'avatarUrl',
@@ -72,6 +75,7 @@ function countFilledHints(form: PersonaAiGenerateForm): number {
     'orientationHint',
     'nsfwHint',
     'speechStyleHint',
+    'referencePersonaHint',
     'extraNotes',
   ]
   return keys.filter((k) => {
@@ -199,11 +203,18 @@ export function PersonaAiGeneratePage({
   }, [playerIdentity])
 
   const filledCount = useMemo(() => countFilledHints(form), [form])
-  const progressPct = Math.min(100, Math.round((filledCount / TOTAL_HINT_SLOTS) * 100))
+  const directOnly = Boolean(form.referencePersonaDirectGenerate && form.referencePersonaHint.trim())
+  const hintSlotTotal = directOnly ? 1 : TOTAL_HINT_SLOTS
+  const progressPct = Math.min(100, Math.round((filledCount / hintSlotTotal) * 100))
+
+  useEffect(() => {
+    if (directOnly && openChapter !== '01') setOpenChapter('01')
+  }, [directOnly, openChapter])
 
   const patch = (partial: Partial<PersonaAiGenerateForm>) => {
     setDraftDirty(true)
     setForm((prev) => ({ ...prev, ...partial }))
+    if (partial.referencePersonaDirectGenerate === true) setOpenChapter('01')
   }
 
   const finishGenerated = (character: Character) => {
@@ -503,7 +514,7 @@ export function PersonaAiGeneratePage({
               />
             </div>
             <span className="shrink-0 font-mono text-[10px] tabular-nums text-neutral-400">
-              {filledCount}/{TOTAL_HINT_SLOTS}
+              {filledCount}/{hintSlotTotal}
             </span>
           </div>
 
@@ -514,15 +525,25 @@ export function PersonaAiGeneratePage({
           >
             {PERSONA_AI_DOSSIER_TABS.map((tab) => {
               const active = openChapter === tab.id
+              const locked = directOnly && tab.id !== '01'
               return (
                 <button
                   key={tab.id}
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  onClick={() => setOpenChapter(tab.id)}
+                  aria-disabled={locked || undefined}
+                  disabled={locked}
+                  onClick={() => {
+                    if (locked) return
+                    setOpenChapter(tab.id)
+                  }}
                   className={`relative shrink-0 rounded-xl px-3 py-2 text-center transition-colors ${
-                    active ? 'text-neutral-900' : 'text-neutral-400 hover:text-neutral-600'
+                    locked
+                      ? 'cursor-not-allowed text-neutral-300'
+                      : active
+                        ? 'text-neutral-900'
+                        : 'text-neutral-400 hover:text-neutral-600'
                   }`}
                 >
                   <span className="block font-mono text-[9px] tracking-[0.12em] opacity-70">{tab.en}</span>
@@ -563,10 +584,16 @@ export function PersonaAiGeneratePage({
                 boxShadow: '0 10px 28px rgba(23,23,23,0.16)',
               }}
             >
-              {generating ? '正在注入法则…' : '注入法则并生成灵魂'}
+              {generating
+                ? '正在注入法则…'
+                : directOnly
+                  ? '按参考人物直接生成'
+                  : '注入法则并生成灵魂'}
             </button>
             <p className="mt-2 px-0.5 text-center text-[11px] text-neutral-400">
-              {saveBusy
+              {directOnly
+                ? '已开启直接生成：忽略其余表单种子，仅按参考人物与绑定身份生成'
+                : saveBusy
                 ? '正在写入本地草稿…'
                 : savedAt && !draftDirty
                   ? `已封存 · ${formatSavedAt(savedAt)}`
