@@ -79,7 +79,7 @@ import type { LoreArchiveBuiltinPresetToggles } from './loreArchiveBuiltinPreset
 export type LoreArchiveStoreShapeV3 = {
   version: 3
   entries: ArchiveWorldbookEntry[]
-  /** 系统内置预设开关；未写入时默认全部开启 */
+  /** 系统内置预设开关；未写入时默认全部关闭，由用户自行打开 */
   builtinPresets?: LoreArchiveBuiltinPresetToggles
   weibo?: { _reserved: true }
 }

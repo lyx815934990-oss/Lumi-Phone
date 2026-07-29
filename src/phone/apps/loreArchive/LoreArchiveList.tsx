@@ -313,7 +313,7 @@ export function LoreArchiveList({
         <div className="mx-auto mb-4 flex max-w-md flex-col gap-3">
           <p className="px-1 text-[11px] font-medium tracking-wide text-neutral-500">系统内置（仅开关）</p>
           {LORE_ARCHIVE_BUILTIN_PRESETS.map((preset) => {
-            const enabledOn = builtinPresets[preset.id] !== false
+            const enabledOn = builtinPresets[preset.id] === true
             return (
               <LoreArchiveBuiltinPresetCard
                 key={preset.id}

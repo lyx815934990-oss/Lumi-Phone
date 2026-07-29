@@ -50,11 +50,12 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
 export function resolveLoreArchiveBuiltinPresetToggles(
   raw?: LoreArchiveBuiltinPresetToggles | null,
 ): Record<LoreArchiveBuiltinPresetId, boolean> {
+  // 未写入 / 未勾选 → 关闭；用户在档案室自行打开
   return {
-    lumiDoctrineOfLove: raw?.lumiDoctrineOfLove !== false,
-    activeConfession: raw?.activeConfession !== false,
-    pureRestrainLove: raw?.pureRestrainLove !== false,
-    offlineRichInnerOs: raw?.offlineRichInnerOs !== false,
+    lumiDoctrineOfLove: raw?.lumiDoctrineOfLove === true,
+    activeConfession: raw?.activeConfession === true,
+    pureRestrainLove: raw?.pureRestrainLove === true,
+    offlineRichInnerOs: raw?.offlineRichInnerOs === true,
   }
 }
 
