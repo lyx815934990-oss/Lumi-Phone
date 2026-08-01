@@ -9,6 +9,7 @@ import { PhoneShell } from './components/PhoneShell'
 import { UserSystemAuthModal } from './components/UserSystemAuthModal'
 import { UserInfoCorrectionModal } from './components/UserInfoCorrectionModal'
 import { AccountStatusCheckingOverlay } from './components/AccountStatusCheckingOverlay'
+import { BootResourceGate } from './components/BootResourceGate'
 import { SplashScreen } from './components/SplashScreen'
 import { useCustomization } from './CustomizationContext'
 import {
@@ -170,7 +171,10 @@ export function PhoneApp() {
   const disableTransitions = state.ui.disablePageTransitions
   const pageProps = buildPageProps(disableTransitions)
   const [route, setRoute] = useState<Route>(resolveInitialPhoneRoute)
-  const [showSplash, setShowSplash] = useState(() => !shouldSkipSplashOnBoot())
+  /** 开屏动画前：HTML 进度条 → 就绪后再播 Splash */
+  const skipSplashOnBoot = shouldSkipSplashOnBoot()
+  const [bootDone, setBootDone] = useState(false)
+  const [showSplash, setShowSplash] = useState(false)
   const [wechatKeepAlive, setWechatKeepAlive] = useState(false)
   const [showEntryNotice, setShowEntryNotice] = useState(false)
   const [ageConfirmed, setAgeConfirmed] = useState(false)
@@ -190,15 +194,20 @@ export function PhoneApp() {
   /** 本次页面加载是否已做过开屏后的唯一一次账号检测（刷新页面会重置） */
   const sessionBootAuthDoneRef = useRef(false)
 
+  const handleBootReady = useCallback(() => {
+    setBootDone(true)
+    if (!skipSplashOnBoot) setShowSplash(true)
+  }, [skipSplashOnBoot])
+
   useEffect(() => {
-    if (showSplash) return
+    if (!bootDone || showSplash) return
     const t = window.setTimeout(() => setDeferSecondaryRuntime(true), 1800)
     return () => window.clearTimeout(t)
-  }, [showSplash])
+  }, [bootDone, showSplash])
 
   /** 桌面稳定后静默预取微信大包，降低点开时弱网重置概率 */
   useEffect(() => {
-    if (showSplash || wechatKeepAlive) return
+    if (!bootDone || showSplash || wechatKeepAlive) return
     let cancelled = false
     const run = () => {
       if (cancelled) return
@@ -227,7 +236,7 @@ export function PhoneApp() {
         window.cancelIdleCallback(idleId)
       }
     }
-  }, [showSplash, wechatKeepAlive])
+  }, [bootDone, showSplash, wechatKeepAlive])
 
   useEffect(() => {
     if (localDevBypassAuth) openVerifiedRef.current = true
@@ -419,7 +428,7 @@ export function PhoneApp() {
 
   useEffect(() => {
     if (localDevBypassAuth) return
-    if (showSplash || showEntryNotice) return
+    if (!bootDone || showSplash || showEntryNotice) return
     if (sessionBootAuthDoneRef.current) return
     sessionBootAuthDoneRef.current = true
     if (shouldShowAccountStatusCheck()) {
@@ -427,12 +436,13 @@ export function PhoneApp() {
       setUserAuthReady(false)
     }
     void refreshUserAuth()
-  }, [showSplash, showEntryNotice, refreshUserAuth])
+  }, [bootDone, showSplash, showEntryNotice, refreshUserAuth])
 
   const needsCorrection = needsUserInfoCorrection(userAuthStatus)
 
   const showUserAuthModal =
     !localDevBypassAuth &&
+    bootDone &&
     !showSplash &&
     !showEntryNotice &&
     !authChecking &&
@@ -445,6 +455,7 @@ export function PhoneApp() {
 
   const showInfoCorrectionModal =
     !localDevBypassAuth &&
+    bootDone &&
     !showSplash &&
     !showEntryNotice &&
     !authChecking &&
@@ -454,6 +465,7 @@ export function PhoneApp() {
 
   const showAccountStatusChecking =
     !localDevBypassAuth &&
+    bootDone &&
     !showSplash &&
     !showEntryNotice &&
     route.name === 'home' &&
@@ -464,6 +476,7 @@ export function PhoneApp() {
     !!userAuthStatus && !isUserActivated(userAuthStatus)
 
   const canOfferEvolutionPush =
+    bootDone &&
     !showSplash &&
     !showEntryNotice &&
     !showAccountStatusChecking &&
@@ -673,9 +686,12 @@ export function PhoneApp() {
           ) : null}
         </PhoneShell>
         </WorldbookLoreProvider>
+        {!bootDone ? (
+          <BootResourceGate enabled={!skipSplashOnBoot} onReady={handleBootReady} />
+        ) : null}
         {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
         <EntryNoticeModal
-          open={!showSplash && showEntryNotice}
+          open={bootDone && !showSplash && showEntryNotice}
           ageConfirmed={ageConfirmed}
           riskConfirmed={riskConfirmed}
           onToggleAge={setAgeConfirmed}

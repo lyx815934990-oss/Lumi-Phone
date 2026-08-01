@@ -2,11 +2,14 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { markBootProgress } from './phone/boot/lumiBootBridge'
 import {
   isLikelyIosBrowser,
   setupServiceWorkerControlWatcher,
 } from './phone/apps/backgroundNotify/backgroundPushClient'
 import { maybeRecoverFromBrokenKeepAlivePwa } from './phone/apps/backgroundNotify/keepAliveBootRecovery'
+
+markBootProgress(76, '正在启动应用…')
 
 /**
  * 键盘覆盖内容而不是挤压 viewport（Chromium 等）。
@@ -32,6 +35,7 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
+markBootProgress(82, '界面准备中…')
 
 function runWhenIdle(task: () => void, timeoutMs: number) {
   const ric = (

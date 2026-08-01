@@ -41,9 +41,183 @@
     <link rel="apple-touch-icon" sizes="180x180" href="%BASE_URL%image/主屏幕图标.png" />
     <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
     <title>Lumi Phone</title>
+    <style id="lumi-boot-style">
+      #lumi-boot {
+        position: fixed;
+        inset: 0;
+        z-index: 100000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #ffffff;
+        color: #1c1c1e;
+        font-family: "Didot", "Optima", "SF Pro Display", "Helvetica Neue", sans-serif;
+        transition: opacity 0.42s ease, visibility 0.42s ease;
+      }
+      #lumi-boot.lumi-boot--hide {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      .lumi-boot__inner {
+        width: min(300px, calc(100vw - 48px));
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      .lumi-boot__brand {
+        font-size: 14px;
+        letter-spacing: 0.5em;
+        font-weight: 400;
+        margin-right: -0.5em;
+        margin-bottom: 28px;
+      }
+      .lumi-boot__bar {
+        width: 100%;
+        height: 2px;
+        border-radius: 999px;
+        background: rgba(28, 28, 30, 0.08);
+        overflow: hidden;
+      }
+      .lumi-boot__fill {
+        height: 100%;
+        width: 0%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #c5a880 0%, #d4af37 55%, #e8d5a3 100%);
+        box-shadow: 0 0 10px rgba(212, 175, 55, 0.28);
+        transition: width 0.35s ease;
+      }
+      .lumi-boot__meta {
+        margin-top: 14px;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        color: rgba(28, 28, 30, 0.42);
+        font-family: "Songti SC", "STSong", "SimSun", "Noto Serif SC", serif;
+      }
+      .lumi-boot__pct {
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.08em;
+        color: rgba(28, 28, 30, 0.55);
+        font-family: "SF Pro Text", "Helvetica Neue", sans-serif;
+      }
+    </style>
   </head>
   <body>
+    <div id="lumi-boot" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="正在加载资源">
+      <div class="lumi-boot__inner">
+        <div class="lumi-boot__brand">L U M I</div>
+        <div class="lumi-boot__bar"><div class="lumi-boot__fill" id="lumi-boot-fill"></div></div>
+        <div class="lumi-boot__meta">
+          <span class="lumi-boot__pct" id="lumi-boot-pct">0%</span>
+          <span aria-hidden="true"> · </span>
+          <span id="lumi-boot-label">正在加载资源…</span>
+        </div>
+      </div>
+    </div>
     <div id="root"></div>
+    <script>
+      ;(function () {
+        var boot = document.getElementById('lumi-boot')
+        var fill = document.getElementById('lumi-boot-fill')
+        var pctEl = document.getElementById('lumi-boot-pct')
+        var labelEl = document.getElementById('lumi-boot-label')
+        var progress = 0
+        var hidden = false
+        var creepTimer = 0
+        var bytesLoaded = 0
+        var bytesSeen = 0
+
+        function paint() {
+          if (!fill || !pctEl || !boot) return
+          var p = Math.max(0, Math.min(100, progress))
+          fill.style.width = p.toFixed(1) + '%'
+          pctEl.textContent = Math.round(p) + '%'
+          boot.setAttribute('aria-valuenow', String(Math.round(p)))
+        }
+
+        function setProgress(next, label) {
+          if (hidden) return
+          var n = Number(next)
+          if (!isFinite(n)) return
+          progress = Math.max(progress, Math.min(100, n))
+          if (label && labelEl) labelEl.textContent = label
+          paint()
+        }
+
+        function estimateFromResources() {
+          try {
+            var entries = performance.getEntriesByType('resource') || []
+            var loaded = 0
+            var total = 0
+            for (var i = 0; i < entries.length; i++) {
+              var e = entries[i]
+              var name = String(e.name || '')
+              if (name.indexOf('/assets/') === -1 && name.indexOf('/src/') === -1) continue
+              var size = e.transferSize || e.encodedBodySize || 0
+              if (size > 0) {
+                total += size
+                loaded += size
+              } else if (e.responseEnd > 0) {
+                total += 120000
+                loaded += 120000
+              } else {
+                total += 120000
+              }
+            }
+            bytesLoaded = loaded
+            bytesSeen = Math.max(bytesSeen, total)
+            if (bytesSeen <= 0) return
+            // 资源阶段最多推到 72%，留给 React 启动
+            var ratio = Math.min(1, bytesLoaded / Math.max(bytesSeen, bytesLoaded + 80000))
+            setProgress(8 + ratio * 64, '正在加载资源…')
+          } catch (_) {}
+        }
+
+        if (typeof PerformanceObserver !== 'undefined') {
+          try {
+            var po = new PerformanceObserver(function () {
+              estimateFromResources()
+            })
+            po.observe({ entryTypes: ['resource'] })
+          } catch (_) {}
+        }
+
+        setProgress(4, '正在连接…')
+        estimateFromResources()
+        creepTimer = window.setInterval(function () {
+          if (hidden || progress >= 70) return
+          setProgress(progress + 0.7, '正在加载资源…')
+          estimateFromResources()
+        }, 280)
+
+        window.__lumiBoot = {
+          set: setProgress,
+          get: function () {
+            return progress
+          },
+          isVisible: function () {
+            return !hidden
+          },
+          done: function (onHidden) {
+            if (hidden) {
+              if (onHidden) onHidden()
+              return
+            }
+            setProgress(100, '准备就绪')
+            window.clearInterval(creepTimer)
+            hidden = true
+            if (boot) boot.classList.add('lumi-boot--hide')
+            window.setTimeout(function () {
+              if (boot && boot.parentNode) boot.parentNode.removeChild(boot)
+              var st = document.getElementById('lumi-boot-style')
+              if (st && st.parentNode) st.parentNode.removeChild(st)
+              if (onHidden) onHidden()
+            }, 440)
+          },
+        }
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
