@@ -105,7 +105,7 @@ function buildDimensionSystemPrompt(
       : opts.godPerspective
         ? `本轮存档已勾选上帝视角：**全篇**写屏外可见场景，玩家不得与约会对象同场同框。`
         : opts.mainCharacterOffstage
-          ? `本轮存档已勾选侧幕叙写：**全篇**主角色缺席，约会主角色 ${charName} 不得出场、不得被写成在场互动对象。`
+          ? `本轮存档已勾选侧幕叙写：**全篇**主角色缺席，约会主角色 ${charName} 不得出场、不得被写成在场互动对象；对本轮侧幕内容默认不知情（禁止开天眼）。`
           : `本轮未锁定上帝/侧幕：以锚点人称与关系为主轴续写；允许按需短切少量屏外或 NPC 侧幕，不必整篇锁死单一视角。`
 
   const taskBlock =
@@ -126,9 +126,9 @@ function buildDimensionSystemPrompt(
     kind === 'parallel'
       ? `人称：第三人称旁白写**锚点 cast 以外**的同步场景；禁止用「你」指玩家；禁止 ${charName} 及锚点正文已出现角色出场。`
       : opts.perspective === 'first'
-        ? '人称：第一人称（我/我们）为主。'
+        ? '人称：第一人称（我/我们）为主；旁白指玩家须用「我」，禁止用「你」指玩家。上文若是「你」本轮须改口。'
         : opts.perspective === 'third'
-          ? '人称：第三人称旁观为主。'
+          ? '人称：第三人称旁观为主；旁白指玩家须用他/她或姓名，禁止用「你」指玩家。上文若是「你」本轮须改口。'
           : '人称：第二人称（你）代入玩家为主；旁白指玩家须用「你」。'
 
   const languageRule = buildDimensionLanguageRule(

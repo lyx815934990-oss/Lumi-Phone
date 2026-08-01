@@ -10,9 +10,9 @@ export type AiPulseDmScreenshotDirective = {
   lines: PulseDmScreenshotLine[]
 }
 
-const BLOCK_START_RE = /^\[(?:微博私信截图|PULSE_DM_SHOT)\]\s*$/i
-const BLOCK_END_RE = /^\[\/(?:微博私信截图|PULSE_DM_SHOT)\]\s*$/i
-const BLOCK_OPEN_PREFIX_RE = /^\[(?:微博私信截图|PULSE_DM_SHOT)\]/i
+const BLOCK_START_RE = /^(?:微博私信截图|\[(?:微博私信截图|PULSE_DM_SHOT)\])\s*$/i
+const BLOCK_END_RE = /^(?:结束微博私信截图|\[\/(?:微博私信截图|PULSE_DM_SHOT)\])\s*$/i
+const BLOCK_OPEN_PREFIX_RE = /^(?:微博私信截图|\[(?:微博私信截图|PULSE_DM_SHOT)\])/i
 const PLACEHOLDER_RE = /^\[PULSE_DM_SHOT\]([a-zA-Z0-9_-]{6,40})\s*$/
 
 const shotImageCache = new Map<string, { base64: string; mime: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' }>()
@@ -25,12 +25,12 @@ export function buildWeChatPulseDmScreenshotOutputBlock(): string {
 - 仅在剧情需要时使用：吃网友好友私信瓜、澄清谣言、吐槽离谱私信等；**禁止**用截图秀人气/刷存在感；**日常闲聊不要刷屏截图**。截图里的网友内容宜克制，勿写成满屏表白、叫老公等炫耀节目单。
 - 截图展示的是**你在微博私信里与某网友的对话**（云朵气泡 UI），不是微信聊天记录卡片。
 - 格式（可独占数行；前后仍可有口语气泡）：
-[微博私信截图]
+微博私信截图
 对象：网友昵称
 对方：第一条私信
 我说：你的回复
 对方：对方再接一句
-[/微博私信截图]
+结束微博私信截图
 - 「对象」= 对方微博网名；「我说」= 你（角色）发出的私信（截图右侧）；「对方」= 网友（左侧）。
 - 每条 1 行、口语碎片感；合计 **2～8** 条；禁止 Unicode emoji（可用 [doge][允悲]）；禁止把真实微信会话原文整段粘贴。
 - 本块**不会**显示在聊天气泡原文里，客户端会合成一张私信截图图片发出。
@@ -76,15 +76,11 @@ export function parsePulseDmScreenshotMarkup(block: string): AiPulseDmScreenshot
 export function parsePulseDmScreenshotDirective(raw: string): AiPulseDmScreenshotDirective | null {
   const t = String(raw ?? '').replace(/\r\n/g, '\n').trim()
   if (!t) return null
-  if (!/\[(?:微博私信截图|PULSE_DM_SHOT)\]/i.test(t)) return null
-  const open = t.search(/\[(?:微博私信截图|PULSE_DM_SHOT)\]/i)
-  const close = t.search(/\[\/(?:微博私信截图|PULSE_DM_SHOT)\]/i)
-  if (open < 0) return null
-  const inner =
-    close > open
-      ? t.slice(open, close + t.slice(close).indexOf(']') + 1)
-      : t.slice(open)
-  return parsePulseDmScreenshotMarkup(inner)
+  const hasOpen =
+    /(?:^|\n)\s*(?:微博私信截图|\[(?:微博私信截图|PULSE_DM_SHOT)\])/i.test(t) ||
+    BLOCK_OPEN_PREFIX_RE.test(t)
+  if (!hasOpen) return null
+  return parsePulseDmScreenshotMarkup(t)
 }
 
 export function isPulseDmScreenshotDirectiveArtifactLine(line: string): boolean {
@@ -92,7 +88,12 @@ export function isPulseDmScreenshotDirectiveArtifactLine(line: string): boolean 
   if (!t) return false
   if (PLACEHOLDER_RE.test(t)) return true
   if (BLOCK_START_RE.test(t) || BLOCK_END_RE.test(t)) return true
-  if (BLOCK_OPEN_PREFIX_RE.test(t) && /\[\/(?:微博私信截图|PULSE_DM_SHOT)\]/i.test(t)) return true
+  if (
+    BLOCK_OPEN_PREFIX_RE.test(t) &&
+    /(?:结束微博私信截图|\[\/(?:微博私信截图|PULSE_DM_SHOT)\])/i.test(t)
+  ) {
+    return true
+  }
   return Boolean(parsePulseDmScreenshotDirective(t))
 }
 
@@ -146,7 +147,10 @@ export function stripPulseDmScreenshotDirectivesFromBubbles(bubbles: string[]): 
 
     if (buffering) {
       buffering.push(line)
-      if (BLOCK_END_RE.test(trimmed) || /\[\/(?:微博私信截图|PULSE_DM_SHOT)\]/i.test(trimmed)) {
+      if (
+        BLOCK_END_RE.test(trimmed) ||
+        /(?:结束微博私信截图|\[\/(?:微博私信截图|PULSE_DM_SHOT)\])/i.test(trimmed)
+      ) {
         flushBuffer()
       }
       continue
@@ -155,7 +159,7 @@ export function stripPulseDmScreenshotDirectivesFromBubbles(bubbles: string[]): 
     // 单行完整块
     if (
       BLOCK_OPEN_PREFIX_RE.test(trimmed) &&
-      /\[\/(?:微博私信截图|PULSE_DM_SHOT)\]/i.test(trimmed)
+      /(?:结束微博私信截图|\[\/(?:微博私信截图|PULSE_DM_SHOT)\])/i.test(trimmed)
     ) {
       const directive = parsePulseDmScreenshotDirective(trimmed)
       if (directive) {
@@ -194,4 +198,4 @@ export async function preparePulseDmScreenshotPlaceholders(
   }
 }
 
-export const PULSE_DM_SCREENSHOT_TRANSCRIPT = '[微博私信截图]'
+export const PULSE_DM_SCREENSHOT_TRANSCRIPT = '微博私信截图'

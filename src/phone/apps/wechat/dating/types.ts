@@ -1,4 +1,7 @@
 import type { StoryTimelineSummaryDelta } from '../memory/storyTimelineTypes'
+import type { DatingPlotPaceSettings } from './datingPlotPace'
+
+export type { DatingPlotPaceSettings, DatingPlotPacePreset, DatingPlotPaceUnit } from './datingPlotPace'
 
 export type DateMode = 'normal' | 'vn'
 export type NarrativePerspective = 'first' | 'second' | 'third'
@@ -65,6 +68,13 @@ export type NarrativeGenOptions = {
   generateParallelOnSend?: boolean
   /** 本轮发送时同轮生成 IF 线 */
   generateIfLineOnSend?: boolean
+  /** 本轮剧情故事时间推进跨度（慢/中/快/自定义） */
+  plotPace?: DatingPlotPaceSettings
+  /**
+   * 是否要求模型先输出 `<thinking>` 思维链再写正文。
+   * 关闭则直出剧情正文（更快、更省 token）。默认开启。
+   */
+  thinkingChainEnabled?: boolean
 }
 
 export type PlotItemType = 'player' | 'ai'
@@ -268,8 +278,18 @@ export type CharacterArchive = {
   vnVoiceDisabled?: boolean
   /** 导演模式：输入为下一段剧情指引（尚未发生）；关闭则视为既成事实。普通模式与 VN 共用 */
   directorMode?: boolean
+  /**
+   * 剧情推进速度：本轮故事内时间跨度（慢=数小时～一天；中=数天～约一月；快=数月～数年；可自定义）。
+   * 与目标字数无关。
+   */
+  plotPace?: DatingPlotPaceSettings
   /** 抢话：允许 AI 代写玩家当轮言行；关闭则不抢话。普通模式与 VN 共用 */
   autoUserReaction?: boolean
+  /**
+   * 是否走 Lumi 思维链输出（`<thinking>` + 正文）。
+   * 关闭则模型直出正文。默认 true；普通模式与 VN 共用。
+   */
+  thinkingChainEnabled?: boolean
   /** 发送剧情时同轮一并生成平行事件（写入卡片 + 时间轴摘要） */
   generateParallelOnSend?: boolean
   /** 发送剧情时同轮一并生成 IF 线（仅卡片阅读，不进 prompt） */

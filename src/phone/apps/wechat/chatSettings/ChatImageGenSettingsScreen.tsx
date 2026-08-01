@@ -1,10 +1,23 @@
 import { ArrowLeft, User, UserRound } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { ImageGenStyleTabSection } from '../../../../components/moments/ImageGenStyleTabSection'
+import {
+  describeReferenceImageSupportForModel,
+  modelSupportsReferenceImageUploadFromSettings,
+} from '../../../../components/moments/imageGenModelCapabilities'
+import { parseMomentsImageModelId } from '../../../../components/moments/momentsImageModelCatalog'
+import { resolveCharacterMediaImageStyleHint } from '../../../../components/moments/momentsImagePromptEnhancer'
+import { DEFAULT_STYLE_PRESET_ID } from '../../../../components/moments/pollinationsPresets'
+import type { MomentsImageGenSettings } from '../../../../components/moments/useMomentsSettingsStore'
 import { Pressable } from '../../../components/Pressable'
 import { phoneNumStyle } from '../../../types'
+import { useImageGenSettings } from '../../api/useImageGenSettings'
 import { AppearanceRefSettingsPanel } from '../appearanceRef/AppearanceRefSettingsPanel'
-import { SharedImageGenStyleSection } from '../appearanceRef/SharedImageGenStyleSection'
 import { useAppearanceReferenceStatus } from '../appearanceRef/useAppearanceReferenceStatus'
+import {
+  applyChatImageGenStyleOverride,
+  summarizeChatImageGenStyleOverride,
+} from '../chatImageGenStyleOverride'
 import type { ChatConversationSettingsRow } from '../newFriendsPersona/types'
 import {
   clampImageRoundCount,
@@ -23,9 +36,18 @@ type ImageGenTab = 'count' | 'appearance' | 'style'
 type RefSubTab = 'character' | 'user'
 
 export type ChatImageGenSettingsPatch = Partial<
-  Pick<ChatConversationSettingsRow, 'imageRoundCountMin' | 'imageRoundCountMax'>
+  Pick<
+    ChatConversationSettingsRow,
+    | 'imageRoundCountMin'
+    | 'imageRoundCountMax'
+    | 'imageGenStyleOverrideEnabled'
+    | 'imageGenStylePrefixMode'
+    | 'imageGenStylePresetId'
+    | 'imageGenCustomStylePrefix'
+  >
 > & {
   clearImageRoundCountRange?: boolean
+  clearImageGenStyleOverride?: boolean
 }
 
 function ChatSettingsNum({ children }: { children: React.ReactNode }) {
@@ -162,7 +184,13 @@ function RefTabButton({
 export function summarizeChatImageGenSettings(
   row: Pick<
     ChatConversationSettingsRow,
-    'imageRoundTriggerPercent' | 'imageRoundCountMin' | 'imageRoundCountMax'
+    | 'imageRoundTriggerPercent'
+    | 'imageRoundCountMin'
+    | 'imageRoundCountMax'
+    | 'imageGenStyleOverrideEnabled'
+    | 'imageGenStylePrefixMode'
+    | 'imageGenStylePresetId'
+    | 'imageGenCustomStylePrefix'
   >,
 ): string {
   const imageSendSupported = isCharacterImageSendSupported(row.imageRoundTriggerPercent)
@@ -173,7 +201,7 @@ export function summarizeChatImageGenSettings(
       parts.push(formatImageRoundCountRangeLabel(range))
     }
   }
-  parts.push('形象与风格')
+  parts.push(summarizeChatImageGenStyleOverride(row))
   return parts.join(' · ')
 }
 
@@ -202,6 +230,55 @@ export function ChatImageGenSettingsScreen({
 
   const showUserRef = !!playerIdentityId?.trim()
   const imageSendSupported = isCharacterImageSendSupported(settings.imageRoundTriggerPercent)
+  const { imageGen: globalImageGen, configured } = useImageGenSettings()
+  const styleOverrideEnabled = settings.imageGenStyleOverrideEnabled === true
+  const effectiveStyleSettings = useMemo(
+    () => applyChatImageGenStyleOverride(globalImageGen, settings),
+    [globalImageGen, settings],
+  )
+  const refUploadSupported = modelSupportsReferenceImageUploadFromSettings(effectiveStyleSettings)
+  const useReferenceStyle = hasAppearanceReference && refUploadSupported
+  const styleHint = useMemo(
+    () => resolveCharacterMediaImageStyleHint(effectiveStyleSettings, hasAppearanceReference),
+    [effectiveStyleSettings, hasAppearanceReference],
+  )
+  const refSupportNote = useMemo(() => {
+    const { modelName } = parseMomentsImageModelId(effectiveStyleSettings.modelId)
+    if (!modelName) return ''
+    return describeReferenceImageSupportForModel(effectiveStyleSettings.provider, modelName)
+  }, [effectiveStyleSettings])
+
+  const localStyleForEditor: MomentsImageGenSettings = useMemo(
+    () => ({
+      ...globalImageGen,
+      stylePrefixMode: settings.imageGenStylePrefixMode === 'custom' ? 'custom' : 'preset',
+      stylePresetId: settings.imageGenStylePresetId?.trim() || DEFAULT_STYLE_PRESET_ID,
+      customStylePrefix: settings.imageGenCustomStylePrefix ?? '',
+    }),
+    [globalImageGen, settings.imageGenStylePrefixMode, settings.imageGenStylePresetId, settings.imageGenCustomStylePrefix],
+  )
+
+  const enableLocalStyle = () => {
+    void onPatch({
+      imageGenStyleOverrideEnabled: true,
+      imageGenStylePrefixMode: globalImageGen.stylePrefixMode === 'custom' ? 'custom' : 'preset',
+      imageGenStylePresetId: globalImageGen.stylePresetId?.trim() || DEFAULT_STYLE_PRESET_ID,
+      imageGenCustomStylePrefix: globalImageGen.customStylePrefix ?? '',
+    })
+  }
+
+  const patchLocalStyle = (patch: Partial<MomentsImageGenSettings>) => {
+    void onPatch({
+      imageGenStyleOverrideEnabled: true,
+      ...(patch.stylePrefixMode === 'custom' || patch.stylePrefixMode === 'preset'
+        ? { imageGenStylePrefixMode: patch.stylePrefixMode }
+        : {}),
+      ...(typeof patch.stylePresetId === 'string' ? { imageGenStylePresetId: patch.stylePresetId } : {}),
+      ...(typeof patch.customStylePrefix === 'string'
+        ? { imageGenCustomStylePrefix: patch.customStylePrefix }
+        : {}),
+    })
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#ededed]">
@@ -284,7 +361,7 @@ export function ChatImageGenSettingsScreen({
                 >
                   <p className="text-[15px] font-medium text-black">每次张数范围</p>
                   <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                    发图时角色可发送的图片张数（每条 <span className="font-mono">[图片]</span> 行计 1
+                    发图时角色可发送的图片张数（每条 <span className="font-mono">发图</span> 行计 1
                     张）。
                   </p>
                   <div className="mt-3">
@@ -356,10 +433,78 @@ export function ChatImageGenSettingsScreen({
             className="rounded-[12px] bg-white px-4 py-4"
             style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
           >
-            <SharedImageGenStyleSection
-              className="mt-0 border-0 pt-0"
-              hasAppearanceReference={hasAppearanceReference}
-            />
+            <p className="text-[16px] text-black">生图风格</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+              {useReferenceStyle
+                ? '已设置形象参考图，且当前生图模型支持传参考图：配图将匹配参考图画风，不再叠加预设风格前缀。'
+                : hasAppearanceReference
+                  ? '已设置形象参考图，但当前模型不支持传图；可为本聊天单独选择预设或自定义风格。'
+                  : '默认同步全局 API 生图风格；也可为本聊天单独设置，不影响其它角色与朋友圈。'}
+              {!configured ? ' 请先在 API 设置中启用并配置生图引擎。' : ''}
+            </p>
+            {hasAppearanceReference && refSupportNote ? (
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">{refSupportNote}</p>
+            ) : null}
+
+            <div className="mt-3 flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (styleOverrideEnabled) void onPatch({ clearImageGenStyleOverride: true })
+                }}
+                className={`flex-1 rounded-full py-2 text-[12px] font-medium transition-colors ${
+                  !styleOverrideEnabled ? 'bg-black text-white' : 'bg-[#f5f5f5] text-[#666]'
+                }`}
+              >
+                跟随全局
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!styleOverrideEnabled) enableLocalStyle()
+                }}
+                className={`flex-1 rounded-full py-2 text-[12px] font-medium transition-colors ${
+                  styleOverrideEnabled ? 'bg-black text-white' : 'bg-[#f5f5f5] text-[#666]'
+                }`}
+              >
+                本聊天单独设置
+              </button>
+            </div>
+
+            <div className="mt-3 rounded-[10px] border border-[#e5e5e5] bg-[#fafafa] px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[12px] text-[#666]">当前生效</p>
+                  <p className="mt-0.5 text-[13px] text-[#333]">{styleHint}</p>
+                </div>
+                {styleOverrideEnabled ? (
+                  <button
+                    type="button"
+                    onClick={() => void onPatch({ clearImageGenStyleOverride: true })}
+                    className="shrink-0 text-[12px] text-[#576b95]"
+                  >
+                    恢复跟随全局
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {styleOverrideEnabled && !useReferenceStyle ? (
+              <div className="mt-3">
+                <ImageGenStyleTabSection
+                  imageGen={localStyleForEditor}
+                  onPatch={patchLocalStyle}
+                  refUploadSupported={refUploadSupported}
+                  variant="compact"
+                />
+              </div>
+            ) : null}
+
+            {!styleOverrideEnabled ? (
+              <p className="mt-3 text-[12px] leading-relaxed text-[#8e8e8e]">
+                当前跟随 API 设置中的生图风格。点「本聊天单独设置」后，仅本会话使用下方所选风格。
+              </p>
+            ) : null}
           </section>
         ) : null}
       </div>

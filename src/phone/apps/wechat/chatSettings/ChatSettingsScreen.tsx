@@ -52,6 +52,8 @@ import {
 import { CreateGroupPickContactsSheet, type CreateGroupContactPick } from '../group/CreateGroupPickContactsSheet'
 import { ChatBackgroundPresetGrid } from './ChatBackgroundPresetGrid'
 import { resolvePublicImageUrl } from '../../../../publicAssetUrl'
+import { compressAvatarDataUrl, MAX_AVATAR_DATA_URL_LEN } from '../avatarCompress'
+import { resolveWechatAppAvatar } from '../../../../components/discoverListen/listenTogetherUserAvatarPreference'
 
 function WxSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
@@ -179,10 +181,11 @@ function ListRow({
   )
 }
 
-type StubKind = 'chat-bg' | 'voice' | 'complaint'
+type StubKind = 'chat-bg' | 'chat-avatar' | 'voice' | 'complaint'
 
 const STUB_TITLES: Record<StubKind, string> = {
   'chat-bg': '设置当前聊天背景',
+  'chat-avatar': '本聊天我的头像',
   voice: '主动语音电话',
   complaint: '投诉',
 }
@@ -241,10 +244,12 @@ export function ChatSettingsScreen({
   const [stub, setStub] = useState<StubKind | null>(null)
   const [chatBgDraft, setChatBgDraft] = useState('')
   const [chatBgCropSrc, setChatBgCropSrc] = useState<string | null>(null)
+  const [chatAvatarCropSrc, setChatAvatarCropSrc] = useState<string | null>(null)
   const [clearOpen, setClearOpen] = useState(false)
   const [inviteGroupOpen, setInviteGroupOpen] = useState(false)
   const [replyLangOpen, setReplyLangOpen] = useState(false)
   const chatBgFileRef = useRef<HTMLInputElement | null>(null)
+  const chatAvatarFileRef = useRef<HTMLInputElement | null>(null)
 
   const peerForInvite = inviteGroupFromPeerCharacterId?.trim() || ''
   const canInviteToGroup = !!peerForInvite && !!onInviteCreateGroup && personaContactsForGroup.length > 0
@@ -363,6 +368,7 @@ export function ChatSettingsScreen({
           | 'profileImageChangeEnabled'
           | 'internetMemeLexiconEnabled'
           | 'chatBackground'
+          | 'playerChatAvatarUrl'
           | 'stickerRoundTriggerPercent'
           | 'stickerTargetedModeEnabled'
           | 'stickerTargetedGroups'
@@ -378,6 +384,10 @@ export function ChatSettingsScreen({
           | 'imageRoundTriggerPercent'
           | 'imageRoundCountMin'
           | 'imageRoundCountMax'
+          | 'imageGenStyleOverrideEnabled'
+          | 'imageGenStylePrefixMode'
+          | 'imageGenStylePresetId'
+          | 'imageGenCustomStylePrefix'
           | 'proactiveMessageEnabled'
           | 'proactiveMessageIntervalSeconds'
           | 'proactiveMessageLastFiredAtMs'
@@ -394,6 +404,7 @@ export function ChatSettingsScreen({
         clearVoiceRoundTriggerPercent?: boolean
         clearImageRoundTriggerPercent?: boolean
         clearImageRoundCountRange?: boolean
+        clearImageGenStyleOverride?: boolean
         clearProactiveMessageIntervalSeconds?: boolean
         clearProactiveMessageVariableIntervalBounds?: boolean
         clearProactiveMessageSchedule?: boolean
@@ -540,6 +551,117 @@ export function ChatSettingsScreen({
     }
     reader.readAsDataURL(file)
   }, [])
+
+  const onPickChatAvatarFile = useCallback((file: File | null) => {
+    if (!file || !file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result ?? '')
+      if (!result) return
+      setChatAvatarCropSrc(result)
+    }
+    reader.readAsDataURL(file)
+  }, [])
+
+  if (stub === 'chat-avatar') {
+    const overrideUrl = (effective.playerChatAvatarUrl ?? '').trim()
+    const globalAvatar =
+      resolveWechatAppAvatar(state.profile.avatarImageUrl) || state.profile.avatarImageUrl?.trim() || ''
+    const previewSrc = overrideUrl
+      ? resolveWechatAppAvatar(overrideUrl) || resolvePublicImageUrl(overrideUrl) || overrideUrl
+      : globalAvatar
+    const hasOverride = !!overrideUrl
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-[#ededed]">
+        <header
+          className="shrink-0 border-b border-[#e5e5e5] bg-[#ededed] px-3 pb-3"
+          style={{ paddingTop: 'max(12px, env(safe-area-inset-top, 0px))' }}
+        >
+          <div className="flex w-full items-center">
+            <Pressable
+              type="button"
+              aria-label="返回"
+              onClick={() => setStub(null)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+            >
+              <ArrowLeft className="size-5 text-black" strokeWidth={2} />
+            </Pressable>
+            <h1 className="min-w-0 flex-1 text-center text-[18px] font-bold text-black">本聊天我的头像</h1>
+            <div className="w-10 shrink-0" />
+          </div>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-4">
+          <div className="rounded-[12px] bg-white px-4 py-4" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+            <p className="text-[15px] font-medium text-black">仅本会话展示</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+              设置后，此聊天里你的气泡头像会用这张图；角色讨论你的微信头像时也会按此图理解。未设置时跟随「我」页账号头像。
+            </p>
+            <div className="mt-4 flex flex-col items-center gap-3">
+              <div className="h-24 w-24 overflow-hidden rounded-full border border-[#e5e5e5] bg-[#f2f2f7]">
+                {previewSrc ? (
+                  <img src={previewSrc} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-[12px] text-[#8e8e8e]">无头像</div>
+                )}
+              </div>
+              <p className="text-[12px] text-[#8e8e8e]">{hasOverride ? '当前：本聊天单独头像' : '当前：跟随全局账号头像'}</p>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Pressable
+                type="button"
+                onClick={() => chatAvatarFileRef.current?.click()}
+                className="inline-flex h-10 items-center justify-center rounded-[10px] border border-black bg-black px-4 text-[13px] text-white"
+              >
+                {hasOverride ? '更换头像' : '上传本聊天头像'}
+              </Pressable>
+              <Pressable
+                type="button"
+                disabled={!hasOverride}
+                onClick={() => {
+                  void (async () => {
+                    await patch({ playerChatAvatarUrl: '' })
+                    setStub(null)
+                  })()
+                }}
+                className="inline-flex h-10 items-center justify-center rounded-[10px] border border-[#d0d0d0] bg-white px-4 text-[13px] text-black disabled:opacity-45"
+              >
+                恢复跟随全局
+              </Pressable>
+            </div>
+            <input
+              ref={chatAvatarFileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                onPickChatAvatarFile(e.target.files?.[0] ?? null)
+                e.currentTarget.value = ''
+              }}
+            />
+          </div>
+        </div>
+        <ImageCropperModal
+          open={!!chatAvatarCropSrc}
+          imageSrc={chatAvatarCropSrc ?? ''}
+          title="裁剪本聊天头像"
+          aspect={1}
+          maxSide={1080}
+          objectFit="horizontal-cover"
+          onCancel={() => setChatAvatarCropSrc(null)}
+          onConfirm={async (dataUrl) => {
+            const next = await compressAvatarDataUrl(dataUrl, MAX_AVATAR_DATA_URL_LEN)
+            if (next.length > MAX_AVATAR_DATA_URL_LEN) {
+              window.alert('图片过大，请选择较小的图片。')
+              return
+            }
+            setChatAvatarCropSrc(null)
+            await patch({ playerChatAvatarUrl: next })
+            setStub(null)
+          }}
+        />
+      </div>
+    )
+  }
 
   if (stub === 'chat-bg') {
     const draftTrimmed = chatBgDraft.trim()
@@ -765,6 +887,15 @@ export function ChatSettingsScreen({
 
         {/* 功能列表 */}
         <SettingsListCard>
+          <ListRow onClick={() => setStub('chat-avatar')} borderBottom>
+            <div className="min-w-0 flex-1">
+              <span className="text-[16px] text-black">本聊天我的头像</span>
+              <p className="mt-1 text-[12px] text-[#8e8e8e]">
+                {(effective.playerChatAvatarUrl ?? '').trim() ? '已单独设置' : '跟随全局账号头像'}
+              </p>
+            </div>
+            <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
+          </ListRow>
           <ListRow stacked borderBottom={false}>
             <button
               type="button"
@@ -882,7 +1013,7 @@ export function ChatSettingsScreen({
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">回复思维链（CoT）</span>
               <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                开启后为本会话注入后台推演步骤，回复更细致但更耗 token；关闭仍保留换行分条、语音与表情包等输出格式。
+                开启后为本会话注入后台推演步骤；下方「开启忙碌 / 转发聊天记录 / 微博私信截图 / 换头像背景 / 支持发图」开了哪些，会额外加对应功能判定。更细致但更耗 token；关闭仍保留换行分条、语音与表情包等输出格式。
               </p>
             </div>
             <WxSwitch
@@ -920,7 +1051,7 @@ export function ChatSettingsScreen({
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">换头像 / 朋友圈背景</span>
               <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                开启后允许角色响应用户发图，输出 <span className="font-mono text-[11px]">[换头像]</span> 等指令；关闭则不注入相关协议。
+                开启后允许角色响应用户发图，输出 <span className="font-mono text-[11px]">换头像</span> / <span className="font-mono text-[11px]">换背景</span> 等指令；关闭则不注入相关协议。
               </p>
             </div>
             <WxSwitch

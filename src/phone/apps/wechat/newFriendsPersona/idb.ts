@@ -1804,6 +1804,14 @@ function normalizeChatConversationSettingsRow(input: unknown): ChatConversationS
         ? !!(r as { showGroupRankBadgesInChat?: boolean }).showGroupRankBadgesInChat
         : false,
     chatBackground: typeof r.chatBackground === 'string' ? r.chatBackground : '',
+    ...(typeof (r as { playerChatAvatarUrl?: unknown }).playerChatAvatarUrl === 'string' &&
+    (r as { playerChatAvatarUrl: string }).playerChatAvatarUrl.trim()
+      ? {
+          playerChatAvatarUrl: migrateLegacyRootPublicUrl(
+            (r as { playerChatAvatarUrl: string }).playerChatAvatarUrl.trim(),
+          ),
+        }
+      : {}),
     ...(typeof (r as { replyOutputLanguage?: unknown }).replyOutputLanguage === 'string' &&
     (r as { replyOutputLanguage: string }).replyOutputLanguage.trim()
       ? { replyOutputLanguage: (r as { replyOutputLanguage: string }).replyOutputLanguage.trim().slice(0, 16) }
@@ -1871,6 +1879,29 @@ function normalizeChatConversationSettingsRow(input: unknown): ChatConversationS
               imageRoundCountMax: imageCountRange.max,
             }
           : {}),
+      }
+    })(),
+    ...((): Partial<ChatConversationSettingsRow> => {
+      const overrideEnabled =
+        typeof (r as { imageGenStyleOverrideEnabled?: unknown }).imageGenStyleOverrideEnabled === 'boolean'
+          ? !!(r as { imageGenStyleOverrideEnabled?: boolean }).imageGenStyleOverrideEnabled
+          : false
+      if (!overrideEnabled) return {}
+      const modeRaw = (r as { imageGenStylePrefixMode?: unknown }).imageGenStylePrefixMode
+      const mode = modeRaw === 'custom' ? ('custom' as const) : ('preset' as const)
+      const presetId =
+        typeof (r as { imageGenStylePresetId?: unknown }).imageGenStylePresetId === 'string'
+          ? (r as { imageGenStylePresetId: string }).imageGenStylePresetId.trim().slice(0, 64)
+          : ''
+      const customPrefix =
+        typeof (r as { imageGenCustomStylePrefix?: unknown }).imageGenCustomStylePrefix === 'string'
+          ? (r as { imageGenCustomStylePrefix: string }).imageGenCustomStylePrefix.trim().slice(0, 500)
+          : ''
+      return {
+        imageGenStyleOverrideEnabled: true,
+        imageGenStylePrefixMode: mode,
+        ...(presetId ? { imageGenStylePresetId: presetId } : {}),
+        ...(customPrefix ? { imageGenCustomStylePrefix: customPrefix } : {}),
       }
     })(),
     ...(typeof (r as { proactiveMessageEnabled?: unknown }).proactiveMessageEnabled === 'boolean'
@@ -5398,6 +5429,7 @@ export class PersonaDb {
     if (patch.imageGenFailed === false) delete merged.imageGenFailed
     if (patch.imageDescription === '') delete merged.imageDescription
     if (patch.imageGenPrompt === '') delete merged.imageGenPrompt
+    if (Array.isArray(patch.images) && patch.images.length === 0) delete merged.images
     const normalized = normalizeWeChatChatMessage(merged)
     if (!normalized) return
     const db = await openDb()
@@ -9472,6 +9504,8 @@ export class PersonaDb {
       clearVoiceRoundTriggerPercent?: boolean
       clearImageRoundTriggerPercent?: boolean
       clearImageRoundCountRange?: boolean
+      /** 为 true 时清除本聊天生图风格覆盖，恢复跟随全局 API */
+      clearImageGenStyleOverride?: boolean
       clearClassicEmojiRoundTriggerPercent?: boolean
       clearClassicEmojiBannedNames?: boolean
       clearStickerTargetedConfig?: boolean
@@ -9495,6 +9529,7 @@ export class PersonaDb {
         | 'showGroupMemberNicknameInChat'
         | 'showGroupRankBadgesInChat'
         | 'chatBackground'
+        | 'playerChatAvatarUrl'
         | 'stickerRoundTriggerPercent'
         | 'stickerTargetedModeEnabled'
         | 'stickerTargetedGroups'
@@ -9513,6 +9548,10 @@ export class PersonaDb {
         | 'imageRoundTriggerPercent'
         | 'imageRoundCountMin'
         | 'imageRoundCountMax'
+        | 'imageGenStyleOverrideEnabled'
+        | 'imageGenStylePrefixMode'
+        | 'imageGenStylePresetId'
+        | 'imageGenCustomStylePrefix'
         | 'proactiveMessageEnabled'
         | 'proactiveMessageIntervalSeconds'
         | 'proactiveMessageLastFiredAtMs'
@@ -9576,6 +9615,13 @@ export class PersonaDb {
       showGroupRankBadgesInChat:
         params.showGroupRankBadgesInChat ?? existing?.showGroupRankBadgesInChat ?? false,
       chatBackground: params.chatBackground ?? existing?.chatBackground ?? '',
+      ...(typeof params.playerChatAvatarUrl === 'string'
+        ? params.playerChatAvatarUrl.trim()
+          ? { playerChatAvatarUrl: params.playerChatAvatarUrl.trim() }
+          : {}
+        : existing?.playerChatAvatarUrl?.trim()
+          ? { playerChatAvatarUrl: existing.playerChatAvatarUrl.trim() }
+          : {}),
       ...(params.clearStickerRoundTriggerPercent
         ? {}
         : typeof params.stickerRoundTriggerPercent === 'number' && Number.isFinite(params.stickerRoundTriggerPercent)
@@ -9708,6 +9754,35 @@ export class PersonaDb {
               }
             })()
           : {}),
+      ...(params.clearImageGenStyleOverride
+        ? {}
+        : (() => {
+            const enabled =
+              typeof params.imageGenStyleOverrideEnabled === 'boolean'
+                ? params.imageGenStyleOverrideEnabled
+                : existing?.imageGenStyleOverrideEnabled === true
+            if (!enabled) return {}
+            const mode =
+              params.imageGenStylePrefixMode === 'custom' || params.imageGenStylePrefixMode === 'preset'
+                ? params.imageGenStylePrefixMode
+                : existing?.imageGenStylePrefixMode === 'custom'
+                  ? ('custom' as const)
+                  : ('preset' as const)
+            const presetId =
+              typeof params.imageGenStylePresetId === 'string'
+                ? params.imageGenStylePresetId.trim().slice(0, 64)
+                : existing?.imageGenStylePresetId?.trim() || ''
+            const customPrefix =
+              typeof params.imageGenCustomStylePrefix === 'string'
+                ? params.imageGenCustomStylePrefix.trim().slice(0, 500)
+                : existing?.imageGenCustomStylePrefix?.trim() || ''
+            return {
+              imageGenStyleOverrideEnabled: true,
+              imageGenStylePrefixMode: mode,
+              ...(presetId ? { imageGenStylePresetId: presetId } : {}),
+              ...(customPrefix ? { imageGenCustomStylePrefix: customPrefix } : {}),
+            }
+          })()),
       ...(typeof params.proactiveMessageEnabled === 'boolean'
         ? { proactiveMessageEnabled: params.proactiveMessageEnabled }
         : existing?.proactiveMessageEnabled !== undefined

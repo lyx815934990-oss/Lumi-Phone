@@ -37,7 +37,7 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
     id: 'pureRestrainLove',
     title: '纯爱克制',
     description:
-      '系统内置：好感生效后约束克制纯爱气质——直球但不压迫、暗戳戳心动、尊重边界、禁止强制爱。开启后注入线上/线下 AI，正文不可查看或编辑。',
+      '系统内置：好感生效后约束克制纯爱——直球不压迫、暗戳戳心动、尊重边界、禁止强制爱；情侣亲密默认生涩害羞；越界或上头稍用力后会内耗自责。开启后注入线上/线下 AI，正文不可查看或编辑。',
   },
   {
     id: 'offlineRichInnerOs',

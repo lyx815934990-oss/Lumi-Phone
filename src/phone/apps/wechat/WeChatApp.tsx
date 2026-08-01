@@ -457,8 +457,8 @@ function buildFriendRequestReplyBias(params: { messages: FriendRequest['messages
       : '当前不是首条验证消息阶段：可输出 1~4 条普通文本（每行一条）。'
     : '当前是首条验证消息阶段：必须且只能输出 1 条普通文本。'
   const rule1 = adjudicationMode
-    ? '1) 最开头必须输出补充偏向中的 `<friend_request_response>` 裁决块；其后仅写口语验证回复，禁止 [表情包]、引用、红包、转账等结构化消息。'
-    : '1) 只允许普通文本消息，禁止任何特殊格式：禁止 [表情包]、[引用:...]、[REDPACKET]、[TRANSFER]、[VOICECALL]、[BUSY]、JSON、Markdown、代码块、URL 图片链接。'
+    ? '1) 最开头必须输出补充偏向中的 `<friend_request_response>` 裁决块；其后仅写口语验证回复，禁止表情包、引用、红包、转账等结构化消息。'
+    : '1) 只允许普通文本消息，禁止任何特殊格式：禁止「表情包」「引用」「红包」「转账」「语音通话」「忙碌」等机器指令、JSON、Markdown、代码块、URL 图片链接。'
   const extra = params.extraBias?.trim() ? `\n补充偏向：${params.extraBias.trim()}` : ''
   return (
     `这是“新朋友-验证申请”专用聊天，不是普通私聊。\n` +
@@ -4904,6 +4904,7 @@ function WeChatAppInner({ onBack }: Props) {
     profileImageChange: boolean
     internetMemeLexicon: boolean
     bg: string
+    playerChatAvatarUrl: string
     showGroupMemberNicknameInChat: boolean
     showGroupRankBadgesInChat: boolean
   } | null>(null)
@@ -4944,6 +4945,7 @@ function WeChatAppInner({ onBack }: Props) {
           profileImageChange: s?.profileImageChangeEnabled === true,
           internetMemeLexicon: s?.internetMemeLexiconEnabled === true,
           bg: (s?.chatBackground ?? '').trim(),
+          playerChatAvatarUrl: (s?.playerChatAvatarUrl ?? '').trim(),
           showGroupMemberNicknameInChat: s?.showGroupMemberNicknameInChat !== false,
           showGroupRankBadgesInChat: !!s?.showGroupRankBadgesInChat,
         }
@@ -4956,6 +4958,7 @@ function WeChatAppInner({ onBack }: Props) {
           prev.profileImageChange === next.profileImageChange &&
           prev.internetMemeLexicon === next.internetMemeLexicon &&
           prev.bg === next.bg &&
+          prev.playerChatAvatarUrl === next.playerChatAvatarUrl &&
           prev.showGroupMemberNicknameInChat === next.showGroupMemberNicknameInChat &&
           prev.showGroupRankBadgesInChat === next.showGroupRankBadgesInChat
             ? prev
@@ -6302,6 +6305,7 @@ function WeChatAppInner({ onBack }: Props) {
                 personaCharacterId={chatRoomPersonaCharacterId ?? undefined}
                 playerDisplayName={state.profile.displayName}
                 playerAvatarUrl={state.profile.avatarImageUrl}
+                playerChatAvatarUrl={chatSessionPrefs?.playerChatAvatarUrl || undefined}
                 peerAvatarUrl={chatPeerContact?.avatarUrl}
                 peerNotifyTitle={chatPeerContact?.remarkName ?? '聊天'}
                 chatBackgroundUrl={chatSessionPrefs?.bg || undefined}

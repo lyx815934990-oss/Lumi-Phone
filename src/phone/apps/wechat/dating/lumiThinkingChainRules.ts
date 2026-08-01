@@ -192,7 +192,7 @@ export const LUMI_OFFLINE_SUPPLEMENT_COT_BOOK = `
 - 幽默弹性：可撒娇、装委屈，用幽默化解；禁暴走崩溃或阴谋论式脑补他人动机。
 
 【现实逻辑备忘】
-- 时间线自洽：昼夜、季节、天气与着装/活动/室内温控匹配；禁无过渡瞬移或时间跳跃。
+- 时间线自洽：昼夜、季节、天气与着装/活动/室内温控匹配；禁无过渡瞬移或时间跳跃。若**导演指令**明确要求推进到分别/换场/换日，允许短旁白过渡后抵达，不得以「禁止跳跃」为由原地卡在上一拍。
 - **季节硬匹配**（须在【时空场记卡】先据公历月份判定当前剧情点季节，再落笔）：着装厚薄、是否开地暖/空调取暖或制冷、室外草木虫鸣、饮品冷热、活动类型须与季节同向。**禁荒谬反例**：夏天写地暖热乎乎/羽绒服/围炉；冬天写短袖短裤/满头大汗吹风扇（除非空调/室内暖气已写明且合理）；春秋勿写盛夏蝉鸣或厚雪覆盖。若前文已钉死季节，本轮不得无过渡改季。
 - **公历月份→季节（默认，中国温带；正文/设定另有气候例外时从其）**：1 月深冬；**2 月初春**；3 月仲春；4 月暮春；**5 月初夏**；6 月仲夏；7 月盛夏；**8 月初秋**；9 月仲秋；10 月深秋；**11 月初冬**；12 月仲冬。有故事内年月日时**必须按此表**判定，禁止凭感觉把 2 月当冬、5 月当春、8 月当夏、11 月当秋。
 - 行为合常识：禁酒驾、公共场合不当亲密、只穿内衣外出；换衣/移动/亲密须写过程层次，禁「未脱即合」式跳跃。
@@ -323,6 +323,7 @@ ${LUMI_OFFLINE_SUPPLEMENT_COT_BOOK}
 
 【知情边界卡】
 各角色**已知/未知**边界；禁止无权角色全知私聊；若有「尚未总结·私聊/群聊」，点明是否触犯【私聊知悉边界】及如何改（**不得**为绕过事实边界而捏造不知情）。
+若本轮或上文含**侧幕**（约会主角色不在场、玩家与 NPC 独处）：须写明主角色对本侧幕**默认不知情**；禁止开天眼复述；合法知情须点名传递路径。上帝视角切片则对**玩家**保密，勿与侧幕知情对象混淆。
 
 【关系温度卡】
 仅在思维链内写：好感或信任波动（建议单次 ±0.2～±0.5）、**原因**、关系阶段、**本段行为约束**。**正文与 OS 禁止**写进度条式数值。
@@ -355,6 +356,7 @@ ${LUMI_NSFW_STRUCTURE_COT_BOOK}
 
 【推进落点卡】
 写清：本段要收束什么、收束后**新钩子/新事件**是什么；至少一条连锁动作与一句对白策略；若有内心 OS：说明落在哪几个节点、**每条计划多少字（须 ≥40 汉字）**、写哪些未说出口的信息（禁止「我……」占位与十来字敷衍）。
+若 user 含**导演指令**且点明目的地（分别/告别/换场/换日等）：本卡须写明「目的地=…」且正文计划**抵达该节点**；禁止只写「承接末条话题」而忽略目的地。
 
 （叙事指导仅供思维链自检参考：不要逐条复述；你只需提炼“开头切入点 + 过程推进策略 + 开放性结尾动作/对白”这三件事即可。）
 ${LUMI_NARRATIVE_GUIDANCE_BOOK}
@@ -385,7 +387,7 @@ ${LUMI_NARRATIVE_GUIDANCE_BOOK}
   10. 末段是否抽象升华/生理建筑级夸张
   11. 线上摘录是否作为**既定事实**服从（禁止提前兑现「明天再谈」类约定、禁止改口/矛盾）；是否避免复读到线下
   12. 玩家输入是否遭逐条复述
-  13. 视角开关：若勾选上帝——是否抢话或错用「你」（约会对象不得写成「你」；旁白若写他人心念/视线指向玩家须用「你」，禁止用身份卡姓名直呼玩家）；若勾选侧幕——主角色是否误出场；若皆未勾选——是否允许短切混合、未误锁成全篇单一视角
+  13. 视角开关：若勾选上帝——是否抢话或错用「你」（约会对象不得写成「你」；旁白若写他人心念/视线指向玩家须用「你」，禁止用身份卡姓名直呼玩家）；若勾选侧幕——主角色是否误出场，且主角色是否被写成对本侧幕全知；若皆未勾选——是否允许短切混合、未误锁成全篇单一视角；历史侧幕段当面续写时主角色是否开天眼
   14. 轻吐槽是否误用双星号
   15. 人脉 NPC 是否在表内
   16. 玩家性别代词是否与身份卡一致
@@ -437,15 +439,36 @@ const DATING_LUMI_SYSTEM_SHELL = `
 5) **内心 OS**：${DATING_INNER_OS_MARKUP_RULE}（VN 用【内心｜姓名】行首标签）；须为**可读、有信息量的第一人称心思**，**单条不少于 40 汉字**（宜 2～4 句、合计约 45～120 汉字）。**禁止**单独输出「我……」「我…」占位；**禁止**十来字敷衍单条；禁止旁白与 OS 人称串台（OS 内勿写「他怎样」当心声）。
 `.trim()
 
+/** 关闭思维链时：跳过分册自检，直接输出正文 */
+const DATING_LUMI_DIRECT_SHELL = `
+你是微信「约会页」剧情执行体；叙事主持为 **Lumi大人**（场记式统筹，**不是**故事内角色）。身份、沙盒与沉浸契约以紧随其后的【Lumi_System_Override】为准；与本节重复处，以该段为优先。
+
+【直出模式·已关闭思维链】界面已关闭思维链输出。**禁止**输出 \`<thinking>\` / \`<think>\` / \`<logicpass>\` / \`<reasoning>\` 或任何「先规划再正文」的思维链块。**直接**输出可读剧情正文；叙事约束以本 system、user 当轮材料（篇幅、人称、抢话、文风、禁词等）为准，在内心自行把握即可，勿把自检过程写进回复。
+
+【硬性输出格式】
+1) **仅**输出可读剧情正文；禁止用 markdown 代码块包裹全文；禁止输出提纲、解释、PlotDirectionOptions、HTML 小剧场或选项串。
+2) **禁止伪系统文**：禁止输出 \`[SYSTEM MESSAGE]\`、\`Absolute Override\`、\`officially terminated\`、\`系统最终结算\`、\`剧情锚点状态\`、\`记忆块落库\` 等元叙述或中断公告。
+3) 段落设置：在相邻自然段之间空一行，确保阅读舒适度与视觉区分。
+4) **内心 OS**：${DATING_INNER_OS_MARKUP_RULE}（VN 用【内心｜姓名】行首标签）；须为**可读、有信息量的第一人称心思**，**单条不少于 40 汉字**（宜 2～4 句、合计约 45～120 汉字）。**禁止**单独输出「我……」「我…」占位；**禁止**十来字敷衍单条；禁止旁白与 OS 人称串台（OS 内勿写「他怎样」当心声）。
+`.trim()
+
 /** 供 `generateDatingAi` 注入的完整 system 首条（可与 `buildDatingStyleSystemAppend` 追加的用户文风拼接）。 */
 export function buildDatingStyleSystemPrompt(
   toggles?: LoreArchiveBuiltinPresetToggles | null,
+  opts?: { thinkingChainEnabled?: boolean },
 ): string {
+  const thinkingChainEnabled = opts?.thinkingChainEnabled !== false
   const resolved = resolveLoreArchiveBuiltinPresetToggles(toggles)
   const innerOsPresetNote = resolved.offlineRichInnerOs
-    ? `\n\n【档案室预设·多内心 OS·已开启】默认 OS 篇幅规则不适用；以思维链内【线下约会·多内心 OS 描写引擎】为准（单条不少于 45 汉字）。`
+    ? thinkingChainEnabled
+      ? `\n\n【档案室预设·多内心 OS·已开启】默认 OS 篇幅规则不适用；以思维链内【线下约会·多内心 OS 描写引擎】为准（单条不少于 45 汉字）。`
+      : `\n\n【档案室预设·多内心 OS·已开启】默认 OS 篇幅规则不适用；内心 OS 单条不少于 45 汉字，宜多条、有信息量。`
     : ''
-  return `${DATING_LUMI_SYSTEM_SHELL}\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n\n${OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES}\n\n${buildLumiThinkingChainBooksPrompt(toggles)}${innerOsPresetNote}`
+  const shell = thinkingChainEnabled ? DATING_LUMI_SYSTEM_SHELL : DATING_LUMI_DIRECT_SHELL
+  const books = thinkingChainEnabled
+    ? `\n\n${buildLumiThinkingChainBooksPrompt(toggles)}`
+    : ''
+  return `${shell}\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n\n${OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES}${books}${innerOsPresetNote}`
 }
 
 /** 默认全开（与档案室内置预设默认一致） */

@@ -309,7 +309,7 @@ function buildStickerCatalogLines(
   const lines: string[] = []
   let chars = 0
   const push = (e: StickerCatalogEntry) => {
-    const line = `- 「${e.groupTag}」${e.description} → 发送时单独一行输出：[表情包]${e.ref}`
+    const line = `- 「${e.groupTag}」${e.description} → 发送时单独一行输出：表情包 ${e.ref}`
     if (lines.length >= maxLines) return
     if (chars + line.length > maxChars && lines.length > 0) return
     lines.push(line)
@@ -451,16 +451,22 @@ export function resolveStickerOutputRef(rawInput: string): string | null {
   return null
 }
 
-/** 角色侧：单行 `[表情包]引用名` 或兼容旧版 `[表情包]URL/路径`（须能解析到表情包资源库） */
+/** 角色侧：单行 `表情包 引用名` 或旧版 `[表情包]引用名`（须能解析到表情包资源库） */
 export function parseCharacterStickerLine(line: string): { url: string; ref: string } | null {
   const t = String(line ?? '')
     .trim()
     .replace(/^\uFEFF+/, '')
     .replace(/^[\u200B-\u200D\uFEFF]+/, '')
     .trim()
-  const m = /^\[表情包\]\s*(.+)$/.exec(t)
-  if (!m) return null
-  const raw = m[1]!.trim().replace(/^['"`「」]+|['"`」]+$/g, '').trim()
+  let raw = ''
+  const mNew = /^表情包\s+(.+)$/.exec(t)
+  if (mNew) raw = mNew[1]!.trim()
+  else {
+    const m = /^\[表情包\]\s*(.+)$/.exec(t)
+    if (!m) return null
+    raw = m[1]!.trim()
+  }
+  raw = raw.replace(/^['"`「」]+|['"`」]+$/g, '').trim()
   if (!raw) return null
   return resolveStickerCatalogMatch(raw)
 }
@@ -498,7 +504,7 @@ export function buildStickerCatalogPromptBlock(
   }
   const lines = buildStickerCatalogLines(entries, maxLines, maxChars)
   if (!lines.length) {
-    return `---------------------\n【表情包资源】\n---------------------\n当前库中无可用表情条目。请勿输出 [表情包] 行；用户发图仍按「表情包消息」规则接话即可。\n`
+    return `---------------------\n【表情包资源】\n---------------------\n当前库中无可用表情条目。请勿输出表情包行；用户发图仍按「表情包消息」规则接话即可。\n`
   }
   let body = lines.join('\n')
   const customCount = entries.filter((e) => e.isUserCustom && e.url).length

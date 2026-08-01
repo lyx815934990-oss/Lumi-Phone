@@ -106,11 +106,22 @@ export function DirectorModeHelpPanel(props: { open: boolean; onClose: () => voi
             badge={<ModeBadge tone="neutral">可和其他开关一起用</ModeBadge>}
           >
             <ModePoint label="开启：">
-              你写的是「接下来想怎么演」的提示，事情还没发生；AI 从当前场面接着写，不会默认你已经做完结果。
+              你写的是「接下来想怎么演」的提示，事情还没发生。同场动作会按过程来写；若你要求「推进到分别 / 告别 / 换场」等，本轮会往那个节点推，而不是卡在上一段同一时段原地续写。
             </ModePoint>
             <ModePoint label="关闭：">
               你写的是已经说过、做过的事；AI 从别人的反应接着写。
             </ModePoint>
+          </ModeCard>
+
+          <ModeCard
+            icon={<Layers className="size-[18px]" strokeWidth={1.75} />}
+            title="剧情推进速度"
+            badge={<ModeBadge tone="neutral">自动 / 慢 / 中 / 快 / 自定义</ModeBadge>}
+          >
+            <p>
+              控制本轮**故事里能跨多久**，和字数无关：「自动」交给模型按剧情自行把握；慢速大约数小时到一天，中速数天到约一个月，快速可到数月或数年；也可自定义小时 / 天 / 月 / 年。
+            </p>
+            <p className="text-[12px] text-stone-500">在输入区「推进·…」里选择，会随当前角色存档。</p>
           </ModeCard>
 
           <ModeCard
@@ -133,6 +144,9 @@ export function DirectorModeHelpPanel(props: { open: boolean; onClose: () => voi
           >
             <p>
               勾选后这一轮**整段**约会对象先不出场，只写你和其他人脉、路人之间的对话和场面；你可以正常在场互动。
+            </p>
+            <p className="text-[12px] text-stone-500">
+              对象当时不在场，默认**不知道**这段侧幕里发生了什么；之后当面续写也不会无故点破，除非你告诉对方、或剧情里出现转述/看到消息等合理路径。
             </p>
             <p className="text-[12px] text-stone-500">适合社团、上班、偶遇路人等「对象不在眼前」的段落。</p>
           </ModeCard>

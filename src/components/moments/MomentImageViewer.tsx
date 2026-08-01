@@ -129,6 +129,26 @@ export function MomentImageViewer({
   }, [open, initialIndex, images.length, resetSlideOffset, resetTransform])
 
   useEffect(() => {
+    if (!open) setLocalBusy(false)
+  }, [open])
+
+  /** 外部 regenerating 从 true→false 时清掉遮罩 */
+  const prevRegeneratingRef = useRef(regenerating)
+  useEffect(() => {
+    const was = prevRegeneratingRef.current
+    prevRegeneratingRef.current = regenerating
+    if (was && !regenerating) setLocalBusy(false)
+  }, [regenerating])
+
+  /** 新图已替换上来时结束本地 loading（避免父级 Promise 未归还时遮罩卡住） */
+  const prevSrcRef = useRef(currentSrc)
+  useEffect(() => {
+    const prev = prevSrcRef.current
+    prevSrcRef.current = currentSrc
+    if (prev && currentSrc && prev !== currentSrc) setLocalBusy(false)
+  }, [currentSrc])
+
+  useEffect(() => {
     if (!promptEditorOpen) return
     setPromptDraft(prompts?.[index] ?? '')
   }, [promptEditorOpen, index, prompts])

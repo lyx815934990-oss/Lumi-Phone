@@ -5,6 +5,8 @@ import {
   parseDistanceInput,
   type LocationSpoofDraft,
 } from './wechatLocationUtils'
+import { matchAnyDirectiveName, pickNamed, pickPositional } from '../directives/parseSpaceDirective'
+import { WxCmd } from '../directives/wechatDirectiveLexicon'
 
 export type AiLocationShareDirective = {
   name: string
@@ -55,9 +57,56 @@ function readLocationShareJson(raw: string): AiLocationShareDirective | null {
   }
 }
 
+function readLocationShareSpace(line: string): AiLocationShareDirective | null {
+  const parts = matchAnyDirectiveName(line, [WxCmd.location])
+  if (!parts) return null
+  const name =
+    pickNamed(parts, ['名', 'name', 'title', 'target', '地点']) || pickPositional(parts, 0)
+  if (!name) return null
+  const address =
+    pickNamed(parts, ['地址', 'address', 'details']) ||
+    (parts.positional.length >= 2 ? pickPositional(parts, 1) : '')
+  const distRaw =
+    pickNamed(parts, ['距离', 'distance', 'distanceKm', 'distanceMeters']) ||
+    (parts.positional.length >= 3 ? pickPositional(parts, 2) : '')
+  if (!distRaw || /^unknown$/i.test(distRaw)) {
+    return {
+      name: name.slice(0, 120),
+      address: address ? address.slice(0, 160) : undefined,
+      distanceMeters: distRaw && /^unknown$/i.test(distRaw) ? -1 : 1200,
+    }
+  }
+  if (/km$/i.test(distRaw) || /^\d+(\.\d+)?$/.test(distRaw)) {
+    const n = Number(String(distRaw).replace(/km$/i, ''))
+    if (Number.isFinite(n)) {
+      const asKm = /km$/i.test(distRaw) || n < 50
+      return {
+        name: name.slice(0, 120),
+        address: address ? address.slice(0, 160) : undefined,
+        distanceMeters: Math.max(0, asKm ? n * 1000 : n),
+      }
+    }
+  }
+  const parsed = parseDistanceInput(distRaw)
+  if (parsed != null) {
+    return {
+      name: name.slice(0, 120),
+      address: address ? address.slice(0, 160) : undefined,
+      distanceMeters: parsed,
+    }
+  }
+  return {
+    name: name.slice(0, 120),
+    address: address ? address.slice(0, 160) : undefined,
+    distanceMeters: 1200,
+  }
+}
+
 /** 解析角色侧发位置指令行 */
 export function parseLocationShareDirective(raw: string): AiLocationShareDirective | null {
   const line = String(raw ?? '').trim()
+  const space = readLocationShareSpace(line)
+  if (space) return space
   const m =
     /^\[LOCATION_SHARE\]\s*(\{[\s\S]*\})$/i.exec(line) ||
     /^\[LOCATION_SHARE_SEND\]\s*(\{[\s\S]*\})$/i.exec(line)
@@ -67,6 +116,7 @@ export function parseLocationShareDirective(raw: string): AiLocationShareDirecti
 
 export function isLocationShareDirectiveArtifactLine(line: string): boolean {
   const t = String(line ?? '').trim()
+  if (matchAnyDirectiveName(t, [WxCmd.location])) return true
   return /^\[LOCATION_SHARE(?:_SEND)?\]\s*\{/i.test(t)
 }
 
@@ -91,10 +141,10 @@ export const WECHAT_LOCATION_SHARE_OUTPUT_BLOCK = `
 【角色共享坐标 · 发位置卡】
 ---------------------
 - 当你要在剧情里**主动把自己的位置（或某虚构地点）发给用户**时，除符合人设的口语外，须**单独占一行**输出机器指令（用户看不到指令行，界面会显示位置卡片）：
-  - \`[LOCATION_SHARE]{"name":"地点主标题","address":"详细地址","distanceKm":0.5}\`
-  - 字段 \`name\`（或 \`title\` / \`target\`）必填；\`address\`（或 \`details\`）选填；距离三选一：\`distanceKm\`、\`distanceMeters\`、或 \`distance\` 字符串（如 \`"0.5 KM"\` / \`"Unknown"\`）。
-- **不要**单独一行只写 \`[位置] …\` 当作「已发出」——那是会话预览文案，**不会**生成位置卡；要真的发出，必须用 \`[LOCATION_SHARE]\` 整行 JSON。
-- **禁止**使用 \`[LOCATION_SEND]\`、\`[SHARE_LOCATION]\` 等自创标签。
+  - \`发位置 名=地点主标题 地址=详细地址 距离=0.5km\`
+  - 也可用位置参：\`发位置 星巴克淮海店 上海市黄浦区… 0.5km\`
+  - \`名\` 必填；\`地址\` 选填；\`距离\` 如 \`0.5km\` / \`500\` / \`Unknown\`。
+- **不要**单独一行只写「位置 …」预览文案——**不会**生成位置卡；须用 \`发位置\` 整行。
 - 距离语义与用户发给你的位置卡相同：用户界面显示的 **TARGET DISTANCE** 表示用户与该地点的相对距离（覆写坐标，非真实 GPS）。
 - 可先口语铺垫（「我在哪哪哪等你」），再单独一行指令；也可指令与口语分条发送。
 `.trim()

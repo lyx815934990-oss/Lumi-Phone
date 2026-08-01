@@ -259,8 +259,8 @@ function buildDatingPlotReferenceIdentityLockPrompt(
       `${notePart}${charGenderPart}${playerGenderPart}` +
       `You are given ${characterRefCount} reference image(s) for the DATING CHARACTER and ${playerRefCount} for the PLAYER — they are TWO DIFFERENT people. ` +
       `Do NOT merge faces, swap genders, or treat all references as one person. ` +
-      `Render as a third-person cinematic illustration — NOT first-person POV, NOT smartphone snapshot. ` +
-      `If reference is 2D anime/illustration, output MUST remain 2D illustrated. Scene request: ${scenePrompt}`
+      `Render as a third-person cinematic frame — NOT first-person POV, NOT smartphone snapshot. ` +
+      `Keep the SAME rendering medium as the reference images. Scene request: ${scenePrompt}`
     )
   }
 
@@ -272,7 +272,7 @@ function buildDatingPlotReferenceIdentityLockPrompt(
       ? `You are given ${refCount} reference images of the SAME character from different views (${refLabels?.join(', ') ?? 'multiple angles'}). Use ALL references together to preserve consistent identity, face, body proportions, outfit style, and art style. `
       : 'The person in the reference image must remain the EXACT same individual — identical face, hairstyle, hair color, eye shape, skin tone, and distinguishing features. '
   return (
-    `${genderPart}${notePart}${identityPart}Render as a third-person cinematic illustration frame captured by an external film camera — NOT first-person POV, NOT smartphone snapshot, NOT mirror selfie. Preserve reference art style and illustration medium. If reference is 2D anime/illustration, output MUST remain 2D illustrated. Scene request: ${scenePrompt}`
+    `${genderPart}${notePart}${identityPart}Render as a third-person cinematic frame captured by an external film camera — NOT first-person POV, NOT smartphone snapshot, NOT mirror selfie. Preserve the reference art style and rendering medium exactly (do NOT convert to a different medium). Scene request: ${scenePrompt}`
   )
 }
 
@@ -289,8 +289,8 @@ function buildReferenceStyleOnlyLockPrompt(
       ? `You are given ${refCount} reference images. Match ONLY their shared art style, line quality, color palette, rendering medium and character design language. `
       : 'Match ONLY the reference image art style, line quality, color palette, rendering medium and character design language. '
   return (
-    `${notePart}${refPart}Match reference art style only; do NOT copy reference third-person composition unless the scene prompt asks for it. ` +
-    `If reference is 2D anime/illustration, output MUST stay 2D illustrated — NOT photorealistic. Scene request: ${scenePrompt}`
+    `${notePart}${refPart}Match reference art style and rendering medium only; do NOT copy reference third-person composition unless the scene prompt asks for it. ` +
+    `Keep the SAME medium as the reference (2D/illustration/photo/CGI — whichever the reference is); do NOT reinterpret into a different medium. Scene request: ${scenePrompt}`
   )
 }
 
@@ -312,12 +312,13 @@ function buildReferenceIdentityLockPrompt(
       ? `You are given ${refCount} reference images of the SAME character from different views (${refLabels?.join(', ') ?? 'multiple angles'}). Use ALL references together to preserve consistent identity, face, body proportions, outfit style, and art style. `
       : 'The person in the reference image must remain the EXACT same individual — identical face, hairstyle, hair color, eye shape, skin tone, and distinguishing features. '
   return (
-    `${genderPart}${notePart}${identityPart}Do not change ethnicity or age. Preserve the reference image art style, illustration medium, line quality, outfit, collar, and accessories. If the reference is 2D anime/illustration, the output MUST remain 2D illustrated — do NOT convert to photorealistic photo, CGI, or 3D render. Scene request: ${scenePrompt}`
+    `${genderPart}${notePart}${identityPart}Do not change ethnicity or age. Preserve the reference image art style, illustration/photo medium, line or skin quality, outfit, collar, and accessories. ` +
+    `Keep the SAME rendering medium as the reference (whether 2D anime, illustration, photoreal photo, or 3D CGI) — do NOT convert the character into a different medium. Scene request: ${scenePrompt}`
   )
 }
 
-const GPT_REFERENCE_ILLUSTRATION_GUARD =
-  'Keep the same 2D anime/illustration rendering as the reference. Do NOT make photorealistic, CGI, or muscular photo-real body. Keep reference costume design unless the scene explicitly asks to change clothes.'
+const REFERENCE_MEDIUM_LOCK_GUARD =
+  'CRITICAL: Look at the reference image(s) and keep THEIR exact rendering medium and art style. Do NOT invent a different medium. Keep reference costume design unless the scene explicitly asks to change clothes.'
 
 function pickClosestImageSize(width: number, height: number, presets: string[]): string {
   const targetRatio = width / height
@@ -743,7 +744,7 @@ async function requestGeminiGenerateContentImage(params: {
     })
     parts.push({
       text:
-        params.promptContext === 'dating_plot'
+        (params.promptContext === 'dating_plot'
           ? buildDatingPlotReferenceIdentityLockPrompt(
               params.prompt,
               params.characterGenderHint,
@@ -765,7 +766,7 @@ async function requestGeminiGenerateContentImage(params: {
                 refDataUrls.length,
                 refLabels,
                 params.characterAppearanceRefNote,
-              ),
+              )) + ` ${REFERENCE_MEDIUM_LOCK_GUARD}`,
     })
   } else {
     parts.push({ text: params.prompt })
@@ -816,10 +817,21 @@ async function loadImageUrlAsDataUrl(url: string): Promise<string | null> {
 
 async function resolveReferenceImageDataUrls(params: MomentsImageGenParams): Promise<string[]> {
   const urls = resolveReferenceUrlsFromParams(params)
+  if (!urls.length) return []
   const out: string[] = []
+  const failed: string[] = []
   for (const url of urls) {
     const dataUrl = await loadImageUrlAsDataUrl(url)
     if (dataUrl) out.push(dataUrl)
+    else failed.push(url.slice(0, 48))
+  }
+  if (!out.length) {
+    throw new Error(
+      '形象参考图加载失败，无法按参考图生图。请重新上传参考图后重试（勿在参考图未加载成功时继续纯文生图）。',
+    )
+  }
+  if (failed.length) {
+    console.warn('[momentsImageGen] some reference images failed to load', failed)
   }
   return out
 }
@@ -868,12 +880,12 @@ function buildGptImageReferenceEditPrompt(
   playerGenderHint?: string,
 ): string {
   if (promptContext === 'dating_plot') {
-    return `${buildDatingPlotReferenceIdentityLockPrompt(prompt, genderHint, refCount, refLabels, appearanceRefNote, characterRefCount, playerGenderHint)} ${GPT_REFERENCE_ILLUSTRATION_GUARD}`
+    return `${buildDatingPlotReferenceIdentityLockPrompt(prompt, genderHint, refCount, refLabels, appearanceRefNote, characterRefCount, playerGenderHint)} ${REFERENCE_MEDIUM_LOCK_GUARD}`
   }
   if (styleOnly) {
-    return `${buildReferenceStyleOnlyLockPrompt(prompt, refCount, appearanceRefNote)} ${GPT_REFERENCE_ILLUSTRATION_GUARD}`
+    return `${buildReferenceStyleOnlyLockPrompt(prompt, refCount, appearanceRefNote)} ${REFERENCE_MEDIUM_LOCK_GUARD}`
   }
-  return `${buildReferenceIdentityLockPrompt(prompt, genderHint, refCount, refLabels, appearanceRefNote)} ${GPT_REFERENCE_ILLUSTRATION_GUARD}`
+  return `${buildReferenceIdentityLockPrompt(prompt, genderHint, refCount, refLabels, appearanceRefNote)} ${REFERENCE_MEDIUM_LOCK_GUARD}`
 }
 
 function extractOpenAiImagePayloadError(data: unknown): string {
@@ -1206,6 +1218,12 @@ async function generateGeminiImage(params: MomentsImageGenParams): Promise<strin
   const height = params.height ?? 1024
 
   if (isGeminiImagenModel(modelName)) {
+    const hasRefs = resolveReferenceUrlsFromParams(params).length > 0
+    if (hasRefs) {
+      throw new Error(
+        '当前 Gemini 模型为 Imagen（纯文生图，不支持识图参考）。请改选带「Image」的原生 Gemini 图模（如 gemini-2.0-flash-preview-image-generation），才能把形象参考图送进模型。',
+      )
+    }
     const url = `${GEMINI_API_BASE_URL}/models/${modelName}:predict?key=${encodeURIComponent(apiKey)}`
     const res = await fetch(url, {
       method: 'POST',
@@ -1302,7 +1320,7 @@ async function generateOpenaiImage(params: MomentsImageGenParams): Promise<strin
       if (params.promptContext === 'character_media' || params.promptContext === 'dating_plot') {
         const detail = err instanceof Error ? err.message : String(err)
         throw new Error(
-          `GPT 形象参考生图失败：${detail}。GPT 对二次元立绘参考容易偏写实/换脸，建议换 Gemini 原生图模；并确认 API 已开通 /v1/images/edits。`,
+          `GPT 形象参考生图失败：${detail}。请确认 API 已开通 /v1/images/edits，且模型为支持参考图的 GPT Image（如 gpt-image-1）。`,
         )
       }
       // 非角色自拍场景保留文生图回落
@@ -1424,6 +1442,12 @@ async function generateCustomImageWithGeminiRouteFallback(
     generateContentErr = err
     const msg = err instanceof Error ? err.message : String(err)
     if (!genEndpoint || !shouldRetryGeminiImageViaGenerations(msg)) throw err
+    // 有形象参考图时不能回落到纯文生图，否则参考图会被丢掉
+    if (resolveReferenceUrlsFromParams(params).length > 0) {
+      throw new Error(
+        `${msg}（已配置形象参考图，不能改走无识图的 /images/generations。请换支持 generateContent 传图的 Gemini Image 模型或接口。）`,
+      )
+    }
   }
 
   try {
@@ -1502,12 +1526,12 @@ async function generateCustomImage(params: MomentsImageGenParams): Promise<strin
         if (params.promptContext === 'character_media' || params.promptContext === 'dating_plot') {
           const detail = err instanceof Error ? err.message : String(err)
           throw new Error(
-            `GPT 形象参考生图失败：${detail}。中转站需支持 /images/edits；二次元参考更推荐 Gemini 原生图模。`,
+            `GPT 形象参考生图失败：${detail}。中转站需支持 /images/edits，且模型为 GPT Image。`,
           )
         }
       }
     } else if (params.promptContext === 'character_media') {
-      throw new Error('自定义接口未配置 /images/edits，无法使用形象参考图。请换支持 edits 的中转或 Gemini 原生图模。')
+      throw new Error('自定义接口未配置 /images/edits，无法使用形象参考图。请换支持 edits 的中转，或改用支持传图的 Gemini Image。')
     }
   }
 

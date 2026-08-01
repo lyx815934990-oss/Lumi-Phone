@@ -2,6 +2,8 @@ import {
   applyCharacterMomentPinDirectives,
   type CharacterMomentPinDirective,
 } from '../../../components/moments/momentPinService'
+import { matchAnyDirectiveName, pickNamed, pickPositional } from './directives/parseSpaceDirective'
+import { WxCmd } from './directives/wechatDirectiveLexicon'
 
 const PIN_DIRECTIVE_RE =
   /^\[(?:置顶朋友圈|PIN_MOMENT|MOMENT_PIN)\](?:\s*(\{[\s\S]*\}))?\s*$/i
@@ -34,9 +36,27 @@ function parseDirectivePayload(raw?: string | null): Pick<
   }
 }
 
+function parsePinSpace(line: string, action: 'pin' | 'unpin'): CharacterMomentPinDirective | null {
+  const names =
+    action === 'pin' ? [WxCmd.pinMoment] : [WxCmd.unpinMoment]
+  const parts = matchAnyDirectiveName(line, names)
+  if (!parts) return null
+  const momentId =
+    pickNamed(parts, ['id', 'momentId', '动态']) || pickPositional(parts, 0) || undefined
+  const hint = pickNamed(parts, ['hint', '关键词', 'content']) || undefined
+  const indexRaw = Number(pickNamed(parts, ['index', 'nth', '序号']))
+  const index =
+    Number.isFinite(indexRaw) && indexRaw >= 1 ? Math.round(indexRaw) : undefined
+  return { action, momentId, hint, index }
+}
+
 export function parseCharacterMomentPinDirective(line: string): CharacterMomentPinDirective | null {
   const t = String(line ?? '').trim()
   if (!t) return null
+  const spacePin = parsePinSpace(t, 'pin')
+  if (spacePin) return spacePin
+  const spaceUnpin = parsePinSpace(t, 'unpin')
+  if (spaceUnpin) return spaceUnpin
   const pinMatch = PIN_DIRECTIVE_RE.exec(t)
   if (pinMatch) {
     return { action: 'pin', ...parseDirectivePayload(pinMatch[1]) }
@@ -89,10 +109,10 @@ export const WECHAT_CHARACTER_MOMENT_PIN_APPENDIX = `
 ■ 怎么输出
 - 先像真人一样用 **0～2 句**口语回应（可犹豫、确认、调侃），**不要**写成教程；也可静默直接改。
 - 若你**决定**操作：在可见回复中**另起一行**，整行**只**输出以下指令之一（不要加引号或多余字）：
-  - 置顶：\`[置顶朋友圈]{"momentId":"…"}\`（momentId 见上方「你的朋友圈 · 置顶参考」）
-  - 用户只说「最新一条/刚发的那条」：用参考列表第 1 条的 momentId
-  - 用户描述正文关键词：选最匹配的一条 momentId，或 \`{"hint":"关键词"}\`
-  - 取消置顶：\`[取消置顶朋友圈]{"momentId":"…"}\`；若未指明哪条，取消**最近置顶**的那条
+  - 置顶：\`置顶朋友圈 id=…\`（id 见上方「你的朋友圈 · 置顶参考」）
+  - 用户只说「最新一条/刚发的那条」：用参考列表第 1 条的 id
+  - 用户描述正文关键词：选最匹配的一条 id，或 \`置顶朋友圈 hint=关键词\`
+  - 取消置顶：\`取消置顶朋友圈 id=…\`；若未指明哪条，取消**最近置顶**的那条
 - 若你不愿、找不到对应动态、或用户指的是**用户自己**的朋友圈：只文字回应，**禁止**输出上述指令。
 - 没有充分理由时保持现有置顶不变，**不要**为了刷存在感频繁换顶。
 `.trim()
@@ -104,5 +124,5 @@ export function buildUserMomentPinRequestBias(message?: string | null): string {
   const mentionsMoments = /朋友圈|动态|moment/i.test(t)
   const mentionsPin = /置顶|取消置顶|顶置|pin/i.test(t)
   if (!mentionsMoments || !mentionsPin) return ''
-  return `[系统提示] 用户本轮在私聊中提到了**朋友圈置顶/取消置顶**。若用户是在请你操作**你自己的**朋友圈：查看上方「你的朋友圈 · 置顶参考」，愿意则先口语回应，再**单独一行**输出 \`[置顶朋友圈]{"momentId":"…"}\` 或 \`[取消置顶朋友圈]{"momentId":"…"}\`；找不到合适动态或你不愿则只文字婉拒，不要输出指令。`
+  return `[系统提示] 用户本轮在私聊中提到了**朋友圈置顶/取消置顶**。若用户是在请你操作**你自己的**朋友圈：查看上方「你的朋友圈 · 置顶参考」，愿意则先口语回应，再**单独一行**输出 \`置顶朋友圈 id=…\` 或 \`取消置顶朋友圈 id=…\`；找不到合适动态或你不愿则只文字婉拒，不要输出指令。`
 }

@@ -43,10 +43,10 @@ export function formatPulseShareAiTranscriptLine(
   return [
     `【系统事件】${who}把一条**微博广场公开动态**转发到了微信。`,
     `博主「${card.authorName}」正文：【${body}】${topic ? `（关联话题：${topic}）` : ''}`,
-    `id：${card.postId}（若你决定去评论，\`[微博评论]\` 块里的 id 行须原样复制）。`,
+    `id：${card.postId}（若你决定去评论，「微博评论」块里的 id 行须原样复制）。`,
     `背景：这是网上公开可刷到的网友帖，你默认也会刷微博/热搜，能看见同类内容；不要纠结「我不认识这个网友」或质疑「内容从哪来的」。`,
     `例外：若帖子属于诽谤、造谣、抹黑你本人的不实负面绯闻，可以否认、生气、追究来源。`,
-    `请结合人设真实回复用户；强烈建议同轮用自己微博账号下去评该帖（见输出协议中的 [微博评论] 块）。`,
+    `请结合人设真实回复用户；强烈建议同轮用自己微博账号下去评该帖（见输出协议中的「微博评论」块）。`,
   ].join('')
 }
 
@@ -63,9 +63,9 @@ export type AiPulseCommentDirective = {
   replies: AiPulseCommentReply[]
 }
 
-const BLOCK_START_RE = /^\[(?:微博评论|PULSE_COMMENT)\]\s*$/i
-const BLOCK_END_RE = /^\[\/(?:微博评论|PULSE_COMMENT)\]\s*$/i
-const BLOCK_OPEN_PREFIX_RE = /^\[(?:微博评论|PULSE_COMMENT)\]/i
+const BLOCK_START_RE = /^(?:微博评论|\[(?:微博评论|PULSE_COMMENT)\])\s*$/i
+const BLOCK_END_RE = /^(?:结束微博评论|\[\/(?:微博评论|PULSE_COMMENT)\])\s*$/i
+const BLOCK_OPEN_PREFIX_RE = /^(?:微博评论|\[(?:微博评论|PULSE_COMMENT)\])/i
 const LEGACY_JSON_LINE_RE = /^\[PULSE_COMMENT\]\s*(\{[\s\S]*\})$/i
 const FIELD_LINE_RE =
   /^\s*(?:id|postId|帖id|帖子|评|评论|text|comment|内容|回|回复|reply)\s*[:：]/i
@@ -148,8 +148,8 @@ function parsePulseCommentMarkup(block: string): AiPulseCommentDirective | null 
   if (legacy) return readPulseCommentJson(legacy[1]!)
 
   const inner = normalized
-    .replace(/^\[(?:微博评论|PULSE_COMMENT)\]\s*/i, '')
-    .replace(/\s*\[\/(?:微博评论|PULSE_COMMENT)\]\s*$/i, '')
+    .replace(/^(?:微博评论|\[(?:微博评论|PULSE_COMMENT)\])\s*/i, '')
+    .replace(/\s*(?:结束微博评论|\[\/(?:微博评论|PULSE_COMMENT)\])\s*$/i, '')
     .trim()
   if (!inner) return null
   if (inner.startsWith('{') && inner.endsWith('}')) return readPulseCommentJson(inner)
@@ -390,15 +390,15 @@ export function buildWeChatPulseShareOutputBlock(): string {
 - 当用户刚转发微博、且你有情绪要宣泄/澄清/蹭热度时：**强烈建议**在同一次线上回复里，一边用微信气泡回话，一边去微博评那条帖。
 - 须输出下面这种**多行字段块**（用户看不到；系统写入微博评论区）。不要用 JSON、不要写成一句话：
 \`\`\`
-[微博评论]
+微博评论
 id：系统事件里的id原样复制
 评：你用自己微博账号发的评论
 回：网友昵称｜接你评论的话
 回：另一个网友｜继续接话｜上一条网友昵称
-[/微博评论]
+结束微博评论
 \`\`\`
 - \`id\` 必须与系统事件中的 id **完全一致**；\`评\` 为你本人口吻（可嘴硬、可宠粉、可否认绯闻），禁止客服腔。
 - \`回\` 行：**写 2～6 条**。格式固定为 \`昵称｜内容\`，楼中楼再加 \`｜被回复昵称\`。第一条必须是接你（角色）的评论；分隔符用中文全角 \`｜\` 或英文 \`|\` 均可。禁止 Unicode emoji，可用 [doge][允悲]。
-- 冷淡到不想下场时可以不写 \`[微博评论]\` 块，但微信正文仍要谈到帖子内容。
+- 冷淡到不想下场时可以不写 \`微博评论\` 块，但微信正文仍要谈到帖子内容。
 `.trim()
 }

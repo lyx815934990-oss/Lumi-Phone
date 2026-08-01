@@ -1,10 +1,13 @@
 import { generateMomentsImage } from '../../../components/moments/momentsImageGen'
 import type { MomentsImageGenSettings } from '../../../components/moments/useMomentsSettingsStore'
 import { loadResolvedImageGenSettings } from '../api/loadResolvedImageGenSettings'
+import { loadResolvedImageGenSettingsForChat } from './chatImageGenStyleOverride'
 import { buildCharacterMediaImageGenParams } from './characterAppearanceImageGen'
 import type { Character, WeChatImageMime } from './newFriendsPersona/types'
 import { personaDb } from './newFriendsPersona/idb'
 import { imageGenDataUrlToPayload } from './wechatCharacterImageGen'
+import { normalizeAppearanceRefPlayerIdentityId } from './appearanceRefContextStore'
+import { wechatConversationKey } from './wechatConversationKey'
 import {
   appearanceBundleToCharacterPatch,
   resolveScopedAppearanceRefs,
@@ -109,6 +112,7 @@ async function markWeChatImageGenRetrying(messageId: string): Promise<void> {
   const id = messageId.trim()
   if (!id) return
   try {
+    // 保留已有图：大图预览重新生成时继续显示旧图 + loading，避免气泡切到占位导致遮罩状态错乱
     await personaDb.patchWeChatChatMessageById(id, {
       imageGenPending: true,
       imageGenAwaitingConfirm: false,
@@ -143,14 +147,26 @@ export async function retryWeChatCharacterImageGenMessage(params: {
   }
   const characterId = row?.characterId?.trim() || ''
   const character = characterId ? await personaDb.getCharacter(characterId) : null
-  const settings = await loadResolvedImageGenSettings()
+  const playerIdentityId =
+    normalizeAppearanceRefPlayerIdentityId(params.playerIdentityId) ||
+    normalizeAppearanceRefPlayerIdentityId(row?.playerIdentityId)
+  const conversationKey =
+    row?.conversationKey?.trim() ||
+    (characterId && playerIdentityId ? wechatConversationKey(characterId, playerIdentityId) : '')
+  const globalSettings = await loadResolvedImageGenSettings()
+  const settings = await loadResolvedImageGenSettingsForChat({
+    conversationKey,
+    characterId,
+    playerIdentityId,
+    globalSettings,
+  })
   await markWeChatImageGenRetrying(messageId)
   return finalizeWeChatCharacterImageGenMessage({
     messageId,
     prompt,
     character,
     settings,
-    playerIdentityId: params.playerIdentityId?.trim() || row?.playerIdentityId?.trim() || null,
+    playerIdentityId: playerIdentityId || null,
   })
 }
 
@@ -180,14 +196,37 @@ export async function finalizeWeChatCharacterImageGenMessage(params: {
   }
   try {
     let characterForGen = params.character
-    const characterId = params.character?.id?.trim()
-    const playerIdentityId = params.playerIdentityId?.trim()
-    if (characterForGen && characterId && playerIdentityId) {
+    const characterId = params.character?.id?.trim() || ''
+    let playerIdentityId =
+      normalizeAppearanceRefPlayerIdentityId(params.playerIdentityId) ||
+      normalizeAppearanceRefPlayerIdentityId(params.character?.playerIdentityId)
+    if (characterForGen && characterId) {
+      if (!playerIdentityId) {
+        try {
+          const ch = await personaDb.getCharacter(characterId)
+          playerIdentityId = normalizeAppearanceRefPlayerIdentityId(ch?.playerIdentityId)
+          if (ch && !params.character?.appearanceRefImages?.length && ch.appearanceRefImages?.length) {
+            characterForGen = ch
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      let playerIdentity = null as Awaited<ReturnType<typeof personaDb.getPlayerIdentity>>
+      if (playerIdentityId) {
+        try {
+          playerIdentity = await personaDb.getPlayerIdentity(playerIdentityId)
+        } catch {
+          playerIdentity = null
+        }
+      }
+      // 与 Pulse/约会一致：只要有角色就解析本页独立参考图（勿因缺少玩家身份整段跳过）
       const scopedRefs = await resolveScopedAppearanceRefs({
         context: 'chat',
-        playerIdentityId,
+        playerIdentityId: playerIdentityId || null,
         characterId,
         character: characterForGen,
+        playerIdentity,
       })
       characterForGen = {
         ...characterForGen,

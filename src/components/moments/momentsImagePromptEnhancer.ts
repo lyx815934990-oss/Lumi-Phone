@@ -39,10 +39,10 @@ const ANIME_ANTI_REALISTIC =
   'NOT photorealistic, NOT realistic photo, NOT DSLR, NOT 3d render, NOT hyperrealistic'
 
 const SELFIE_HINT =
-  /\b(?:selfie shot|mirror selfie shot|selfie|self[\s-]?portrait|mirror selfie|front camera)\b|\[wx-selfie\||\[SUBJECT:PERSON_ACTION|自拍|对镜|前置摄像头|镜面自拍/i
+  /\b(?:selfie shot|mirror selfie shot|selfie|self[\s-]?portrait|mirror selfie|front camera)\b|\[wx-selfie\||\[SUBJECT:PERSON_ACTION|自拍|对镜|前置摄像头|镜面自拍|自撮り|セルフィー/i
 
 const MIRROR_SELFIE_HINT =
-  /\b(?:mirror selfie shot|mirror selfie|mirror shot|in front of (?:a )?mirror|bathroom mirror|reflection in mirror|mirror reflection)\b|对镜|镜面|镜子前|浴室镜|全身镜|镜中|镜面反射|镜子里/i
+  /\b(?:mirror selfie shot|mirror selfie|mirror shot|in front of (?:a )?mirror|bathroom mirror|reflection in mirror|mirror reflection)\b|对镜|镜面|镜子前|浴室镜|全身镜|镜中|镜面反射|镜子里|鏡(?:の前|に向かって)|姿見/i
 
 /** 角色私聊/群聊/朋友圈：模型描述是否为自拍（含人物正脸/对镜） */
 export function isCharacterMediaSelfiePrompt(prompt: string): boolean {
@@ -219,7 +219,7 @@ export function isCharacterMediaCharacterFaceVisiblePrompt(prompt: string): bool
 export const isCharacterChatSelfiePrompt = isCharacterMediaSelfiePrompt
 
 const REFERENCE_MATCH_STYLE_SUFFIX =
-  'match the exact art style, rendering technique, line quality, color palette and illustration medium of the reference image, consistent character design language, same level of stylization as reference, preserve reference outfit and accessories unless scene explicitly changes clothes, do NOT switch to photorealistic or CGI if reference is illustrated, do NOT use a different art style from reference'
+  'CRITICAL: match the EXACT art medium and rendering of the reference image(s) — whatever that medium is (2D anime, illustration, watercolor, photoreal photo, 3D CGI, etc.). Same line quality, color palette, stylization level and design language. Preserve reference outfit and accessories unless the scene explicitly changes clothes. Do NOT reinterpret the character into a different medium than the reference'
 
 const REFERENCE_STYLE_ONLY_COMPOSITION_GUARD =
   'do NOT copy reference image third-person composition, standing pose, or full-body portrait framing, match art style and color palette only'
@@ -519,10 +519,8 @@ export function buildCharacterMediaImagePrompt(
   appendCharacterMediaDualIntimateCompositionGuard(parts, inferFrom)
   appendCharacterMediaSoloBodyPartCompositionGuard(parts, inferFrom)
   appendCharacterMediaHandAestheticGuard(parts, inferFrom, options?.appearanceText)
-  if (!useReferenceStyle || !hasReference) {
-    if (anime && !/not photorealistic/i.test(withStyle)) {
-      parts.push(ANIME_ANTI_REALISTIC)
-    }
+  if (!useReferenceStyle && anime && !/not photorealistic/i.test(withStyle)) {
+    parts.push(ANIME_ANTI_REALISTIC)
   }
   return parts.join(', ')
 }

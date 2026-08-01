@@ -21,6 +21,21 @@ import { computeWeChatStyleKeyboardInset, measureComposerOverlapPx } from '../..
 import { Pressable } from '../../components/Pressable'
 import { setBackgroundNotifyPendingWork } from '../backgroundNotify/backgroundNotifyPendingWork'
 import { registerProactiveMessageRevealHandler } from './proactiveMessageRevealBridge'
+import {
+  installScreenShareReactionEngine,
+  ScreenShareConfirmSheet,
+  ScreenShareDock,
+  setScreenShareExternalPauseGetter,
+  setScreenSharePaused,
+  startScreenShareSession,
+} from './screenShare'
+import {
+  matchAnyDirectiveName,
+  pickNamed,
+  pickPositional,
+  pickTrailingInt,
+} from './directives/parseSpaceDirective'
+import { WxCmd } from './directives/wechatDirectiveLexicon'
 import { planProactiveRevealBubblesAsync, repairStoredMediaMessageRow, repairStoredVoiceMessageRow } from './proactiveBubbleRevealPlan'
 import {
   isProactiveMessageInFlight,
@@ -103,6 +118,8 @@ import {
   type WeChatImageGenUiPatch,
 } from './wechatCharacterImageGenAsync'
 import { characterHasAppearanceReference, resolveCharacterImageGenPromptAppearanceHint } from './characterAppearanceImageGen'
+import { resolveScopedAppearanceRefs } from './resolveScopedAppearanceRefs'
+import { loadResolvedImageGenSettingsForChat } from './chatImageGenStyleOverride'
 import { resolveCharacterMediaImageStyleHint } from '../../../components/moments/momentsImagePromptEnhancer'
 
 import { useChatTheme } from './ChatThemeContext'
@@ -1208,6 +1225,16 @@ function parseReplyMarker(raw: string): { replyMessageId?: string; text: string 
     .replace(/\s{2,}/g, ' ')
     .trim()
   if (!line) return { text: '' }
+  const spaceQuote = matchAnyDirectiveName(line, [WxCmd.quote])
+  if (spaceQuote) {
+    const id =
+      pickNamed(spaceQuote, ['id', '消息', 'messageId']) || pickPositional(spaceQuote, 0)
+    const text =
+      spaceQuote.positional.length >= 2
+        ? spaceQuote.positional.slice(1).join(' ').trim()
+        : ''
+    if (id) return { replyMessageId: id, text }
+  }
   const inline = line.match(/^\[引用[:：]([^\]]+)\]\s*(.*)$/)
   if (inline) {
     return {
@@ -1256,7 +1283,7 @@ function bubbleLineNeedsSpecialBubbleHandler(line: string): boolean {
   const t = String(line ?? '').trim()
   if (!t) return false
   if (t === WECHAT_RECALL_ACTION_TOKEN) return true
-  if (/^(?:\[语音\]|【语音】)\s*/.test(t)) return true
+  if (/^(?:语音\s+|\[语音\]|【语音】)/.test(t)) return true
   if (parseRedPacketDirective(t)) return true
   if (parseTransferDirective(t)) return true
   if (parseTransferIncomingActionDirective(t)) return true
@@ -1293,6 +1320,30 @@ function parseBusyDirective(raw: string): { reason: string; duration: number } |
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
     .trim()
+  // 新格式：忙碌 开会 15  | 忙碌 reason=开会 duration=15
+  const busyParts = matchAnyDirectiveName(line, [WxCmd.busy])
+  if (busyParts) {
+    const durationRaw = pickTrailingInt(busyParts)
+    const duration = Math.min(
+      120,
+      Math.max(1, durationRaw != null && durationRaw > 0 ? durationRaw : 15),
+    )
+    const reasonFromNamed = pickNamed(busyParts, ['reason', '原因', '事'])
+    const reasonPos =
+      busyParts.positional.length >= 2
+        ? busyParts.positional.slice(0, -1).join(' ').trim()
+        : pickPositional(busyParts, 0)
+    const reason = (reasonFromNamed || reasonPos || '暂时有事').trim() || '暂时有事'
+    // 须有时长或至少一个参数，避免口语「我太忙碌了」误判
+    const hasDurationHint =
+      durationRaw != null ||
+      Boolean(busyParts.named.duration || busyParts.named.分钟 || busyParts.named.min) ||
+      Boolean(reasonFromNamed) ||
+      busyParts.positional.length >= 1
+    if (hasDurationHint) {
+      return { reason, duration }
+    }
+  }
   const busyIdx = line.toUpperCase().indexOf('[BUSY]')
   if (busyIdx < 0) return null
   const after = line.slice(busyIdx + '[BUSY]'.length)
@@ -1325,9 +1376,32 @@ const RED_PACKET_UI_SHORTHAND_DEFAULT_YUAN = 8.88
 /** 整行即「展示用」转账文案（模型常误只输出 `[转账]`） */
 const TRANSFER_UI_SHORTHAND_DEFAULT_YUAN = 88
 
+function parseMoneyAmountRemarkSpace(
+  line: string,
+  cmd: string,
+  remarkMax: number,
+  amountMax?: number,
+): { amountYuan: number; remark: string } | null {
+  const parts = matchAnyDirectiveName(line, [cmd])
+  if (!parts) return null
+  const amountNamed = Number(pickNamed(parts, ['amount', '金额', '元']))
+  const amountPos = Number(pickPositional(parts, 0))
+  const amountRaw = Number.isFinite(amountNamed) && amountNamed > 0 ? amountNamed : amountPos
+  const amountYuan = Number.isFinite(amountRaw) ? Math.round(amountRaw * 100) / 100 : Number.NaN
+  if (!Number.isFinite(amountYuan) || amountYuan < 0.01) return null
+  if (amountMax != null && amountYuan > amountMax) return null
+  const remarkNamed = pickNamed(parts, ['备注', 'remark', 'memo'])
+  const remarkPos =
+    parts.positional.length >= 2 ? parts.positional.slice(1).join(' ').trim() : ''
+  const remark = (remarkNamed || remarkPos).slice(0, remarkMax)
+  return { amountYuan, remark }
+}
+
 function parseRedPacketDirective(raw: string): AiRedPacketDirective | null {
   let line = String(raw ?? '').trim()
   if (line.startsWith('【红包】')) line = `[红包]${line.slice('【红包】'.length)}`
+  const space = parseMoneyAmountRemarkSpace(line, WxCmd.redPacket, 64, 200)
+  if (space) return space
   const m = /^\[REDPACKET\]\s*(\{[\s\S]*\})$/i.exec(line)
   if (m) {
     try {
@@ -1363,6 +1437,8 @@ function parseRedPacketDirective(raw: string): AiRedPacketDirective | null {
 function parseTransferDirective(raw: string): AiTransferDirective | null {
   let line = String(raw ?? '').trim()
   if (line.startsWith('【转账】')) line = `[转账]${line.slice('【转账】'.length)}`
+  const space = parseMoneyAmountRemarkSpace(line, WxCmd.transfer, 40)
+  if (space) return space
   const m = /^\[TRANSFER\]\s*(\{[\s\S]*\})$/i.exec(line)
   if (m) {
     try {
@@ -1398,6 +1474,11 @@ function parseTransferDirective(raw: string): AiTransferDirective | null {
 /** 角色将用户发出的未拆红包标为已拆：须单独占一行；不写此行则仅靠用户自己在气泡上拆开 */
 function parseRedPacketOpenDirective(raw: string): { messageId?: string } | null {
   const line = String(raw ?? '').trim()
+  const space = matchAnyDirectiveName(line, [WxCmd.openRedPacket])
+  if (space) {
+    const mid = pickNamed(space, ['id', 'messageId', '消息']) || pickPositional(space, 0)
+    return { messageId: mid || undefined }
+  }
   const m = /^\[REDPACKET_OPEN\]\s*(\{[\s\S]*\})$/i.exec(line)
   if (!m) return null
   try {
@@ -1443,6 +1524,18 @@ function resolveSelfUnopenedRedPacketMessageId(params: { messageIdHint?: string;
 /** 角色对用户转入账款的确认收款 / 拒收退还（不产生新气泡，仅改本地转账记录） */
 function parseTransferIncomingActionDirective(raw: string): { kind: 'accept' | 'return'; messageId?: string } | null {
   const line = String(raw ?? '').trim()
+  const acceptSpace = matchAnyDirectiveName(line, [WxCmd.acceptTransfer])
+  if (acceptSpace) {
+    const mid =
+      pickNamed(acceptSpace, ['id', 'messageId', '消息']) || pickPositional(acceptSpace, 0)
+    return { kind: 'accept', messageId: mid || undefined }
+  }
+  const returnSpace = matchAnyDirectiveName(line, [WxCmd.returnTransfer])
+  if (returnSpace) {
+    const mid =
+      pickNamed(returnSpace, ['id', 'messageId', '消息']) || pickPositional(returnSpace, 0)
+    return { kind: 'return', messageId: mid || undefined }
+  }
   const tryOne = (tag: string, kind: 'accept' | 'return') => {
     const m = new RegExp(`^\\[${tag}\\]\\s*(\\{[\\s\\S]*\\})$`, 'i').exec(line)
     if (!m) return null
@@ -1559,6 +1652,13 @@ function resolveTransferIdFromMisplacedRedPacketOpen(params: {
 
 function parseVoiceCallDirective(raw: string): AiVoiceCallDirective | null {
   const line = String(raw ?? '').trim()
+  const space = matchAnyDirectiveName(line, [WxCmd.voiceCall])
+  if (space) {
+    const opening =
+      pickNamed(space, ['开场', 'opening', 'openingLine', 'firstLine']) ||
+      space.positional.join(' ').trim()
+    return { type: 'start', openingLine: opening ? opening.slice(0, 120) : undefined }
+  }
   const m =
     /^\[VOICECALL\]\s*(\{[\s\S]*\})$/i.exec(line) ??
     /^\[VOICECALL\s*(\{[\s\S]*\})\]$/i.exec(line)
@@ -1568,7 +1668,7 @@ function parseVoiceCallDirective(raw: string): AiVoiceCallDirective | null {
     const t = String(j.type ?? '')
       .trim()
       .toLowerCase()
-    if (t !== 'start') return null
+    if (t && t !== 'start') return null
     const openingRaw = j.openingLine ?? j.opening ?? j.firstLine
     const openingLine = typeof openingRaw === 'string' ? openingRaw.trim().slice(0, 120) : ''
     return openingLine ? { type: 'start', openingLine } : { type: 'start' }
@@ -2208,6 +2308,19 @@ function preferResolvedImageGenChatMsg(dbMsg: ChatMsg, liveMsg: ChatMsg): ChatMs
 
   const dbImg = dbMsg.images?.[0]?.base64?.trim()
   const liveImg = liveMsg.images?.[0]?.base64?.trim()
+  // 重新生成：内存已清空图并 pending，勿用尚未落库的 DB 旧图盖掉
+  if (liveMsg.imageGenPending && !liveImg) {
+    return mergeRedPacketOpened({
+      ...dbMsg,
+      ...liveMsg,
+      images: liveMsg.images,
+      imageGenPending: true,
+      imageGenAwaitingConfirm: false,
+      imageGenFailed: false,
+      imageGenPrompt: liveMsg.imageGenPrompt ?? dbMsg.imageGenPrompt,
+      imageDescription: liveMsg.imageDescription ?? dbMsg.imageDescription,
+    })
+  }
   if (liveImg && !dbImg) {
     return mergeRedPacketOpened({
       ...dbMsg,
@@ -2257,13 +2370,17 @@ function applyImageGenUiPatchToMsg(
   msg: ChatMsg,
   patch: Partial<Pick<ChatMsg, 'images' | 'imageGenPending' | 'imageGenAwaitingConfirm' | 'imageGenFailed'>>,
 ): ChatMsg {
-  return {
+  const next: ChatMsg = {
     ...msg,
     ...patch,
     ...(patch.imageGenPending === false ? { imageGenPending: undefined } : {}),
     ...(patch.imageGenAwaitingConfirm === false ? { imageGenAwaitingConfirm: undefined } : {}),
     ...(patch.imageGenFailed === false ? { imageGenFailed: undefined } : {}),
   }
+  if (Array.isArray(patch.images) && patch.images.length === 0) {
+    delete next.images
+  }
+  return next
 }
 
 function resolveImageGenPatchForMessageId(
@@ -2361,6 +2478,8 @@ export function ChatRoomInner({
   promptPlayerIdentityId: _promptPlayerIdentityId = null,
   /** 玩家头像（与「我」页资料一致），用于己方聊天气泡 */
   playerAvatarUrl,
+  /** 本聊天单独设置的己方头像；有值时覆盖 playerAvatarUrl（气泡与 AI 识图） */
+  playerChatAvatarUrl,
   /** 对方在微信通讯录中的头像 URL；缺省时（角色私聊）会尝试从人设库读取 */
   peerAvatarUrl,
   /** 系统通知标题（通讯录备注名 / Lumi） */
@@ -2431,6 +2550,7 @@ export function ChatRoomInner({
   playerIdentityId: string
   promptPlayerIdentityId?: string | null
   playerAvatarUrl?: string
+  playerChatAvatarUrl?: string
   peerAvatarUrl?: string
   peerNotifyTitle?: string
   chatBackgroundUrl?: string
@@ -2806,10 +2926,12 @@ export function ChatRoomInner({
   }, [peerAvatarUrl, useLumiProjectAssistantPrompt, personaCharacterId, conversationCharacterId])
 
   const playerAvatarResolved = useMemo(() => {
+    const chatOverride = resolveWechatAppAvatar(playerChatAvatarUrl)
+    if (chatOverride.trim()) return chatOverride.trim()
     const resolved =
       resolveWechatAppAvatar(playerAvatarUrl) || resolveWechatAppAvatar(state.profile.avatarImageUrl)
     return resolved.trim() || undefined
-  }, [playerAvatarUrl, state.profile.avatarImageUrl])
+  }, [playerChatAvatarUrl, playerAvatarUrl, state.profile.avatarImageUrl])
 
   /**
    * 私聊专用：仅从 IndexedDB 拼「群聊近期消息摘录」，**不调用模型**（与约会线下剧情参考同源思路）。
@@ -4984,6 +5106,8 @@ export function ChatRoomInner({
   const stubPanelRef = useRef<null | 'emoji'>(null)
   stubPanelRef.current = stubPanel
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
+  const [screenShareConfirmOpen, setScreenShareConfirmOpen] = useState(false)
+  const [screenShareStarting, setScreenShareStarting] = useState(false)
   const [groupLive, setGroupLive] = useState<GroupChatRow | null>(null)
   const [groupAvatarByCharId, setGroupAvatarByCharId] = useState<Record<string, string>>({})
   const [groupAtOpen, setGroupAtOpen] = useState(false)
@@ -5210,44 +5334,80 @@ export function ChatRoomInner({
     }, 1500)
   }, [])
 
+  /** 同步防重复点击（不驱动 UI；大图 loading 由 MomentImageViewer localBusy + await 控制） */
   const retryCharacterImageGenInFlightRef = useRef(new Set<string>())
+  const setCharacterImageGenInFlight = useCallback((messageId: string, inFlight: boolean) => {
+    const id = messageId.trim()
+    if (!id) return
+    if (inFlight) retryCharacterImageGenInFlightRef.current.add(id)
+    else retryCharacterImageGenInFlightRef.current.delete(id)
+  }, [])
 
   const handleRetryCharacterImageGen = useCallback(
-    (msg: Pick<ChatMsg, 'id' | 'imageGenPrompt' | 'imageDescription'>) => {
+    async (msg: Pick<ChatMsg, 'id' | 'imageGenPrompt' | 'imageDescription'>, overridePrompt?: string) => {
       const messageId = msg.id.trim()
       if (!messageId || retryCharacterImageGenInFlightRef.current.has(messageId)) return
-      retryCharacterImageGenInFlightRef.current.add(messageId)
-      void retryWeChatCharacterImageGenMessage({
-        messageId,
-        prompt: resolveCharacterImageGenPromptForApi(msg) || undefined,
-        playerIdentityId,
+      const prompt =
+        (overridePrompt?.trim() || resolveCharacterImageGenPromptForApi(msg) || '').trim() || undefined
+      setCharacterImageGenInFlight(messageId, true)
+      patchChatMsgInListRef.current(messageId, {
+        imageGenAwaitingConfirm: false,
+        imageGenPending: true,
+        imageGenFailed: false,
       })
-        .then((result) => {
-          if (result.ok) return
-          const { failure } = result
-          if (failure.kind === 'rate_limit') {
-            showCenterToast(/额度|quota|配额/i.test(failure.message) ? '生图额度已用尽' : '生图请求过于频繁，请稍后再试')
-          } else if (failure.kind === 'safety') {
-            showCenterToast('配图未通过内容安全审核')
-          } else if (failure.message === 'missing_image_gen_prompt') {
-            showCenterToast('缺少配图描述，无法重试')
-          } else {
-            showCenterToast('配图生成失败，请稍后再试')
-          }
+      if (overridePrompt?.trim()) {
+        void personaDb
+          .patchWeChatChatMessageById(messageId, { imageGenPrompt: overridePrompt.trim().slice(0, 4000) })
+          .catch(() => {})
+      }
+      try {
+        const result = await retryWeChatCharacterImageGenMessage({
+          messageId,
+          prompt,
+          playerIdentityId,
         })
-        .finally(() => {
-          retryCharacterImageGenInFlightRef.current.delete(messageId)
-        })
+        if (result.ok) return
+        const { failure } = result
+        if (failure.kind === 'rate_limit') {
+          showCenterToast(/额度|quota|配额/i.test(failure.message) ? '生图额度已用尽' : '生图请求过于频繁，请稍后再试')
+        } else if (failure.kind === 'safety') {
+          showCenterToast('配图未通过内容安全审核')
+        } else if (failure.message === 'missing_image_gen_prompt') {
+          showCenterToast('缺少配图描述，无法重试')
+        } else {
+          showCenterToast(failure.message?.trim() || '配图生成失败，请稍后再试')
+        }
+      } finally {
+        setCharacterImageGenInFlight(messageId, false)
+      }
     },
-    [playerIdentityId, showCenterToast],
+    [playerIdentityId, setCharacterImageGenInFlight, showCenterToast],
+  )
+
+  const handleSaveCharacterImageGenPrompt = useCallback(
+    (msg: Pick<ChatMsg, 'id'>, prompt: string) => {
+      const messageId = msg.id.trim()
+      const next = prompt.trim().slice(0, 4000)
+      if (!messageId || !next) return
+      void personaDb.patchWeChatChatMessageById(messageId, { imageGenPrompt: next }).catch(() => {})
+      setItems((prev) => {
+        const msgs = extractMessages(prev)
+        const idx = msgs.findIndex((m) => m.id === messageId)
+        if (idx < 0) return prev
+        const nextMsgs = msgs.map((m, i) => (i === idx ? { ...m, imageGenPrompt: next } : m))
+        return rebuildWithCurrentTime(nextMsgs)
+      })
+      showCenterToast('已保存生图提示词')
+    },
+    [extractMessages, rebuildWithCurrentTime, showCenterToast],
   )
 
   const handleConfirmCharacterImageGen = useCallback(
-    (msg: Pick<ChatMsg, 'id' | 'imageGenPrompt' | 'imageDescription'>) => {
+    async (msg: Pick<ChatMsg, 'id' | 'imageGenPrompt' | 'imageDescription'>) => {
       const messageId = msg.id.trim()
       const prompt = resolveCharacterImageGenPromptForApi(msg)
       if (!messageId || !prompt || retryCharacterImageGenInFlightRef.current.has(messageId)) return
-      retryCharacterImageGenInFlightRef.current.add(messageId)
+      setCharacterImageGenInFlight(messageId, true)
       patchChatMsgInListRef.current(messageId, {
         imageGenAwaitingConfirm: false,
         imageGenPending: true,
@@ -5260,33 +5420,32 @@ export function ChatRoomInner({
           imageGenFailed: false,
         })
         .catch(() => {})
-      void retryWeChatCharacterImageGenMessage({
-        messageId,
-        prompt,
-        playerIdentityId,
-      })
-        .then((result) => {
-          if (result.ok) {
-            scheduleReconcilePendingImageGenBubblesRef.current()
-            return
-          }
-          const { failure } = result
-          if (failure.kind === 'rate_limit') {
-            showCenterToast(/额度|quota|配额/i.test(failure.message) ? '生图额度已用尽' : '生图请求过于频繁，请稍后再试')
-          } else if (failure.kind === 'safety') {
-            showCenterToast('配图未通过内容安全审核')
-          } else if (failure.message === 'missing_image_gen_prompt') {
-            showCenterToast('缺少配图描述，无法生成')
-          } else {
-            showCenterToast('配图生成失败，请稍后再试')
-          }
+      try {
+        const result = await retryWeChatCharacterImageGenMessage({
+          messageId,
+          prompt,
+          playerIdentityId,
+        })
+        if (result.ok) {
           scheduleReconcilePendingImageGenBubblesRef.current()
-        })
-        .finally(() => {
-          retryCharacterImageGenInFlightRef.current.delete(messageId)
-        })
+          return
+        }
+        const { failure } = result
+        if (failure.kind === 'rate_limit') {
+          showCenterToast(/额度|quota|配额/i.test(failure.message) ? '生图额度已用尽' : '生图请求过于频繁，请稍后再试')
+        } else if (failure.kind === 'safety') {
+          showCenterToast('配图未通过内容安全审核')
+        } else if (failure.message === 'missing_image_gen_prompt') {
+          showCenterToast('缺少配图描述，无法生成')
+        } else {
+          showCenterToast('配图生成失败，请稍后再试')
+        }
+        scheduleReconcilePendingImageGenBubblesRef.current()
+      } finally {
+        setCharacterImageGenInFlight(messageId, false)
+      }
     },
-    [playerIdentityId, showCenterToast],
+    [playerIdentityId, setCharacterImageGenInFlight, showCenterToast],
   )
 
   const requestVoiceMessageAudio = useCallback(
@@ -6307,6 +6466,12 @@ export function ChatRoomInner({
 
     return () => registerProactiveMessageRevealHandler(ck, null)
   }, [conversationKey, enqueueOpponentMessagesSequential, proactiveCountdownEnabled])
+
+  useEffect(() => {
+    installScreenShareReactionEngine()
+    setScreenShareExternalPauseGetter(() => manualAiPauseRef.current === true)
+    return () => setScreenShareExternalPauseGetter(null)
+  }, [])
 
   /** 切到安卓系统桌面后 setTimeout 会被严重节流；立刻落库以触发系统通知 */
   useEffect(() => {
@@ -8258,7 +8423,7 @@ export function ChatRoomInner({
             })()
             const recallBias = recallPreview
               ? Math.random() < 0.2
-                ? `[系统提示] 用户刚刚撤回了一条私聊消息；你手快，在消失前**瞥到一点氛围**（${recallVagueShape}）**硬性约束**：正文里**禁止**复述撤回原文、**禁止**用加粗/引号复刻措辞、**禁止**使用 \`[引用:消息ID]\` 指向该条或任何等价「引用条」展示原文；只能用人设口吻**旁敲侧击**一句（如「撤回什么呢，我都看见了」「当我瞎？」），让读者感觉你瞄到了又不当众拆穿。`
+                ? `[系统提示] 用户刚刚撤回了一条私聊消息；你手快，在消失前**瞥到一点氛围**（${recallVagueShape}）**硬性约束**：正文里**禁止**复述撤回原文、**禁止**用加粗/引号复刻措辞、**禁止**使用 \`引用 消息ID\` 指向该条或任何等价「引用条」展示原文；只能用人设口吻**旁敲侧击**一句（如「撤回什么呢，我都看见了」「当我瞎？」），让读者感觉你瞄到了又不当众拆穿。`
                 : `[系统提示] 用户刚刚撤回了一条消息，你没看清具体内容。**禁止**假装你看见了原文、**禁止**复述臆测的具体措辞；可以好奇追问，或照常接话。`
               : ''
             const lastSelfPlain = reversed.find((x) => x.kind === 'msg' && x.from === 'self') as ChatMsg | undefined
@@ -8597,15 +8762,34 @@ export function ChatRoomInner({
                 ...(classicEmojiBannedNames?.length ? { classicEmojiBannedNames } : {}),
               }
             }
-            resolvedImageGenSettings = await loadResolvedImageGenSettings()
+            const globalImageGenSettings = await loadResolvedImageGenSettings()
+            resolvedImageGenSettings = await loadResolvedImageGenSettingsForChat({
+              conversationKey,
+              characterId: character?.id ?? conversationCharacterId,
+              playerIdentityId,
+              globalSettings: globalImageGenSettings,
+            })
             // 私聊且「支持发图」开启时注入发图协议；关闭则不注入、不展示占位
             characterImageGenEnabled =
               roomType !== 'group' &&
               !lumiAssistantChat &&
               isCharacterImageSendSupported(convMediaFreqRef.current.image)
+            let hasChatAppearanceReference = characterHasAppearanceReference(character)
+            try {
+              const scopedAppearance = await resolveScopedAppearanceRefs({
+                context: 'chat',
+                playerIdentityId,
+                characterId: character?.id ?? conversationCharacterId,
+                character,
+              })
+              hasChatAppearanceReference =
+                scopedAppearance.character.images.length > 0 || hasChatAppearanceReference
+            } catch {
+              /* keep global-only */
+            }
             const characterImageGenStyleHint = resolveCharacterMediaImageStyleHint(
               resolvedImageGenSettings,
-              characterHasAppearanceReference(character),
+              hasChatAppearanceReference,
             )
             const roundImageCountRange = parseStoredImageRoundCountRange(
               convMediaFreqRef.current.imageCountMin,
@@ -8626,6 +8810,7 @@ export function ChatRoomInner({
               ? ({
                   characterImageGenEnabled: true,
                   characterImageGenStyleHint,
+                  hasAppearanceReference: hasChatAppearanceReference,
                   imageRoundCountMin: roundImageCountRange.min,
                   imageRoundCountMax: roundImageCountRange.max,
                   ...(roundImageCountTarget > 0 ? { imageRoundCountTarget: roundImageCountTarget } : {}),
@@ -9004,7 +9189,7 @@ export function ChatRoomInner({
               }
               if (characterImageGenEnabled) {
                 systemContentFinal += `\n\n${buildCharacterImageGenPromptBlock(characterImageGenStyleHint, {
-                  hasAppearanceReference: characterHasAppearanceReference(character),
+                  hasAppearanceReference: hasChatAppearanceReference,
                   appearanceHint: resolveCharacterImageGenPromptAppearanceHint(character),
                   userExplicitCharacterImageRequest: roundUserExplicitImageRequest,
                   chatContextTail: buildChatContextTailFromTranscript(transcript),
@@ -9121,6 +9306,7 @@ export function ChatRoomInner({
                 nonPrimarySpeakerLine,
                 worldBookPlayerIdentity: worldBookPlayerIdentityForAi,
                 worldBookUserLineLabel: worldBookUserLineLabelForAi,
+                ...(playerAvatarResolved ? { playerWechatAvatarUrl: playerAvatarResolved } : {}),
               }
               if (userImageIsSticker) {
                 aiReply = await requestWeChatPeerReplyBubbles(privatePeerReplyRetryParams)
@@ -9135,6 +9321,7 @@ export function ChatRoomInner({
                   imageBase64: img.base64.trim(),
                   imageMime: img.type ?? 'image/jpeg',
                   userImageIsSticker,
+                  ...(playerAvatarResolved ? { playerWechatAvatarUrl: playerAvatarResolved } : {}),
                   ...meetWechatAiExtras,
                   ...altExtras,
                   ...linkPreviewExtras,
@@ -9236,6 +9423,7 @@ export function ChatRoomInner({
                 nonPrimarySpeakerLine,
                 worldBookPlayerIdentity: worldBookPlayerIdentityForAi,
                 worldBookUserLineLabel: worldBookUserLineLabelForAi,
+                ...(playerAvatarResolved ? { playerWechatAvatarUrl: playerAvatarResolved } : {}),
               }
               aiReply = await requestWeChatPeerReplyBubbles(privatePeerReplyRetryParams)
             }
@@ -9780,21 +9968,23 @@ export function ChatRoomInner({
             }
           } else if (
             (aiReply.bubbles ?? []).some((b) =>
-              /\[MUSIC_SYNC_INVITE\]/i.test(String(b ?? '')),
+              /(?:^|\n)\s*(?:共听邀请|\[MUSIC_SYNC_INVITE\])/i.test(String(b ?? '')),
             )
           ) {
             logConsole(
               'ai',
-              '[music_sync] 模型输出了 MUSIC_SYNC_INVITE 但未能生成邀约卡（请检查指令是否含 title/artist 或 trackId）',
+              '[music_sync] 模型输出了共听邀请但未能生成邀约卡（请检查指令是否含 title/artist 或 trackId）',
             )
           }
           if (
             !musicPre.pendingSeeks.length &&
-            (aiReply.bubbles ?? []).some((b) => /\[MUSIC_SEEK\]/i.test(String(b ?? '')))
+            (aiReply.bubbles ?? []).some((b) =>
+              /(?:^|\n)\s*(?:跳进度|\[MUSIC_SEEK\])/i.test(String(b ?? '')),
+            )
           ) {
             logConsole(
               'ai',
-              '[music_sync] MUSIC_SEEK 未能解析进度（需 lyric/time/timeMs，且须正在与该角色一起听）',
+              '[music_sync] 跳进度未能解析（需 lyric/time/timeMs，且须正在与该角色一起听）',
             )
           }
         }
@@ -10927,7 +11117,7 @@ export function ChatRoomInner({
               })
               continue
             }
-            const voiceLineMatch = currentLine.match(/^(?:\[语音\]|【语音】)\s*(.*)$/)
+            const voiceLineMatch = currentLine.match(/^(?:语音\s+|\[语音\]|【语音】\s*)(.*)$/)
             if (voiceLineMatch) {
               if (
                 shouldSuppressCharacterVoiceLine(
@@ -12307,6 +12497,7 @@ export function ChatRoomInner({
     groupLive,
     groupAvatarByCharId,
     peerAvatarResolved,
+    playerAvatarResolved,
     buildChatItemsForAiTranscript,
     buildChatItemsForAiTranscriptForKey,
     enqueueOpponentMessagesSequential,
@@ -13951,6 +14142,7 @@ export function ChatRoomInner({
           break
         case 'read_ignore':
           manualAiPauseRef.current = true
+          setScreenSharePaused(true)
           if (conversationKey.trim()) setConversationOpponentQueueStop(conversationKey.trim(), true)
           setTypingVisible(false)
           pendingAiRepliesRef.current = 0
@@ -13958,6 +14150,7 @@ export function ChatRoomInner({
           break
         case 'busy':
           manualAiPauseRef.current = true
+          setScreenSharePaused(true)
           if (conversationKey.trim()) setConversationOpponentQueueStop(conversationKey.trim(), true)
           setTypingVisible(false)
           pendingAiRepliesRef.current = 0
@@ -13968,7 +14161,8 @@ export function ChatRoomInner({
           setRetryReplyPromptOpen(true)
           break
         case 'continue_reply':
-              if (conversationKey.trim()) setConversationOpponentQueueStop(conversationKey.trim(), false)
+          if (conversationKey.trim()) setConversationOpponentQueueStop(conversationKey.trim(), false)
+          setScreenSharePaused(false)
           triggerManualCharacterReply()
           showComposerToast('已继续回复')
           break
@@ -13978,6 +14172,16 @@ export function ChatRoomInner({
           openConsole()
           showComposerToast('控制台已打开')
           logger.log('frontend', '点击加号菜单：控制台日志')
+          break
+        case 'screen_share':
+          if (roomType !== 'private' || useLumiProjectAssistantPrompt || isSelfMemoChat) {
+            showComposerToast('请在角色私聊中使用一起刷')
+            break
+          }
+          setStubPanel(null)
+          setPlusMenuOpen(false)
+          setScreenShareConfirmOpen(true)
+          logger.log('frontend', '点击加号菜单：一起刷')
           break
         case 'games':
           setStubPanel(null)
@@ -15778,6 +15982,8 @@ export function ChatRoomInner({
         }
         const isSticker = typeof m.text === 'string' && m.text.trim().startsWith('[表情包]')
         const src = `data:${image?.type ?? 'image/jpeg'};base64,${img}`
+        const canRegen =
+          !isSticker && !isSelf && Boolean(resolveCharacterImageGenPromptForApi(m))
         return wrap(
           <WeChatChatImageBubbleRow
             id={m.id}
@@ -15796,6 +16002,14 @@ export function ChatRoomInner({
             onOtherAvatarClick={sharedRowProps.onOtherAvatarClick}
             multiSelectAvatar={msAvatar}
             selected={actionPanelOpen && actionMessageId === m.id}
+            canRegenerate={canRegen}
+            regenPrompt={canRegen ? resolveCharacterImageGenPromptForApi(m) : undefined}
+            onRegenerate={
+              canRegen ? (prompt) => handleRetryCharacterImageGen(m, prompt) : undefined
+            }
+            onSaveRegenPrompt={
+              canRegen ? (prompt) => handleSaveCharacterImageGenPrompt(m, prompt) : undefined
+            }
             onLongPress={
               isMultiSelectMode
                 ? undefined
@@ -15963,6 +16177,9 @@ export function ChatRoomInner({
     showGroupMemberNicknameInChat,
     showGroupRankBadgesInChat,
     imageGenPatchVersion,
+    handleRetryCharacterImageGen,
+    handleSaveCharacterImageGenPrompt,
+    handleConfirmCharacterImageGen,
   ])
 
   const pendingRevealAvatarUrl = useMemo(() => {
@@ -16544,6 +16761,38 @@ export function ChatRoomInner({
           setCallingOpen(true)
         }}
       />
+      <ScreenShareConfirmSheet
+        open={screenShareConfirmOpen}
+        peerName={peerNotifyTitle.trim() || '对方'}
+        starting={screenShareStarting}
+        onClose={() => {
+          if (screenShareStarting) return
+          setScreenShareConfirmOpen(false)
+        }}
+        onConfirm={() => {
+          void (async () => {
+            setScreenShareStarting(true)
+            try {
+              await startScreenShareSession({
+                conversationKey,
+                characterId: conversationCharacterId,
+                peerTitle: peerNotifyTitle.trim() || '对方',
+                peerAvatarUrl: peerAvatarResolved?.trim() || '',
+              })
+              setScreenShareConfirmOpen(false)
+              showComposerToast('一起刷已开始')
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : '开启失败'
+              showComposerToast(msg)
+            } finally {
+              setScreenShareStarting(false)
+            }
+          })()
+        }}
+      />
+      {roomType === 'private' && conversationKey.trim() ? (
+        <ScreenShareDock conversationKey={conversationKey} />
+      ) : null}
       <LocationSpoofModal
         open={locationSpoofOpen}
         sending={locationSending}

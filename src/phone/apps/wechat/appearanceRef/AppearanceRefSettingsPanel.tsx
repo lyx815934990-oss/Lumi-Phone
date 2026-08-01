@@ -14,6 +14,7 @@ import {
   bundleFromCharacterFields,
   clearAppearanceRefContextOverride,
   getAppearanceRefContextOverride,
+  normalizeAppearanceRefPlayerIdentityId,
   upsertAppearanceRefContextOverride,
   type AppearanceRefContext,
 } from '../appearanceRefContextStore'
@@ -76,7 +77,7 @@ export function AppearanceRefSettingsPanel({
   hideHeader = false,
 }: Props) {
   const cid = characterId?.trim() ?? ''
-  const pid = playerIdentityId?.trim() ?? ''
+  const pid = normalizeAppearanceRefPlayerIdentityId(playerIdentityId)
   const scoped = context !== 'global' && !!pid && !!cid
 
   const [character, setCharacter] = useState<Character | null>(null)

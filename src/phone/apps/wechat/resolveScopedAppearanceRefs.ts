@@ -1,9 +1,12 @@
 import type { Character, PlayerIdentity } from './newFriendsPersona/types'
 import {
   bundleFromCharacterFields,
+  findAppearanceRefContextOverrideForCharacter,
   getAppearanceRefContextOverride,
+  normalizeAppearanceRefPlayerIdentityId,
   type AppearanceRefBundle,
   type AppearanceRefContext,
+  type AppearanceRefContextOverride,
 } from './appearanceRefContextStore'
 
 export type ResolvedScopedAppearanceRefs = {
@@ -22,8 +25,11 @@ export async function resolveScopedAppearanceRefs(params: {
 }): Promise<ResolvedScopedAppearanceRefs> {
   const character = params.character ?? null
   const playerIdentity = params.playerIdentity ?? null
-  const pid = params.playerIdentityId?.trim() || playerIdentity?.id?.trim() || ''
   const cid = params.characterId?.trim() || character?.id?.trim() || ''
+  const pid =
+    normalizeAppearanceRefPlayerIdentityId(params.playerIdentityId) ||
+    normalizeAppearanceRefPlayerIdentityId(playerIdentity?.id) ||
+    normalizeAppearanceRefPlayerIdentityId(character?.playerIdentityId)
 
   const globalCharacter = bundleFromCharacterFields(
     character?.appearanceRefImages,
@@ -36,7 +42,7 @@ export async function resolveScopedAppearanceRefs(params: {
     playerIdentity?.appearanceRefNote,
   )
 
-  if (params.context === 'global' || !pid || !cid) {
+  if (params.context === 'global' || !cid) {
     return {
       character: globalCharacter,
       user: globalUser,
@@ -45,7 +51,14 @@ export async function resolveScopedAppearanceRefs(params: {
     }
   }
 
-  const override = await getAppearanceRefContextOverride(pid, cid, params.context)
+  let override: AppearanceRefContextOverride | null = null
+  if (pid) {
+    override = await getAppearanceRefContextOverride(pid, cid, params.context)
+  }
+  // 无 pid / 身份不一致 / 历史用 __none__ 存的独立配置：按角色+场景回退
+  if (!override?.forked) {
+    override = await findAppearanceRefContextOverrideForCharacter(cid, params.context, pid)
+  }
   if (!override?.forked) {
     return {
       character: globalCharacter,
@@ -55,20 +68,49 @@ export async function resolveScopedAppearanceRefs(params: {
     }
   }
 
-  const characterOverride =
-    override.characterRefImages?.length || override.characterRefNote
-      ? bundleFromCharacterFields(override.characterRefImages, undefined, override.characterRefNote)
-      : null
-  const userOverride =
-    override.userRefImages?.length || override.userRefNote
-      ? bundleFromCharacterFields(override.userRefImages, undefined, override.userRefNote)
-      : null
+  /** 仅笔记 fork、图片为空时保留全局参考图，避免「有图却生图丢参考」 */
+  const mergeForkedBundle = (
+    global: AppearanceRefBundle,
+    overrideImages: AppearanceRefBundle['images'] | undefined | null,
+    overrideNote: string | undefined | null,
+    hasNoteField: boolean,
+  ): AppearanceRefBundle => {
+    const images =
+      overrideImages && overrideImages.length > 0 ? overrideImages : global.images
+    const note = hasNoteField
+      ? String(overrideNote ?? '').trim()
+      : global.note
+    return { images, note }
+  }
+
+  const hasCharacterLocal =
+    (override.characterRefImages?.length ?? 0) > 0 ||
+    typeof override.characterRefNote === 'string'
+  const hasUserLocal =
+    (override.userRefImages?.length ?? 0) > 0 || typeof override.userRefNote === 'string'
+
+  const characterBundle = hasCharacterLocal
+    ? mergeForkedBundle(
+        globalCharacter,
+        override.characterRefImages,
+        override.characterRefNote,
+        typeof override.characterRefNote === 'string',
+      )
+    : globalCharacter
+  const userBundle = hasUserLocal
+    ? mergeForkedBundle(
+        globalUser,
+        override.userRefImages,
+        override.userRefNote,
+        typeof override.userRefNote === 'string',
+      )
+    : globalUser
 
   return {
-    character: characterOverride ?? globalCharacter,
-    user: userOverride ?? globalUser,
-    characterForked: characterOverride != null,
-    userForked: userOverride != null,
+    character: characterBundle,
+    user: userBundle,
+    characterForked: hasCharacterLocal,
+    userForked: hasUserLocal,
   }
 }
 

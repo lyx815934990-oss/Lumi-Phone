@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus, Save, User, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Save, User, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { emitWeChatStorageChanged, personaDb } from './idb'
@@ -479,6 +479,8 @@ function AiGeneratingOverlay({ open, message }: { open: boolean; message: string
   )
 }
 
+const IDENTITY_PICK_PAGE_SIZE = 5
+
 function IdentityPickModal({
   open,
   loading,
@@ -494,8 +496,21 @@ function IdentityPickModal({
   onPick: (identityId: string) => void
   onCreateNew: () => void
 }) {
+  const [page, setPage] = useState(0)
+  const pageCount = Math.max(1, Math.ceil(identities.length / IDENTITY_PICK_PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const pageItems = identities.slice(
+    safePage * IDENTITY_PICK_PAGE_SIZE,
+    safePage * IDENTITY_PICK_PAGE_SIZE + IDENTITY_PICK_PAGE_SIZE,
+  )
+
+  useEffect(() => {
+    if (open) setPage(0)
+  }, [open, identities.length])
+
   if (!open) return null
   const hasAny = identities.length > 0
+  const showPager = identities.length > IDENTITY_PICK_PAGE_SIZE
   return (
     <div className="fixed inset-0 z-[1200] flex items-center justify-center px-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
       <div
@@ -542,7 +557,7 @@ function IdentityPickModal({
             </div>
           ) : (
             <div className="space-y-3">
-              {identities.map((it) => {
+              {pageItems.map((it) => {
                 const previewAvatar = resolvePlayerIdentityPreviewAvatar({
                   mbti: it.mbti,
                   avatarUrl: it.avatarUrl,
@@ -591,6 +606,36 @@ function IdentityPickModal({
                   </button>
                 </div>
               )})}
+
+              {showPager ? (
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={safePage <= 0}
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    className="inline-flex items-center gap-0.5 rounded-[8px] px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ease-out disabled:opacity-35"
+                    style={{ color: '#000000' }}
+                    aria-label="上一页"
+                  >
+                    <ChevronLeft className="size-4" strokeWidth={1.8} />
+                    上一页
+                  </button>
+                  <span className="text-[13px] tabular-nums" style={{ color: '#666666' }}>
+                    {safePage + 1} / {pageCount}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={safePage >= pageCount - 1}
+                    onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                    className="inline-flex items-center gap-0.5 rounded-[8px] px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ease-out disabled:opacity-35"
+                    style={{ color: '#000000' }}
+                    aria-label="下一页"
+                  >
+                    下一页
+                    <ChevronRight className="size-4" strokeWidth={1.8} />
+                  </button>
+                </div>
+              ) : null}
 
               <button
                 type="button"

@@ -1,5 +1,7 @@
 import type { WeChatChatMessage, WeChatMusicSyncInvitePayload, WeChatMusicSyncPayload } from '../newFriendsPersona/types'
 import { isActiveSyncListeningWithCharacter } from './syncListeningPlaybackBias'
+import { matchAnyDirectiveName, pickNamed, pickPositional } from '../directives/parseSpaceDirective'
+import { WxCmd } from '../directives/wechatDirectiveLexicon'
 
 type CharacterMusicSyncInviteLookupRow = {
   id: string
@@ -151,8 +153,58 @@ function tryTagWithJson(
   return { kind: 'invite', ...fields }
 }
 
+function trySpaceMusicDirective(raw: string): CharacterMusicSyncDirective | null {
+  const line = normalizeDirectiveLine(raw)
+  if (matchAnyDirectiveName(line, [WxCmd.musicNext]) && !matchAnyDirectiveName(line, [WxCmd.musicNext])!.rest) {
+    return { kind: 'play_next' }
+  }
+  if (matchAnyDirectiveName(line, [WxCmd.musicPrev]) && !matchAnyDirectiveName(line, [WxCmd.musicPrev])!.rest) {
+    return { kind: 'play_prev' }
+  }
+  const invite = matchAnyDirectiveName(line, [WxCmd.musicInvite])
+  if (invite) {
+    const trackId = Number(pickNamed(invite, ['trackId', 'songId', 'id']))
+    const title = pickNamed(invite, ['title', '歌名']) || pickPositional(invite, 0)
+    const artist = pickNamed(invite, ['artist', '歌手']) || pickPositional(invite, 1)
+    return {
+      kind: 'invite',
+      ...(Number.isFinite(trackId) && trackId > 0 ? { trackId: Math.floor(trackId) } : {}),
+      ...(title ? { title } : {}),
+      ...(artist ? { artist } : {}),
+    }
+  }
+  const play = matchAnyDirectiveName(line, [WxCmd.musicPlay])
+  if (play) {
+    const trackId = Number(pickNamed(play, ['trackId', 'songId', 'id']))
+    const title = pickNamed(play, ['title', '歌名']) || pickPositional(play, 0)
+    const artist = pickNamed(play, ['artist', '歌手']) || pickPositional(play, 1)
+    return {
+      kind: 'play',
+      ...(Number.isFinite(trackId) && trackId > 0 ? { trackId: Math.floor(trackId) } : {}),
+      ...(title ? { title } : {}),
+      ...(artist ? { artist } : {}),
+    }
+  }
+  const seek = matchAnyDirectiveName(line, [WxCmd.musicSeek])
+  if (seek) {
+    const timeMs = Number(pickNamed(seek, ['timeMs', 'ms']))
+    const time = pickNamed(seek, ['time', 'at', '时间'])
+    const lyric = pickNamed(seek, ['lyric', 'line', '歌词', 'text']) || seek.rest
+    const percent = Number(pickNamed(seek, ['percent', 'pct', 'percentage']))
+    return {
+      kind: 'seek',
+      ...(Number.isFinite(timeMs) && timeMs >= 0 ? { timeMs: Math.floor(timeMs) } : {}),
+      ...(time ? { time } : {}),
+      ...(lyric ? { lyric: lyric.slice(0, 200) } : {}),
+      ...(Number.isFinite(percent) ? { percent: Math.max(0, Math.min(100, percent)) } : {}),
+    }
+  }
+  return null
+}
+
 export function parseCharacterMusicSyncDirective(raw: string): CharacterMusicSyncDirective | null {
   return (
+    trySpaceMusicDirective(raw) ??
     tryTagWithJson(raw, 'MUSIC_PLAY_NEXT', 'play_next') ??
     tryTagWithJson(raw, 'MUSIC_PLAY_PREV', 'play_prev') ??
     tryTagWithJson(raw, 'MUSIC_PLAY', 'play') ??
@@ -286,9 +338,9 @@ export function formatCharacterMusicSyncInviteTranscriptLine(
     status = '；用户已通过邀约卡接受并与你一起听'
   } else if (data.userResponded === 'declined') {
     status =
-      '；**用户已拒绝本次共听邀约**（勿再用 MUSIC_PLAY / MUSIC_SEEK 直接点播或拉进度，下次须 MUSIC_SYNC_INVITE 重新邀请并等用户接受）'
+      '；**用户已拒绝本次共听邀约**（勿再用「点歌」「跳进度」直接点播或拉进度，下次须「共听邀请」重新邀请并等用户接受）'
   } else {
-    status = '；用户尚未回应邀约卡（勿 MUSIC_PLAY 直接点播，等待接受/拒绝或重新发邀约）'
+    status = '；用户尚未回应邀约卡（勿「点歌」直接点播，等待接受/拒绝或重新发邀约）'
   }
   const lyrics = data.lyricsExcerpt?.trim()
   const base = `${head}${status}`
@@ -321,18 +373,18 @@ export function buildCharacterMusicSyncInviteStateBias(
 
   const latest = findLatestCharacterMusicSyncInvite(msgs)
   if (!latest) {
-    return `[一起听·状态] 当前未与该用户处于共听会话。若要一起听，须发 \`[MUSIC_SYNC_INVITE]\` 邀约卡并等用户点击接受；**禁止** \`[MUSIC_PLAY]\` / \`[MUSIC_SEEK]\` / \`[MUSIC_PLAY_NEXT]\` / \`[MUSIC_PLAY_PREV]\` 直接点播或切歌。`
+    return `[一起听·状态] 当前未与该用户处于共听会话。若要一起听，须发 \`共听邀请\` 邀约卡并等用户点击接受；**禁止** \`点歌\` / \`跳进度\` / \`切下一首\` / \`切上一首\` 直接点播或切歌。`
   }
 
   const title = latest.invite.trackTitle?.trim() || '未知歌曲'
   if (latest.invite.userResponded === 'declined') {
-    return `[一起听·状态] 用户已拒绝你最近发出的共听邀约（《${title}》）。**禁止** \`[MUSIC_PLAY]\` / \`[MUSIC_SEEK]\` / \`[MUSIC_PLAY_NEXT]\` / \`[MUSIC_PLAY_PREV]\`；若仍想一起听，须重新发 \`[MUSIC_SYNC_INVITE]\` 并等用户接受后再播。可自然聊拒绝原因或换话题，勿假装已在共听。`
+    return `[一起听·状态] 用户已拒绝你最近发出的共听邀约（《${title}》）。**禁止** \`点歌\` / \`跳进度\` / \`切下一首\` / \`切上一首\`；若仍想一起听，须重新发 \`共听邀请\` 并等用户接受后再播。可自然聊拒绝原因或换话题，勿假装已在共听。`
   }
   if (!latest.invite.userResponded) {
-    return `[一起听·状态] 你已发出共听邀约（《${title}》），用户尚未接受/拒绝。**禁止** \`[MUSIC_PLAY]\` 直接点播；等待用户回应或换一首重新 \`[MUSIC_SYNC_INVITE]\`。`
+    return `[一起听·状态] 你已发出共听邀约（《${title}》），用户尚未接受/拒绝。**禁止** \`点歌\` 直接点播；等待用户回应或换一首重新 \`共听邀请\`。`
   }
   if (latest.invite.userResponded === 'accepted') {
-    return `[一起听·状态] 用户曾接受共听（《${title}》）但当前无活跃会话。再次一起听须重新发 \`[MUSIC_SYNC_INVITE]\`，不可 \`[MUSIC_PLAY]\` 直播。`
+    return `[一起听·状态] 用户曾接受共听（《${title}》）但当前无活跃会话。再次一起听须重新发 \`共听邀请\`，不可 \`点歌\` 直播。`
   }
   return ''
 }
@@ -342,12 +394,12 @@ export const WECHAT_CHARACTER_MUSIC_SYNC_OUTPUT_BLOCK = `
 【一起听：角色侧播放控制（对用户不可见）】
 ---------------------
 - 与用户**已建立一起听**或你想**主动邀听**时，可用以下**单独一行**机器指令（勿写进口语同句）；用户看不到指令行，播放器会静默执行。
-- **前提**：\`[MUSIC_PLAY]\` / \`[MUSIC_SEEK]\` / \`[MUSIC_PLAY_NEXT]\` / \`[MUSIC_PLAY_PREV]\` **仅当用户已通过邀约卡接受、正在与你共听时**可用。未建立共听、或用户**拒绝**了邀约、或邀约**待回应**时，**只能**用 \`[MUSIC_SYNC_INVITE]\` 重新邀请，**禁止**直接点播。
-- **切歌**：\`[MUSIC_PLAY_NEXT]\` 下一首；\`[MUSIC_PLAY_PREV]\` 上一首（须正在与该用户共听且用户已接受）。
-- **点歌/换歌**：\`[MUSIC_PLAY]{}\` 或 \`[MUSIC_PLAY]{"trackId":歌曲id}\` 或 \`[MUSIC_PLAY]{"title":"歌名","artist":"歌手"}\`；**单独成行**，在指令前口语说完后再切歌（勿与对白同条）。可与语音/文字分条：先口语「换首安静点的」→ 再指令 → 再补「这首应该够安静」。**用户拒绝共听后再次想听，须先发 MUSIC_SYNC_INVITE，不可 MUSIC_PLAY。**
-- **拉进度/强调某句歌词**：\`[MUSIC_SEEK]{"lyric":"歌词原文一句"}\` 或 \`{"time":"01:23"}\` / \`{"timeMs":83000}\` / \`{"percent":42}\`（须正在一起听且用户已接受）。**推荐分条节奏**：① 口语问「刚刚那句听到了吗」② 口语说「我拉回去再给你听一遍」③ **单独一行** \`[MUSIC_SEEK]{"lyric":"…"}\` ④ 口语接「就是这里！」。指令行对用户不可见，播放器会同步到该时刻并继续播放；**对白里仍禁止念时间码**。
-- **邀请共听**：\`[MUSIC_SYNC_INVITE]{}\` 或带 \`trackId\` / \`title\`+\`artist\`；会发出**一起听邀约卡**（带封面与歌名，用户点击后选择接受/拒绝，**仅接受后**才开始播放）。用户拒绝后须重新发邀约，不可跳过。可与 1～3 句口语搭配，**指令须单独成行**，勿与对白写在同一行。
-- **选歌一致**：指令里的 \`title\`+\`artist\` 须与你在同轮口语里描述的气质一致（说 emo/治愈/慢歌就不要填嗨曲/摇滚；说「有点吵的摇滚」才填对应曲目）；须为**网易云能搜到的真实歌曲**。
-- **对白风格**：自然聊歌、歌词、感受即可；**禁止**报时间码、进度、副歌第几分钟、「我刚帮你切了歌」等无意义报幕；指令做了就当默契，用口语接歌感即可。
-- 用户发来的共听邀约仍用 \`[MUSIC_SYNC_ACCEPT]\` / \`[MUSIC_SYNC_DECLINE]\` 回应，与本节角色侧指令不同。
+- **前提**：\`点歌\` / \`跳进度\` / \`切下一首\` / \`切上一首\` **仅当用户已通过邀约卡接受、正在与你共听时**可用。未建立共听、或用户**拒绝**了邀约、或邀约**待回应**时，**只能**用 \`共听邀请\` 重新邀请，**禁止**直接点播。
+- **切歌**：\`切下一首\`；\`切上一首\`（须正在与该用户共听且用户已接受）。
+- **点歌/换歌**：\`点歌\` 或 \`点歌 title=歌名 artist=歌手\` 或 \`点歌 歌名 歌手\`；**单独成行**，在指令前口语说完后再切歌（勿与对白同条）。**用户拒绝共听后再次想听，须先发 共听邀请，不可 点歌。**
+- **拉进度/强调某句歌词**：\`跳进度 lyric=歌词原文一句\` 或 \`跳进度 time=01:23\` / \`跳进度 percent=42\`（须正在一起听且用户已接受）。指令行对用户不可见；**对白里仍禁止念时间码**。
+- **邀请共听**：\`共听邀请\` 或 \`共听邀请 title=歌名 artist=歌手\`；会发出**一起听邀约卡**（带封面与歌名，用户点击后选择接受/拒绝，**仅接受后**才开始播放）。可与 1～3 句口语搭配，**指令须单独成行**。
+- **选歌一致**：指令里的歌名/歌手须与你在同轮口语里描述的气质一致；须为**网易云能搜到的真实歌曲**。
+- **对白风格**：自然聊歌、歌词、感受即可；**禁止**报时间码、进度、「我刚帮你切了歌」等无意义报幕。
+- 用户发来的共听邀约仍用 \`共听接受\` / \`共听拒绝\` 回应，与本节角色侧指令不同。
 `.trim()

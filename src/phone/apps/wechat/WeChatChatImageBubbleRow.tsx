@@ -25,6 +25,12 @@ type Props = {
   onRetry?: () => void
   /** 用户确认开始生成 */
   onConfirmGenerate?: () => void
+  /** 放大预览时重新生成（AI 配图） */
+  canRegenerate?: boolean
+  regenPrompt?: string
+  regenerating?: boolean
+  onRegenerate?: (prompt: string) => void | Promise<void>
+  onSaveRegenPrompt?: (prompt: string) => void | Promise<void>
   isSticker?: boolean
   bubble: WeChatBubbleTheme
   showAvatar: boolean
@@ -65,6 +71,11 @@ export function WeChatChatImageBubbleRow({
   onLongPress,
   onRetry,
   onConfirmGenerate,
+  canRegenerate = false,
+  regenPrompt = '',
+  regenerating = false,
+  onRegenerate,
+  onSaveRegenPrompt,
   multiSelectAvatar,
 }: Props) {
   const anchorRef = useRef<HTMLDivElement>(null)
@@ -367,7 +378,27 @@ export function WeChatChatImageBubbleRow({
         )}
       </div>
       {!showGenerating && !showFailed && !showAwaiting ? (
-        <ChatImageLightbox open={lightboxOpen} src={src} onClose={() => setLightboxOpen(false)} />
+        <ChatImageLightbox
+          open={lightboxOpen}
+          src={src}
+          onClose={() => setLightboxOpen(false)}
+          regenPrompt={canRegenerate ? regenPrompt : undefined}
+          regenerating={regenerating}
+          onRegenerate={
+            canRegenerate && onRegenerate
+              ? async (prompt) => {
+                  await onRegenerate(prompt)
+                }
+              : undefined
+          }
+          onSavePrompt={
+            canRegenerate && onSaveRegenPrompt
+              ? async (prompt) => {
+                  await onSaveRegenPrompt(prompt)
+                }
+              : undefined
+          }
+        />
       ) : null}
       </>
     )
@@ -457,7 +488,27 @@ export function WeChatChatImageBubbleRow({
       )}
       </div>
       {!showGenerating && !showFailed && !showAwaiting ? (
-        <ChatImageLightbox open={lightboxOpen} src={src} onClose={() => setLightboxOpen(false)} />
+        <ChatImageLightbox
+          open={lightboxOpen}
+          src={src}
+          onClose={() => setLightboxOpen(false)}
+          regenPrompt={canRegenerate ? regenPrompt : undefined}
+          regenerating={regenerating}
+          onRegenerate={
+            canRegenerate && onRegenerate
+              ? async (prompt) => {
+                  await onRegenerate(prompt)
+                }
+              : undefined
+          }
+          onSavePrompt={
+            canRegenerate && onSaveRegenPrompt
+              ? async (prompt) => {
+                  await onSaveRegenPrompt(prompt)
+                }
+              : undefined
+          }
+        />
       ) : null}
     </>
   )

@@ -1,11 +1,15 @@
 import {
   ArrowLeft,
+  BookUser,
+  Brain,
   ChevronDown,
   FilePenLine,
   Heart,
   ImageIcon,
   Layers,
   Loader2,
+  MessageSquareOff,
+  MessagesSquare,
   MoreHorizontal,
   Pause,
   Play,
@@ -41,6 +45,11 @@ import {
   normalizeDatingLanguageSettings,
 } from './DatingLanguageSettingsPanel'
 import {
+  DatingPlotPaceSettingsButton,
+  DatingPlotPaceSettingsFields,
+} from './DatingPlotPaceSettingsPanel'
+import { normalizeDatingPlotPaceSettings } from './datingPlotPace'
+import {
   isDatingPlotContentHintActive,
   subscribeDatingPlotContentHint,
 } from './datingPlotGenerationEvents'
@@ -73,6 +82,7 @@ import {
 import type { HeartWhisper } from '../newFriendsPersona/types'
 import { VNDialogBox } from './VNDialogBox'
 import { VNBottomControls } from './VNBottomControls'
+import { WeChatCenterToast } from '../WeChatCenterToast'
 import { VNStoreProvider, useActiveSprite, useVNStore } from './useVNStore'
 import { SpriteEditorPage } from './SpriteEditorPage'
 import { ChromaKeyRenderer } from './ChromaKeyRenderer'
@@ -622,7 +632,9 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     setMainCharacterOffstage,
     setVnVoiceDisabled,
     setDirectorMode,
+    setPlotPaceSettings,
     setAutoUserReaction,
+    setThinkingChainEnabled,
     setGenerateParallelOnSend,
     setGenerateIfLineOnSend,
     setDatingLengthTargetChars,
@@ -656,6 +668,11 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
   const [lengthOpen, setLengthOpen] = useState(false)
   const [lengthTargetChars, setLengthTargetChars] = useState('500')
 
+  const plotPace = useMemo(
+    () => normalizeDatingPlotPaceSettings(currentArchive.plotPace),
+    [currentArchive.plotPace],
+  )
+
   useEffect(() => {
     const v = currentArchive.datingLengthTargetChars
     if (typeof v === 'number' && Number.isFinite(v)) {
@@ -675,6 +692,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
   const [autoUserOpen, setAutoUserOpen] = useState(false)
   const godLocksNoInterrupt = currentArchive.godPerspective
   const autoUserReaction = !!currentArchive.autoUserReaction
+  const thinkingChainEnabled = currentArchive.thinkingChainEnabled !== false
   const plotImageGenEnabled = !!currentArchive.plotImageGenEnabled
   const plotImageCountNode = useMemo(() => {
     const range = parseDatingPlotImageCountRange(
@@ -733,9 +751,22 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     if (heartWhisperToastTimerRef.current != null) window.clearTimeout(heartWhisperToastTimerRef.current)
     heartWhisperToastTimerRef.current = window.setTimeout(() => setHeartWhisperToast(null), 2600)
   }, [])
+  const [thinkingChainToast, setThinkingChainToast] = useState<string | null>(null)
+  const thinkingChainToastTimerRef = useRef<number | null>(null)
+  const showThinkingChainToast = useCallback((msg: string) => {
+    setThinkingChainToast(msg)
+    if (thinkingChainToastTimerRef.current != null) window.clearTimeout(thinkingChainToastTimerRef.current)
+    thinkingChainToastTimerRef.current = window.setTimeout(() => setThinkingChainToast(null), 1800)
+  }, [])
+  const toggleThinkingChain = useCallback(() => {
+    const next = !thinkingChainEnabled
+    setThinkingChainEnabled(next)
+    showThinkingChainToast(next ? '已开启思维链' : '已关闭思维链，将直接输出正文')
+  }, [setThinkingChainEnabled, showThinkingChainToast, thinkingChainEnabled])
   useEffect(() => {
     return () => {
       if (heartWhisperToastTimerRef.current != null) window.clearTimeout(heartWhisperToastTimerRef.current)
+      if (thinkingChainToastTimerRef.current != null) window.clearTimeout(thinkingChainToastTimerRef.current)
     }
   }, [])
   const [vnCustomInput, setVnCustomInput] = useState('')
@@ -2901,6 +2932,8 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
       directorMode: !!currentArchive.directorMode,
       generateParallelOnSend: !!currentArchive.generateParallelOnSend,
       generateIfLineOnSend: !!currentArchive.generateIfLineOnSend,
+      thinkingChainEnabled: currentArchive.thinkingChainEnabled !== false,
+      plotPace,
       ...(styleTuning.stylePrompt.trim() ? { stylePrompt: styleTuning.stylePrompt.trim() } : {}),
       ...(styleTuning.referenceSnippet.trim() ? { referenceSnippet: styleTuning.referenceSnippet.trim() } : {}),
     }),
@@ -2911,6 +2944,8 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
       currentArchive.directorMode,
       currentArchive.generateParallelOnSend,
       currentArchive.generateIfLineOnSend,
+      currentArchive.thinkingChainEnabled,
+      plotPace,
       styleTuning.stylePrompt,
       styleTuning.referenceSnippet,
     ],
@@ -3402,10 +3437,12 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                     type="button"
                     onClick={() => setPerspectiveOpen((v) => !v)}
                     className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[13px] text-[#262626] transition-all duration-200 hover:border-stone-400"
-                    title="选择下一次剧情人称"
+                    title={`人称 · ${perspectiveLabel}`}
+                    aria-label={`人称 · ${perspectiveLabel}`}
                   >
-                    {perspectiveLabel}
-                    <ChevronDown className="size-3.5" />
+                    <BookUser className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+                    <span className="max-w-[4.5em] truncate">{perspectiveLabel}</span>
+                    <ChevronDown className="size-3.5 shrink-0 opacity-60" aria-hidden />
                   </button>
                   {perspectiveOpen ? (
                     <div className="absolute left-0 top-full z-20 mt-1 w-[140px] rounded-xl border border-stone-200 bg-white p-1 shadow-md">
@@ -3463,6 +3500,29 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                     </div>
                   ) : null}
                 </div>
+                <DatingPlotPaceSettingsButton
+                  value={plotPace}
+                  onPatch={setPlotPaceSettings}
+                />
+                <button
+                  type="button"
+                  onClick={toggleThinkingChain}
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[13px] transition-all duration-200 ${
+                    thinkingChainEnabled
+                      ? 'border-stone-200 bg-stone-50 text-[#262626] hover:border-stone-400'
+                      : 'border-stone-100 bg-stone-100 text-[#a3a3a3] hover:border-stone-300 hover:text-[#737373]'
+                  }`}
+                  title={
+                    thinkingChainEnabled
+                      ? '思维链 · 开（先自检再写正文）'
+                      : '思维链 · 关（模型直出正文，更快）'
+                  }
+                  aria-label={thinkingChainEnabled ? '思维链已开启' : '思维链已关闭'}
+                  aria-pressed={thinkingChainEnabled}
+                >
+                  <Brain className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+                  <span>{thinkingChainEnabled ? '思维链' : '直出'}</span>
+                </button>
                 <div className="relative">
                   <button
                     type="button"
@@ -3479,11 +3539,23 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                     title={
                       godLocksNoInterrupt
                         ? '上帝视角下固定不抢话，避免旁白代写玩家导致冲突'
-                        : '选择抢话与否'
+                        : `抢话 · ${autoUserLabel}`
+                    }
+                    aria-label={
+                      godLocksNoInterrupt
+                        ? '上帝视角下固定不抢话'
+                        : `抢话 · ${autoUserLabel}`
                     }
                   >
-                    {autoUserLabel}
-                    <ChevronDown className="size-3.5" />
+                    {!godLocksNoInterrupt && autoUserReaction ? (
+                      <MessagesSquare className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+                    ) : (
+                      <MessageSquareOff className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+                    )}
+                    <span>{autoUserLabel}</span>
+                    {!godLocksNoInterrupt ? (
+                      <ChevronDown className="size-3.5 shrink-0 opacity-60" aria-hidden />
+                    ) : null}
                   </button>
                   {autoUserOpen && !godLocksNoInterrupt ? (
                     <div className="absolute left-0 top-full z-20 mt-1 w-[126px] rounded-xl border border-stone-200 bg-white p-1 shadow-md">
@@ -3510,6 +3582,18 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                     </div>
                   ) : null}
                 </div>
+                <DatingLanguageSettingsButton
+                  iconOnly
+                  value={normalizeDatingLanguageSettings({
+                    plotOutputLanguage: currentArchive.plotOutputLanguage,
+                    dialogueLanguage: currentArchive.dialogueLanguage,
+                    innerOsLanguage: currentArchive.innerOsLanguage,
+                    dialogueTranslationSyncEnabled: currentArchive.dialogueTranslationSyncEnabled,
+                    innerOsTranslationSyncEnabled: currentArchive.innerOsTranslationSyncEnabled,
+                    dialogueTranslationLanguage: currentArchive.dialogueTranslationLanguage,
+                  })}
+                  onPatch={patchDatingLanguageSettings}
+                />
                 <button
                   type="button"
                   onClick={() => setHeartWhisperOpen(true)}
@@ -3519,6 +3603,13 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                   <Heart className="size-4" strokeWidth={1.75} />
                   心语
                 </button>
+                <DatingNetworkMentionControls
+                  datingCharacterId={currentCharacter.id}
+                  text={input}
+                  onTextChange={setInput}
+                  inputRef={inputRef}
+                  disabled={loading}
+                />
                 <div className="ml-auto flex shrink-0 items-center pl-1">
                   <button
                     type="button"
@@ -3531,17 +3622,6 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                 </div>
               </div>
               <div className="mb-2 flex flex-wrap items-center gap-2">
-                <DatingLanguageSettingsButton
-                  value={normalizeDatingLanguageSettings({
-                    plotOutputLanguage: currentArchive.plotOutputLanguage,
-                    dialogueLanguage: currentArchive.dialogueLanguage,
-                    innerOsLanguage: currentArchive.innerOsLanguage,
-                    dialogueTranslationSyncEnabled: currentArchive.dialogueTranslationSyncEnabled,
-                    innerOsTranslationSyncEnabled: currentArchive.innerOsTranslationSyncEnabled,
-                    dialogueTranslationLanguage: currentArchive.dialogueTranslationLanguage,
-                  })}
-                  onPatch={patchDatingLanguageSettings}
-                />
                 <div
                   className="inline-flex flex-wrap items-center gap-2 rounded-full border border-stone-200/90 bg-stone-50/70 px-2.5 py-1.5"
                   title={
@@ -3578,14 +3658,6 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                   配图与形象
                 </button>
               </div>
-              <DatingNetworkMentionControls
-                datingCharacterId={currentCharacter.id}
-                text={input}
-                onTextChange={setInput}
-                inputRef={inputRef}
-                disabled={loading}
-                className="mb-2"
-              />
               <textarea
                 ref={inputRef}
                 value={input}
@@ -4092,6 +4164,10 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                   />
                 </button>
               </div>
+              <div className="rounded-xl border border-stone-200 bg-stone-50/80 px-3 py-2.5">
+                <p className="mb-2 text-[13px] font-medium text-[#262626]">剧情推进速度</p>
+                <DatingPlotPaceSettingsFields value={plotPace} onPatch={setPlotPaceSettings} />
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2">
                   <p className="text-[13px] text-[#262626]">上帝视角</p>
@@ -4131,6 +4207,30 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-2">
+                <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2">
+                  <div className="min-w-0 pr-2">
+                    <p className="text-[13px] text-[#262626]">思维链</p>
+                    <p className="mt-0.5 text-[10px] leading-snug text-[#8e8e8e]">
+                      关闭后跳过自检分册，模型直出正文（更快）
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={thinkingChainEnabled}
+                    aria-label="思维链"
+                    onClick={toggleThinkingChain}
+                    className={`relative h-8 w-[52px] shrink-0 rounded-full p-1 transition-colors ${
+                      thinkingChainEnabled ? 'bg-black' : 'bg-[#cccccc]'
+                    }`}
+                  >
+                    <span
+                      className={`block h-6 w-6 rounded-full bg-white transition-transform ${
+                        thinkingChainEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
                 <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2">
                   <p className={`text-[13px] ${godLocksNoInterrupt ? 'text-[#a3a3a3]' : 'text-[#262626]'}`}>抢话</p>
                   <button
@@ -4949,6 +5049,8 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
           {heartWhisperToast}
         </div>
       ) : null}
+
+      {createPortal(<WeChatCenterToast message={thinkingChainToast} />, document.body)}
 
       <HeartWhisperModal
         open={heartWhisperOpen}

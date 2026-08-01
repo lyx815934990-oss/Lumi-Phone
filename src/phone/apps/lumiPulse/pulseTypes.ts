@@ -310,14 +310,15 @@ export type PulsePersistedRoot = {
 
 export type PulsePovOption = {
   povId: PulsePovId
-  /** 主要角色名（微博展示昵称优先） */
+  /** 主要角色名（微博展示昵称优先）；个人视角时为玩家微博昵称 */
   label: string
-  /** 关联世界背景名，如「现代都市」 */
+  /** 关联世界背景名，如「现代都市」；无绑定角色时为「个人视角」 */
   worldName: string
   /** 角色身份（发现页搜索副标题等） */
   identity?: string
   avatarUrl?: string
-  kind: 'char'
+  /** char = 主要角色世界；player = 身份未绑定角色时的个人视角世界 */
+  kind: 'char' | 'player'
   rawId: string
   /** 主绑定 + 关联的玩家身份 id（用于身份视角隔离） */
   linkedPlayerIdentityIds?: string[]
@@ -331,10 +332,14 @@ export function toCharPovId(characterId: string): PulsePovId {
   return `char:${characterId.trim()}`
 }
 
-/** 是否为有效「世界」锚点（仅主要角色 char:） */
+/**
+ * 是否为有效「世界」锚点。
+ * - `char:` 主要角色世界（绑定身份后的常规入口）
+ * - `player:` 身份未绑定主要角色时的个人视角世界（仍可刷广场 / 发帖）
+ */
 export function isPulseWorldPovId(povId: string | null | undefined): boolean {
   const parsed = povId ? parsePulsePovId(povId) : null
-  return parsed?.kind === 'char'
+  return parsed?.kind === 'char' || parsed?.kind === 'player'
 }
 
 export function parsePulsePovId(povId: string): { kind: 'player' | 'char'; rawId: string } | null {

@@ -4,6 +4,8 @@ import { scheduleCharacterMomentArchive } from '../../../components/moments/mome
 import { isMomentsChatApiConfigured } from '../../../components/moments/momentsChatApiReady'
 import { resolveMomentsChatPublishContext } from '../../../components/moments/momentsChatPublishContext'
 import { upsertUserMoment } from '../../../components/moments/momentsFeedStorage'
+import { matchAnyDirectiveName, pickNamed } from './directives/parseSpaceDirective'
+import { WxCmd } from './directives/wechatDirectiveLexicon'
 
 export type CharacterMomentPublishDirective = {
   topic?: string
@@ -37,6 +39,15 @@ export function parseCharacterMomentPublishDirective(
 ): CharacterMomentPublishDirective | null {
   const t = String(line ?? '').trim()
   if (!t) return null
+  const space = matchAnyDirectiveName(t, [WxCmd.publishMoment])
+  if (space) {
+    const topic = pickNamed(space, ['topic', '主题', 'content', 'direction']) || undefined
+    const hint = pickNamed(space, ['hint', '情绪', 'mood']) || undefined
+    if (!topic && !hint && space.rest) {
+      return { topic: space.rest }
+    }
+    return { topic, hint }
+  }
   const match = PUBLISH_DIRECTIVE_RE.exec(t)
   if (!match) return null
   return parseDirectivePayload(match[1])
@@ -145,14 +156,14 @@ export const WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX = `
 意图由你根据对话**自行判断**。当用户要你发一条**你自己的**朋友圈动态，或你经过对话后**自己决定**要发一条时：
 - 先像真人一样用 **1～2 句**口语回应（可答应、犹豫、调侃、傲娇），**不要**写成教程。
 - 若你**同意**发布：在可见回复中**另起一行**，整行**只**输出：
-  - \`[发朋友圈]\` — 按你的人设与本轮对话自行撰写
-  - 或带方向：\`[发朋友圈]{"topic":"主题","hint":"情绪/细节"}\`（topic/hint 可选，供生成时参考）
-- 客户端会**静默生成并发布**实际动态；你**不要**在聊天里写出完整朋友圈正文，也**不要**用 \`[图片]\` 假装已发。
-- **置顶**：是否在发布时置顶由生成逻辑根据内容重要性与你的人设**自行决定**；用户没提置顶时你也应自己判断，普通日常**不要**每条都置顶。若需置顶**已存在**的旧动态，才用 \`[置顶朋友圈]\` 指令。
-- 若你不愿、觉得不合适、或用户指的是**用户自己**的朋友圈：只文字回应，**禁止**输出 \`[发朋友圈]\`。
+  - \`发朋友圈\` — 按你的人设与本轮对话自行撰写
+  - 或带方向：\`发朋友圈 topic=主题 hint=情绪/细节\`（可选，供生成时参考）
+- 客户端会**静默生成并发布**实际动态；你**不要**在聊天里写出完整朋友圈正文，也**不要**用 \`发图\` 假装已发。
+- **置顶**：是否在发布时置顶由生成逻辑根据内容重要性与你的人设**自行决定**；用户没提置顶时你也应自己判断，普通日常**不要**每条都置顶。若需置顶**已存在**的旧动态，才用 \`置顶朋友圈\` 指令。
+- 若你不愿、觉得不合适、或用户指的是**用户自己**的朋友圈：只文字回应，**禁止**输出 \`发朋友圈\`。
 - **务必区分（高频误用）**：换头像 / 换朋友圈背景（主页封面）≠ 发朋友圈动态。
-  - 「背景换成我 / 用这张当背景 / 封面改一下」→ \`[换朋友圈背景]\`，**禁止** \`[发朋友圈]\`。
-  - 「发条圈 / 晒一下 / 官宣发圈」→ 才用 \`[发朋友圈]\`。
-  - 禁止口头说「背景换好了」却输出 \`[发朋友圈]\`；也不要把用户刚发来的换背景图当成发圈配图。
+  - 「背景换成我 / 用这张当背景 / 封面改一下」→ \`换背景\`，**禁止** \`发朋友圈\`。
+  - 「发条圈 / 晒一下 / 官宣发圈」→ 才用 \`发朋友圈\`。
+  - 禁止口头说「背景换好了」却输出 \`发朋友圈\`；也不要把用户刚发来的换背景图当成发圈配图。
 - 没有发动态意愿时，**不要**主动输出该指令（除非人设/剧情强烈驱动你此刻就要发）。
 `.trim()

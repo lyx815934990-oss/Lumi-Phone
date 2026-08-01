@@ -320,9 +320,9 @@ function buildBusyPrefix(ctx?: BusyRuntimeContext): string {
   if (!ctx || !ctx.enabled) return ''
   if (ctx.isBusy) {
     return `【角色忙碌模式规则】
-- 你当前仍在忙碌中，只能输出一行：[BUSY]{"reason":"你正在忙的事情","duration":预计分钟数}
+- 你当前仍在忙碌中，只能输出一行：忙碌 你正在忙的事情 预计分钟数
 - 不要输出普通聊天正文
-- duration 必须是 1~${ctx.maxDuration} 的整数分钟
+- 分钟数必须是 1~${ctx.maxDuration} 的整数
 
 【当前状态】
 角色是否忙碌：是
@@ -336,15 +336,15 @@ function buildBusyPrefix(ctx?: BusyRuntimeContext): string {
       : []
     return `【忙碌模式可选触发规则】
 - 你当前不在忙碌中，可正常聊天。
-- 若你判断当前情境确实不便继续（开会/上课/开车/洗澡/睡觉/情绪冷却等），可以改为仅输出一行 BUSY 指令：
-  [BUSY]{"reason":"你正在忙的事情","duration":15}
-- duration 必须是 1~${ctx.maxDuration} 的整数分钟。
-- 若用户明确要求“测试忙碌指令/BUSY 指令/进入忙碌状态”，应优先输出 BUSY 指令配合测试。
+- 若你判断当前情境确实不便继续（开会/上课/开车/洗澡/睡觉/情绪冷却等），可以改为仅输出一行忙碌指令：
+  忙碌 你正在忙的事情 15
+- 分钟数必须是 1~${ctx.maxDuration} 的整数。
+- 若用户明确要求“测试忙碌指令/进入忙碌状态”，应优先输出忙碌指令配合测试。
 ${customScenarios.length ? `- 忙碌场景参考：${customScenarios.join('；')}` : ''}`.trim()
   }
   return `【忙碌后回复上下文】
 你当前已经忙完「${ctx.reason || '一些事情'}」，现在恢复线上聊天。
-请直接按普通聊天规则回复用户，不要输出 BUSY 指令。
+请直接按普通聊天规则回复用户，不要输出忙碌指令。
 忙碌期间用户消息（供你一次性衔接）：${stringifyBusyMessages(ctx.busyMessages)}`
 }
 
@@ -1065,17 +1065,15 @@ function splitSingleLineWechatBubble(line: string): string[] {
   return out.length ? out : [src]
 }
 
-const WECHAT_STICKER_LINE_MARKER = '[表情包]'
+const WECHAT_STICKER_LINE_MARKERS = ['[表情包]', '表情包 '] as const
 
 /**
- * 把「普通文字 + 同行 [表情包]…」拆成多条气泡文本。
- * 客户端 `parseCharacterStickerLine` 要求整行以 `[表情包]` 开头才能匹配资源库；群模型常把二者粘在 SPEAKER 同一行，故在解析层强制拆开。
- * 按物理行切分：同一行内多个 `[表情包]` 各自成条；换行后的文字不与上一行的表情包粘成一条。
+ * 把「普通文字 + 同行 表情包…」拆成多条气泡文本。
+ * 客户端要求整行以 `表情包 ` 或旧 `[表情包]` 开头；群模型常把二者粘在 SPEAKER 同一行，故在解析层强制拆开。
  */
 export function splitInlineStickerPayloadsFromPlainText(input: string): string[] {
   const raw = String(input ?? '').trim()
   if (!raw) return []
-  /** 须先按物理行拆：续行无 <<SPEAKER>> 时整段会 merge 进本字段，若整段无 [表情包] 时曾错误 return [raw]，导致多行被合成一条巨气泡。 */
   const lines = raw.split(/\r?\n/)
   const out: string[] = []
   for (const line of lines) {
@@ -1086,10 +1084,19 @@ export function splitInlineStickerPayloadsFromPlainText(input: string): string[]
   return out
 }
 
+function nextStickerMarkerIndex(s: string, from: number): { idx: number; marker: string } | null {
+  let best: { idx: number; marker: string } | null = null
+  for (const marker of WECHAT_STICKER_LINE_MARKERS) {
+    const idx = s.indexOf(marker, from)
+    if (idx < 0) continue
+    if (!best || idx < best.idx) best = { idx, marker }
+  }
+  return best
+}
+
 function splitSinglePhysicalLineByStickerMarkers(line: string): string[] {
   const s = String(line ?? '')
-  const marker = WECHAT_STICKER_LINE_MARKER
-  if (!s.includes(marker)) {
+  if (!WECHAT_STICKER_LINE_MARKERS.some((m) => s.includes(m))) {
     const t = s.trim()
     return t ? [t] : []
   }
@@ -1097,19 +1104,20 @@ function splitSinglePhysicalLineByStickerMarkers(line: string): string[] {
   let pos = 0
   const len = s.length
   while (pos < len) {
-    const idx = s.indexOf(marker, pos)
-    if (idx === -1) {
+    const hit = nextStickerMarkerIndex(s, pos)
+    if (!hit) {
       const tail = s.slice(pos).trim()
       if (tail) out.push(tail)
       break
     }
+    const { idx, marker } = hit
     if (idx > pos) {
       const before = s.slice(pos, idx).trim()
       if (before) out.push(before)
     }
     const from = idx
-    const nextSticker = s.indexOf(marker, from + marker.length)
-    const end = nextSticker === -1 ? len : nextSticker
+    const next = nextStickerMarkerIndex(s, from + marker.length)
+    const end = next ? next.idx : len
     const sticker = s.slice(from, end).trim()
     if (sticker) out.push(sticker)
     pos = end
@@ -1176,7 +1184,7 @@ export type WeChatPeerReplyResult = {
   orderedSegments?: WeChatPeerReplyOrderedSegment[]
   thinking?: string
   danmakuLines?: string[]
-  /** 模型伪造的合并聊天记录（<forward_history> XML；兼容字段，取首个） */
+  /** 模型伪造的合并聊天记录（「转发记录」块或旧 XML；兼容字段，取首个） */
   forwardHistory?: WeChatChatHistoryPayload
   /** 模型原始正文（裁决 XML 解析用，避免按气泡拆分后丢失） */
   rawText?: string
@@ -1194,7 +1202,7 @@ export const WECHAT_RECALL_ACTION_TOKEN = '[__RECALL__]'
 const WECHAT_CHARACTER_RECALL_GUIDE = `
 【角色撤回机制行为指导】
 - 你可以在自然语境中触发“发送后撤回”，用来表现犹豫、傲娇、慌乱、后悔等细腻情绪。
-- 当你触发撤回时，务必遵守输出协议中的 <msg> + <action>recall</action> 格式。
+- 当你触发撤回时，务必遵守输出协议：误发气泡换行后独占一行「撤回」，再换行掩饰气泡。
 - 撤回应服务剧情推进，而非打断交流；撤回后通常应给出一句掩饰或转场内容。
 `.trim()
 
@@ -1314,6 +1322,8 @@ function extractDanmakuBlock(raw: string): { visible: string; danmakuLines: stri
 function expandRecallProtocolLine(line: string): string[] {
   const src = String(line ?? '').trim()
   if (!src) return []
+  // 新格式：独占一行「撤回」
+  if (src === '撤回') return [WECHAT_RECALL_ACTION_TOKEN]
   const tagRe = /<(msg|action)>([\s\S]*?)<\/\1>/gi
   const out: string[] = []
   let matched = false
@@ -1382,9 +1392,13 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   characterMomentsPinCatalog?: string
   userMomentsViewerCatalog?: string
   includeThinkingChain?: boolean
+  /** 「开启忙碌」：思维链增加忙碌判定（协议仍由 busyPrefix 注入） */
+  includeBusyDirective?: boolean
   includeForwardHistoryCard?: boolean
   includePulseDmScreenshot?: boolean
   includeProfileImageChange?: boolean
+  /** 「支持发图」：思维链增加发图判定 */
+  includeCharacterImageSend?: boolean
   includeInternetMemeLexicon?: boolean
   replyOutputLanguage?: string
   replyVoiceLanguage?: string
@@ -1398,7 +1412,13 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   const userMomentsCatalog = params.userMomentsViewerCatalog?.trim()
   const toggles = getLoreArchiveBuiltinPresetTogglesSnapshot()
   const thinkingBlock = params.includeThinkingChain
-    ? `\n\n${buildWechatThinkingChainAppendix(toggles)}`
+    ? `\n\n${buildWechatThinkingChainAppendix(toggles, {
+        busyEnabled: params.includeBusyDirective === true,
+        forwardHistoryCardEnabled: params.includeForwardHistoryCard === true,
+        pulseDmScreenshotEnabled: params.includePulseDmScreenshot === true,
+        profileImageChangeEnabled: params.includeProfileImageChange === true,
+        characterImageSendEnabled: params.includeCharacterImageSend === true,
+      })}`
     : ''
   const forwardBlock = params.includeForwardHistoryCard
     ? `\n\n${WECHAT_FORWARD_HISTORY_FORGER_APPENDIX}`
@@ -1468,6 +1488,11 @@ const WECHAT_SELF_PROFILE_IMAGES_APPENDIX = `
 若 system 之后、对话历史之前出现你的微信头像/朋友圈背景图：那是你**当前**对外展示的形象；换图或恢复历史后客户端会更新配图。
 `.trim()
 
+const WECHAT_USER_CHAT_AVATAR_APPENDIX = `
+【用户微信头像】
+若 system 之后、对话历史之前出现用户头像图：那是对方**在本聊天**对外展示的微信头像（可能与对方全局账号头像不同）。讨论对方头像/头像样式时以该图为准，勿编造未看到的细节。
+`.trim()
+
 function buildMemoryMomentImagesUserMessage(imageUrls: string[]): Record<string, unknown> {
   return {
     role: 'user',
@@ -1498,6 +1523,22 @@ function buildSelfProfileVisionUserMessage(
   return { role: 'user', content }
 }
 
+function buildUserChatAvatarVisionUserMessage(avatarUrl: string): Record<string, unknown> | null {
+  const url = avatarUrl.trim()
+  if (!url) return null
+  return {
+    role: 'user',
+    content: [
+      {
+        type: 'text',
+        text: '【用户微信头像 · 本聊天】以下为用户在本会话中展示的微信头像。讨论对方头像时以本图为准。',
+      },
+      { type: 'text', text: '下图：用户当前在本聊天的微信头像' },
+      { type: 'image_url', image_url: { url } },
+    ],
+  }
+}
+
 function injectPreHistoryVisionMessages(
   messages: OpenAiCompatibleMessage[],
   blocks: Array<{ message: Record<string, unknown> | null }>,
@@ -1513,6 +1554,8 @@ async function callWeChatPeerReplyChat(
   opts: {
     memoryMomentImages?: string[]
     characterSelfProfileVisionParts?: ReturnType<typeof buildCharacterSelfProfileVisionParts>
+    /** 用户在本聊天展示的微信头像（会话覆盖优先） */
+    playerWechatAvatarUrl?: string | null
     temperature: number
     /** 缺省不传：不限制输出 token，由模型/线路自行决定 */
     max_tokens?: number
@@ -1520,9 +1563,13 @@ async function callWeChatPeerReplyChat(
 ): Promise<string> {
   const memUrls = (opts.memoryMomentImages ?? []).map((u) => u.trim()).filter(Boolean)
   const selfParts = opts.characterSelfProfileVisionParts ?? []
+  const userAvatarUrl = opts.playerWechatAvatarUrl?.trim() || ''
   const visionBlocks: Array<{ message: Record<string, unknown> | null }> = []
   if (selfParts.length) {
     visionBlocks.push({ message: buildSelfProfileVisionUserMessage(selfParts) })
+  }
+  if (userAvatarUrl) {
+    visionBlocks.push({ message: buildUserChatAvatarVisionUserMessage(userAvatarUrl) })
   }
   if (memUrls.length) {
     visionBlocks.push({ message: buildMemoryMomentImagesUserMessage(memUrls) })
@@ -1627,6 +1674,13 @@ export async function requestWeChatPeerReplyBubbles(params: {
   characterImageGenEnabled?: boolean
   /** 当前生图风格中文名，供协议说明（风格由客户端拼接，模型勿写） */
   characterImageGenStyleHint?: string
+  /** 是否已有可生图用的形象参考（含聊天本页独立配置）；缺省则仅看角色全局字段 */
+  hasAppearanceReference?: boolean
+  /**
+   * 用户在本聊天展示的微信头像 URL（会话单独设置优先于账号全局头像）。
+   * 有值时会注入识图，供角色讨论对方头像时对齐。
+   */
+  playerWechatAvatarUrl?: string | null
   /** 角色本人近期朋友圈列表，供置顶指令选用 momentId */
   characterMomentsPinCatalog?: string
   /** 该角色可见的用户近期朋友圈目录 */
@@ -1694,7 +1748,8 @@ export async function requestWeChatPeerReplyBubbles(params: {
   })
   const imageGenBlock = params.characterImageGenEnabled
     ? buildCharacterImageGenPromptBlock(params.characterImageGenStyleHint, {
-        hasAppearanceReference: characterHasAppearanceReference(params.character),
+        hasAppearanceReference:
+          params.hasAppearanceReference ?? characterHasAppearanceReference(params.character),
         appearanceHint: resolveCharacterImageGenPromptAppearanceHint(params.character),
         scope: params.groupChatTranscript ? 'default' : 'private_chat',
         injectCompositionLifeFeelCot,
@@ -1731,6 +1786,8 @@ export async function requestWeChatPeerReplyBubbles(params: {
           characterMomentsPinCatalog: params.characterMomentsPinCatalog,
           userMomentsViewerCatalog: params.userMomentsViewerCatalog,
           includeThinkingChain: params.includeThinkingChain === true,
+          includeBusyDirective: params.busyContext?.enabled === true,
+          includeCharacterImageSend: params.characterImageGenEnabled === true,
           replyOutputLanguage: params.replyOutputLanguage,
           replyVoiceLanguage: params.replyVoiceLanguage,
           translationSyncEnabled: params.translationSyncEnabled === true,
@@ -1782,14 +1839,18 @@ export async function requestWeChatPeerReplyBubbles(params: {
     params.promptMode === 'persona' && params.character
       ? buildCharacterSelfProfileVisionParts(params.character)
       : []
+  const playerWechatAvatarUrl = params.playerWechatAvatarUrl?.trim() || ''
   const memoryImagesAppendix = memoryMomentImages.length
     ? `\n\n---\n${WECHAT_MEMORY_MOMENT_IMAGES_APPENDIX}\n`
     : ''
   const selfProfileImagesAppendix = selfProfileVisionParts.length
     ? `\n\n---\n${WECHAT_SELF_PROFILE_IMAGES_APPENDIX}\n`
     : ''
+  const userChatAvatarAppendix = playerWechatAvatarUrl
+    ? `\n\n---\n${WECHAT_USER_CHAT_AVATAR_APPENDIX}\n`
+    : ''
   // 输出协议已经 earlyOutputAppendix 插入 base 前部；末尾仅留媒体/贴纸等附属指令
-  const system = `${busyPrefix ? `${busyPrefix}\n\n` : ''}${base}${selfProfileImagesAppendix}${memoryImagesAppendix}${recallGuide ? `\n\n${recallGuide}` : ''}${mediaFreqBlock ? `\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n${danmakuInstruction}` : ''}\n\n${stickerBlock}${imageGenBlock ? `\n\n${imageGenBlock}` : ''}`
+  const system = `${busyPrefix ? `${busyPrefix}\n\n` : ''}${base}${selfProfileImagesAppendix}${userChatAvatarAppendix}${memoryImagesAppendix}${recallGuide ? `\n\n${recallGuide}` : ''}${mediaFreqBlock ? `\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n${danmakuInstruction}` : ''}\n\n${stickerBlock}${imageGenBlock ? `\n\n${imageGenBlock}` : ''}`
 
   const history = transcriptToMessages(params.transcript, { groupChat: params.groupChatTranscript })
   const messages: OpenAiCompatibleMessage[] = [{ role: 'system', content: system }, ...history]
@@ -1806,6 +1867,7 @@ export async function requestWeChatPeerReplyBubbles(params: {
   const text = await callWeChatPeerReplyChat(cfg, messages, {
     memoryMomentImages,
     characterSelfProfileVisionParts: selfProfileVisionParts,
+    playerWechatAvatarUrl: playerWechatAvatarUrl || null,
     temperature: params.friendRequestAdjudication
       ? 0.38
       : isLumi
@@ -2034,6 +2096,17 @@ const WECHAT_STICKER_IMAGE_REPLY_APPENDIX = `
 - 回复请用**换行分隔**：每一行一条微信气泡，不要整段挤在一行。
 `.trim()
 
+const WECHAT_SCREEN_SHARE_REPLY_APPENDIX = `
+你们正在「一起刷」：用户分享了手机屏幕实时画面（可能是小红书、微博、视频、购物页等）。
+请你以[角色姓名]的身份，像真人陪刷一样用微信口语短反应，不要写评图作文。
+硬性要求（必须遵守）：
+- 用 **1～3 行**气泡（换行分隔）；每行一句短话。
+- 必须点出 **1～2 个**可核对的画面细节（App/标题/图文/人物/商品等），再带一点情绪或吐槽。
+- 可选 **1 个**很轻的追问；**禁止**每轮都问「你在干嘛/在看什么」。
+- 禁止长篇客观描述、禁止列清单式评测；看不清就直说「看不清/糊了」，严禁假装看到。
+- 不要输出协议标签或 JSON；不要假装自己点了屏幕上的按钮。
+`.trim()
+
 /**
  * 图片消息：优先尝试走多模态（vision）格式；若模型/接口不支持，则仍走文本调用让模型自己说明“看不见图片”。
  */
@@ -2048,6 +2121,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   imageMime: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
   /** 用户侧为表情包消息时走较短接话协议，避免过度评图 */
   userImageIsSticker?: boolean
+  /** 「一起刷」屏幕共享抽帧：走陪刷短反应协议 */
+  userImageIsScreenShare?: boolean
   wechatHomeProfile?: { displayName: string; signature?: string } | null
   meetWechatContinuityBlock?: string
   altAccountProbeBlock?: string
@@ -2106,12 +2181,15 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   imageRoundAllowed?: boolean
   characterImageGenEnabled?: boolean
   characterImageGenStyleHint?: string
+  hasAppearanceReference?: boolean
   characterMomentsPinCatalog?: string
   userMomentsViewerCatalog?: string
   characterWechatProfileBlock?: string
   sharedLinkPreviewBlock?: string
   /** 每轮摘要表：要求模型在回复末尾追加 unified memory markup */
   perRoundMemoryAppendix?: string
+  /** 用户在本聊天展示的微信头像（会话覆盖优先；有则多模态注入） */
+  playerWechatAvatarUrl?: string | null
 }): Promise<WeChatPeerReplyResult> {
   const cfg = params.apiConfig
   if (!cfg?.apiUrl?.trim() || !cfg.apiKey?.trim() || !cfg.modelId?.trim()) {
@@ -2174,9 +2252,13 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   })
   const isLumi = params.promptMode === 'lumi-assistant'
   const roleName = params.character?.name?.trim() || (isLumi ? 'Lumi' : '对方')
-  const imgRulesBase = params.userImageIsSticker ? WECHAT_STICKER_IMAGE_REPLY_APPENDIX : WECHAT_IMAGE_REPLY_APPENDIX
+  const imgRulesBase = params.userImageIsScreenShare
+    ? WECHAT_SCREEN_SHARE_REPLY_APPENDIX
+    : params.userImageIsSticker
+      ? WECHAT_STICKER_IMAGE_REPLY_APPENDIX
+      : WECHAT_IMAGE_REPLY_APPENDIX
   const imgRules = (
-    isLumi
+    isLumi || params.userImageIsScreenShare
       ? imgRulesBase
       : params.includeProfileImageChange === true
         ? `${imgRulesBase}\n\n${WECHAT_CHARACTER_PROFILE_IMAGE_APPLY_IMAGE_ROUND_HINT}`
@@ -2209,7 +2291,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   })
   const imageGenBlock = params.characterImageGenEnabled
     ? buildCharacterImageGenPromptBlock(params.characterImageGenStyleHint, {
-        hasAppearanceReference: characterHasAppearanceReference(params.character),
+        hasAppearanceReference:
+          params.hasAppearanceReference ?? characterHasAppearanceReference(params.character),
         appearanceHint: resolveCharacterImageGenPromptAppearanceHint(params.character),
         scope: params.groupChatTranscript ? 'default' : 'private_chat',
         injectCompositionLifeFeelCot,
@@ -2242,6 +2325,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
         characterMomentsPinCatalog: params.characterMomentsPinCatalog,
         userMomentsViewerCatalog: params.userMomentsViewerCatalog,
         includeThinkingChain: params.includeThinkingChain === true,
+        includeBusyDirective: params.busyContext?.enabled === true,
+        includeCharacterImageSend: params.characterImageGenEnabled === true,
         replyOutputLanguage: params.replyOutputLanguage,
         replyVoiceLanguage: params.replyVoiceLanguage,
         translationSyncEnabled: params.translationSyncEnabled === true,
@@ -2255,22 +2340,39 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   const memoryMomentImages = (params.longTermMemoryMomentImages ?? [])
     .map((u) => u.trim())
     .filter(Boolean)
+  const playerWechatAvatarUrl = params.playerWechatAvatarUrl?.trim() || ''
+  const userAvatarVisionMsg = playerWechatAvatarUrl
+    ? buildUserChatAvatarVisionUserMessage(playerWechatAvatarUrl)
+    : null
   const memoryImagesAppendix = memoryMomentImages.length
     ? `\n\n---\n${WECHAT_MEMORY_MOMENT_IMAGES_APPENDIX}\n`
     : ''
-  const system = `${busyPrefix ? `${busyPrefix}\n\n` : ''}${base}${memoryImagesAppendix}\n\n${recallGuide}\n\n---\n【图片消息附加要求】\n${imgRules}\n\n${outputAppendix}${mediaFreqBlock ? `\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n${danmakuInstruction}` : ''}\n\n${stickerBlock}${imageGenBlock ? `\n\n${imageGenBlock}` : ''}`
+  const userChatAvatarAppendix = playerWechatAvatarUrl
+    ? `\n\n---\n${WECHAT_USER_CHAT_AVATAR_APPENDIX}\n`
+    : ''
+  const imageAppendixTitle = params.userImageIsScreenShare ? '【一起刷·屏幕画面附加要求】' : '【图片消息附加要求】'
+  const system = `${busyPrefix ? `${busyPrefix}\n\n` : ''}${base}${userChatAvatarAppendix}${memoryImagesAppendix}\n\n${recallGuide}\n\n---\n${imageAppendixTitle}\n${imgRules}\n\n${outputAppendix}${
+    params.userImageIsScreenShare
+      ? ''
+      : `${mediaFreqBlock ? `\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n${danmakuInstruction}` : ''}\n\n${stickerBlock}${imageGenBlock ? `\n\n${imageGenBlock}` : ''}`
+  }`
 
   const history = transcriptToMessages(params.transcript, { groupChat: params.groupChatTranscript })
 
   // vision user message: text + dataURL image
   const dataUrl = `data:${params.imageMime};base64,${params.imageBase64}`
-  const visionUserText = params.userImageIsSticker ? '（我发来了一张表情包）' : '（我发来了一张图片）'
+  const visionUserText = params.userImageIsScreenShare
+    ? '（我们正在一起刷，这是我手机屏幕当前画面）'
+    : params.userImageIsSticker
+      ? '（我发来了一张表情包）'
+      : '（我发来了一张图片）'
   logConsole(
     'ai',
-    `图片多模态请求：apiUrl=${cfg.apiUrl} modelId=${cfg.modelId} mime=${params.imageMime} b64Len=${params.imageBase64.length}`,
+    `图片多模态请求：apiUrl=${cfg.apiUrl} modelId=${cfg.modelId} mime=${params.imageMime} b64Len=${params.imageBase64.length}${params.userImageIsScreenShare ? ' screenShare=1' : ''}`,
   )
   const visionMessages: unknown[] = [
     { role: 'system', content: system },
+    ...(userAvatarVisionMsg ? [userAvatarVisionMsg] : []),
     ...(memoryMomentImages.length ? [buildMemoryMomentImagesUserMessage(memoryMomentImages)] : []),
     ...history,
     ...(params.perRoundMemoryAppendix?.trim()
@@ -2331,6 +2433,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       // 变体 1：image_url 直接为字符串
       const alt1: unknown[] = [
         { role: 'system', content: system },
+        ...(userAvatarVisionMsg ? [userAvatarVisionMsg] : []),
+        ...(memoryMomentImages.length ? [buildMemoryMomentImagesUserMessage(memoryMomentImages)] : []),
         ...history,
         {
           role: 'user',
@@ -2349,6 +2453,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       // 变体 2：部分实现使用 url 字段而非 image_url 包裹
       const alt2: unknown[] = [
         { role: 'system', content: system },
+        ...(userAvatarVisionMsg ? [userAvatarVisionMsg] : []),
+        ...(memoryMomentImages.length ? [buildMemoryMomentImagesUserMessage(memoryMomentImages)] : []),
         ...history,
         {
           role: 'user',
@@ -2374,7 +2480,9 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
           '我刚发了一张图片，但你的当前模型/接口可能不支持看图。请你用自然的微信聊天语气说明你看不见图片，并引导我用文字描述或换一种方式发给你。',
       },
     ]
-    const text = await openAiCompatibleChat(cfg, fallbackMessages, {
+    const text = await callWeChatPeerReplyChat(cfg, fallbackMessages, {
+      memoryMomentImages,
+      playerWechatAvatarUrl: playerWechatAvatarUrl || null,
       temperature: isLumi ? 0.62 : 0.82,
     })
     const p2 = parseWeChatPeerReplyWithThinking(text.trim() ? text : '收到。')
@@ -4192,16 +4300,16 @@ const WECHAT_GROUP_MULTI_SPEAKER_LUMI_RULES = `
 - **禁止**把全局展示的「会话玩家身份档案」或会话登录档常用名当成每名 NPC 都必须遵用的称谓；多成员绑定身份不同时，那份档案往往只对应**其中一档**，错误沿用会导致全员喊错（典型：绑定卫总线的角色却喊祁）。
 
 【表情包（强约束｜与文字禁止同一行）】
-- **宁缺毋滥**：默认不发；只有《表情包资源》里存在**贴脸**条目时才单独发 \`[表情包]\` 行；无合适则只文字，禁止乱选凑数。
-- 客户端只会把**整行以** \`[表情包]\` **开头**的行识别为表情包气泡；若写成「一句对白 + 同行 [表情包]…」，会整段当普通字、资源匹配失败。
-- **正确**：先发完**纯文字**的一行（须带 <<SPEAKER>>），下一行再发**仅含** \`[表情包]\` +《表情包资源》**引用名原文** 的一行（**必须**重新写一行 \`<<SPEAKER:同一角色ID>>\`，且**该行除表情包载荷外不要夹其它字**）。
-- **错误示例（禁止）**：\`<<SPEAKER:id>>大人你居然还在笑！[表情包]爷真的服了（无语流汗）\`
-- **正确示例**：\`<<SPEAKER:id>>大人你居然还在笑！\` 换行后 \`<<SPEAKER:id>>[表情包]爷真的服了（无语流汗）\`
+- **宁缺毋滥**：默认不发；只有《表情包资源》里存在**贴脸**条目时才单独发 \`表情包 引用名\` 行；无合适则只文字，禁止乱选凑数。
+- 客户端只会把**整行以** \`表情包 \` **开头**的行识别为表情包气泡；若写成「一句对白 + 同行 表情包…」，会整段当普通字、资源匹配失败。
+- **正确**：先发完**纯文字**的一行（须带 <<SPEAKER>>），下一行再发**仅含** \`表情包 \` +《表情包资源》**引用名原文** 的一行（**必须**重新写一行 \`<<SPEAKER:同一角色ID>>\`，且**该行除表情包载荷外不要夹其它字**）。
+- **错误示例（禁止）**：\`<<SPEAKER:id>>大人你居然还在笑！表情包 爷真的服了（无语流汗）\`
+- **正确示例**：\`<<SPEAKER:id>>大人你居然还在笑！\` 换行后 \`<<SPEAKER:id>>表情包 爷真的服了（无语流汗）\`
 - **禁止** \`emoji:\` / \`emoji：\`、\`表情:\`、\`sticker:\` 等前缀；否则无法匹配资源。
 
 【微信经典黄脸（inline 文字表情）】
 - 可在带 \`<<SPEAKER:…>>\` 的**普通文字行**内写 \`[呲牙]\`、\`[OK]\` 等（名称见《微信经典表情》目录，**逐字一致**）；可与对白混排，也可单独一行只发表情。
-- **不是** \`[表情包]\` GIF 行；不受 GIF 概率限制。松弛对话**宜常带**贴脸黄脸；亲密关系下安慰/情话场景可更自然。
+- **不是** \`表情包\` GIF 行；不受 GIF 概率限制。松弛对话**宜常带**贴脸黄脸；亲密关系下安慰/情话场景可更自然。
 - **\`[微笑]\` 慎用**：年轻语境常读成「死亡微笑」（冷/无语/略气），非字面开心；默认勿在同龄日常里发，仅长辈/商务/不懂网感人设或真的冷/无语时用。
 - **偏负面黄脸**：\`[裂开]\` \`[尴尬]\` \`[再见]\` \`[擦汗]\` \`[汗]\` \`[便便]\` \`[吐]\` 等通常表负面/无语/尴尬/拒意，勿误判为正面。其他黄脸与 GIF 包多为氛围标点，勿过度解读。
 - 严肃争吵、冷战时仍优先纯文字。

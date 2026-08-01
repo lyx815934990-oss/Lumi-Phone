@@ -34,7 +34,7 @@ import { PulseProfile } from './PulseProfile'
 import { PulseNumericText } from './components/PulseNum'
 import { PulseUserProfileView } from './components/PulseUserProfileView'
 import { PulseTabBar } from './PulseTabBar'
-import type { PulseFollowingUser, PulseTab, PulseTrendingTopic } from './pulseTypes'
+import type { PulseFollowingUser, PulsePovOption, PulseTab, PulseTrendingTopic } from './pulseTypes'
 import { parsePulsePovId } from './pulseTypes'
 import { TrendingTopicPage } from './TrendingTopicPage'
 import {
@@ -124,6 +124,7 @@ function LumiPulseAppContent({
     return parsed?.kind === 'player' ? parsed.rawId : ''
   }, [playerPovId])
 
+  /** 当前身份绑定的主要角色世界（可为空） */
   const options = useMemo(() => {
     if (!identityRawId) return []
     return allWorldOptions.filter((o) => {
@@ -132,6 +133,24 @@ function LumiPulseAppContent({
       return boundCharPovIdSet.has(o.povId)
     })
   }, [allWorldOptions, boundCharPovIdSet, identityRawId])
+
+  /**
+   * 会话世界列表：有绑定角色用角色世界；未绑定则用个人视角世界，仍可进入广场。
+   */
+  const worldOptions = useMemo((): PulsePovOption[] => {
+    if (options.length) return options
+    if (!playerPovId || !identityRawId) return []
+    return [
+      {
+        povId: playerPovId,
+        kind: 'player',
+        rawId: identityRawId,
+        label: weiboDisplayName.trim() || '我',
+        worldName: '个人视角',
+        avatarUrl: weiboAvatar || undefined,
+      },
+    ]
+  }, [identityRawId, options, playerPovId, weiboAvatar, weiboDisplayName])
 
   const [tab, setTab] = useState<PulseTab>('home')
   const [openPostId, setOpenPostId] = useState<string | null>(null)
@@ -162,8 +181,8 @@ function LumiPulseAppContent({
   const prevWorldRef = useRef<string | null>(null)
 
   const activeWorld = useMemo(
-    () => options.find((o) => o.povId === currentWorldId) ?? null,
-    [currentWorldId, options],
+    () => worldOptions.find((o) => o.povId === currentWorldId) ?? null,
+    [currentWorldId, worldOptions],
   )
 
   const openPost = usePulsePostById(openPostId)
@@ -319,18 +338,18 @@ function LumiPulseAppContent({
   }, [boundCharPovIds, playerPovId, setIdentityVisibleCharPovIds])
 
   /**
-   * 身份选定后：世界锚点仅在「绑定了该身份的主要角色」内选择。
-   * 有记忆世界且仍有效则沿用；否则自动接入首位绑定世界。
+   * 身份选定后：优先接入绑定了该身份的主要角色世界；
+   * 若尚未绑定角色，则接入个人视角世界（player:），仍可刷广场与发帖。
    */
   useEffect(() => {
     if (!hydrated || !playerPovId) return
-    if (!options.length) {
+    if (!worldOptions.length) {
       if (currentWorldId) setCurrentWorldId(null)
       return
     }
-    if (options.some((o) => o.povId === currentWorldId)) return
-    setCurrentWorldId(options[0]!.povId)
-  }, [hydrated, playerPovId, options, currentWorldId, setCurrentWorldId])
+    if (worldOptions.some((o) => o.povId === currentWorldId)) return
+    setCurrentWorldId(worldOptions[0]!.povId)
+  }, [hydrated, playerPovId, worldOptions, currentWorldId, setCurrentWorldId])
 
   /** 切换世界时关闭跨世界的动态详情（首次进入世界不清空） */
   useEffect(() => {
@@ -510,50 +529,6 @@ function LumiPulseAppContent({
     )
   }
 
-  if (!options.length) {
-    return (
-      <div
-        className={`flex h-full min-h-0 flex-col bg-[#FCFCFC] ${className}`}
-        data-phone-page="app"
-        data-app-id="weibo"
-        style={{ ...themeStyle, fontFamily: 'var(--phone-font)' }}
-      >
-        <header
-          className="relative z-20 flex shrink-0 items-center gap-2 px-3 pb-2"
-          style={{ paddingTop: 'max(8px, env(safe-area-inset-top, 0px))' }}
-        >
-          <Pressable
-            type="button"
-            onClick={handleChromeBack}
-            className="flex items-center gap-0.5 rounded-full py-1.5 pr-2 opacity-70"
-            aria-label={
-              exitToChatOnBack ? '返回聊天' : backTarget === 'discover' ? '返回发现' : '返回主页'
-            }
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.35">
-              <path d="M14 6L8 12l6 6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <span className="text-[13px] tracking-wide text-[#1C1C1E]">
-              {exitToChatOnBack ? '返回聊天' : backTarget === 'discover' ? '返回发现' : '返回主页'}
-            </span>
-          </Pressable>
-        </header>
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
-          <p className="text-[13px] leading-relaxed text-neutral-400">
-            当前身份尚未绑定主要角色。请在人设中为角色绑定此身份后再进入，或切换其他身份视角。
-          </p>
-          <Pressable
-            type="button"
-            onClick={() => beginIdentitySwitch('profile')}
-            className="rounded-full bg-[#1C1C1E] px-4 py-2 text-[12px] tracking-wide text-white"
-          >
-            切换身份
-          </Pressable>
-        </div>
-      </div>
-    )
-  }
-
   if (!currentWorldId || !activeWorld) {
     return (
       <div className="flex h-full items-center justify-center bg-[#FCFCFC] text-[13px] text-neutral-400">
@@ -631,7 +606,9 @@ function LumiPulseAppContent({
               />
             ) : tab === 'discover' ? (
               <PulseDiscover
-                povName={activeWorld.label}
+                povName={
+                  activeWorld.kind === 'player' ? activeWorld.worldName : activeWorld.label
+                }
                 currentWorldId={currentWorldId}
                 currentPlayerPovId={playerPovId}
                 povOptions={options}

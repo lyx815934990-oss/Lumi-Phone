@@ -23,15 +23,15 @@ export function isLargeMbtiAvatar(mbti?: string): boolean {
   return key === 'ISFJ' || key === 'ENTJ'
 }
 
-/** 玩家身份列表/卡片：已选 MBTI 时优先展示人格形象图，否则回落自定义头像 */
+/** 玩家身份列表/卡片：有自定义头像优先；否则用 MBTI 人格形象图 */
 export function resolvePlayerIdentityPreviewAvatar(params: {
   mbti?: string | null
   avatarUrl?: string | null
 }): { src: string; kind: 'mbti' | 'photo' | 'none' } {
-  const mbtiSrc = resolveMbtiImageUrl(String(params.mbti ?? ''))
-  if (mbtiSrc) return { src: mbtiSrc, kind: 'mbti' }
   const photo = resolveCharacterAvatarUrl({ avatarUrl: String(params.avatarUrl ?? '') })
   if (photo) return { src: photo, kind: 'photo' }
+  const mbtiSrc = resolveMbtiImageUrl(String(params.mbti ?? ''))
+  if (mbtiSrc) return { src: mbtiSrc, kind: 'mbti' }
   return { src: '', kind: 'none' }
 }
 

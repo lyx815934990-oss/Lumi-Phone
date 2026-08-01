@@ -229,6 +229,11 @@ export type ChatConversationSettingsRow = {
   showGroupRankBadgesInChat: boolean
   /** 聊天背景图 URL 或 dataURL，空为默认 */
   chatBackground: string
+  /**
+   * 本聊天中用户（己方）展示的头像 URL/dataURL；空 = 跟随微信账号全局头像。
+   * 气泡与角色侧「看到的用户头像」均优先用此字段。
+   */
+  playerChatAvatarUrl?: string
   /** 角色每轮至少发 1 条表情包的目标概率 0–100；缺省 = 不覆写系统协议 */
   stickerRoundTriggerPercent?: number
   /** 定向 GIF 表情包：为 true 时按分组/禁止列表过滤可发条目 */
@@ -269,6 +274,16 @@ export type ChatConversationSettingsRow = {
   imageRoundCountMin?: number
   /** 角色每次发图张数上限 1–9；缺省 1 */
   imageRoundCountMax?: number
+  /**
+   * 本聊天是否覆盖全局 API 生图风格；未开启则跟随 API 预设。
+   */
+  imageGenStyleOverrideEnabled?: boolean
+  /** 本聊天风格模式：preset | custom（仅 override 开启时生效） */
+  imageGenStylePrefixMode?: 'preset' | 'custom'
+  /** 本聊天预设风格 id（如 anime / realistic） */
+  imageGenStylePresetId?: string
+  /** 本聊天自定义风格前缀 */
+  imageGenCustomStylePrefix?: string
   /**
    * 是否支持发图：未存或 `0` = 关闭（默认）；>0 = 开启（按语境适量发图）。
    * 旧档若存过概率百分比，>0 仍视为开启。

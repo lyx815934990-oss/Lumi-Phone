@@ -6,6 +6,8 @@ import {
   applyProfileImageUrlChange,
   resolveProfileImageRestoreUrl,
 } from './wechatCharacterProfileImageHistory'
+import { matchAnyDirectiveName, pickPositional } from './directives/parseSpaceDirective'
+import { WxCmd } from './directives/wechatDirectiveLexicon'
 
 export type CharacterProfileImageApplyTarget = 'avatar' | 'momentsCover'
 
@@ -31,6 +33,10 @@ export function parseCharacterProfileImageApplyDirective(
 ): CharacterProfileImageApplyTarget | null {
   const t = String(line ?? '').trim()
   if (!t) return null
+  const setAvatar = matchAnyDirectiveName(t, [WxCmd.setAvatar])
+  if (setAvatar && !setAvatar.rest) return 'avatar'
+  const setCover = matchAnyDirectiveName(t, [WxCmd.setCover, '换朋友圈背景', '换朋友圈封面'])
+  if (setCover && !setCover.rest) return 'momentsCover'
   if (AVATAR_DIRECTIVE_RE.test(t)) return 'avatar'
   if (MOMENTS_COVER_DIRECTIVE_RE.test(t)) return 'momentsCover'
   return null
@@ -41,6 +47,16 @@ function parseCharacterProfileImageAction(line: string): CharacterProfileImageAc
   if (!t) return null
   const userAvatar = parseCharacterProfileImageApplyDirective(t)
   if (userAvatar) return { kind: 'userImage', target: userAvatar }
+  const restoreAvatarSpace = matchAnyDirectiveName(t, [WxCmd.restoreAvatar])
+  if (restoreAvatarSpace) {
+    const key = pickPositional(restoreAvatarSpace, 0) || restoreAvatarSpace.rest
+    if (key) return { kind: 'restore', target: 'avatar', restoreKey: key }
+  }
+  const restoreCoverSpace = matchAnyDirectiveName(t, [WxCmd.restoreCover, '恢复朋友圈背景', '恢复朋友圈封面'])
+  if (restoreCoverSpace) {
+    const key = pickPositional(restoreCoverSpace, 0) || restoreCoverSpace.rest
+    if (key) return { kind: 'restore', target: 'momentsCover', restoreKey: key }
+  }
   const restoreAvatar = RESTORE_AVATAR_DIRECTIVE_RE.exec(t)
   if (restoreAvatar?.[1]?.trim()) {
     return { kind: 'restore', target: 'avatar', restoreKey: restoreAvatar[1].trim() }
@@ -101,36 +117,36 @@ export const WECHAT_CHARACTER_PROFILE_IMAGE_APPLY_APPENDIX = `
 - **恢复历史图**：换回 original 或历史序号中的旧图。
 
 ■ 易混点（必读）
-- 「把朋友圈背景换成我 / 换成这张 / 背景图用这张 / 封面改成…」→ **只**输出 \`[换朋友圈背景]\`，**禁止**输出 \`[发朋友圈]\`。
-- 「发条朋友圈 / 晒一下 / 官宣发圈」→ 才用 \`[发朋友圈]\`；配图由客户端生成，**不要**把「换背景的那张用户图」当成发圈配图借口。
-- 口头说「背景换好了」却输出 \`[发朋友圈]\` 是错误；口头已承认换背景时，指令行必须是 \`[换朋友圈背景]\`。
+- 「把朋友圈背景换成我 / 换成这张 / 背景图用这张 / 封面改成…」→ **只**输出 \`换背景\`，**禁止**输出 \`发朋友圈\`。
+- 「发条朋友圈 / 晒一下 / 官宣发圈」→ 才用 \`发朋友圈\`；配图由客户端生成，**不要**把「换背景的那张用户图」当成发圈配图借口。
+- 口头说「背景换好了」却输出 \`发朋友圈\` 是错误；口头已承认换背景时，指令行必须是 \`换背景\`。
 
 ■ 用户发图更换（须你愿意）
 当用户把图片发给你，且你判断对方是要你把「刚收到的那张图」设为微信头像或朋友圈背景时：
 - 先像真人一样用 **1～2 句**口语回应。
 - 若你**同意**更换：在可见回复中**另起一行**，整行**只**输出：
-  - 换头像：\`[换头像]\`
-  - 换朋友圈背景/封面：\`[换朋友圈背景]\`
-- 客户端会用**用户刚发来的那张图**写入你的资料；**不要**编造 URL，**不要**用 \`[图片]\` 假装已换。
-- 若本轮用户**没有**发来可用的图：只文字说明需要对方发图，或请对方发一张要用的图；**禁止**为此输出 \`[发朋友圈]\` 凑数。
+  - 换头像：\`换头像\`
+  - 换朋友圈背景/封面：\`换背景\`
+- 客户端会用**用户刚发来的那张图**写入你的资料；**不要**编造 URL，**不要**用 \`发图\` 假装已换。
+- 若本轮用户**没有**发来可用的图：只文字说明需要对方发图，或请对方发一张要用的图；**禁止**为此输出 \`发朋友圈\` 凑数。
 - 若你不愿或图片不合适：只文字婉拒，**禁止**输出上述指令。
 
 ■ 恢复原始 / 历史图（须你愿意）
 当你判断用户（或你自己）要换回**原始**或**以前用过**的头像/背景时：
 - 先 1～2 句口语回应（可带一点怀旧/犹豫）。
 - 同意则**另起一行**输出（整行仅此指令）：
-  - \`[恢复头像|original]\` 或 \`[恢复头像|1]\`（数字见历史列表）
-  - \`[恢复朋友圈背景|original]\` 或 \`[恢复朋友圈背景|1]\`
+  - \`恢复头像 original\` 或 \`恢复头像 1\`（数字见历史列表）
+  - \`恢复背景 original\` 或 \`恢复背景 1\`
 - 与当前完全相同时不要输出恢复指令。
 - 没有更换/恢复意愿时，**不要**主动输出这些指令。
 `.trim()
 
 export const WECHAT_CHARACTER_PROFILE_IMAGE_APPLY_IMAGE_ROUND_HINT = `
 本轮用户发来了图片。请先判断意图再选指令：
-- 要你把该图设为**头像 / 朋友圈背景（主页封面）**：口语回应后**另起一行**只输出 \`[换头像]\` 或 \`[换朋友圈背景]\`；**禁止**用 \`[发朋友圈]\` 代替。
-- 要你**发一条朋友圈动态**：才用 \`[发朋友圈]\`（另见发朋友圈协议）。
+- 要你把该图设为**头像 / 朋友圈背景（主页封面）**：口语回应后**另起一行**只输出 \`换头像\` 或 \`换背景\`；**禁止**用 \`发朋友圈\` 代替。
+- 要你**发一条朋友圈动态**：才用 \`发朋友圈\`（另见发朋友圈协议）。
 - 只是聊天配图：正常回复即可，不要输出资料图/发圈指令。
-若上文在谈「换背景/换封面」且用户又发图说「这张也不错 / 用这张」：默认是换背景，输出 \`[换朋友圈背景]\`。
+若上文在谈「换背景/换封面」且用户又发图说「这张也不错 / 用这张」：默认是换背景，输出 \`换背景\`。
 `.trim()
 
 const MOMENTS_COVER_REQUEST_RE =
@@ -179,12 +195,12 @@ export function buildUserProfileImageChangeBias(
   const parts: string[] = []
   if (wantCover) {
     parts.push(
-      '用户在请你换**朋友圈背景/封面**（主页顶部图）。同意则口语后**另起一行只**输出 `[换朋友圈背景]`；**禁止**用 `[发朋友圈]` 代替或「假装」已换背景。',
+      '用户在请你换**朋友圈背景/封面**（主页顶部图）。同意则口语后**另起一行只**输出 `换背景`；**禁止**用 `发朋友圈` 代替或「假装」已换背景。',
     )
   }
   if (wantAvatar) {
     parts.push(
-      '用户在请你换**微信头像**。同意则口语后**另起一行只**输出 `[换头像]`；**禁止**用 `[发朋友圈]` 代替。',
+      '用户在请你换**微信头像**。同意则口语后**另起一行只**输出 `换头像`；**禁止**用 `发朋友圈` 代替。',
     )
   }
   return `[系统提示] ${parts.join(' ')}`
@@ -238,19 +254,19 @@ export function reconcileMistakenMomentPublishAsProfileImageChange(params: {
   let target: CharacterProfileImageApplyTarget | null = null
   if (wantCover) {
     target = 'momentsCover'
-    if (!hasCoverDirective) next.push('[换朋友圈背景]')
+    if (!hasCoverDirective) next.push('换背景')
   } else if (wantAvatar) {
     target = 'avatar'
-    if (!hasAvatarDirective) next.push('[换头像]')
+    if (!hasAvatarDirective) next.push('换头像')
   }
 
   return { bubbles: next, rewritten: true, target }
 }
 
 function isMomentPublishDirectiveLine(line: string): boolean {
-  return /^\[(?:发朋友圈|POST_MOMENT|MOMENT_POST)\](?:\s*(\{[\s\S]*\}))?\s*$/i.test(
-    String(line ?? '').trim(),
-  )
+  const t = String(line ?? '').trim()
+  if (/^发朋友圈(?:\s|$)/.test(t)) return true
+  return /^\[(?:发朋友圈|POST_MOMENT|MOMENT_POST)\](?:\s*(\{[\s\S]*\}))?\s*$/i.test(t)
 }
 
 function isProfileOrMomentDirectiveLine(line: string): boolean {
@@ -258,6 +274,7 @@ function isProfileOrMomentDirectiveLine(line: string): boolean {
   if (!t) return false
   if (parseCharacterProfileImageAction(t)) return true
   if (isMomentPublishDirectiveLine(t)) return true
+  if (/^(?:改昵称|改签名|改资料)\b/.test(t)) return true
   if (/^\[(?:改微信昵称|改个性签名|改微信资料|SET_WECHAT_)/i.test(t)) return true
   return false
 }

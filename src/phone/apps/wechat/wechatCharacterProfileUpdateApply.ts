@@ -10,6 +10,9 @@ import {
 const WECHAT_NICK_MAX = 12
 const WECHAT_SIG_MAX = 22
 
+import { matchAnyDirectiveName, pickNamed } from './directives/parseSpaceDirective'
+import { WxCmd } from './directives/wechatDirectiveLexicon'
+
 const NICK_DIRECTIVE_RE =
   /^\[(?:改微信昵称|SET_WECHAT_NICKNAME|SETWECHATNICKNAME)\](?:\s*(\{[\s\S]*\}))?\s*$/i
 const SIG_DIRECTIVE_RE =
@@ -75,6 +78,31 @@ export function parseCharacterWechatProfileUpdateDirective(
 ): CharacterWechatProfileUpdateDirective | null {
   const t = String(line ?? '').trim()
   if (!t) return null
+  const nickSpace = matchAnyDirectiveName(t, [WxCmd.setNick, '改微信昵称'])
+  if (nickSpace) {
+    const nickname = clampNick(
+      pickNamed(nickSpace, ['nickname', 'nick', '昵称']) || nickSpace.rest,
+    )
+    if (!nickname) return null
+    return { nickname }
+  }
+  const sigSpace = matchAnyDirectiveName(t, [WxCmd.setSig, '改个性签名'])
+  if (sigSpace) {
+    const signature = clampSig(
+      pickNamed(sigSpace, ['signature', 'sig', 'sign', '签名']) || sigSpace.rest,
+    )
+    return { signature }
+  }
+  const profileSpace = matchAnyDirectiveName(t, [WxCmd.setProfile, '改微信资料'])
+  if (profileSpace) {
+    const nickname = clampNick(pickNamed(profileSpace, ['nickname', 'nick', '昵称']))
+    const signature = clampSig(pickNamed(profileSpace, ['signature', 'sig', 'sign', '签名']))
+    if (!nickname && !signature) return null
+    return {
+      ...(nickname ? { nickname } : {}),
+      ...(signature ? { signature } : {}),
+    }
+  }
   const nickMatch = NICK_DIRECTIVE_RE.exec(t)
   if (nickMatch) {
     const payload = parseDirectivePayload(nickMatch[1])
@@ -139,12 +167,12 @@ export function buildUserWechatProfileUpdateBias(message?: string | null): strin
   const parts: string[] = []
   if (mentionsNick) {
     parts.push(
-      '若用户是在请你改**微信昵称**：愿意则先 1～2 句口语回应，再**单独一行**输出 `[改微信昵称]{"nickname":"新昵称"}`（1～12 字，勿等于档案姓名）；不愿则只文字婉拒，不要输出指令。',
+      '若用户是在请你改**微信昵称**：愿意则先 1～2 句口语回应，再**单独一行**输出 `改昵称 新昵称`（1～12 字，勿等于档案姓名）；不愿则只文字婉拒，不要输出指令。',
     )
   }
   if (mentionsSig) {
     parts.push(
-      '若用户是在请你改**个性签名**：愿意则先口语回应，再**单独一行**输出 `[改个性签名]{"signature":"新签名"}`（≤22 字，仅展示在个人朋友圈主页）；不愿则只文字婉拒，不要输出指令。',
+      '若用户是在请你改**个性签名**：愿意则先口语回应，再**单独一行**输出 `改签名 新签名`（≤22 字，仅展示在个人朋友圈主页）；不愿则只文字婉拒，不要输出指令。',
     )
   }
   return `[系统提示] 用户本轮提到了微信资料变更。${parts.join(' ')}`
@@ -174,10 +202,10 @@ ${buildWechatSignatureChatUpdateRulesBlock(WECHAT_SIG_MAX)}
 
 ■ 怎么输出（与口语回复同轮）
 - 先像真人一样用 **0～2 句**口语带过（也可静默直接改，视性格而定），**不要**写成教程。
-- 需要改时，在可见回复中**另起一行**，整行**只**输出以下指令之一（JSON 内字符串勿换行）：
-  - 只改昵称：\`[改微信昵称]{"nickname":"新昵称"}\`（1～12 字）
-  - 只改签名：\`[改个性签名]{"signature":"新签名"}\`（≤22 字，一句话）
-  - 同时改：\`[改微信资料]{"nickname":"…","signature":"…"}\`（可只填其中一项）
+- 需要改时，在可见回复中**另起一行**，整行**只**输出以下指令之一：
+  - 只改昵称：\`改昵称 新昵称\`（1～12 字）
+  - 只改签名：\`改签名 新签名\`（≤22 字，一句话）
+  - 同时改：\`改资料 昵称=… 签名=…\`（可只填其中一项）
 - 新内容与当前资料**完全相同**时不要输出指令。
 - 用户没提、你也无改的动力时，**不要**为了刷存在感乱改；**绝大多数轮次应保持签名不变**。
 `.trim()

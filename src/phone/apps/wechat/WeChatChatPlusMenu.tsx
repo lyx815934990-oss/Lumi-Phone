@@ -13,6 +13,7 @@ import {
   Heart,
   Image,
   MapPin,
+  MonitorSmartphone,
   PhoneCall,
   Play,
   RotateCcw,
@@ -43,6 +44,7 @@ export type WeChatPlusActionId =
   | 'busy'
   | 'continue_reply'
   | 'console_logs'
+  | 'screen_share'
   | 'check_phone'
   | 'games'
 
@@ -53,7 +55,7 @@ const PAGE1: { id: WeChatPlusActionId; label: string; Icon: LucideIcon }[] = [
   { id: 'location', label: '位置', Icon: MapPin },
   { id: 'redpacket', label: '红包', Icon: Gift },
   { id: 'transfer', label: '转账', Icon: CreditCard },
-  { id: 'affection_pay', label: '亲情卡支付', Icon: Heart },
+  { id: 'screen_share', label: '一起刷', Icon: MonitorSmartphone },
   { id: 'favorite', label: '收藏', Icon: Star },
 ]
 

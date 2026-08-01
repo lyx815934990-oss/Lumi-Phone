@@ -372,13 +372,24 @@ export function buildCharacterMediaImageGenParams(opts: {
     : rawPrompt
   const genderCorrected = enforceCharacterMediaImagePromptGender(promptForApi, opts.character?.gender)
   const prompt = sanitizeCharacterMediaImagePrompt(normalizeCharacterImageGenPromptForApi(genderCorrected))
-  const lockAppearance = isCharacterMediaAppearanceLockPrompt(prompt)
-  const faceVisible = isCharacterMediaCharacterFaceVisiblePrompt(prompt)
+  const inferFrom = `${rawPrompt}\n${prompt}`
+  const lockAppearance = isCharacterMediaAppearanceLockPrompt(inferFrom)
+  const faceVisible = isCharacterMediaCharacterFaceVisiblePrompt(inferFrom)
+  const wantsIdentityReference = isCharacterMediaReferenceImagePrompt(inferFrom)
+  const wantsStyleReference =
+    !wantsIdentityReference &&
+    (faceVisible ||
+      isCharacterMediaCharacterAppearanceNeededPrompt(inferFrom) ||
+      /\b(?:1boy|1girl|reference character|portrait|upper body)\b|半身|正脸|面部/i.test(inferFrom))
+  /** 有形象参考图但当前模型不支持传图时禁止静默改成纯文生图（否则会变成与参考无关的写实图） */
+  if (hasReferenceConfigured && (wantsIdentityReference || wantsStyleReference) && !refUploadSupported) {
+    throw new Error(
+      '已上传形象参考图，但当前生图模型不支持识图传图。请改选 Gemini 原生 Image（非 Imagen）或 GPT Image（需 /images/edits），否则无法按参考图锁定形象。',
+    )
+  }
   /** 自拍/对镜：锁脸身份；其它露脸构图：仅锁画风；不露脸（牵手特写等）：不传参考图 */
-  const attachIdentityReference =
-    refUploadSupported && hasReferenceConfigured && isCharacterMediaReferenceImagePrompt(prompt)
-  const attachStyleReference =
-    refUploadSupported && hasReferenceConfigured && !attachIdentityReference && faceVisible
+  const attachIdentityReference = refUploadSupported && hasReferenceConfigured && wantsIdentityReference
+  const attachStyleReference = refUploadSupported && hasReferenceConfigured && wantsStyleReference
   const attachReferenceImages = attachIdentityReference || attachStyleReference
   const characterAppearanceNeeded = isCharacterMediaCharacterAppearanceNeededPrompt(rawPrompt)
   const fullRefNoteParts = [

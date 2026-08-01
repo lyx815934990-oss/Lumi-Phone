@@ -2,11 +2,13 @@ import { ArrowLeft, Check, Download, Edit, Plus, Trash2, User } from 'lucide-rea
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ApiConfig } from '../../api/types'
 import { useCurrentApiConfig } from '../../api/ApiSettingsContext'
+import { ImageCropperModal } from '../../../components/ImageCropperModal'
 import { personaDb } from '../newFriendsPersona/idb'
 import { DEFAULT_WORLD_BACKGROUND_ID } from '../newFriendsPersona/worldBackgroundConstants'
 import { formatWorldBackgroundForPrompt } from '../newFriendsPersona/worldBackgroundFormat'
 import { canonicalPublicImagePath } from '../../../../publicAssetUrl'
 import { repairCharacterAvatarForBundleImport } from '../../../utils/characterAvatarUrl'
+import { compressAvatarDataUrl, MAX_AVATAR_DATA_URL_LEN } from '../avatarCompress'
 import type { PlayerIdentity, Relationship } from '../newFriendsPersona/types'
 import { daysInMonth, formatMD, randomChineseName, uid, zodiacFromMD } from '../newFriendsPersona/utils'
 import { InlineDropdown } from '../newFriendsPersona/InlineDropdown'
@@ -577,6 +579,8 @@ function IdentityEditPage({
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [rels, setRels] = useState<Relationship[]>([])
   const [mbtiOpen, setMbtiOpen] = useState(false)
+  const [avatarCropSrc, setAvatarCropSrc] = useState('')
+  const avatarFileInputRef = useRef<HTMLInputElement>(null)
   const [monthOpen, setMonthOpen] = useState(false)
   const [dayOpen, setDayOpen] = useState(false)
   const [identityOpen, setIdentityOpen] = useState(false)
@@ -758,6 +762,21 @@ function IdentityEditPage({
     setData((prev) => ({ ...prev, [k]: v, updatedAt: Date.now() }))
   }
 
+  const identityAvatarPreview = useMemo(
+    () => resolvePlayerIdentityPreviewAvatar({ mbti: data.mbti, avatarUrl: data.avatarUrl }),
+    [data.mbti, data.avatarUrl],
+  )
+
+  const pickIdentityAvatarFile = (file: File | null) => {
+    if (!file || !file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const src = typeof reader.result === 'string' ? reader.result : ''
+      if (src) setAvatarCropSrc(src)
+    }
+    reader.readAsDataURL(file)
+  }
+
   const syncMbtiPersonalityWorldBooks = (prev: PlayerIdentity, nextMbti: string): PlayerIdentity => {
     const now = Date.now()
     const k = normalizeMbti(nextMbti)
@@ -861,6 +880,34 @@ function IdentityEditPage({
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden" style={{ background: COLORS.bg }}>
+      <ImageCropperModal
+        open={!!avatarCropSrc}
+        imageSrc={avatarCropSrc}
+        title="裁剪身份头像"
+        aspect={1}
+        maxSide={1080}
+        objectFit="horizontal-cover"
+        onCancel={() => setAvatarCropSrc('')}
+        onConfirm={async (dataUrl) => {
+          const next = await compressAvatarDataUrl(dataUrl, MAX_AVATAR_DATA_URL_LEN)
+          if (next.length > MAX_AVATAR_DATA_URL_LEN) {
+            window.alert('图片过大，请选择较小的图片。')
+            return
+          }
+          setField('avatarUrl', next)
+          setAvatarCropSrc('')
+        }}
+      />
+      <input
+        ref={avatarFileInputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        onChange={(e) => {
+          pickIdentityAvatarFile(e.target.files?.[0] ?? null)
+          e.currentTarget.value = ''
+        }}
+      />
       <TopBar
         title={title}
         onBack={() => {
@@ -932,6 +979,64 @@ function IdentityEditPage({
               </p>
             </div>
             <div className="space-y-3 px-5 py-5">
+                <div>
+                  <span className="text-[12px]" style={{ color: COLORS.sub }}>
+                    头像
+                  </span>
+                  <div className="mt-2 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => avatarFileInputRef.current?.click()}
+                      className="flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-full border bg-white transition-all duration-200 ease-out hover:bg-[#f5f5f5]"
+                      style={{ borderColor: COLORS.border }}
+                      aria-label="上传身份头像"
+                    >
+                      {identityAvatarPreview.src ? (
+                        <img
+                          src={identityAvatarPreview.src}
+                          alt=""
+                          className={
+                            identityAvatarPreview.kind === 'mbti'
+                              ? `max-h-full max-w-full object-contain ${isLargeMbtiAvatar(data.mbti) ? '' : 'scale-90'}`
+                              : 'h-full w-full object-cover'
+                          }
+                        />
+                      ) : (
+                        <User className="size-7" color={COLORS.faint} strokeWidth={1.5} />
+                      )}
+                    </button>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => avatarFileInputRef.current?.click()}
+                          className="rounded-[12px] border bg-white px-3 py-2 text-[13px] transition-all duration-200 ease-out hover:bg-[#f5f5f5]"
+                          style={{ borderColor: COLORS.border, color: COLORS.text }}
+                        >
+                          {data.avatarUrl?.trim() ? '更换头像' : '上传头像'}
+                        </button>
+                        {data.avatarUrl?.trim() ? (
+                          <button
+                            type="button"
+                            onClick={() => setField('avatarUrl', '')}
+                            className="rounded-[12px] border bg-white px-3 py-2 text-[13px] transition-all duration-200 ease-out hover:bg-[#f5f5f5]"
+                            style={{ borderColor: COLORS.border, color: COLORS.sub }}
+                          >
+                            清除
+                          </button>
+                        ) : null}
+                      </div>
+                      <p className="text-[12px] leading-relaxed" style={{ color: COLORS.faint }}>
+                        {data.avatarUrl?.trim()
+                          ? '已使用自定义头像（优先于 MBTI 形象）。'
+                          : data.mbti?.trim()
+                            ? '未上传时列表会显示 MBTI 人格形象；上传后以自定义头像为准。'
+                            : '可选。上传后显示在身份卡片与人设列表。'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <label className="block">
                   <span className="text-[12px]" style={{ color: COLORS.sub }}>
                     姓名

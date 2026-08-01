@@ -7,6 +7,8 @@ import { computeOrderDeliveredAt } from '../../takeout/tasteOrderBridge'
 import { sanitizeRecipientNickname } from '../../takeout/tasteDeliveryRecipient'
 import type { TasteOrderPayload } from '../../takeout/types'
 import type { WeChatTakeoutOrderPayload } from '../newFriendsPersona/types'
+import { matchAnyDirectiveName, pickNamed } from '../directives/parseSpaceDirective'
+import { WxCmd } from '../directives/wechatDirectiveLexicon'
 
 function readRecipientName(j: Record<string, unknown>): string | undefined {
   const raw =
@@ -74,15 +76,49 @@ function readTakeoutOrderJson(raw: string): AiTakeoutOrderDirective | null {
   }
 }
 
+function readTakeoutOrderSpace(line: string): AiTakeoutOrderDirective | null {
+  const parts = matchAnyDirectiveName(line, [WxCmd.takeout])
+  if (!parts) return null
+  const storeId = pickNamed(parts, ['店', 'storeId', 'store', '店铺'])
+  const dishesRaw = pickNamed(parts, ['菜', 'items', '菜单'])
+  if (!storeId || !dishesRaw) return null
+  const items: AiTakeoutOrderItem[] = []
+  for (const chunk of dishesRaw.split(/[,，、]/)) {
+    const bit = chunk.trim()
+    if (!bit) continue
+    const m = /^(.+?)\s*[x×*]\s*(\d+)$/i.exec(bit) || /^(.+?)\s+(\d+)$/.exec(bit)
+    if (m) {
+      items.push({ name: m[1]!.trim().slice(0, 80), quantity: Math.max(1, Math.round(Number(m[2]))) })
+    } else {
+      items.push({ name: bit.slice(0, 80), quantity: 1 })
+    }
+  }
+  if (!items.length) return null
+  const remark = pickNamed(parts, ['备注', 'remark', 'note']) || undefined
+  const recipientName =
+    sanitizeRecipientNickname(pickNamed(parts, ['收货', 'recipientName', 'recipient', 'toName'])) ||
+    undefined
+  return {
+    storeId,
+    items,
+    remark: remark ? remark.slice(0, 200) : undefined,
+    recipientName,
+  }
+}
+
 export function parseTakeoutOrderDirective(raw: string): AiTakeoutOrderDirective | null {
   const line = String(raw ?? '').trim()
+  const space = readTakeoutOrderSpace(line)
+  if (space) return space
   const m = /^\[TAKEOUT_ORDER\]\s*(\{[\s\S]*\})$/i.exec(line)
   if (!m) return null
   return readTakeoutOrderJson(m[1]!)
 }
 
 export function isTakeoutOrderDirectiveArtifactLine(line: string): boolean {
-  return /^\[TAKEOUT_ORDER\]\s*\{/i.test(String(line ?? '').trim())
+  const t = String(line ?? '').trim()
+  if (matchAnyDirectiveName(t, [WxCmd.takeout])) return true
+  return /^\[TAKEOUT_ORDER\]\s*\{/i.test(t)
 }
 
 export function takeoutOrderContentFallback(card: WeChatTakeoutOrderPayload): string {

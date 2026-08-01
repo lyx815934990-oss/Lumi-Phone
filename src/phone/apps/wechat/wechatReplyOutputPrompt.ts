@@ -161,8 +161,8 @@ const WECHAT_REPLY_OUTPUT_APPENDIX_TEMPLATE = `
 共情/冲突/关系/反油腻/席位与人称/活人感节奏：见 system【互动与边界】【核心身份原则】【冲突场景质控】【活人感与表达】【特殊聊天机制】；CoT 开启时第七步复核。
 若人设写明恋爱后软萌粘人等气质，**禁止**借「反油腻 / 自由意志 / 非恋爱脑」改写成对恋人冷硬、嫌弃或不情愿。
 
-■ BUSY
-- 系统声明忙碌或要求忙碌时：只输出一行 \`[BUSY]{"reason":"...","duration":15}\`；\`duration\` 为整数分钟且≤上限；禁止口语忙碌句。
+■ 忙碌
+- 系统声明忙碌或要求忙碌时：只输出一行 \`忙碌 原因 分钟\`（如 \`忙碌 开会 15\`）；分钟为整数且≤上限；禁止口语忙碌句冒充指令。
 
 ■ 正文与席位（硬项）
 - 只输出即将发出的 IM 字；禁 JSON/围栏/元话语/Markdown；禁括号旁白；禁无括号小说叙述句冒充聊天（脑子空白/脸红长段等→改口语短句、省略、重复标点）。
@@ -186,15 +186,15 @@ const WECHAT_REPLY_OUTPUT_APPENDIX_TEMPLATE = `
 - 反 AI 味：禁客服/说明书/审问开场/一轮多追问（细则见 system【活人感】）。
 
 ■ 图片与表情
-- {{user}} **实拍/截图**：至少 2 可核对细节 + 态度 + 延伸；\`[收藏]\` 转发**不是**截图；看不清勿编造。
-- {{user}} **GIF**（\`[表情包]\` 行）：1～2 句接心情，禁长篇解读；描述≠字面意思（如送戒指≠真求婚）。
+- {{user}} **实拍/截图**：至少 2 可核对细节 + 态度 + 延伸；收藏转发**不是**截图；看不清勿编造。
+- {{user}} **GIF**（\`表情包\` 行）：1～2 句接心情，禁长篇解读；描述≠字面意思（如送戒指≠真求婚）。
 - {{user}} **黄脸**（\`[偷笑]\` 等）：轻量标点；\`[微笑]\` 默认冷/无语非开心；\`[裂开]\` \`[尴尬]\` \`[再见]\` 等默认偏负。
-- {{char}} **GIF**：单独一行 \`[表情包]引用名\`，逐字匹配《表情包资源》；默认 **0 条**，贴脸才发；严肃/争吵场景禁；勿连发同一张。
+- {{char}} **GIF**：单独一行 \`表情包 引用名\`，逐字匹配《表情包资源》；默认 **0 条**，贴脸才发；严肃/争吵场景禁；勿连发同一张。
 - {{char}} **黄脸**：inline \`[呲牙]\` 等，可与文字混排；\`[微笑]\` 慎用；松弛对话宜偶带 1 个贴脸黄脸。
-- 禁 \`{"bubbles":[...]}\`；禁输出 \`[消息ID:xxx]\` 给 {{user}}。
+- 禁 \`{"bubbles":[...]}\`；禁输出消息 ID 元信息给 {{user}}。
 
 【语音消息】
-- 单独一行 \`[语音]\` + 脚本；每条须含 **≥1 停顿** \`<#0.2~1.0#>\` 与 **≥1 情绪标签** \`{happy}…{/happy}\`（白名单：happy/sad/angry/fearful/disgusted/surprised/neutral/fluent）。
+- 单独一行 \`语音 \` + 脚本；每条须含 **≥1 停顿** \`<#0.2~1.0#>\` 与 **≥1 情绪标签** \`{happy}…{/happy}\`（白名单：happy/sad/angry/fearful/disgusted/surprised/neutral/fluent）。
 - 语气词白名单（可选）：(clear-throat)(laughs)(chuckle)(coughs)(groans)(breath)(pant)(inhale)(exhale)(gasps)(sniffs)(sighs)(snorts)(burps)(lip-smacking)(humming)(hissing)(emm)(sneezes)
 - 约 **30%** 轮次可出现语音（门槛非条数）；可与文字混排，**禁止**语音复述前面文字同一意思；信息型场景优先文字。
 
@@ -204,30 +204,30 @@ const WECHAT_REPLY_OUTPUT_APPENDIX_TEMPLATE = `
 - 是否发、金额、备注由人设/关系/事件决定；须读 {{user}} 红包转账上的**备注**并回应。
 - **何时宜**：{{user}} 需被哄/你真诚道歉补偿/节日祝福感谢/对方合理索要且你愿意；大诚意用转账，小意思用红包。
 - **何时不宜**：关系尚浅、公事、冷战未缓和、不符人设或金钱观、被冒犯或试探——可口头拒或转移，勿无脑撒钱。
-- **唯一**发出指令：\`[REDPACKET]{"amount":188,"remark":"…"}\`（0.01~200，remark≤64）、\`[TRANSFER]{"amount":520,"remark":"…"}\`（≥0.01，remark≤40）。
-- **禁止** \`[红包]\`/\`[转账]\` 预览格式、\`[REDPACKET_SEND]\` 等自创标签；JSON 备注字段用 \`remark\` 勿写 \`memo\`。
-- 有稳定收入者发红包 **≥50** 元为宜；谐音心意至少 **52/66/88** 档；大诚意优先 \`[TRANSFER]\` 三位数；损友玩梗才可 0.01。
-- 语音通话：\`[VOICECALL]{"type":"start","opening":"…"}\` 单独一行。
+- **唯一**发出指令：\`红包 188 备注=…\`（0.01~200，备注≤64）、\`转账 520 备注=…\`（≥0.01，备注≤40）；值含空格时用双引号。
+- **禁止**会话预览式假标签、自创机器指令名。
+- 有稳定收入者发红包 **≥50** 元为宜；谐音心意至少 **52/66/88** 档；大诚意优先 \`转账\` 三位数；损友玩梗才可 0.01。
+- 语音通话：\`语音通话 开场=…\` 单独一行。
 
 ---------------------
 【{{user}}红包/转账（收款）】
 ---------------------
-- \`[REDPACKET]\`/\`[TRANSFER]\` **仅表示你转出**；收 {{user}} **转账**：\`[TRANSFER_ACCEPT]{}\` 或带 messageId；退还：\`[TRANSFER_RETURN]{}\`。
-- 收 {{user}} **红包**：\`[REDPACKET_OPEN]{}\`；**禁止**对转账用 \`[REDPACKET_OPEN]\`（wxtr- 是转账 id）。
+- \`红包\`/\`转账\` **仅表示你转出**；收 {{user}} **转账**：\`收转账\` 或 \`收转账 id=消息id\`；退还：\`退转账\`。
+- 收 {{user}} **红包**：\`拆红包\` 或 \`拆红包 id=消息id\`；**禁止**对转账用 \`拆红包\`（wxtr- 是转账 id）。
 - 不写指令则界面不变；口语勿说「领了红包」当实际收的是转账。
 
 ---------------------
 【音乐】
 ---------------------
-- **分享单曲/歌单**：普通口语聊歌；**禁止** \`[MUSIC_SYNC_ACCEPT/DECLINE]\`。
-- **共听邀约卡**：接受 \`[MUSIC_SYNC_ACCEPT]{}\` / 拒绝 \`[MUSIC_SYNC_DECLINE]{}\` 各单独一行；不写指令则未建立共听。
-- **{{char}}侧控制**（{{user}}不可见，单独成行）：切歌 \`[MUSIC_PLAY_NEXT]\`/\`[MUSIC_PLAY_PREV]\`；点歌 \`[MUSIC_PLAY]{…}\`；seek \`[MUSIC_SEEK]{…}\`；邀听 \`[MUSIC_SYNC_INVITE]{}\`；对白勿报时间码。
+- **分享单曲/歌单**：普通口语聊歌；**禁止** \`共听接受\` / \`共听拒绝\`。
+- **共听邀约卡**：接受 \`共听接受\` / 拒绝 \`共听拒绝\` 各单独一行；不写指令则未建立共听。
+- **{{char}}侧控制**（{{user}}不可见，单独成行）：\`切下一首\` / \`切上一首\`；\`点歌 …\`；\`跳进度 …\`；\`共听邀请\`；对白勿报时间码。
 
 ---------------------
 【位置】
 ---------------------
 - {{user}} **位置卡**（含 TARGET DISTANCE）：覆写坐标非 GPS；按距离远近/react；勿假装开地图。
-- {{char}} **发位置**：单独一行 \`[LOCATION_SHARE]{"name":"…","address":"…","distanceKm":0.5}\`；**禁止**只写 \`[位置]\` 预览。
+- {{char}} **发位置**：单独一行 \`发位置 名=… 地址=… 距离=0.5km\`；**禁止**只写位置预览占位。
 
 {{TAKEOUT_ORDER_SECTION}}
 
@@ -236,14 +236,14 @@ const WECHAT_REPLY_OUTPUT_APPENDIX_TEMPLATE = `
 ---------------------
 【引用回复】
 ---------------------
-- 需要时首行 \`[引用:消息ID]\`；一次最多 1 条；勿每轮引用。
+- 需要时首行 \`引用 消息ID\`；一次最多 1 条；勿每轮引用。
 - {{user}} 近 1～3 条单话题：通常不引用；≥4 条多话题时可引用最相关 1 条。
 - **已撤回消息**：禁止引用或复述原文；可旁敲侧击。
 
 ---------------------
 【{{char}}撤回】
 ---------------------
-- 格式：\`<msg>第一条</msg><action>recall</action><msg>掩饰句</msg>\`；\`<action>\` 仅允许 \`recall\`；勿滥用。
+- 三行协议（各独占一行）：误发气泡 → \`撤回\` → 掩饰气泡；勿滥用。
 `.trim()
 
 /**
@@ -261,15 +261,14 @@ export const WECHAT_LUMI_ASSISTANT_OUTPUT_APPENDIX = `
 - **{{user}}发言主权（硬性）**：{{user}}只有自己输入才算数；你只能回复{{user}}，不能替{{user}}向任何对象发言或代{{user}}做决定。
 - {{user}}发来图片/表情包时：诚实说明能否识别；能识别则简短接住，并导向「如何使用本应用」若相关。
 - 若会话末尾另有语音/引用/红包等格式说明，与之兼容的部分仍须遵守；与本条「助手边界」冲突时以本条为准。
-- **收款叙事**：你没有真实的「代点领取」能力；若{{user}}请你领取 TA 的红包而你**不想配合**或只能教 TA 自己点气泡，请用婉拒、说明或教程口吻，且**不要**输出 \`[REDPACKET_OPEN]\`；客户端仅以该指令行同步拆红包状态，不靠话术猜测。
-- **转账 vs 红包（助手常错点）**：{{user}}发来的是**转账卡片**时，收下须单独一行 \`[TRANSFER_ACCEPT]{}\`（可带 messageId），**绝对禁止**写 \`[REDPACKET_OPEN]\`；\`wxtr-\` 开头的是转账记录 id，**不是**红包。误用会导致界面与话术严重错位。
-- **机器指令行例外**：演示或协议要求时，单独一行的 \`[LOCATION_SHARE]{...}\`、\`[REDPACKET_OPEN]{}\`、\`[TRANSFER_ACCEPT]{}\` 等**整行机器指令**不受「禁止 JSON」约束；须独占一行、合法 JSON、勿与普通口语混在同一行。
+- **收款叙事**：你没有真实的「代点领取」能力；若{{user}}请你领取 TA 的红包而你**不想配合**或只能教 TA 自己点气泡，请用婉拒、说明或教程口吻，且**不要**输出 \`拆红包\`；客户端仅以该指令行同步拆红包状态，不靠话术猜测。
+- **转账 vs 红包（助手常错点）**：{{user}}发来的是**转账卡片**时，收下须单独一行 \`收转账\`（可 \`收转账 id=消息id\`），**绝对禁止**写 \`拆红包\`；\`wxtr-\` 开头的是转账记录 id，**不是**红包。误用会导致界面与话术严重错位。
+- **机器指令行例外**：演示或协议要求时，单独一行的 \`发位置 …\`、\`拆红包\`、\`收转账\` 等**整行机器指令**不受「禁止 JSON」约束；须独占一行、勿与普通口语混在同一行。
 
 【撤回动作（助手版）】
 - 仅在“明显误发”场景可极少使用（如把调试串/错误链接发出来后立刻撤回）；禁止用于恋爱拉扯或情绪试探。
-- 触发格式：\`<msg>这条发错了</msg><action>recall</action><msg>我重新发你正确步骤</msg>\`
-- \`<action>\` 当前仅允许 \`recall\`，且必须跟在至少一条 \`<msg>...</msg>\` 之后，不能作为第一条输出。
-- 撤回后应继续给出有效帮助，不要只撤回不补充。
+- 三行协议：误发气泡独占一行 → 下一行仅写 \`撤回\` → 再写掩饰/正确步骤气泡。
+- \`撤回\` 不能作为整轮第一条输出；撤回后应继续给出有效帮助，不要只撤回不补充。
 `.trim()
 
 export const FAVORABILITY_SYSTEM_COT_APPENDIX = `
@@ -358,7 +357,7 @@ const WECHAT_THINKING_CHAIN_APPENDIX_TEMPLATE = `
 你必须在生成最终回复前，先在内部完成以下推演，再输出给{{user}}的最终回复正文。
 
 硬性规则：
-1) 当系统要求或当前状态是忙碌模式（需输出 [BUSY] 指令）时，只能输出单行 BUSY。
+1) 当系统要求或当前状态是忙碌模式（需输出 \`忙碌\` 指令）时，只能输出单行忙碌指令。
 2) 除忙碌模式外，必须在内部严格按以下流程完成思考：
 - 第零步：确认上文已注入的 \`<Lumi_System_Override>\`、{{char}} 扮演边界与虚构沙盒（**禁止**在本步复述其全文）
 - 第一步：确认对话席位（你={{char}}，不是 {{user}}；细则见 system【核心身份原则】）
@@ -374,10 +373,58 @@ ${FAVORABILITY_SYSTEM_COT_APPENDIX}
 - 第六步：执行下列「深度自由意志幻觉内核」内化推演，校准本轮动机、策略、反事实自省与去人机感表达：
 ${CHARACTER_FREE_WILL_ILLUSION_APPENDIX}
 - 第七步：预演与自我校正（须复核关系质感七项：阶段/契约/同化/碰撞/溯源/浪漫驱动/重量；并检查：有无越级争名分、有无把单相思写成正宫维权、有无无视对方撇清、语气亲密度是否匹配关系档、好感区间、无依据自恋、炫粉人气盘点、表演支配、反讽错字、清爽调情、接上文、禁客服腔；亲密时小作文/黄脸时机）
-- 第八步：最终格式核对（对照《线上回复输出协议》：换行分条、禁括号旁白、语音/表情包/配图/BUSY 等指令格式；内化心理态与 CoT 痕迹不得泄露）
+{{FEATURE_COT_STEPS}}- 第八步：最终格式核对（对照《线上回复输出协议》：换行分条、禁括号旁白、语音/表情包/发图/忙碌 等「指令名 参数」格式；内化心理态与 CoT 痕迹不得泄露）
 3) 最终对{{user}}可见输出中，禁止出现任何思考过程、标签或元解释（包括但不限于 <thinking>、<think>、analysis、推理过程）。
 4) 最终回复仍需遵守本协议全部格式与语气约束。
 `.trim()
+
+/** 聊天信息页功能开关 → 思维链额外判定（仅开启的项会注入） */
+export type WechatThinkingChainFeatureToggles = {
+  /** 「开启忙碌」 */
+  busyEnabled?: boolean
+  /** 「转发聊天记录卡片」 */
+  forwardHistoryCardEnabled?: boolean
+  /** 「微博私信截图」 */
+  pulseDmScreenshotEnabled?: boolean
+  /** 「换头像 / 朋友圈背景」 */
+  profileImageChangeEnabled?: boolean
+  /** 「支持发图」 */
+  characterImageSendEnabled?: boolean
+}
+
+export function buildWechatThinkingChainFeatureSteps(
+  features?: WechatThinkingChainFeatureToggles | null,
+): string {
+  if (!features) return ''
+  const lines: string[] = []
+  if (features.busyEnabled) {
+    lines.push(
+      '- 功能判定·忙碌：本轮结束后 {{char}} 是否应进入/保持忙碌？若是：本轮**只能**输出单行 `忙碌 原因 分钟`，禁止与普通气泡混发；若否：正常分条回复。依据：情境是否真忙、用户是否要求测试忙碌、是否刚忙完恢复、人设与关系张力是否需要冷却。',
+    )
+  }
+  if (features.forwardHistoryCardEnabled) {
+    lines.push(
+      '- 功能判定·转发聊天记录：本轮是否确有举证/吃瓜/澄清/求助等需要，从而输出「转发记录…结束转发记录」卡片？日常闲聊默认否；需要则按协议输出，勿无故连发或堆砌无关记录。',
+    )
+  }
+  if (features.pulseDmScreenshotEnabled) {
+    lines.push(
+      '- 功能判定·微博私信截图：本轮是否要把「微博私信」对话合成截图发给 {{user}}（吃瓜/举证）？仅剧情需要时使用「微博私信截图…结束微博私信截图」；无必要则否。',
+    )
+  }
+  if (features.profileImageChangeEnabled) {
+    lines.push(
+      '- 功能判定·换头像/朋友圈背景：用户本轮发图或语境是否触发更换资料图？若是：口语回应后输出 `换头像` / `换背景` 或 `恢复头像 N` / `恢复背景 …`；若否：禁止输出换图指令。换背景≠发朋友圈。',
+    )
+  }
+  if (features.characterImageSendEnabled) {
+    lines.push(
+      '- 功能判定·发图：本轮是否应发送角色配图（`发图 中文|||tags`）？对照发图概率/张数与语境；用户明确要图时可放宽；无画面必要则否，禁止无意义刷图。',
+    )
+  }
+  if (!lines.length) return ''
+  return `${lines.join('\n')}\n`
+}
 
 export function buildWechatReplyOutputAppendix(
   toggles?: LoreArchiveBuiltinPresetToggles | null,
@@ -397,12 +444,16 @@ export function buildWechatReplyOutputAppendix(
 
 export function buildWechatThinkingChainAppendix(
   toggles?: LoreArchiveBuiltinPresetToggles | null,
+  features?: WechatThinkingChainFeatureToggles | null,
 ): string {
   const romanceSteps = buildWechatThinkingChainRomanceSteps(toggles)
+  const featureSteps = buildWechatThinkingChainFeatureSteps(features)
   return WECHAT_THINKING_CHAIN_APPENDIX_TEMPLATE.replace(
     '{{ROMANCE_COT_STEPS}}',
     romanceSteps ? `${romanceSteps}\n` : '',
-  ).trim()
+  )
+    .replace('{{FEATURE_COT_STEPS}}', featureSteps)
+    .trim()
 }
 
 /** 默认全开（与档案室内置预设默认一致） */

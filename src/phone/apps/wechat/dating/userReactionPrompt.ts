@@ -6,9 +6,18 @@ export function buildUserReactionPromptBlock(params: {
   userDisplayName: string
   characterRealName: string
   isVnMode: boolean
+  /** 当面互动时的叙述人称；影响「抢话开」时旁白怎么写玩家动作 */
+  narrativePerspective?: 'first' | 'second' | 'third'
 }): string {
   const user = params.userDisplayName.trim() || '用户'
   const peer = params.characterRealName.trim() || '约会对象'
+  const persp = params.narrativePerspective ?? 'second'
+  const actionNarration =
+    persp === 'third'
+      ? '动作用第三人称旁白（他/她或姓名作主语；禁止「你伸手…」）'
+      : persp === 'first'
+        ? '动作用第一人称旁白（我/我们；禁止「你伸手…」）'
+        : '动作用第二人称旁白或自然段叙述'
 
   if (params.godPerspective) {
     return (
@@ -30,7 +39,7 @@ export function buildUserReactionPromptBlock(params: {
       `【当轮抢话开关：开】\n` +
       `抢话模式（**须遵守**）：\n` +
       `- **须**在正文合理代写玩家（我/${user}）的可见动作、选择或引号对白，推进本轮；**禁止**整段只有 ${peer}/NPC 发言而玩家完全失声。\n` +
-      `- 玩家**说出口**的内容须写在弯引号/直引号内；动作用第二人称旁白或自然段叙述。\n` +
+      `- 玩家**说出口**的内容须写在弯引号/直引号内；${actionNarration}。\n` +
       `- 若本轮玩家输入/导演指令含对白或动作要点，须在正文中**演出**（可写出），勿只写 ${peer} 反应却省略玩家侧。\n` +
       `- 仍须为玩家留下后续选择空间，勿一次性代写过长的玩家独白。\n` +
       vnLine +
@@ -41,13 +50,19 @@ export function buildUserReactionPromptBlock(params: {
   const vnLine = params.isVnMode
     ? `- VN：**禁止** \`【对白】${user}：\` / \`【对白】你：\` 等玩家说话人行；玩家台词仅存在于历史「玩家输入」，本轮 AI 正文只写 ${peer}/NPC 侧。\n`
     : ''
+  const youBan =
+    persp === 'third'
+      ? `- 旁白**禁止**用「你」描写玩家（本轮第三人称）；也不要写玩家当轮新发起的动作/开口。\n`
+      : persp === 'first'
+        ? `- 旁白若需指玩家历史动作可用「我」，但**禁止**代写本轮新动作/开口；**禁止**用「你」指玩家。\n`
+        : `- 旁白中的「你」**禁止**描写玩家当轮新发起的动作/开口（如「你伸手…」「你开口说…」）；只写 ${peer} 侧等待、观察、抢先开口等。\n`
   return (
     `【当轮抢话开关：关】\n` +
     `不抢话模式（**须遵守**）：\n` +
     `- **禁止**代写玩家（我/${user}）当轮任何**新**动作、神态、选择或说出口的对白；玩家本轮行为**仅**以界面「玩家输入/导演指令」为准，你只写 ${peer}/NPC 的感知、对白与反应。\n` +
     `- **禁止**正文出现玩家说出口的引号对白：包括「你说…」「你问…」「你低声道…」+ 引号台词；禁止 \`${user}：…\`、\`你：…\` 作玩家台词；**禁止**把玩家输入原句改写法再放进引号。\n` +
     `- **允许**：${peer} 与 NPC 在对白里称呼、质问、回应玩家（那是**角色**的对白，不是玩家对白）。\n` +
-    `- 旁白中的「你」**禁止**描写玩家当轮新发起的动作/开口（如「你伸手…」「你开口说…」）；只写 ${peer} 侧等待、观察、抢先开口等。\n` +
+    youBan +
     `- 「对白占比≥55%」**只统计** ${peer}/NPC 的引号对白；**禁止**为凑占比编造玩家引号对白。\n` +
     vnLine +
     `思维链【代写边界卡】须写明：抢话=关，正文不含玩家新引号对白/新动作。\n`

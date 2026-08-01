@@ -1,5 +1,7 @@
 import { loadResolvedApiConfig } from '../api/loadResolvedApiConfig'
 import { loadResolvedImageGenSettings } from '../api/loadResolvedImageGenSettings'
+import { applyChatImageGenStyleOverride } from './chatImageGenStyleOverride'
+import { resolveScopedAppearanceRefs } from './resolveScopedAppearanceRefs'
 import { resolveCharacterMediaImageStyleHint } from '../../../components/moments/momentsImagePromptEnhancer'
 import { characterHasAppearanceReference } from './characterAppearanceImageGen'
 import { buildCharacterMomentsPinCatalogBlock } from '../../../components/moments/momentPinService'
@@ -14,6 +16,7 @@ import {
 import { personaDb } from './newFriendsPersona/idb'
 import type { ChatConversationSettingsRow, WeChatChatMessage, WeChatMusicSyncInvitePayload } from './newFriendsPersona/types'
 import { formatWorldBackgroundForPrompt } from './newFriendsPersona/worldBackgroundFormat'
+import { resolveWechatAppAvatar } from '../../../components/discoverListen/listenTogetherUserAvatarPreference'
 import { loadAccountsBundle } from './wechatAccountPersistence'
 import { buildFriendRequestPrivatePromptPack } from './wechatFriendRequestPrivatePromptPack'
 import {
@@ -274,6 +277,10 @@ async function fireProactiveMessage(row: ChatConversationSettingsRow): Promise<v
       displayName: playerDisplayName,
       signature: account?.signature?.trim() || '',
     }
+    const playerWechatAvatarUrl =
+      resolveWechatAppAvatar(activeRow.playerChatAvatarUrl).trim() ||
+      resolveWechatAppAvatar(account?.avatarUrl).trim() ||
+      ''
 
     let worldBackgroundPrompt: string | undefined
     if (character.worldBackgroundEnabled !== false && character.worldBackgroundId?.trim()) {
@@ -307,10 +314,24 @@ async function fireProactiveMessage(row: ChatConversationSettingsRow): Promise<v
     ])
     const timeCfg = normalizeWeChatTimeConfig(charTime?.config ?? global.globalTimeConfig)
 
-    const resolvedImageGenSettings = await loadResolvedImageGenSettings()
+    const globalImageGenSettings = await loadResolvedImageGenSettings()
+    const resolvedImageGenSettings = applyChatImageGenStyleOverride(globalImageGenSettings, activeRow)
+    let hasChatAppearanceReference = characterHasAppearanceReference(character)
+    try {
+      const scopedAppearance = await resolveScopedAppearanceRefs({
+        context: 'chat',
+        playerIdentityId: sessionPid,
+        characterId,
+        character,
+      })
+      hasChatAppearanceReference =
+        scopedAppearance.character.images.length > 0 || hasChatAppearanceReference
+    } catch {
+      /* keep global-only */
+    }
     const characterImageGenStyleHint = resolveCharacterMediaImageStyleHint(
       resolvedImageGenSettings,
-      characterHasAppearanceReference(character),
+      hasChatAppearanceReference,
     )
 
     const characterMomentsPinCatalog =
@@ -422,6 +443,7 @@ async function fireProactiveMessage(row: ChatConversationSettingsRow): Promise<v
         meetWechatContinuityBlock,
         transcript,
         promptMode: 'persona',
+        ...(playerWechatAvatarUrl ? { playerWechatAvatarUrl } : {}),
         longTermMemoryNotes: pack.memory || undefined,
         longTermMemoryMomentImages: pack.momentImageUrls?.length ? pack.momentImageUrls : undefined,
         worldBackgroundPrompt,
@@ -463,6 +485,7 @@ async function fireProactiveMessage(row: ChatConversationSettingsRow): Promise<v
           ? {
               characterImageGenEnabled: true,
               characterImageGenStyleHint,
+              hasAppearanceReference: hasChatAppearanceReference,
               imageRoundCountMin: imageCountRange.min,
               imageRoundCountMax: imageCountRange.max,
               ...(imageRoundCountTarget > 0 ? { imageRoundCountTarget: imageRoundCountTarget } : {}),

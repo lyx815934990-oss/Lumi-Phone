@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { Languages } from 'lucide-react'
 import {
   normalizeWeChatChatLanguageCode,
   weChatChatLanguageLabel,
@@ -196,6 +197,8 @@ export function DatingLanguageSettingsButton({
   dark,
   label = '输出语言',
   showSummary = true,
+  /** 仅显示图标（输入区工具栏） */
+  iconOnly = false,
 }: {
   value: DatingLanguageSettingsValue
   onPatch: (partial: DatingLanguageSettingsPatch) => void
@@ -205,6 +208,7 @@ export function DatingLanguageSettingsButton({
   label?: string
   /** 按钮上展示当前语言摘要 */
   showSummary?: boolean
+  iconOnly?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement | null>(null)
@@ -285,27 +289,45 @@ export function DatingLanguageSettingsButton({
       )
     : null
 
+  const titleText = `输出语言与翻译 · ${summary}`
+
   return (
     <>
       <button
         ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        title={`输出语言与翻译 · ${summary}`}
+        title={titleText}
+        aria-label={titleText}
         className={
           className ??
-          (dark
-            ? 'inline-flex max-w-full items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1.5 text-[12px] text-white'
-            : 'inline-flex max-w-full items-center gap-1.5 rounded-full border border-stone-200/90 bg-stone-50/70 px-2.5 py-1.5 text-[12px] text-[#525252] transition-all duration-200 hover:border-stone-300 hover:bg-white hover:text-[#262626]')
+          (iconOnly
+            ? dark
+              ? 'inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/25 bg-white/10 text-white'
+              : 'inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-stone-50 text-[#262626] transition-all duration-200 hover:border-stone-400'
+            : dark
+              ? 'inline-flex max-w-full items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1.5 text-[12px] text-white'
+              : 'inline-flex max-w-full items-center gap-1.5 rounded-full border border-stone-200/90 bg-stone-50/70 px-2.5 py-1.5 text-[12px] text-[#525252] transition-all duration-200 hover:border-stone-300 hover:bg-white hover:text-[#262626]')
         }
       >
-        <span className="shrink-0 font-medium">{label}</span>
-        {showSummary ? (
-          <span className={`min-w-0 truncate ${dark ? 'text-white/75' : 'text-[#a3a3a3]'}`}>
-            {shortSummary}
-            {anySync ? ' · 译' : ''}
+        {iconOnly ? (
+          <span className="relative inline-flex">
+            <Languages className="size-4" strokeWidth={1.75} aria-hidden />
+            {anySync ? (
+              <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-violet-500" aria-hidden />
+            ) : null}
           </span>
-        ) : null}
+        ) : (
+          <>
+            <span className="shrink-0 font-medium">{label}</span>
+            {showSummary ? (
+              <span className={`min-w-0 truncate ${dark ? 'text-white/75' : 'text-[#a3a3a3]'}`}>
+                {shortSummary}
+                {anySync ? ' · 译' : ''}
+              </span>
+            ) : null}
+          </>
+        )}
       </button>
       {panel}
     </>

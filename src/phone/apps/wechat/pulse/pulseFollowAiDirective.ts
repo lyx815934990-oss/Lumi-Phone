@@ -11,9 +11,9 @@ export type AiPulseFollowDirective = {
   followUser: true
 }
 
-const BLOCK_START_RE = /^\[(?:微博关注|PULSE_FOLLOW)\]\s*$/i
-const BLOCK_END_RE = /^\[\/(?:微博关注|PULSE_FOLLOW)\]\s*$/i
-const BLOCK_OPEN_PREFIX_RE = /^\[(?:微博关注|PULSE_FOLLOW)\]/i
+const BLOCK_START_RE = /^(?:微博关注|\[(?:微博关注|PULSE_FOLLOW)\])\s*$/i
+const BLOCK_END_RE = /^(?:结束微博关注|\[\/(?:微博关注|PULSE_FOLLOW)\])\s*$/i
+const BLOCK_OPEN_PREFIX_RE = /^(?:微博关注|\[(?:微博关注|PULSE_FOLLOW)\])/i
 const LEGACY_JSON_LINE_RE = /^\[(?:微博关注|PULSE_FOLLOW)\]\s*(\{[\s\S]*\})$/i
 const FIELD_LINE_RE = /^\s*(?:目标|target|对象|关注)\s*[:：]/i
 
@@ -56,14 +56,14 @@ function parsePulseFollowMarkup(block: string): AiPulseFollowDirective | null {
     return null
   }
 
-  // 裸标签：`[微博关注]` / `[PULSE_FOLLOW]`
-  if (/^\[(?:微博关注|PULSE_FOLLOW)\]\s*$/i.test(normalized)) {
+  // 裸标签：`微博关注` / 旧 `[微博关注]`
+  if (/^(?:微博关注|\[(?:微博关注|PULSE_FOLLOW)\])\s*$/i.test(normalized)) {
     return { followUser: true }
   }
 
   const inner = normalized
-    .replace(/^\[(?:微博关注|PULSE_FOLLOW)\]\s*/i, '')
-    .replace(/\s*\[\/(?:微博关注|PULSE_FOLLOW)\]\s*$/i, '')
+    .replace(/^(?:微博关注|\[(?:微博关注|PULSE_FOLLOW)\])\s*/i, '')
+    .replace(/\s*(?:结束微博关注|\[\/(?:微博关注|PULSE_FOLLOW)\])\s*$/i, '')
     .trim()
   if (!inner) return { followUser: true }
   if (inner.startsWith('{') && inner.endsWith('}')) return readPulseFollowJson(inner)
@@ -241,18 +241,16 @@ export function buildWeChatPulseFollowOutputBlock(): string {
 - **唯一**发出指令（用户看不到；勿与口语混在同一行），任选一种写法：
 
 单行：
-\`[微博关注]{}\`
-或 \`[PULSE_FOLLOW]{}\`
+\`微博关注\`
 
 多行字段块：
 \`\`\`
-[微博关注]
+微博关注
 目标：用户
-[/微博关注]
+结束微博关注
 \`\`\`
 
 - 指令含义固定为：**当前角色微博账号关注当前会话玩家微博**；不要填别人的昵称当目标。
 - 「互关」场景：你只能完成「你关注对方」这一侧；对方是否关注你由对方操作，勿假装已替对方点关注。
-- 禁止自创 \`[关注]\` \`[FOLLOW]\` 等标签；须用上方标签之一。
 `.trim()
 }

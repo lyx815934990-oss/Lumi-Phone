@@ -168,7 +168,8 @@ export function PulseDiscover({
   }, [boundCharSet, povOptions, state.wechatPersonaContacts])
 
   const defaultRefCharacterId = useMemo(() => {
-    const worldCid = parsePulsePovId(currentWorldId)?.rawId?.trim()
+    const worldParsed = parsePulsePovId(currentWorldId)
+    const worldCid = worldParsed?.kind === 'char' ? worldParsed.rawId.trim() : ''
     if (worldCid && refCharacterOptions.some((o) => o.characterId === worldCid)) return worldCid
     return refCharacterOptions[0]?.characterId
   }, [currentWorldId, refCharacterOptions])
@@ -245,12 +246,14 @@ export function PulseDiscover({
           povContext = [povContext, pulsePostsRef].filter(Boolean).join('\n\n——\n\n')
         }
 
-        const worldCid = parsePulsePovId(currentWorldId)?.rawId?.trim()
+        const worldParsed = parsePulsePovId(currentWorldId)
+        const worldCid =
+          worldParsed?.kind === 'char' ? worldParsed.rawId.trim() : ''
         const mentionDirectory = await loadPulseMentionDirectory({
           characterIds: [
             ...refCharacters.map((c) => c.characterId),
             ...(worldCid ? [worldCid] : []),
-            ...povOptions.map((o) => o.rawId),
+            ...povOptions.filter((o) => o.kind === 'char').map((o) => o.rawId),
           ],
           ...(settings.includePlayerIdentity
             ? {

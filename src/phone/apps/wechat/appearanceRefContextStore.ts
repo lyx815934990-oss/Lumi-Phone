@@ -71,17 +71,49 @@ export async function getAppearanceRefContextOverride(
   characterId: string,
   context: AppearanceRefContext,
 ): Promise<AppearanceRefContextOverride | null> {
-  const pid = playerIdentityId.trim()
+  const pid = normalizeAppearanceRefPlayerIdentityId(playerIdentityId)
   const cid = characterId.trim()
   if (!pid || !cid) return null
   const all = await loadAllOverrides()
   return all.find((r) => r.playerIdentityId === pid && r.characterId === cid && r.context === context) ?? null
 }
 
+/** 无有效玩家身份时，按角色+场景回退查找本页独立配置（含历史用 __none__ 存的 fork） */
+export async function findAppearanceRefContextOverrideForCharacter(
+  characterId: string,
+  context: AppearanceRefContext,
+  preferredPlayerIdentityId?: string | null,
+): Promise<AppearanceRefContextOverride | null> {
+  const cid = characterId.trim()
+  if (!cid) return null
+  const preferred = normalizeAppearanceRefPlayerIdentityId(preferredPlayerIdentityId)
+  const all = await loadAllOverrides()
+  const candidates = all.filter((r) => r.characterId === cid && r.context === context && r.forked === true)
+  if (!candidates.length) return null
+  const hasLocalContent = (r: AppearanceRefContextOverride) =>
+    (r.characterRefImages?.length ?? 0) > 0 ||
+    (r.userRefImages?.length ?? 0) > 0 ||
+    !!r.characterRefNote?.trim() ||
+    !!r.userRefNote?.trim()
+  const withContent = candidates.filter(hasLocalContent)
+  const pool = withContent.length ? withContent : candidates
+  if (preferred) {
+    const exact = pool.find((r) => r.playerIdentityId === preferred)
+    if (exact) return exact
+  }
+  return [...pool].sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null
+}
+
+export function normalizeAppearanceRefPlayerIdentityId(raw?: string | null): string {
+  const p = typeof raw === 'string' ? raw.trim() : ''
+  if (!p || p === '__none__') return ''
+  return p
+}
+
 export async function upsertAppearanceRefContextOverride(
   patch: Omit<AppearanceRefContextOverride, 'updatedAt'> & { updatedAt?: number },
 ): Promise<AppearanceRefContextOverride> {
-  const pid = patch.playerIdentityId.trim()
+  const pid = normalizeAppearanceRefPlayerIdentityId(patch.playerIdentityId)
   const cid = patch.characterId.trim()
   if (!pid || !cid) throw new Error('appearance_ref_binding_ids_required')
   const key = bindingKey(pid, cid, patch.context)
@@ -109,7 +141,7 @@ export async function clearAppearanceRefContextOverride(
   characterId: string,
   context: AppearanceRefContext,
 ): Promise<void> {
-  const pid = playerIdentityId.trim()
+  const pid = normalizeAppearanceRefPlayerIdentityId(playerIdentityId)
   const cid = characterId.trim()
   if (!pid || !cid) return
   const key = bindingKey(pid, cid, context)

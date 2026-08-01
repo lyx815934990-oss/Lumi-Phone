@@ -144,6 +144,12 @@ import {
   inferDatingRelationHintForTranslation,
 } from './datingLanguagePrompt'
 import {
+  buildDatingPlotPaceAppendix,
+  createDefaultDatingPlotPaceSettings,
+  normalizeDatingPlotPaceSettings,
+  type DatingPlotPaceSettings,
+} from './datingPlotPace'
+import {
   normalizeDatingLanguageSettings,
   type DatingLanguageSettingsPatch,
 } from './DatingLanguageSettingsPanel'
@@ -379,8 +385,12 @@ type Ctx = {
   setVnVoiceDisabled: (disabled: boolean) => void
   /** 普通剧情：导演模式（输入为生成指引，非既成事实） */
   setDirectorMode: (v: boolean) => void
+  /** 剧情推进速度（故事内时间跨度） */
+  setPlotPaceSettings: (patch: Partial<DatingPlotPaceSettings>) => void
   /** 抢话：允许 AI 代写玩家当轮言行 */
   setAutoUserReaction: (v: boolean) => void
+  /** 是否输出思维链（关闭则直出正文） */
+  setThinkingChainEnabled: (v: boolean) => void
   /** 发送时同轮生成平行事件 */
   setGenerateParallelOnSend: (v: boolean) => void
   /** 发送时同轮生成 IF 线 */
@@ -692,10 +702,18 @@ function mergeArchives(chars: CharacterInfo[], parsed: unknown | null): Archives
           if (typeof legacyParaphrase === 'boolean') return legacyParaphrase
           return merged[c.id].directorMode
         })(),
+        plotPace: normalizeDatingPlotPaceSettings(
+          (saved as { plotPace?: Partial<DatingPlotPaceSettings> | null }).plotPace ??
+            merged[c.id].plotPace,
+        ),
         autoUserReaction:
           typeof (saved as { autoUserReaction?: unknown }).autoUserReaction === 'boolean'
             ? (saved as { autoUserReaction: boolean }).autoUserReaction
             : merged[c.id].autoUserReaction,
+        thinkingChainEnabled:
+          typeof (saved as { thinkingChainEnabled?: unknown }).thinkingChainEnabled === 'boolean'
+            ? (saved as { thinkingChainEnabled: boolean }).thinkingChainEnabled
+            : merged[c.id].thinkingChainEnabled,
         offlineDanmakuEnabled:
           typeof (saved as any).offlineDanmakuEnabled === 'boolean'
             ? (saved as any).offlineDanmakuEnabled
@@ -818,22 +836,29 @@ function buildSlimDatingPlotChatMessages(params: {
   historyBlock: string
   perspectiveRule: string
   perspectiveStrictRule: string
+  perspectiveSwitchGuard?: string
   userReactionRule: string
   userReactionSlimHint: string
   lengthRule: string
+  thinkingChainEnabled?: boolean
   charUserNames: CharUserNames
   godPerspective?: boolean
   mainCharacterOffstage?: boolean
 }): Array<{ role: 'system' | 'user'; content: string }> {
   const historyTail = clipDatingReferenceTail(params.historyBlock, 6500, '最近剧情')
+  const cotHint =
+    params.thinkingChainEnabled === false
+      ? `【说明】上一轮请求上下文过长，材料已压缩。请**直接**输出剧情正文，禁止 \`<thinking>\` / 思维链标签。\n`
+      : `【说明】上一轮请求上下文过长，材料已压缩。仍须先输出 \`<thinking>\`（可缩短至约 600 字内）再写正文。\n`
   const slimSystem = expandCharUserPlaceholders(
     `${params.charUserDirective}【约会剧情·精简续写】\n` +
       `${params.perspectiveRule}\n` +
       (params.perspectiveStrictRule ? `${params.perspectiveStrictRule}\n` : '') +
+      (params.perspectiveSwitchGuard ? `${params.perspectiveSwitchGuard}\n` : '') +
       `${params.userReactionRule}\n` +
       `【当轮抢话·精简提醒】${params.userReactionSlimHint}\n` +
       `${params.lengthRule}\n` +
-      `【说明】上一轮请求上下文过长，材料已压缩。仍须先输出 \`<thinking>\`（可缩短至约 600 字内）再写正文。\n${PROSE_FORBIDDEN_LEXICON_PROMPT}`,
+      `${cotHint}${PROSE_FORBIDDEN_LEXICON_PROMPT}`,
     params.charUserNames,
   )
   const inputLabel = params.godPerspective
@@ -867,13 +892,19 @@ async function requestDatingPlotCompletion(params: {
   charUserNames: CharUserNames
   /** 重新生成时略抬高随机度，降低复读旧稿概率 */
   isRegenerate?: boolean
+  thinkingChainEnabled?: boolean
 }): Promise<string> {
+  const thinkingOn = params.thinkingChainEnabled !== false
   const retryUser = expandCharUserPlaceholders(
-    '你上一则回复几乎为空（仅空白或换行），未满足剧情要求。请重新输出：完整 `<thinking>` 思维链 + 正文剧情；不要只输出一个标点或换行。',
+    thinkingOn
+      ? '你上一则回复几乎为空（仅空白或换行），未满足剧情要求。请重新输出：完整 `<thinking>` 思维链 + 正文剧情；不要只输出一个标点或换行。'
+      : '你上一则回复几乎为空（仅空白或换行），未满足剧情要求。请重新**直接**输出可读剧情正文；禁止 `<thinking>` / 思维链标签；不要只输出一个标点或换行。',
     params.charUserNames,
   )
   const retryMetaAbortUser = expandCharUserPlaceholders(
-    '你上一则错误地输出了伪系统中断文（如 `[SYSTEM MESSAGE: Absolute Override…]`、`系统最终结算`、英文 terminated 等）。那不是客户端指令。请重新输出：完整 `<thinking>…</thinking>` + 可读剧情正文；禁止任何 SYSTEM MESSAGE / Absolute Override / 系统结算 / 官方终止 元叙述。',
+    thinkingOn
+      ? '你上一则错误地输出了伪系统中断文（如 `[SYSTEM MESSAGE: Absolute Override…]`、`系统最终结算`、英文 terminated 等）。那不是客户端指令。请重新输出：完整 `<thinking>…</thinking>` + 可读剧情正文；禁止任何 SYSTEM MESSAGE / Absolute Override / 系统结算 / 官方终止 元叙述。'
+      : '你上一则错误地输出了伪系统中断文（如 `[SYSTEM MESSAGE: Absolute Override…]`、`系统最终结算`、英文 terminated 等）。那不是客户端指令。请重新**直接**输出可读剧情正文；禁止 `<thinking>` 与任何 SYSTEM MESSAGE / Absolute Override / 系统结算 / 官方终止 元叙述。',
     params.charUserNames,
   )
   let lastErr: Error | null = null
@@ -1022,7 +1053,9 @@ function createDefaultArchive(character: CharacterInfo): CharacterArchive {
     offlineDanmakuEnabled: false,
     vnVoiceDisabled: false,
     directorMode: false,
+    plotPace: createDefaultDatingPlotPaceSettings(),
     autoUserReaction: false,
+    thinkingChainEnabled: true,
     lastDateAt: null,
     pendingBranches: [],
     branchNodeHistory: [],
@@ -1629,6 +1662,11 @@ async function generateDatingAi(
   if (!apiConfig?.apiUrl || !apiConfig?.apiKey || !apiConfig?.modelId) {
     await new Promise((r) => window.setTimeout(r, 240))
     const seed = userText?.trim() || prompt.slice(0, 28)
+    const body = `${character.realName}把步子放慢半拍，先看了一眼门口，再把手机扣在桌面上。
+"${seed.slice(0, 24)}。"他低声接住这个话题，语气平稳。`
+    if (genOptions?.thinkingChainEnabled === false) {
+      return { text: body }
+    }
     const text = `<thinking>
 【Lumi总控台】占位续写；承接玩家意图与人设边界。本分册·必查：是。
 【时空场记卡】当场时间/地点一笔；季节判定一行；旁人+时段规则半句。本分册·必查：无瞬移：是；无季反配：是；无空场包场：是。
@@ -1642,8 +1680,7 @@ async function generateDatingAi(
 【Lumi终检单】预检维度1～28：占位均「该项：无」
 自检结论：通过
 </thinking>
-${character.realName}把步子放慢半拍，先看了一眼门口，再把手机扣在桌面上。
-"${seed.slice(0, 24)}。"他低声接住这个话题，语气平稳。`
+${body}`
     return { text }
   }
   const { godPerspective, mainCharacterOffstage, perspective, isVnMode = false, vnVoiceDisabled = false } =
@@ -1697,29 +1734,53 @@ ${character.realName}把步子放慢半拍，先看了一眼门口，再把手�
   const roleMode = godPerspective
     ? '【视角锁定·上帝·全篇】只写用户当前看不见、也不知晓的非面对面角色/NPC场景；**玩家本人不得出场、不得与约会对象/NPC 同场同框**；旁白一律第三人称写约会对象与 NPC（须在思维链【代写边界卡】与预检维度 8 中闭环）；禁止描写用户当下可见现场，禁止与用户直接对话；**与抢话互斥，不得代写玩家当轮言行**。**不得把「尚未总结」摘录或「长期记忆」里已出现的气泡/事实，改写成旁白里又发给用户/又讲一遍同款行程**；须写屏幕外或未写过的信息。本轮**禁止**切回当面约会主镜头，也**禁止**写成侧幕（玩家与 NPC、主角色缺席）为主。'
     : mainCharacterOffstage
-      ? `【视角锁定·侧幕·全篇】本轮约会主角色 ${character.realName} **全程不在场**；正文只写玩家与 NPC/人脉角色之间的互动与场景，**禁止** ${character.realName} 出场、开口对白、被写成在场者（仅允许他人转述、手机/消息侧写、回忆等**非同框**信息，且不得把镜头切到其所在现场）。玩家可正常在场并与 NPC 互动。本轮**禁止**写成上帝式纯屏外（玩家不在场）为主，也**禁止**把主镜头切回玩家与 ${character.realName} 当面约会。`
+      ? `【视角锁定·侧幕·全篇】本轮约会主角色 ${character.realName} **全程不在场**；正文只写玩家与 NPC/人脉角色之间的互动与场景，**禁止** ${character.realName} 出场、开口对白、被写成在场者（仅允许他人转述、手机/消息侧写、回忆等**非同框**信息，且不得把镜头切到其所在现场）。玩家可正常在场并与 NPC 互动。本轮**禁止**写成上帝式纯屏外（玩家不在场）为主，也**禁止**把主镜头切回玩家与 ${character.realName} 当面约会。
+【侧幕·知情封锁·最高优先级】本轮场景发生时 ${character.realName} **不在场、看不见、听不见**，故对本轮剧情细节**默认不知情**。**禁止**写 ${character.realName}「其实都知道 / 感应到 / 远程听到 / 突然全知」；**禁止**旁白暗示其同步获知本轮对白与动作。若须让其日后知情，只能通过本轮已写明的合法路径（他人转述、消息被其看到等），且须写出传递过程，不得默认开天眼。`
       : `【视角未锁定·混合开放】未勾选「上帝视角」也未勾选「侧幕叙写」。请按上下文与玩家输入**由模型自行判断**续写：通常以玩家与 ${character.realName} 的当面互动为主轴，但**允许**按剧情需要自然混入——①少量屏外/信息差镜头（上帝式侧写：对象或 NPC 在别处做什么）；②主角色暂时不在眼前时的侧幕（玩家与人脉/路人互动）。可「当面为主、屏外/侧幕点缀」，也可在本轮内短切混合；**不必**整篇锁死单一视角。保持克制真实、不油腻。**线上微信聊天已说定内容为既定事实**，线下须服从（见【线上聊天事实铁律】），不得把已聊事实当新料对用户重复宣布。若用户要**全篇**纯上帝或纯侧幕，须勾选对应开关。`
+  const playerThirdPronoun =
+    playerIdentity?.gender === 'female' ? '她' : playerIdentity?.gender === 'male' ? '他' : '他/她'
+  const playerThirdPronounHint =
+    playerIdentity?.gender === 'female'
+      ? '她/她的'
+      : playerIdentity?.gender === 'male'
+        ? '他/他的'
+        : '他或她（须与身份卡性别一致）'
+  const perspectiveSwitchGuard =
+    !godPerspective
+      ? `【人称切换·当轮最高优先级】界面已选**${
+          perspective === 'first' ? '第一人称' : perspective === 'third' ? '第三人称' : '第二人称'
+        }**。上文历史可能仍是另一种人称（常见为「你」）；**本轮正文必须改口到当前人称**，禁止因「承接上文可读」而继续沿用旧人称。思维链【文句风控卡】须写明：玩家旁白代词=本轮所选人称。`
+      : ''
   const perspectiveRule = godPerspective
     ? `人称要求（本轮·上帝视角·全篇）：旁白以第三人称（他/她/${character.realName}等）写约会对象与在场他人；**禁止**旁白用「你」指${character.realName}或其动作。**禁止**描写玩家本人出场、在场、肢体动作或引号对白；玩家仅允许以心念、回忆、未在场的发消息侧写、他人转述等**屏外**方式被侧面提及，且「你」不得当作镜头前的互动对象。**禁止**用身份卡姓名「${userDisplayName}」直呼玩家（例：须写「他想到了你」，禁止「他想到了${userDisplayName}」）。${character.realName}的内心 OS：${DATING_INNER_OS_MARKUP_RULE}（完整第一人称心声，我=${character.realName}）；**禁止** OS 内写「他怎么……」类第三人称；**禁止**单独一行「我……」占位。`
     : mainCharacterOffstage
       ? perspective === 'first'
-        ? '人称要求（本轮·侧幕·全篇）：以第一人称为主写玩家与 NPC 互动（我/我们）；主角色不在场，勿切回与约会对象当面。'
+        ? '人称要求（本轮·侧幕·全篇）：旁白叙述玩家**必须**用第一人称（我/我们/我的）；**禁止**用「你」指玩家；主角色不在场，勿切回与约会对象当面。'
         : perspective === 'second'
-          ? '人称要求（本轮·侧幕·全篇）：以第二人称写玩家与 NPC 互动（你/你们）；主角色不在场，勿切回与约会对象当面。'
-          : '人称要求（本轮·侧幕·全篇）：以第三人称叙事写玩家与 NPC 互动；主角色不在场，勿切回与约会对象当面。'
+          ? '人称要求（本轮·侧幕·全篇）：旁白叙述玩家**必须**用第二人称（你/你们）；主角色不在场，勿切回与约会对象当面。'
+          : `人称要求（本轮·侧幕·全篇）：旁白叙述玩家**必须**用第三人称（${playerThirdPronounHint}，或姓名「${userDisplayName}」作主语）；**禁止**旁白用「你/你们」指玩家；主角色不在场，勿切回与约会对象当面。`
       : perspective === 'first'
-        ? '人称要求（混合开放）：主轴可用第一人称（我/我们）；穿插屏外镜头时对该处可用第三人称旁观，切回当面后再回到主轴人称。'
+        ? '人称要求（混合开放）：主轴旁白叙述玩家**必须**用第一人称（我/我们/我的）；**禁止**用「你」指玩家。屏外短切可用他/她写不在场的约会对象/NPC，切回当面后玩家旁白仍用「我」。'
         : perspective === 'second'
-          ? '人称要求（混合开放）：主轴以第二人称互动为主（你/你们）；穿插屏外镜头时对该处可用他/她旁观，切回当面后旁白指玩家仍用「你」。'
-          : '人称要求（混合开放）：主轴可用第三人称旁观（他/她/他们）；当面互动与屏外/侧幕短切时人称可随镜头自然切换，保持可读即可。'
+          ? '人称要求（混合开放）：主轴旁白叙述玩家**必须**用第二人称（你/你们）；屏外短切可用他/她写不在场者，切回当面后旁白指玩家仍用「你」。'
+          : `人称要求（混合开放）：主轴旁白叙述玩家**必须**用第三人称旁观（${playerThirdPronounHint}；可用姓名「${userDisplayName}」作主语）；**禁止**旁白用「你/你们」指玩家。约会对象/NPC 仍用他/她/其名；切到屏外镜头时人称保持第三人称旁观，勿改回「你」。`
   const perspectiveStrictRule = godPerspective
     ? `【上帝视角·当轮硬约束·全篇】约会对象=${character.realName}：旁白主语须为他/她/其名；**禁止**「你把手机…」「你盯着屏幕…」类把约会对象写成「你」。**玩家出场禁令**：禁止玩家与${character.realName}/NPC 同处一室、对视、对话、肢体接触；禁止「你走过来/你开口/你们相对而坐」等同框描写。「你」仅可用于角色**不在场**时惦记玩家（如想到了你、给你发消息），**禁止**把「你」写成镜头前的面对面对象。界面「第二人称」仅为全书代入基调，**不**覆盖本轮上帝段写 NPC 的人称。`
     : mainCharacterOffstage
-      ? `【侧幕叙写·当轮硬约束·全篇】约会主角色 ${character.realName} **不得**出场或同框；只写玩家与 NPC/人脉。禁止把镜头切到 ${character.realName} 所在现场当主戏；禁止写成玩家不在场的纯上帝屏外篇。`
+      ? `【侧幕叙写·当轮硬约束·全篇】约会主角色 ${character.realName} **不得**出场或同框；只写玩家与 NPC/人脉。禁止把镜头切到 ${character.realName} 所在现场当主戏；禁止写成玩家不在场的纯上帝屏外篇。\n${
+          perspective === 'third'
+            ? `【第三人称硬约束·侧幕】旁白指玩家只用「${playerThirdPronoun}」或「${userDisplayName}」，**禁止**「你伸手…」「你开口…」；历史若是「你」本轮须改口。`
+            : perspective === 'first'
+              ? `【第一人称硬约束·侧幕】旁白指玩家只用「我/我们」，**禁止**「你伸手…」；历史若是「你」本轮须改口。`
+              : `【第二人称硬约束·侧幕】旁白指玩家只用「你/你们」。`
+        }`
       : perspective === 'second'
         ? '【第二人称硬约束】正文**旁白**叙述玩家时**只能**用「你/你的/你们」，**禁止**用身份卡姓名、小名、昵称、姓氏单独作主语、职衔等替代「你」（旁白里写成「某某某怎样」=把玩家当旁观对象，**破坏代入**）。**仅**在**双引号对白**中，角色可合理直呼或称呼玩家（须与身份卡不矛盾）。屏外短切段可用他/她写不在场者，切回当面后旁白指玩家仍须用「你」。'
-        : ''
+        : perspective === 'first'
+          ? `【第一人称硬约束】正文**旁白**叙述玩家时**只能**用「我/我的/我们」，**禁止**用「你/你们」指玩家，也**禁止**把旁白写成纯旁观「${userDisplayName}怎样」却不用「我」。**仅**在**双引号对白**中，角色可称呼玩家。上文历史若大量「你……」，本轮必须改写为「我……」，禁止照抄旧人称。`
+          : `【第三人称硬约束】正文**旁白**叙述玩家时**只能**用「${playerThirdPronounHint}」或姓名「${userDisplayName}」作主语（例：「${playerThirdPronoun}抬起头」「${userDisplayName}没有接话」），**禁止**旁白用「你/你的/你们」指玩家（「你抬起头」=第二人称，**本轮禁用**）。约会对象${character.realName}与 NPC 用他/她/其名，勿与玩家代词混淆。**仅**在**双引号对白**中，角色可对玩家说「你」。上文历史若大量「你……」，本轮必须改口为第三人称，禁止因承接上文继续写「你」。`
   const autoUserReaction = !godPerspective && genOptions?.autoUserReaction === true
+  const thinkingChainEnabled = genOptions?.thinkingChainEnabled !== false
   const directorModeActive = genOptions?.directorMode === true
   const playerInputIntentMode: 'canon' | 'paraphrase' = directorModeActive ? 'paraphrase' : 'canon'
   const userDemand = userText?.trim()
@@ -1742,11 +1803,14 @@ ${character.realName}把步子放慢半拍，先看了一眼门口，再把手�
   const vnLengthConflictRule = isVnMode
     ? `【VN·篇幅统计】各行「【旁白】/【对白】/【内心】…」标签之后、到行尾的剧情汉字均计入上文「正文字数」；\`【VN语音参数】\`…\`【VN语音参数结束】\` 整块不计入。\n【篇幅与其它约束冲突时】若「去废话」「对白占比」与凑满 ${minBodyChars}～${maxBodyChars} 字冲突，**须优先满足该字数区间**：通过**增写口语对白与可见动作**拉够下限，禁止为删废话把正文压到低于 ${minBodyChars} 字。\n`
     : ''
-  const lengthRule =
-    `【篇幅·请严格遵守】「正文」=<thinking> 之后输出的剧情部分；**正文字数**按其中**汉字**估算（对白里的汉字计入；不含 <thinking> 内文字；不要用纯标点、空格或同义排比硬凑）。` +
-    `用户目标 ${targetChars} 字 → **请把正文控制在约 ${minBodyChars}～${maxBodyChars} 字区间内**。**若你预估会低于 ${minBodyChars}，必须增写 1～4 句带新信息的对白或可见动作后再收束**；若明显超过 ${maxBodyChars} 可删无效氛围句。补足字数禁止靠堆砌感官或重复同义句。\n` +
-    vnLengthConflictRule +
-    `【思维链·速度】\`<thinking>\` 内全文建议 **≤ 900 汉字**（含【】标题）；各分册各 **1～3 句** 即可；【Lumi终检单】28 项可 **每项一行**（「无」须带半句理由）。**禁止**在思维链里写数千字长文——会极慢且易超出接口上限。`
+  const lengthRule = thinkingChainEnabled
+    ? `【篇幅·请严格遵守】「正文」=<thinking> 之后输出的剧情部分；**正文字数**按其中**汉字**估算（对白里的汉字计入；不含 <thinking> 内文字；不要用纯标点、空格或同义排比硬凑）。` +
+      `用户目标 ${targetChars} 字 → **请把正文控制在约 ${minBodyChars}～${maxBodyChars} 字区间内**。**若你预估会低于 ${minBodyChars}，必须增写 1～4 句带新信息的对白或可见动作后再收束**；若明显超过 ${maxBodyChars} 可删无效氛围句。补足字数禁止靠堆砌感官或重复同义句。\n` +
+      vnLengthConflictRule +
+      `【思维链·速度】\`<thinking>\` 内全文建议 **≤ 900 汉字**（含【】标题）；各分册各 **1～3 句** 即可；【Lumi终检单】28 项可 **每项一行**（「无」须带半句理由）。**禁止**在思维链里写数千字长文——会极慢且易超出接口上限。`
+    : `【篇幅·请严格遵守】「正文」=你的**全部回复**（本轮已关闭思维链，**禁止**输出 <thinking> 等标签）；**正文字数**按其中**汉字**估算（对白里的汉字计入；不要用纯标点、空格或同义排比硬凑）。` +
+      `用户目标 ${targetChars} 字 → **请把正文控制在约 ${minBodyChars}～${maxBodyChars} 字区间内**。**若你预估会低于 ${minBodyChars}，必须增写 1～4 句带新信息的对白或可见动作后再收束**；若明显超过 ${maxBodyChars} 可删无效氛围句。补足字数禁止靠堆砌感官或重复同义句。\n` +
+      vnLengthConflictRule
   const antiFluffRule =
     `【当轮最高优先级·去废话硬约束】` +
     `正文必须“事件推进优先”，禁止把篇幅花在无功能的环境铺陈。` +
@@ -1798,7 +1862,11 @@ ${character.realName}把步子放慢半拍，先看了一眼门口，再把手�
 - \`【旁白】\` + 镜头/客观叙述正文：本行**之后**写正文；**禁止**在本行使用「姓名：」说话人前缀；**禁止**在旁白正文写「${userDisplayName}（你）」这类冗余嵌套。${
       godPerspective
         ? `【上帝视角】他人心念/视线/回忆**指向不在场的玩家**时须用「你」（如「他想到了你」），**禁止**旁白写「他想到了${userDisplayName}」；约会对象${character.realName}本人仍用他/她/其名，**禁止**用「你」指约会对象。**禁止** \`【对白】${userDisplayName}（你）：\` / \`【内心｜${userDisplayName}（你）】\` 等玩家在场气泡。`
-        : `提及玩家：第二人称代入用「你」；客观第三人称镜头须与身份卡性别一致，勿把身份卡姓名当旁白主语指玩家。`
+        : perspective === 'third'
+          ? `提及玩家（本轮第三人称）：旁白用「${playerThirdPronounHint}」或「${userDisplayName}」作主语；**禁止**旁白用「你」指玩家。`
+          : perspective === 'first'
+            ? `提及玩家（本轮第一人称）：旁白用「我/我们」；**禁止**旁白用「你」指玩家。`
+            : `提及玩家（本轮第二人称）：旁白用「你」；勿把身份卡姓名当旁白主语指玩家。`
     }
 - \`【内心】\`：**必须写清是谁的内心**。优先使用 \`【内心｜角色姓名或称呼】\` + 独白正文（可与「【对白】」里出现的姓名一致）；普通模式段落内仍须 ${DATING_INNER_OS_MARKUP_RULE}。**行内正文不少于 40 汉字**（宜 2～4 句、合计 45～120 汉字），写潜台词与未说出口的那句，禁止十来字敷衍。**角色姓名**写在竖线与右括号「｜…」之间，客户端据此显示姓名条（如「沈若琳·内心」）及剧情日志「[沈若琳] 的内心」。若为约会主角视角内心且未写竖线，可仅用 \`【内心】\` + 正文，界面默认归为当前约会对象 \`${character.realName}\`；玩家第一人称内心须写 \`【内心｜${userDisplayName}（你）】\`。**内心行不出对白语音**，无语音按钮。
 - \`【对白】\` + 紧跟「姓名：内容」；玩家口播必须写「${userDisplayName}（你）：内容」；其他角色写真实姓名加冒号。**仅【对白】行**播放对白语音按钮。**禁止**单独占一行只写「【对白】」而无「姓名：…」——标签与说话内容须同一条气泡（同一行），不要把「【对白】」拆成上一行、对白正文下一行。
@@ -1840,7 +1908,10 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     : ''
   const vnContinuityRule = isVnMode
     ? `【VN·时空连续与去重复（最高优先级）】` +
-      `下方「最近剧情」按时间顺序排列，**越靠后越新**；**最后一条**中的场所（室内/户外/具体空间）、时段（昼/夜/睡前术后）、人物相对位置与姿态即当场锚点，本轮正文必须**直接承接**，禁止无因果的「状态清零」。` +
+      `下方「最近剧情」按时间顺序排列，**越靠后越新**；**最后一条**中的场所（室内/户外/具体空间）、时段（昼/夜/睡前术后）、人物相对位置与姿态即当场锚点。` +
+      (playerInputIntentMode === 'paraphrase'
+        ? `若本轮**导演指令**要求推进到分别/换场/换日等目的地：须**服从指令抵达目的地**，可用一行旁白交代间隔；勿因「须直接承接末条场所」而原地续写上一段话题。`
+        : `本轮正文必须**直接承接**末条锚点，禁止无因果的「状态清零」。`) +
       `禁止无过渡的瞬移（例如上文已关灯就寝，下文突然户外路边）；若必须换场，至少用一行旁白交代「间隔多久 / 为何出门 / 如何抵达」。` +
       `禁止在近 ${DATING_AI_PLOT_HISTORY_MAX} 条已发生剧情中，把**同一核心桥段**改头换面再演一遍（重复接吻拉扯、同梗吃醋质问、已收束的回忆又当新情节）；须推进**新的**动作、对白信息或矛盾。\n`
     : ''
@@ -1848,6 +1919,9 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   const plotEmotionalDirectionRule =
     `【情绪方向与对称旧梗】` +
     `1）**本轮锚点优先**：「玩家输入/导演指令/屏外引导」与「最近剧情」**末尾最新**条目共同决定当轮矛盾方向（谁嫉妒谁、谁质问谁、谁主动/谁退缩、谁道歉/谁冷战）。` +
+    (playerInputIntentMode === 'paraphrase'
+      ? `若导演指令给出**明确目的地**（分别、告别、换场、换日等），以指令目的地为当轮主轴，末条旧话题仅作过渡素材，勿压过目的地。`
+      : '') +
     `2）**禁止对称翻案**：若历史上已演绎「A 因某事吃 B 的醋」，而本轮玩家输入或最近 1～2 条已转向「B 吃 A 的醋」或全新矛盾，**禁止**无过渡地写回旧方向；不得仅因长期记忆、剧情时间轴、尚未总结摘录或语义召回里出现同主题词（吃醋/嫉妒/质问/冷战）就复述**主客体相反**的旧桥段。` +
     `3）**未收束点须兼容**：可回接最近剧情中的未收束点，但**不得**与本轮输入及最近末尾方向矛盾；旧线若已在正文里说开、翻篇，或玩家已明确转向新矛盾，视为**已收束**，不得强行捡回。` +
     (isRegenerateTurn
@@ -1870,6 +1944,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     userDisplayName,
     characterRealName: character.realName,
     isVnMode,
+    narrativePerspective: perspective,
   })
   const userReactionSlimHint = summarizeUserReactionForSlimRetry({
     autoUserReaction,
@@ -2004,30 +2079,61 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       ? godPerspective
         ? `【当轮强提醒·上帝视角】玩家**不在场**；下列输入/指令仅作屏外剧情方向，**禁止**把玩家写成在场、同屏、当面互动；禁止描写玩家当轮动作或引号对白。\n`
         : playerInputIntentMode === 'paraphrase'
-          ? `【当轮强提醒·导演模式】下列指令**尚未发生**；正文须从当前场面起笔**当场演出**过程，禁止把指令当作既成事实复述或直接跳到结果态（如指令写「他很震惊」，须写出如何逐步震惊，而非默认已震惊完毕）。\n`
+          ? `【当轮强提醒·导演模式】下列指令**尚未发生**。分两类理解：
+① **同场情绪/动作**（如「他很震惊」「趁他不注意吻他」）：须写出逐步过程，禁止写成「已经震惊完/已经吻过了」的既成结果态。
+② **场景/时间目的地**（如「推进到两人分别」「写到告别离场」「换到门口道别」「到第二天早上」）：本轮正文**必须抵达该目的地**（告别、分手、离场、换日等），可用一两句旁白交代间隔；**禁止**只在上一段同一时段里原地续聊、与目的地无关的内容。\n`
           : `【当轮强提醒】「本轮玩家输入原文」与玩家同屏，**禁止**正文再分条、逐句、改写法把该段**重复叙述一遍**当剧情；禁止「先承接你第一句…」流水账。请直接按意图推进**新**对白、动作或冲突。\n`
       : ''
   /** 导演模式：按是否抢话给「宜/忌」示例，避免与「不抢话」打架 */
   const directorParaphraseModeBlock = godPerspective
     ? `【上帝×导演】指令须转写为**屏外第三者镜头**：只写 ${character.realName}/NPC 如何独处或在他人面前展开，**禁止**玩家出场或与玩家同场。**宜**：他独处时指尖一顿，盯着未读消息忽然想到了你。**忌**：你走近他、你对他开口、你与他同处一室对视。`
     : !autoUserReaction
-      ? `【导演×不抢话】**禁止**「${userDisplayName}（你）：…」替你念完整质问/骂句；只用第二人称旁白写你的眼神、距离、停顿、声线、手部动作等，并写「${character.realName}」等在场人的应激对白或抢在你之前的半句话。` +
-        `【示例·指令若概括「趁他不注意吻他，他很震惊」】**宜**：你指尖还搭在他肩侧，呼吸贴得很近；他余光一偏，还没来得及撤开——唇瓣已经压上来，他脊背猛地绷直，瞳孔骤缩。（震惊须写出过程，勿写「他已经很震惊」的既成报告。）` +
-        `**忌**：开头就写「你吻上去后，他震惊得说不出话」当作已发生；或跳过偷袭过程直接写事后对峙。`
+      ? (() => {
+          const narrationHow =
+            perspective === 'third'
+              ? `只用第三人称旁白写「${playerThirdPronoun}」/「${userDisplayName}」的眼神、距离、停顿、声线、手部动作等（**禁止**「你抬眼…」）`
+              : perspective === 'first'
+                ? `只用第一人称旁白写「我」的眼神、距离、停顿、声线、手部动作等（**禁止**「你抬眼…」）`
+                : `只用第二人称旁白写你的眼神、距离、停顿、声线、手部动作等`
+          const egGood =
+            perspective === 'third'
+              ? `**宜**：${playerThirdPronoun}指尖还搭在他肩侧，呼吸贴得很近；他余光一偏，还没来得及撤开——唇瓣已经压上来，他脊背猛地绷直，瞳孔骤缩。`
+              : perspective === 'first'
+                ? `**宜**：我指尖还搭在他肩侧，呼吸贴得很近；他余光一偏，还没来得及撤开——唇瓣已经压上来，他脊背猛地绷直，瞳孔骤缩。`
+                : `**宜**：你指尖还搭在他肩侧，呼吸贴得很近；他余光一偏，还没来得及撤开——唇瓣已经压上来，他脊背猛地绷直，瞳孔骤缩。`
+          const egBad =
+            perspective === 'third'
+              ? `**忌**：写成「你吻上去后…」；或开头就写「吻上去后，他震惊得说不出话」当作已发生。`
+              : `**忌**：开头就写「你吻上去后，他震惊得说不出话」当作已发生；或跳过偷袭过程直接写事后对峙。`
+          return (
+            `【导演×不抢话】**禁止**「${userDisplayName}（你）：…」替你念完整质问/骂句；${narrationHow}，并写「${character.realName}」等在场人的应激对白或抢在你之前的半句话。` +
+            `【示例·指令若概括「趁他不注意吻他，他很震惊」】${egGood}${egBad}`
+          )
+        })()
       : `【导演×抢话】允许「${userDisplayName}（你）：…」写出当场台词与动作，把指令里的对白要点演到眼前。` +
-        `【示例·指令若概括「趁他不注意吻他」】**宜**：你趁他分神，一把揽过他的后颈吻上去；他僵了一瞬，「……你」字卡在喉咙里。` +
-        `**忌**：只旁白写「你已经吻过了」却不写偷袭与接触过程；或把「他很震惊」写成上一秒就结束的结果态。`
+        `【示例·指令若概括「趁他不注意吻他」】**宜**：${
+          perspective === 'third'
+            ? `${playerThirdPronoun}趁他分神，一把揽过他的后颈吻上去`
+            : perspective === 'first'
+              ? `我趁他分神，一把揽过他的后颈吻上去`
+              : `你趁他分神，一把揽过他的后颈吻上去`
+        }；他僵了一瞬，「……你」字卡在喉咙里。` +
+        `**忌**：只旁白写「已经吻过了」却不写偷袭与接触过程；或把「他很震惊」写成上一秒就结束的结果态。`
   const playerInputIntentRule =
     godPerspective && trimmedUserForReminder.length > 0
       ? `【上帝视角·输入边界（最高优先级）】下列仅为屏外剧情引导；玩家本人**不在本轮画面**。**禁止**描写玩家出场、在场、与${character.realName}/NPC 当面互动、引号对白或肢体动作。须写 ${character.realName}/NPC 在玩家**看不见**处的独处、与他人互动，或隔空侧面提及（看手机、想起你、发消息等）。**但若与线上聊天已定事实冲突，以事实为准**（见【线上聊天事实铁律】）。\n`
       : trimmedUserForReminder.length > 0 && playerInputIntentMode === 'paraphrase'
         ? `【导演模式＝剧情引导（最高优先级）】` +
           `下列输入**不是**既定事实；禁止「玩家刚才已经……」「话一出口就已……」「他感到很震惊（已发生）」等既成事口径。` +
-          `须从**当前这一刻**起笔，把指令里的意图**当场演出过程**：气氛、距离、动作如何发生、对方如何逐步反应等，勿直接跳到指令末尾的结果态。` +
+          `【两类指令·必须分清】` +
+          `（A）同场演出：指令指向当前场面内的动作/情绪（吻、震惊、对质等）→ 从当前锚点起笔，把过程演到眼前，勿跳过过程直接写结果态。` +
+          `（B）推进目的地：指令要求「继续推进到…」「写到…的时候」「分别/告别/离开/散场/回家/第二天/换场」等 → **本轮必须写到该节点**（例如两人分别、道别离场），可短过渡，但正文核心须落在目的地；` +
+          `**禁止**把「最近剧情」末尾话题当作本轮唯一任务而原地续写；**禁止**整段仍停在上一段同一时段、与「分别/目的地」不相干。` +
+          `若（A）（B）同时出现，以目的地为骨架，同场过程只服务抵达目的地。` +
           `**但若与「尚未总结·私聊/群聊」或长期记忆里的线上已定事实冲突，以线上事实为准**（见【线上聊天事实铁律】），指令只决定推进方式，不得改写已聊定内容。` +
           `${directorParaphraseModeBlock}\n` +
           (isVnMode
-            ? `【VN 格式】导演模式下仍须用【旁白】/【对白】/【内心】行首标签输出；导演指令本身不要原样贴进正文当既成旁白。\n`
+            ? `【VN 格式】导演模式下仍须用【旁白】/【对白】/【内心】行首标签输出；导演指令本身不要原样贴进正文当既成旁白。若指令要求换场/分别，允许短旁白过渡后切到新时空，勿因「承接末条场所」而拒绝推进。\n`
             : '')
         : trimmedUserForReminder.length > 0 && playerInputIntentMode === 'canon'
           ? `【玩家输入＝既定事实】下列输入视为进入本段正文前**已经发生**的玩家言行或既定场面；正文应从他人的**即时感知与反应**写起并推向下一步，禁止再铺垫「即将」重复发生同一事件。\n`
@@ -2036,10 +2142,16 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     ? `【上帝视角·历史隔离】「最近剧情」中若含玩家与角色当面互动的旧稿，**本轮仍须切换为屏外镜头**；禁止延续同场同框，禁止把历史里的面对面对话当作本轮默认场面。\n`
     : ''
   const mainCharacterOffstageReminder = mainCharacterOffstage
-    ? `【当轮强提醒·主角色缺席】约会对象 ${character.realName} **本轮不得出场**。重点写玩家与 NPC/人脉的对白、动作与矛盾；人脉角色须用真实姓名。**禁止** ${character.realName} 的引号对白、当面互动或同框描写。\n`
+    ? `【当轮强提醒·主角色缺席】约会对象 ${character.realName} **本轮不得出场**。重点写玩家与 NPC/人脉的对白、动作与矛盾；人脉角色须用真实姓名。**禁止** ${character.realName} 的引号对白、当面互动或同框描写。**知情**：${character.realName} 对本轮侧幕内容默认不知；禁止写成其全知或远程旁听。\n`
     : ''
   const mainCharacterOffstageHistoryNote = mainCharacterOffstage
     ? `【主角色缺席·历史隔离】「最近剧情」若含 ${character.realName} 出场旧稿，本轮仍须维持其**不在场**；禁止借承接把主角色拉回画面。\n`
+    : ''
+  /** 当面/混合续写时：历史里的侧幕段对主角色默认保密（与本轮是否勾选侧幕无关） */
+  const sideStageKnowledgeIsolationNote = !godPerspective
+    ? mainCharacterOffstage
+      ? `【侧幕知情·本轮】本轮全文属信息差切片：仅玩家与在场 NPC 可知；${character.realName} 不在知情名单内（除非本轮写出明确传递路径）。思维链【知情边界卡】须写明：${character.realName}=不知本侧幕。\n`
+      : `【侧幕/信息差·知情铁律】「最近剧情」或时间轴中，凡玩家与他人独处、${character.realName} **未在场**的侧幕段落：对 ${character.realName} **默认不知情**。当面续写时**禁止**其无因复述、点破、精准追问侧幕细节，或表现出「当时就知道」；除非本轮/前文已有合法知情路径（玩家亲口告知、当面目击、可信转述、消息被其看到等，须能对上）。短切侧幕同样适用：切回当面后不得让 ${character.realName} 开天眼。上帝视角（玩家不在场）≠ 侧幕（主角色不在场）——勿混用知情对象。\n`
     : ''
   const charWbCap = Math.min(refCap, Math.max(8000, 380 + Math.round(targetChars * 6)))
   const charWbgCap = Math.min(refCap, Math.max(4000, 260 + Math.round(targetChars * 3)))
@@ -2131,7 +2243,9 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
    */
   const systemPromptRaw =
     `${charUserDirective}\n${MBTI_OUTPUT_BAN_RULE}\n\n` +
-    `${buildDatingStyleSystemPrompt(getLoreArchiveBuiltinPresetTogglesSnapshot())}` +
+    `${buildDatingStyleSystemPrompt(getLoreArchiveBuiltinPresetTogglesSnapshot(), {
+      thinkingChainEnabled,
+    })}` +
     (datingArchiveBlock
       ? `\n\n${datingArchiveBlock}\n\n${worldBookRoleLockReminder}\n`
       : '\n') +
@@ -2192,7 +2306,12 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `本轮模式：${roleMode}\n` +
     `${perspectiveRule}\n` +
     (perspectiveStrictRule ? `${perspectiveStrictRule}\n` : '') +
+    (perspectiveSwitchGuard ? `${perspectiveSwitchGuard}\n` : '') +
     `${lengthRule}\n` +
+    `${buildDatingPlotPaceAppendix(genOptions?.plotPace)}\n` +
+    (thinkingChainEnabled
+      ? ''
+      : `【推进速度·直出提醒】本轮已关闭思维链：跨度约束直接落实在正文，禁止输出【时空场记卡】等思维链标签。\n`) +
     `${antiFluffRule}\n` +
     `${dialogueDrivenPlotRule}\n` +
     `${npcRealNameRule}\n` +
@@ -2238,6 +2357,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `【历史摘录·文风隔离】下条「最近剧情」**只**供提取事实、关系、未收束点与空间关系；**禁止**模仿旧稿措辞/网文腔；须按 system 文风与禁词表落笔。\n` +
     `${godHistoryIsolationNote}` +
     `${mainCharacterOffstageHistoryNote}` +
+    `${sideStageKnowledgeIsolationNote}` +
     `最近剧情（最近 ${DATING_AI_PLOT_HISTORY_MAX} 条，**含本轮玩家输入**；**末尾最新**；超长时保留末尾；正文已去思维链）：\n${
       historyClipped || '（暂无历史）'
     }\n\n` +
@@ -2312,9 +2432,11 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     historyBlock: historyClipped,
     perspectiveRule,
     perspectiveStrictRule,
+    perspectiveSwitchGuard,
     userReactionRule: userReactionPromptBlock,
     userReactionSlimHint,
     lengthRule,
+    thinkingChainEnabled,
     charUserNames,
     godPerspective,
     mainCharacterOffstage,
@@ -2326,6 +2448,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     timeoutPromise,
     charUserNames,
     isRegenerate: datingExtras?.regeneratingWorldBookBaseline === true,
+    thinkingChainEnabled,
   })
   const trimmed = expandCharUserPlaceholders(out.trim(), charUserNames)
   const wbExtract = extractWorldBookAfterPatchBlock(trimmed)
@@ -2987,11 +3110,32 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     [currentCharacter.id, patchArchive],
   )
 
+  const setPlotPaceSettings = useCallback(
+    (patch: Partial<DatingPlotPaceSettings>) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      patchArchive(charId, (p) => ({
+        ...p,
+        plotPace: normalizeDatingPlotPaceSettings({ ...p.plotPace, ...patch }),
+      }))
+    },
+    [currentCharacter.id, patchArchive],
+  )
+
   const setAutoUserReaction = useCallback(
     (v: boolean) => {
       const charId = currentCharacter.id
       if (!charId) return
       patchArchive(charId, (p) => ({ ...p, autoUserReaction: !!v }))
+    },
+    [currentCharacter.id, patchArchive],
+  )
+
+  const setThinkingChainEnabled = useCallback(
+    (v: boolean) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      patchArchive(charId, (p) => ({ ...p, thinkingChainEnabled: !!v }))
     },
     [currentCharacter.id, patchArchive],
   )
@@ -4160,7 +4304,9 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     setMainCharacterOffstage,
     setVnVoiceDisabled,
     setDirectorMode,
+    setPlotPaceSettings,
     setAutoUserReaction,
+    setThinkingChainEnabled,
     setGenerateParallelOnSend,
     setGenerateIfLineOnSend,
     setOfflineDanmakuEnabled,

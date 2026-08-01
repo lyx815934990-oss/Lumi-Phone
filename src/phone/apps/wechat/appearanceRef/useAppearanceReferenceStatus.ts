@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { personaDb } from '../newFriendsPersona/idb'
+import { normalizeAppearanceRefPlayerIdentityId } from '../appearanceRefContextStore'
 import { resolveScopedAppearanceRefs } from '../resolveScopedAppearanceRefs'
 import type { AppearanceRefPanelContext } from './AppearanceRefSettingsPanel'
 
@@ -13,7 +14,7 @@ export function useAppearanceReferenceStatus(params: {
   subjects?: Subject[]
 }): { hasReference: boolean; loading: boolean } {
   const cid = params.characterId?.trim() ?? ''
-  const pid = params.playerIdentityId?.trim() ?? ''
+  const pid = normalizeAppearanceRefPlayerIdentityId(params.playerIdentityId)
   const subjects = params.subjects ?? (['character', 'user'] as Subject[])
 
   const [hasReference, setHasReference] = useState(false)
