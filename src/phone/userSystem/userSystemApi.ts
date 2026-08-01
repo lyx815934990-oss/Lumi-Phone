@@ -92,9 +92,18 @@ export function clearSessionKickedNotice(): void {
 }
 
 export function handleLumiSessionDisplaced(message = SESSION_KICKED_MESSAGE): void {
+  const username = getStoredUsername()
   writeSessionKickedNotice(message)
   clearPendingBanStatusCheck()
   clearAuth()
+  // 挤下线后仍预填账号名，只需重新输入密码
+  if (username) {
+    try {
+      localStorage.setItem(USERNAME_KEY, username)
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 /** 使用中检测到封禁：立即退回登录页 */
@@ -328,10 +337,10 @@ export function readLocalUserLoginStatus(): UserLoginStatus | null {
   }
 }
 
-/** 是否需要在打开时联网校验会话（仅待复查账号） */
+/** 打开时是否联网校验会话（有 token 即查，仅入场验证弹窗触发） */
 export function shouldCheckLumiSessionOnOpen(): boolean {
   if (isLocalDevBypassAuth()) return false
-  return needsRemoteAuthCheck() && !!getAuthToken()
+  return !!getAuthToken()
 }
 
 function syncPendingFlagsFromStatus(status: UserLoginStatus): void {
@@ -438,7 +447,7 @@ export async function watchLumiSession(): Promise<'ok' | 'displaced' | 'ignored'
   return 'ok'
 }
 
-/** 打开主页且账号待复查时：联网校验会话 / 封禁 */
+/** 打开主页时联网校验会话 / 封禁（最新登录设备会通过心跳声明占用） */
 export async function runLumiSessionGuard(): Promise<
   'ok' | 'displaced' | 'banned' | 'community_required' | 'ignored'
 > {

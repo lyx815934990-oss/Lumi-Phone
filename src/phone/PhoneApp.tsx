@@ -14,16 +14,15 @@ import { BootResourceGate } from './components/BootResourceGate'
 import { SplashScreen } from './components/SplashScreen'
 import { useCustomization } from './CustomizationContext'
 import {
-  clearAuth,
-  clearAuthVerified,
+  canEnterHomeOffline,
   fetchUserStatus,
   getAuthToken,
-  needsRemoteAuthCheck,
   readAuthVerified,
   readBannedNotice,
   readLocalAccountGateStatus,
   readLocalUserLoginStatus,
   readSessionKickedNotice,
+  resolveOfflineAuthVerifyError,
   runLumiSessionGuard,
   shouldShowAccountStatusCheck,
   setAuthVerified,
@@ -384,18 +383,33 @@ export function PhoneApp() {
     const checkStarted = Date.now()
     try {
       const status = await fetchUserStatus({ force: true, timeoutMs: STATUS_FETCH_TIMEOUT_MS })
+      // 401/挤下线/封禁等会在请求层清掉 token；保留本地登录态以便同浏览器免重复输密码
       if (!getAuthToken()) {
         openVerifiedRef.current = false
         handleKickedToLogin()
         return
       }
       if (!status) {
+        // 网络/超时：绝不 clearAuth。已验证过的账号可离线进；否则提示重试（账号密码仍在缓存）
+        const local = readLocalUserLoginStatus()
+        if (canEnterHomeOffline() && local) {
+          openVerifiedRef.current = true
+          const guard = await runLumiSessionGuard()
+          if (guard === 'displaced' || guard === 'banned') {
+            openVerifiedRef.current = false
+            handleKickedToLogin()
+            return
+          }
+          setUserAuthStatus(local)
+          setAuthVerifyError(null)
+          setBanNotice(readBannedNotice()?.message ?? null)
+          setSessionKickedNotice(readSessionKickedNotice())
+          setUserAuthReady(true)
+          return
+        }
         openVerifiedRef.current = false
-        clearAuthVerified()
-        // 状态接口失败（含 401/404）时清掉旧 token，避免只剩「重新验证」无法登录
-        clearAuth()
-        setUserAuthStatus(null)
-        setAuthVerifyError(null)
+        setUserAuthStatus(local)
+        setAuthVerifyError(resolveOfflineAuthVerifyError(local))
         setBanNotice(readBannedNotice()?.message ?? null)
         setSessionKickedNotice(readSessionKickedNotice())
         setUserAuthReady(true)
@@ -403,13 +417,11 @@ export function PhoneApp() {
       }
       openVerifiedRef.current = true
 
-      if (needsRemoteAuthCheck()) {
-        const guard = await runLumiSessionGuard()
-        if (guard === 'displaced' || guard === 'banned') {
-          openVerifiedRef.current = false
-          handleKickedToLogin()
-          return
-        }
+      const guard = await runLumiSessionGuard()
+      if (guard === 'displaced' || guard === 'banned') {
+        openVerifiedRef.current = false
+        handleKickedToLogin()
+        return
       }
 
       setUserAuthStatus(status)
