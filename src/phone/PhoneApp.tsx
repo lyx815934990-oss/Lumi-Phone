@@ -9,6 +9,7 @@ import { PhoneShell } from './components/PhoneShell'
 import { UserSystemAuthModal } from './components/UserSystemAuthModal'
 import { UserInfoCorrectionModal } from './components/UserInfoCorrectionModal'
 import { AccountStatusCheckingOverlay } from './components/AccountStatusCheckingOverlay'
+import { persistLoadedAssetsToServiceWorker, warmNonJubenshaAppChunks } from './boot/warmShellCache'
 import { BootResourceGate } from './components/BootResourceGate'
 import { SplashScreen } from './components/SplashScreen'
 import { useCustomization } from './CustomizationContext'
@@ -205,15 +206,14 @@ export function PhoneApp() {
     return () => window.clearTimeout(t)
   }, [bootDone, showSplash])
 
-  /** 桌面稳定后静默预取微信大包，降低点开时弱网重置概率 */
+  /** 桌面稳定后：缓存已下载壳资源 + 预取微信（绝不预热剧本杀） */
   useEffect(() => {
-    if (!bootDone || showSplash || wechatKeepAlive) return
+    if (!bootDone || showSplash) return
     let cancelled = false
     const run = () => {
       if (cancelled) return
-      void import('./apps/wechat/WeChatApp').catch(() => {
-        /* 预取失败可忽略，真正打开时 lazyWithRetry 会再试 */
-      })
+      void persistLoadedAssetsToServiceWorker()
+      if (!wechatKeepAlive) warmNonJubenshaAppChunks()
     }
     const ric = (
       window as Window & {

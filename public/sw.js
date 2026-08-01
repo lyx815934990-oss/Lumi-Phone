@@ -1,7 +1,13 @@
-/* PWA Service Worker：安装条件 + Web Push 系统通知 */
+/* PWA Service Worker：壳资源缓存 + Web Push 系统通知 */
 
 const NOTIFY_ICON_CACHE = 'lumi-notify-icons-v1'
+const ASSET_CACHE = 'lumi-runtime-assets-v2'
+const SHELL_CACHE = 'lumi-shell-v2'
 const NOTIFY_ICON_PATH_MARKER = '/__lumi_notify_icon__/'
+
+/** 剧本杀 / 超大视频：永不进 SW 缓存，也勿拦截为 cache-first */
+const SKIP_CACHE_RE =
+  /JBSGameFlow|jubensha|Jubensha|jbsChat|剧本杀|\.mp4(?:$|\?)|聊天室背景/i
 
 function resolveDefaultIconUrl() {
   try {
@@ -11,31 +17,135 @@ function resolveDefaultIconUrl() {
   }
 }
 
+function shouldSkipCache(url) {
+  try {
+    const u = typeof url === 'string' ? url : url.href
+    return SKIP_CACHE_RE.test(u)
+  } catch {
+    return true
+  }
+}
+
+function isHashedAsset(url) {
+  return url.origin === self.location.origin && url.pathname.includes('/assets/')
+}
+
+function isCacheableAsset(url) {
+  if (shouldSkipCache(url)) return false
+  if (!isHashedAsset(url)) return false
+  return /\.(js|css|woff2?|png|jpg|jpeg|webp|svg|gif|avif)($|\?)/i.test(url.pathname)
+}
+
+async function cacheFirst(request, cacheName) {
+  const cache = await caches.open(cacheName)
+  const hit = await cache.match(request, { ignoreSearch: false })
+  if (hit) return hit
+  const res = await fetch(request)
+  if (res && res.ok) {
+    try {
+      await cache.put(request, res.clone())
+    } catch {
+      /* quota */
+    }
+  }
+  return res
+}
+
+async function networkFirst(request, cacheName) {
+  const cache = await caches.open(cacheName)
+  try {
+    const res = await fetch(request)
+    if (res && res.ok) {
+      try {
+        await cache.put(request, res.clone())
+      } catch {
+        /* quota */
+      }
+    }
+    return res
+  } catch (err) {
+    const hit = await cache.match(request)
+    if (hit) return hit
+    throw err
+  }
+}
+
+async function putUrls(urls) {
+  const cache = await caches.open(ASSET_CACHE)
+  const list = Array.isArray(urls) ? urls : []
+  await Promise.all(
+    list.map(async (raw) => {
+      if (typeof raw !== 'string' || !raw) return
+      if (shouldSkipCache(raw)) return
+      try {
+        const url = new URL(raw, self.registration.scope)
+        if (url.origin !== self.location.origin) return
+        if (!isCacheableAsset(url) && !/\.(js|css)($|\?)/i.test(url.pathname)) return
+        const req = new Request(url.href, { credentials: 'same-origin' })
+        const hit = await cache.match(req)
+        if (hit) return
+        const res = await fetch(req)
+        if (res && res.ok) await cache.put(req, res)
+      } catch {
+        /* ignore single url */
+      }
+    }),
+  )
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting())
 })
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim())
-})
-
-/** 通知头像：页面将 data URL 写入 Cache 后，由 SW 在同源路径下读出 */
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url)
-  if (!url.pathname.includes(NOTIFY_ICON_PATH_MARKER)) return
-  event.respondWith(
-    caches.open(NOTIFY_ICON_CACHE).then((cache) =>
-      cache.match(event.request).then((cached) => cached || new Response('', { status: 404, statusText: 'Not Found' })),
-    ),
+  event.waitUntil(
+    (async () => {
+      const keep = new Set([NOTIFY_ICON_CACHE, ASSET_CACHE, SHELL_CACHE])
+      const keys = await caches.keys()
+      await Promise.all(keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k)))
+      await self.clients.claim()
+    })(),
   )
 })
 
-/** 页面在后台时由主线程转发（备用路径；优先由页面直接 reg.showNotification） */
+self.addEventListener('fetch', (event) => {
+  const req = event.request
+  if (req.method !== 'GET') return
+
+  const url = new URL(req.url)
+
+  if (url.pathname.includes(NOTIFY_ICON_PATH_MARKER)) {
+    event.respondWith(
+      caches.open(NOTIFY_ICON_CACHE).then((cache) =>
+        cache.match(req).then((cached) => cached || new Response('', { status: 404, statusText: 'Not Found' })),
+      ),
+    )
+    return
+  }
+
+  if (url.origin !== self.location.origin) return
+  if (shouldSkipCache(url)) return
+
+  if (req.mode === 'navigate') {
+    event.respondWith(networkFirst(req, SHELL_CACHE))
+    return
+  }
+
+  if (isCacheableAsset(url)) {
+    event.respondWith(cacheFirst(req, ASSET_CACHE))
+  }
+})
+
+/** 通知头像：页面将 data URL 写入 Cache 后，由 SW 在同源路径下读出 */
 self.addEventListener('message', (event) => {
   const data = event.data
   if (!data || typeof data !== 'object') return
   if (data.type === 'SKIP_WAITING') {
     void self.skipWaiting()
+    return
+  }
+  if (data.type === 'lumi-cache-urls') {
+    event.waitUntil(putUrls(data.urls))
     return
   }
   if (data.type === 'lumi-keepalive-ping') return

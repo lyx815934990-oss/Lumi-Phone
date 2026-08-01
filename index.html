@@ -145,6 +145,11 @@
           paint()
         }
 
+        function isSkippedBootAsset(name) {
+          // 剧本杀对局包 / 大视频：首开进度与预热一律不计、不拉
+          return /JBSGameFlow|jubensha|Jubensha|jbsChat|剧本杀|\.mp4(?:$|\?)|聊天室背景/i.test(name)
+        }
+
         function estimateFromResources() {
           try {
             var entries = performance.getEntriesByType('resource') || []
@@ -154,6 +159,7 @@
               var e = entries[i]
               var name = String(e.name || '')
               if (name.indexOf('/assets/') === -1 && name.indexOf('/src/') === -1) continue
+              if (isSkippedBootAsset(name)) continue
               var size = e.transferSize || e.encodedBodySize || 0
               if (size > 0) {
                 total += size

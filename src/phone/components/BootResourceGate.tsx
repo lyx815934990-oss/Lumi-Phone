@@ -26,7 +26,7 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
     let cancelled = false
 
     const run = async () => {
-      markBootProgress(84, '界面准备中…')
+      markBootProgress(84, '核心资源就绪…')
 
       await Promise.race([
         typeof document !== 'undefined' && document.fonts?.ready
