@@ -107,7 +107,7 @@ import type {
   PlotDimensionArtifact,
   WorldBookAfterRevertEntry,
 } from './types'
-import { patchDatingPlotImageSettings, resolveDatingPlotImagesForAiPlot } from './datingPlotImageGen'
+import { patchDatingPlotImageSettings, runDatingPlotImageGenAfterAi } from './datingPlotImageGen'
 import {
   collectPlotImagesForPersist,
   hydrateArchivesPlotImages,
@@ -118,9 +118,11 @@ import {
 import {
   clampDatingLengthTargetChars,
   parsePlotDimensionLengthTarget,
+  resolveDatingPlotMaxOutputTokens,
   DATING_AI_HISTORY_PROMPT_MAX,
   DATING_AI_OFFLINE_UNSUMMARIZED_CHAR_CAP,
   DATING_AI_REFERENCE_SECTION_CHAR_CAP,
+  DATING_PLOT_COMPLETION_TIMEOUT_MS,
 } from './types'
 import { extractTimelineDeltaFromMemoryJsonText, extractTimelineSnapshotTextFromAiTextRaw } from './datingPlotTimelineSnapshot'
 import { formatOfflineUnsummarizedBlockFromPlotSnapshots } from './loadOfflineDatingPlotsForWechatPrompt'
@@ -893,6 +895,8 @@ async function requestDatingPlotCompletion(params: {
   /** 重新生成时略抬高随机度，降低复读旧稿概率 */
   isRegenerate?: boolean
   thinkingChainEnabled?: boolean
+  /** 限制输出长度，避免无限生成拖到超时 */
+  maxTokens?: number
 }): Promise<string> {
   const thinkingOn = params.thinkingChainEnabled !== false
   const retryUser = expandCharUserPlaceholders(
@@ -920,6 +924,7 @@ async function requestDatingPlotCompletion(params: {
       const raw = await Promise.race([
         openAiCompatibleChatLenient(params.apiConfig as any, msgs, {
           temperature: params.isRegenerate ? 0.84 : 0.68,
+          ...(params.maxTokens != null ? { max_tokens: params.maxTokens } : {}),
         }),
         params.timeoutPromise,
       ])
@@ -2411,14 +2416,21 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       content: expandCharUserPlaceholders(userPromptRaw, charUserNames),
     },
   ]
-  /** 不传 max_tokens：由模型/线路自行决定输出长度；超时用固定宽限 */
-  const timeoutMs = 600_000
+  const syncTranslateEnabled =
+    langSettings.dialogueTranslationSyncEnabled === true ||
+    langSettings.innerOsTranslationSyncEnabled === true
+  const maxTokens = resolveDatingPlotMaxOutputTokens({
+    targetChars,
+    thinkingChainEnabled,
+    syncTranslateEnabled,
+  })
+  const timeoutMs = DATING_PLOT_COMPLETION_TIMEOUT_MS
   const timeoutPromise = new Promise<string>((_, reject) => {
     window.setTimeout(
       () =>
         reject(
           new Error(
-            `剧情生成超时（>${Math.round(timeoutMs / 1000)}s）。可尝试：降低「目标字数」、换更快线路/模型后重试。`,
+            `剧情生成超时（>${Math.round(timeoutMs / 1000)}s）。可尝试：降低「目标字数」、关闭思维链、换更快线路/模型后重试。`,
           ),
         ),
       timeoutMs,
@@ -2449,6 +2461,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     charUserNames,
     isRegenerate: datingExtras?.regeneratingWorldBookBaseline === true,
     thinkingChainEnabled,
+    maxTokens,
   })
   const trimmed = expandCharUserPlaceholders(out.trim(), charUserNames)
   const wbExtract = extractWorldBookAfterPatchBlock(trimmed)
@@ -3458,25 +3471,8 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             ...storyFields,
             worldBookAfterRevertEntries: wbRevertNew.length ? wbRevertNew : undefined,
           }
-          let plotImageWarningForToast: string | undefined
-          if (apiConfig) {
-            const { awaited, images, warning } = await resolveDatingPlotImagesForAiPlot({
-              apiConfig,
-              archive: archiveSnap,
-              plotBody: parsed.content,
-              characterId: charId,
-              playerIdentity,
-              playerIdentityId: playerIdentity?.id ?? memCtx.sessionPlayerIdentityId,
-              plotsBeforeAi: plotsForModel,
-            })
-            plotImageWarningForToast = warning
-            if (images.length) {
-              aiPlot = { ...aiPlot, plotImages: images }
-            } else if (awaited) {
-              aiPlot = { ...aiPlot, plotImages: undefined }
-            }
-          }
           const plotsWithAi = [...plotsForModel, aiPlot]
+          // 先落库正文让列表立刻可见；配图后台补上，避免干等生图数分钟
           await applyArchivePatch(charId, (p) => ({
             ...p,
             plots: [...p.plots, aiPlot],
@@ -3484,6 +3480,20 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             lastDateAt: Date.now(),
             pendingBranches: [],
           }))
+          endDatingPlotContentHint(charId)
+          aiAppended = true
+          if (apiConfig && archiveSnap.plotImageGenEnabled) {
+            void runDatingPlotImageGenAfterAi({
+              apiConfig,
+              characterId: charId,
+              aiPlotId: aiPlot.id,
+              plotBody: parsed.content,
+              archive: { ...archiveSnap, plots: plotsWithAi },
+              playerIdentity,
+              playerIdentityId: playerIdentity?.id ?? memCtx.sessionPlayerIdentityId,
+              applyArchivePatch,
+            })
+          }
           let plotsWithAiFinal = plotsWithAi
           let parallelGeneratedPlotId: string | null = null
           const wantParallelOnSend =
@@ -3513,8 +3523,6 @@ export function DatingProvider({ children }: { children: ReactNode }) {
               plots: p.plots.map((x) => (x.id === aiPlot.id ? aiPlot : x)),
             }))
           }
-          endDatingPlotContentHint(charId)
-          aiAppended = true
           if (archiveSnap.branchEnabled) {
             void runGeneratePendingBranches(charId, char, {
               ...archiveSnap,
@@ -3563,7 +3571,6 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             characterId: charId,
             characterName: char.realName,
             linkedNpcNames,
-            plotImageWarning: plotImageWarningForToast,
           })
         } catch (e) {
           if (!aiAppended) {
@@ -4065,24 +4072,6 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           ...regenStory,
           worldBookAfterRevertEntries: nextRevert.length ? nextRevert : undefined,
         }
-        let plotImageWarningForToast: string | undefined
-        if (apiConfig) {
-          const { awaited, images, warning } = await resolveDatingPlotImagesForAiPlot({
-            apiConfig,
-            archive,
-            plotBody: parsed.content,
-            characterId: charId,
-            playerIdentity,
-            playerIdentityId: playerIdentity?.id ?? memCtx.sessionPlayerIdentityId,
-            plotsBeforeAi: before,
-          })
-          plotImageWarningForToast = warning
-          if (images.length) {
-            nextPlot = { ...nextPlot, plotImages: images }
-          } else if (awaited) {
-            nextPlot = { ...nextPlot, plotImages: undefined }
-          }
-        }
         await applyArchivePatch(charId, (p) => ({
           ...p,
           plots: p.plots.map((x, i) => (i === idx ? nextPlot : x)),
@@ -4091,6 +4080,18 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         endDatingPlotContentHint(charId)
         const nextPlots = archive.plots.map((x, i) => (i === idx ? nextPlot : x))
         const archAfter: CharacterArchive = { ...archive, plots: nextPlots }
+        if (apiConfig && archive.plotImageGenEnabled) {
+          void runDatingPlotImageGenAfterAi({
+            apiConfig,
+            characterId: charId,
+            aiPlotId: nextPlot.id,
+            plotBody: parsed.content,
+            archive: archAfter,
+            playerIdentity,
+            playerIdentityId: playerIdentity?.id ?? memCtx.sessionPlayerIdentityId,
+            applyArchivePatch,
+          })
+        }
         if (archive.branchEnabled) {
           void runGeneratePendingBranches(charId, char, archAfter)
         }
@@ -4132,7 +4133,6 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           characterId: charId,
           characterName: char.realName,
           linkedNpcNames,
-          plotImageWarning: plotImageWarningForToast,
         })
       } catch (e) {
         dispatchDatingPlotGenerationError({

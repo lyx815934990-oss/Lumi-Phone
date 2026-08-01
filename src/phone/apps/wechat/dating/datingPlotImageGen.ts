@@ -154,7 +154,7 @@ export type DatingPlotImagesResolveResult = {
   warning?: string
 }
 
-/** 新发/重生成 AI 剧情前：若开启配图则同步生图，供与正文一并写入后再展示 */
+/** 若仍需「配图完成后再展示」可调用；默认新发/重生成已改为先展示正文再后台补图 */
 export async function resolveDatingPlotImagesForAiPlot(params: {
   apiConfig: ApiConfig
   archive: CharacterArchive
@@ -212,7 +212,7 @@ export async function resolveDatingPlotImagesForAiPlot(params: {
   return { awaited: true, images, warning }
 }
 
-/** @deprecated 新发剧情已在入库前 await 配图；保留供旧调用 */
+/** 正文先落库展示后，后台补剧情配图并写回该条 plot */
 export async function runDatingPlotImageGenAfterAi(params: {
   apiConfig: ApiConfig
   characterId: string
@@ -224,7 +224,7 @@ export async function runDatingPlotImageGenAfterAi(params: {
   applyArchivePatch: (
     characterId: string,
     updater: (prev: CharacterArchive) => CharacterArchive,
-  ) => Promise<void>
+  ) => Promise<unknown>
 }): Promise<void> {
   if (!params.archive.plotImageGenEnabled) return
   const body = params.plotBody.trim()
