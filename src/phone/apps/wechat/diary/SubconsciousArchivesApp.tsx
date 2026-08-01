@@ -5,7 +5,6 @@ import type { MockContact } from '../../../../components/anonymousQa/types'
 import { DiaryBookPreview } from './DiaryBookPreview'
 import { generateSubconsciousDiaryEntry } from './diaryAi'
 import { formatDiaryGenerateError } from './parseDiaryAiResponse'
-import { preloadAllDiaryFonts } from './diaryFonts'
 import { archiveDiaryEntryToMemory, removeDiaryEntryFromMemory } from './diaryMemoryArchiver'
 import { DiaryArchiveHome } from './DiaryArchiveHome'
 import { DiaryGenerateOverlay } from './DiaryGenerateOverlay'
@@ -50,10 +49,6 @@ export function SubconsciousArchivesApp({
   const [generateError, setGenerateError] = useState<string | null>(null)
   const generatingRef = useRef(false)
   const autoTickRef = useRef(false)
-
-  useEffect(() => {
-    void preloadAllDiaryFonts()
-  }, [])
 
   useEffect(() => {
     void bindAccount(wechatCtx?.wechatAccountId ?? null)

@@ -1,11 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { AppPlaceholderScreen } from './components/AppPlaceholderScreen'
-import { CustomizeScreen } from './components/CustomizeScreen'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { EntryNoticeModal } from './components/EntryNoticeModal'
 import { HomeScreen } from './components/HomeScreen'
+import { LazyRouteFallback } from './components/LazyRouteFallback'
 import { PhoneShell } from './components/PhoneShell'
-import { UserAccountApp } from './apps/userAccount/UserAccountApp'
 import { UserSystemAuthModal } from './components/UserSystemAuthModal'
 import { UserInfoCorrectionModal } from './components/UserInfoCorrectionModal'
 import { AccountStatusCheckingOverlay } from './components/AccountStatusCheckingOverlay'
@@ -32,28 +30,11 @@ import {
 import { isUserActivated, needsUserInfoCorrection, type UserAccountTab, type UserLoginStatus } from './userSystem/types'
 import { isLocalDevBypassAuth, LOCAL_DEV_MOCK_STATUS } from './userSystem/localDevMode'
 import { ApiSettingsProvider } from './apps/api/ApiSettingsContext'
-import { ApiSettingsApp } from './apps/api/ApiSettingsApp'
-import { VoiceprintHubApp } from './apps/voiceprint/VoiceprintHubApp'
-import { DataArchiveApp } from './apps/dataArchive/DataArchiveApp'
 import { LUMI_SYS_FIRST_BOOT_KEY } from './apps/dataArchive/constants'
-import { LoreArchiveApp } from './apps/loreArchive/LoreArchiveApp'
-import { RecycleBinApp } from './apps/recycleBin/RecycleBinApp'
-import { BackgroundNotifyApp } from './apps/backgroundNotify/BackgroundNotifyApp'
-import { EvolutionApp } from './apps/evolution/EvolutionApp'
-import { EvolutionUpdatePushModal } from './apps/evolution/EvolutionUpdatePushModal'
-import { getLatestEvolutionRecord } from './apps/evolution/evolutionLogData'
 import { shouldOfferEvolutionPush } from './apps/evolution/evolutionPushStorage'
-import { personaDb } from './apps/wechat/newFriendsPersona/idb'
-import { WeChatApp } from './apps/wechat/WeChatApp'
-import { LumiMeetApp } from './apps/lumiMeet/LumiMeetApp'
-import { SandboxApp } from './apps/sandbox/SandboxApp'
-import { LumiTasteApp } from './apps/takeout/LumiTasteApp'
 import { LUMI_PULSE_NAVIGATE_EVENT } from './apps/lumiPulse/lumiPulseNavigation'
-import { TasteFeastCeremonyHost } from './apps/takeout/TasteFeastCeremonyHost'
-import { LumiMeetProvider } from './apps/lumiMeet/LumiMeetStore'
 import { WorldbookLoreProvider } from './worldbook/worldbookLoreStore'
 import type { AppSlot } from './types'
-import { ListenTogetherPlayerBootstrap } from '../components/discoverListen/ListenTogetherPlayerBootstrap'
 import { dispatchPhoneDismissOverlays } from './phoneDismissOverlays'
 import {
   runDiscordOAuthCallbackFromUrl,
@@ -62,6 +43,70 @@ import {
 } from './userSystem/discordOAuthFlow'
 import { consumeDiscordRegisterFromCommunityTroubleshoot } from './userSystem/discordRegisterFlags'
 import { storeDiscordRegisterPending } from './components/DiscordRegisterCompleteModal'
+
+const WeChatApp = lazy(() =>
+  import('./apps/wechat/WeChatApp').then((m) => ({ default: m.WeChatApp })),
+)
+const UserAccountApp = lazy(() =>
+  import('./apps/userAccount/UserAccountApp').then((m) => ({ default: m.UserAccountApp })),
+)
+const CustomizeScreen = lazy(() =>
+  import('./components/CustomizeScreen').then((m) => ({ default: m.CustomizeScreen })),
+)
+const LumiMeetAppRoute = lazy(() =>
+  import('./apps/lumiMeet/LumiMeetAppRoute').then((m) => ({ default: m.LumiMeetAppRoute })),
+)
+const ApiSettingsApp = lazy(() =>
+  import('./apps/api/ApiSettingsApp').then((m) => ({ default: m.ApiSettingsApp })),
+)
+const VoiceprintHubApp = lazy(() =>
+  import('./apps/voiceprint/VoiceprintHubApp').then((m) => ({ default: m.VoiceprintHubApp })),
+)
+const DataArchiveApp = lazy(() =>
+  import('./apps/dataArchive/DataArchiveApp').then((m) => ({ default: m.DataArchiveApp })),
+)
+const LoreArchiveApp = lazy(() =>
+  import('./apps/loreArchive/LoreArchiveApp').then((m) => ({ default: m.LoreArchiveApp })),
+)
+const RecycleBinApp = lazy(() =>
+  import('./apps/recycleBin/RecycleBinApp').then((m) => ({ default: m.RecycleBinApp })),
+)
+const BackgroundNotifyApp = lazy(() =>
+  import('./apps/backgroundNotify/BackgroundNotifyApp').then((m) => ({
+    default: m.BackgroundNotifyApp,
+  })),
+)
+const SandboxApp = lazy(() =>
+  import('./apps/sandbox/SandboxApp').then((m) => ({ default: m.SandboxApp })),
+)
+const EvolutionApp = lazy(() =>
+  import('./apps/evolution/EvolutionApp').then((m) => ({ default: m.EvolutionApp })),
+)
+const LumiTasteApp = lazy(() =>
+  import('./apps/takeout/LumiTasteApp').then((m) => ({ default: m.LumiTasteApp })),
+)
+const AppPlaceholderScreen = lazy(() =>
+  import('./components/AppPlaceholderScreen').then((m) => ({ default: m.AppPlaceholderScreen })),
+)
+const EvolutionUpdatePushModal = lazy(() =>
+  import('./apps/evolution/EvolutionUpdatePushModal').then((m) => ({
+    default: m.EvolutionUpdatePushModal,
+  })),
+)
+const ListenTogetherPlayerBootstrap = lazy(() =>
+  import('../components/discoverListen/ListenTogetherPlayerBootstrap').then((m) => ({
+    default: m.ListenTogetherPlayerBootstrap,
+  })),
+)
+const TasteFeastCeremonyHost = lazy(() =>
+  import('./apps/takeout/TasteFeastCeremonyHost').then((m) => ({
+    default: m.TasteFeastCeremonyHost,
+  })),
+)
+
+function SuspenseApp({ children, label }: { children: ReactNode; label?: string }) {
+  return <Suspense fallback={<LazyRouteFallback label={label} />}>{children}</Suspense>
+}
 
 type Route =
   | { name: 'home' }
@@ -113,15 +158,6 @@ function buildPageProps(disableTransitions: boolean) {
 const ENTRY_NOTICE_KEY = 'entry-notice-accepted-v1'
 const localDevBypassAuth = isLocalDevBypassAuth()
 
-/** Provider 置于路由层，避免与 LumiMeetApp 同文件热更新时子树脱离 Context */
-function LumiMeetAppRoute({ onBack }: { onBack: () => void }) {
-  return (
-    <LumiMeetProvider>
-      <LumiMeetApp onBack={onBack} />
-    </LumiMeetProvider>
-  )
-}
-
 export function PhoneApp() {
   const { state } = useCustomization()
   const fullScreen = state.ui.fullScreen
@@ -142,9 +178,17 @@ export function PhoneApp() {
   const [authVerifyError, setAuthVerifyError] = useState<string | null>(null)
   const [authChecking, setAuthChecking] = useState(false)
   const [showEvolutionPush, setShowEvolutionPush] = useState(false)
+  /** Splash 结束后再挂听一听 / 宴席等次要运行时，减轻首开 */
+  const [deferSecondaryRuntime, setDeferSecondaryRuntime] = useState(false)
   const openVerifiedRef = useRef(localDevBypassAuth || readAuthVerified())
   /** 本次页面加载是否已做过开屏后的唯一一次账号检测（刷新页面会重置） */
   const sessionBootAuthDoneRef = useRef(false)
+
+  useEffect(() => {
+    if (showSplash) return
+    const t = window.setTimeout(() => setDeferSecondaryRuntime(true), 1800)
+    return () => window.clearTimeout(t)
+  }, [showSplash])
 
   useEffect(() => {
     if (localDevBypassAuth) openVerifiedRef.current = true
@@ -214,10 +258,20 @@ export function PhoneApp() {
   }, [route])
 
   useEffect(() => {
-    const run = () => void personaDb.purgeExpiredIndexedTrash()
-    run()
-    const t = window.setInterval(run, 120000)
-    return () => window.clearInterval(t)
+    let cancelled = false
+    const run = () => {
+      void import('./apps/wechat/newFriendsPersona/idb').then(({ personaDb }) => {
+        if (!cancelled) void personaDb.purgeExpiredIndexedTrash()
+      })
+    }
+    /** 首屏稳定后再清回收站，避免与开屏抢主线程 / IDB */
+    const warm = window.setTimeout(run, 12_000)
+    const t = window.setInterval(run, 120_000)
+    return () => {
+      cancelled = true
+      window.clearTimeout(warm)
+      window.clearInterval(t)
+    }
   }, [])
 
   useEffect(() => {
@@ -385,12 +439,19 @@ export function PhoneApp() {
       setShowEvolutionPush(false)
       return
     }
-    const version = getLatestEvolutionRecord().version
-    if (!shouldOfferEvolutionPush(version)) {
-      setShowEvolutionPush(false)
-      return
+    let cancelled = false
+    void import('./apps/evolution/evolutionLogData').then(({ getLatestEvolutionRecord }) => {
+      if (cancelled) return
+      const version = getLatestEvolutionRecord().version
+      if (!shouldOfferEvolutionPush(version)) {
+        setShowEvolutionPush(false)
+        return
+      }
+      setShowEvolutionPush(true)
+    })
+    return () => {
+      cancelled = true
     }
-    setShowEvolutionPush(true)
   }, [canOfferEvolutionPush])
 
   const handleRetryAuthVerify = useCallback(() => {
@@ -477,7 +538,11 @@ export function PhoneApp() {
     >
       <ApiSettingsProvider>
         <WorldbookLoreProvider>
-        <ListenTogetherPlayerBootstrap />
+        {deferSecondaryRuntime ? (
+          <Suspense fallback={null}>
+            <ListenTogetherPlayerBootstrap />
+          </Suspense>
+        ) : null}
         <PhoneShell>
           {wechatKeepAlive ? (
             <div
@@ -486,7 +551,9 @@ export function PhoneApp() {
               }`}
               aria-hidden={!wechatVisible}
             >
-              <WeChatApp onBack={goHome} />
+              <SuspenseApp label="打开微信…">
+                <WeChatApp onBack={goHome} />
+              </SuspenseApp>
             </div>
           ) : null}
           <AnimatePresence mode="wait" initial={false}>
@@ -505,12 +572,14 @@ export function PhoneApp() {
                 className={`route-page-layer flex h-full min-h-0 flex-col ${disableTransitions ? '' : 'transform-gpu'}`}
                 {...pageProps}
               >
-                <UserAccountApp
-                  onBack={handleUserAccountBack}
-                  initialTab={route.tab}
-                  initialAuthTab={route.authTab}
-                  onAuthChange={syncUserAuthFromLocal}
-                />
+                <SuspenseApp label="打开账号…">
+                  <UserAccountApp
+                    onBack={handleUserAccountBack}
+                    initialTab={route.tab}
+                    initialAuthTab={route.authTab}
+                    onAuthChange={syncUserAuthFromLocal}
+                  />
+                </SuspenseApp>
               </motion.div>
             )}
             {route.name === 'customize' && (
@@ -519,7 +588,9 @@ export function PhoneApp() {
                 className={`route-page-layer flex h-full min-h-0 flex-col ${disableTransitions ? '' : 'transform-gpu'}`}
                 {...pageProps}
               >
-                <CustomizeScreen onBack={goHome} />
+                <SuspenseApp label="打开外观…">
+                  <CustomizeScreen onBack={goHome} />
+                </SuspenseApp>
               </motion.div>
             )}
             {route.name === 'app' && route.id !== 'wechat' && (
@@ -528,33 +599,39 @@ export function PhoneApp() {
                 className={`route-page-layer flex h-full min-h-0 flex-col ${disableTransitions ? '' : 'transform-gpu'}`}
                 {...pageProps}
               >
-                {route.id === 'lumiMeet' ? (
-                  <LumiMeetAppRoute onBack={goHome} />
-                ) : route.id === 'api' ? (
-                  <ApiSettingsApp onBack={goHome} />
-                ) : route.id === 'voiceprint' ? (
-                  <VoiceprintHubApp onBack={goHome} />
-                ) : route.id === 'dataArchive' ? (
-                  <DataArchiveApp onBack={goHome} />
-                ) : route.id === 'loreArchive' ? (
-                  <LoreArchiveApp onBack={goHome} />
-                ) : route.id === 'recycleBin' ? (
-                  <RecycleBinApp onBack={goHome} />
-                ) : route.id === 'backgroundNotify' ? (
-                  <BackgroundNotifyApp onBack={goHome} />
-                ) : route.id === 'sandbox' ? (
-                  <SandboxApp onBack={goHome} />
-                ) : route.id === 'evolution' ? (
-                  <EvolutionApp onBack={goHome} />
-                ) : route.id === 'takeout' ? (
-                  <LumiTasteApp onBack={goHome} />
-                ) : (
-                  <AppPlaceholderScreen appId={route.id} onBack={goHome} />
-                )}
+                <SuspenseApp>
+                  {route.id === 'lumiMeet' ? (
+                    <LumiMeetAppRoute onBack={goHome} />
+                  ) : route.id === 'api' ? (
+                    <ApiSettingsApp onBack={goHome} />
+                  ) : route.id === 'voiceprint' ? (
+                    <VoiceprintHubApp onBack={goHome} />
+                  ) : route.id === 'dataArchive' ? (
+                    <DataArchiveApp onBack={goHome} />
+                  ) : route.id === 'loreArchive' ? (
+                    <LoreArchiveApp onBack={goHome} />
+                  ) : route.id === 'recycleBin' ? (
+                    <RecycleBinApp onBack={goHome} />
+                  ) : route.id === 'backgroundNotify' ? (
+                    <BackgroundNotifyApp onBack={goHome} />
+                  ) : route.id === 'sandbox' ? (
+                    <SandboxApp onBack={goHome} />
+                  ) : route.id === 'evolution' ? (
+                    <EvolutionApp onBack={goHome} />
+                  ) : route.id === 'takeout' ? (
+                    <LumiTasteApp onBack={goHome} />
+                  ) : (
+                    <AppPlaceholderScreen appId={route.id} onBack={goHome} />
+                  )}
+                </SuspenseApp>
               </motion.div>
             )}
           </AnimatePresence>
-          <TasteFeastCeremonyHost />
+          {deferSecondaryRuntime ? (
+            <Suspense fallback={null}>
+              <TasteFeastCeremonyHost />
+            </Suspense>
+          ) : null}
         </PhoneShell>
         </WorldbookLoreProvider>
         {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
@@ -567,11 +644,15 @@ export function PhoneApp() {
           onConfirm={handleNoticeConfirm}
         />
         <AccountStatusCheckingOverlay open={showAccountStatusChecking} />
-        <EvolutionUpdatePushModal
-          open={showEvolutionPush}
-          onClose={() => setShowEvolutionPush(false)}
-          onOpenEvolution={() => openApp('evolution')}
-        />
+        {showEvolutionPush ? (
+          <Suspense fallback={null}>
+            <EvolutionUpdatePushModal
+              open={showEvolutionPush}
+              onClose={() => setShowEvolutionPush(false)}
+              onOpenEvolution={() => openApp('evolution')}
+            />
+          </Suspense>
+        ) : null}
         <UserSystemAuthModal
           open={showUserAuthModal}
           statusOnly={userAuthStatusOnly}

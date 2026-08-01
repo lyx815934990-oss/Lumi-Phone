@@ -10,17 +10,31 @@
     <meta name="theme-color" content="#f2f2f4" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- 外链字体异步加载，避免阻塞首屏；功能页用到对应 family 时再生效 -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
+      rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Long+Cang&family=LXGW+WenKai&family=Noto+Sans+SC:wght@200;300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap"
-      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
-    <!-- 霞鹜文楷 · 规整楷书（国内镜像） -->
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Long+Cang&family=LXGW+WenKai&family=Noto+Sans+SC:wght@200;300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap"
+      />
+    </noscript>
+    <!-- 霞鹜文楷 · 规整楷书（国内镜像，异步） -->
     <link
-      href="https://cdn.staticfile.org/lxgw-wenkai-webfont/1.7.0/style.css"
       rel="stylesheet"
+      href="https://cdn.staticfile.org/lxgw-wenkai-webfont/1.7.0/style.css"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link rel="stylesheet" href="https://cdn.staticfile.org/lxgw-wenkai-webfont/1.7.0/style.css" />
+    </noscript>
     <!-- 沉浸式：网页内容与系统状态栏重叠区域由应用自行绘制，不再预留 safe-area 顶距 -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Lumi Phone" />

@@ -9,30 +9,65 @@ import {
   ScrollText,
   Store,
 } from 'lucide-react'
-import { SubconsciousArchivesApp } from '../phone/apps/wechat/diary/SubconsciousArchivesApp'
 import type { WeChatPersonaContact } from '../phone/types'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 
-import { AnonymousQnAApp } from './anonymousQa/AnonymousQnAApp'
 import type { AnonymousQaWechatContext } from './anonymousQa/buildAnonymousQaPersonaContext'
 import type { MockContact } from './anonymousQa/types'
-import { DiscoverListenTogetherApp } from './discoverListen/DiscoverListenTogetherApp'
 import { LISTEN_TOGETHER_NAVIGATE_EVENT } from './discoverListen/listenTogetherNavigation'
 import { LISTEN_TOGETHER_SHARE_TO_MOMENTS_EVENT } from './discoverListen/listenTogetherMomentShareNavigation'
-import { JubenshaHallApp } from './jubensha'
-import { LumiLiveApp } from '../phone/apps/lumiLive'
 import {
   consumePendingPulseOpenWeibo,
   LUMI_PULSE_NAVIGATE_EVENT,
   peekPulseReturnToChat,
   requestPulseReturnToChat,
 } from '../phone/apps/lumiPulse/lumiPulseNavigation'
-import { WeChatDiscoverLumiPulseApp } from '../phone/apps/lumiPulse/WeChatDiscoverLumiPulseApp'
 import { useMomentsInteractionUnreadCount } from './moments/MomentsNoticeRuntime'
 import { MomentsSerifNumericText } from './moments/ArchiveTimelineDateColumn'
 import type { OnOpenMomentParticipantProfile } from './moments/momentProfileNavigation'
-import { WeChatMomentsPage } from './moments/WeChatMomentsPage'
 import { mockContactsToMomentRefs } from './moments/publishMomentUtils'
+
+const WeChatMomentsPage = lazy(() =>
+  import('./moments/WeChatMomentsPage').then((m) => ({ default: m.WeChatMomentsPage })),
+)
+const DiscoverListenTogetherApp = lazy(() =>
+  import('./discoverListen/DiscoverListenTogetherApp').then((m) => ({
+    default: m.DiscoverListenTogetherApp,
+  })),
+)
+const AnonymousQnAApp = lazy(() =>
+  import('./anonymousQa/AnonymousQnAApp').then((m) => ({ default: m.AnonymousQnAApp })),
+)
+const WeChatDiscoverLumiPulseApp = lazy(() =>
+  import('../phone/apps/lumiPulse/WeChatDiscoverLumiPulseApp').then((m) => ({
+    default: m.WeChatDiscoverLumiPulseApp,
+  })),
+)
+const LumiLiveApp = lazy(() =>
+  import('../phone/apps/lumiLive').then((m) => ({ default: m.LumiLiveApp })),
+)
+const SubconsciousArchivesApp = lazy(() =>
+  import('../phone/apps/wechat/diary/SubconsciousArchivesApp').then((m) => ({
+    default: m.SubconsciousArchivesApp,
+  })),
+)
+const JubenshaHallApp = lazy(() =>
+  import('./jubensha/JubenshaHallApp').then((m) => ({ default: m.JubenshaHallApp })),
+)
+
+function DiscoverSuspense({ children }: { children: ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-full min-h-0 items-center justify-center bg-white text-[13px] text-[#8e8e8e]">
+          加载中…
+        </div>
+      }
+    >
+      {children}
+    </Suspense>
+  )
+}
 
 type DiscoverActionId =
   | 'moments'
@@ -149,79 +184,93 @@ export function WeChatDiscoverInstagram({
   if (activeView === 'moments') {
     return (
       <div className={`h-full min-h-0 ${className}`}>
-        <WeChatMomentsPage
-          onBack={() => setActiveView('list')}
-          wechatNickname={momentsDisplayName}
-          wechatAvatarUrl={wechatAvatarUrl}
-          momentsCoverUrl={momentsCoverUrl}
-          onMomentsCoverChange={onMomentsCoverChange}
-          momentContacts={momentContacts}
-          currentUserName={momentsDisplayName}
-          qnaWechatCtx={qnaWechatCtx}
-          onOpenParticipantProfile={onOpenParticipantProfile}
-        />
+        <DiscoverSuspense>
+          <WeChatMomentsPage
+            onBack={() => setActiveView('list')}
+            wechatNickname={momentsDisplayName}
+            wechatAvatarUrl={wechatAvatarUrl}
+            momentsCoverUrl={momentsCoverUrl}
+            onMomentsCoverChange={onMomentsCoverChange}
+            momentContacts={momentContacts}
+            currentUserName={momentsDisplayName}
+            qnaWechatCtx={qnaWechatCtx}
+            onOpenParticipantProfile={onOpenParticipantProfile}
+          />
+        </DiscoverSuspense>
       </div>
     )
   }
   if (activeView === 'listen-together') {
     return (
-      <DiscoverListenTogetherApp
-        className={`h-full min-h-0 ${className}`}
-        onBack={() => setActiveView('list')}
-      />
+      <DiscoverSuspense>
+        <DiscoverListenTogetherApp
+          className={`h-full min-h-0 ${className}`}
+          onBack={() => setActiveView('list')}
+        />
+      </DiscoverSuspense>
     )
   }
   if (activeView === 'anonymous-qa') {
     return (
       <div className={`h-full min-h-0 ${className}`}>
-        <AnonymousQnAApp
-          onBack={() => setActiveView('list')}
-          currentUserName={currentUserName ?? momentsDisplayName}
-          contacts={qnaContacts}
-          wechatCtx={qnaWechatCtx}
-        />
+        <DiscoverSuspense>
+          <AnonymousQnAApp
+            onBack={() => setActiveView('list')}
+            currentUserName={currentUserName ?? momentsDisplayName}
+            contacts={qnaContacts}
+            wechatCtx={qnaWechatCtx}
+          />
+        </DiscoverSuspense>
       </div>
     )
   }
   if (activeView === 'weibo') {
     return (
-      <WeChatDiscoverLumiPulseApp
-        className={`h-full min-h-0 ${className}`}
-        onBack={() => {
-          setActiveView('list')
-          if (peekPulseReturnToChat()) requestPulseReturnToChat()
-        }}
-      />
+      <DiscoverSuspense>
+        <WeChatDiscoverLumiPulseApp
+          className={`h-full min-h-0 ${className}`}
+          onBack={() => {
+            setActiveView('list')
+            if (peekPulseReturnToChat()) requestPulseReturnToChat()
+          }}
+        />
+      </DiscoverSuspense>
     )
   }
   if (activeView === 'lumi-live') {
     return (
-      <LumiLiveApp
-        className={`h-full min-h-0 ${className}`}
-        onBack={() => setActiveView('list')}
-        personaContacts={personaContacts}
-        userNick={momentsDisplayName}
-      />
+      <DiscoverSuspense>
+        <LumiLiveApp
+          className={`h-full min-h-0 ${className}`}
+          onBack={() => setActiveView('list')}
+          personaContacts={personaContacts}
+          userNick={momentsDisplayName}
+        />
+      </DiscoverSuspense>
     )
   }
   if (activeView === 'subconscious-archives') {
     return (
-      <SubconsciousArchivesApp
-        className={`h-full min-h-0 ${className}`}
-        onBack={() => setActiveView('list')}
-        contacts={qnaContacts}
-        wechatCtx={qnaWechatCtx}
-      />
+      <DiscoverSuspense>
+        <SubconsciousArchivesApp
+          className={`h-full min-h-0 ${className}`}
+          onBack={() => setActiveView('list')}
+          contacts={qnaContacts}
+          wechatCtx={qnaWechatCtx}
+        />
+      </DiscoverSuspense>
     )
   }
   if (activeView === 'jubensha') {
     return (
       <div className={`h-full min-h-0 ${className}`}>
-        <JubenshaHallApp
-          onBack={() => setActiveView('list')}
-          currentUserName={momentsDisplayName}
-          personaContacts={personaContacts}
-        />
+        <DiscoverSuspense>
+          <JubenshaHallApp
+            onBack={() => setActiveView('list')}
+            currentUserName={momentsDisplayName}
+            personaContacts={personaContacts}
+          />
+        </DiscoverSuspense>
       </div>
     )
   }

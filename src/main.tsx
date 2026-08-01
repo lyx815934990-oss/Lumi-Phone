@@ -6,12 +6,7 @@ import {
   isLikelyIosBrowser,
   setupServiceWorkerControlWatcher,
 } from './phone/apps/backgroundNotify/backgroundPushClient'
-import { installBackgroundKeepAlive } from './phone/apps/backgroundNotify/backgroundKeepAlive'
 import { maybeRecoverFromBrokenKeepAlivePwa } from './phone/apps/backgroundNotify/keepAliveBootRecovery'
-import { installProactivePrivateMessageEngine } from './phone/apps/wechat/proactivePrivateMessageEngine'
-import { installProactiveCharacterMomentEngine } from './components/moments/proactiveCharacterMomentEngine'
-import { installTasteUserGiftDeliveryEngine } from './phone/apps/takeout/tasteUserGiftDeliveryEngine'
-import { installTasteFeastCeremonyEngine } from './phone/apps/takeout/tasteFeastCeremonyEngine'
 
 /**
  * 键盘覆盖内容而不是挤压 viewport（Chromium 等）。
@@ -38,7 +33,20 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 )
 
-/** 先渲染 UI，再挂 SW / 保活，避免 iOS PWA 冷启动被保活逻辑抢在 React 之前 */
+function runWhenIdle(task: () => void, timeoutMs: number) {
+  const ric = (
+    window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+    }
+  ).requestIdleCallback
+  if (typeof ric === 'function') {
+    ric(task, { timeout: timeoutMs })
+    return
+  }
+  window.setTimeout(task, Math.min(timeoutMs, 2500))
+}
+
+/** 先渲染 UI，再挂 SW / 保活 / 主动消息引擎，避免抢首屏 */
 queueMicrotask(() => {
   maybeRecoverFromBrokenKeepAlivePwa()
   /** 本机 dev 不注册 SW（尤其 iOS 主屏幕 PWA 易白屏）；正式构建再启用 */
@@ -51,9 +59,22 @@ queueMicrotask(() => {
       installSwWatcher()
     }
   }
-  installBackgroundKeepAlive()
-  installProactivePrivateMessageEngine()
-  installProactiveCharacterMomentEngine()
-  installTasteUserGiftDeliveryEngine()
-  installTasteFeastCeremonyEngine()
+
+  runWhenIdle(() => {
+    void import('./phone/apps/backgroundNotify/backgroundKeepAlive').then((m) => {
+      m.installBackgroundKeepAlive()
+    })
+    void import('./phone/apps/wechat/proactivePrivateMessageEngine').then((m) => {
+      m.installProactivePrivateMessageEngine()
+    })
+    void import('./components/moments/proactiveCharacterMomentEngine').then((m) => {
+      m.installProactiveCharacterMomentEngine()
+    })
+    void import('./phone/apps/takeout/tasteUserGiftDeliveryEngine').then((m) => {
+      m.installTasteUserGiftDeliveryEngine()
+    })
+    void import('./phone/apps/takeout/tasteFeastCeremonyEngine').then((m) => {
+      m.installTasteFeastCeremonyEngine()
+    })
+  }, 4000)
 })

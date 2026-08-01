@@ -1,25 +1,9 @@
 /**
  * 站内 `image/` 资源路径：存库与导入包用「规范路径」，展示时再按当前 Vite base 解析。
+ *
+ * 图片由 vite 插件同步到 `dist/image/`（开发期中间件同源提供），不再用
+ * `import.meta.glob(..., { eager: true })` 把整库打进首包 JS。
  */
-
-const viteImageModules = import.meta.glob('../image/**/*.{png,jpg,jpeg,webp,gif,avif,AVIF}', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>
-
-const viteBundledUrlToCanonical = new Map<string, string>()
-/** 规范路径 `/image/…` → 当前构建的 Vite ?url 产物（展示用） */
-const canonicalToViteBundledUrl = new Map<string, string>()
-for (const [file, url] of Object.entries(viteImageModules)) {
-  if (typeof url !== 'string' || !url) continue
-  const norm = file.replace(/\\/g, '/')
-  const m = norm.match(/(?:^|\/)image\/(.+)$/i)
-  if (!m?.[1]) continue
-  const canon = `/image/${m[1]}`
-  viteBundledUrlToCanonical.set(url, canon)
-  if (!canonicalToViteBundledUrl.has(canon)) canonicalToViteBundledUrl.set(canon, url)
-}
 
 /** 当前部署 base 下的可请求 URL（仅用于展示，不要写入 localStorage / 人设包） */
 export function publicAssetUrl(pathFromSiteRoot: string): string {
@@ -46,9 +30,6 @@ export function canonicalPublicImagePath(url: string): string {
     return u
   }
 
-  const fromVite = viteBundledUrlToCanonical.get(u)
-  if (fromVite) return fromVite
-
   const withoutOrigin = u.replace(/^https?:\/\/[^/]+/i, '')
   const imageRel = withoutOrigin
     .replace(/^\/?(?:Lumi-Phone|Phone)\/(image\/)/i, '$1')
@@ -56,6 +37,7 @@ export function canonicalPublicImagePath(url: string): string {
 
   if (/^image\//i.test(imageRel)) return `/${imageRel}`
   if (u.startsWith('/image/')) return u
+  /** 历史 Vite ?url 哈希资源无法反查规范路径，丢弃以免写脏库 */
   if (u.includes('/assets/')) return ''
   return u
 }
@@ -67,13 +49,8 @@ export function resolvePublicImageUrl(url: string): string {
   if (u.startsWith('data:') || u.startsWith('blob:')) return u
   if (/^https?:\/\//i.test(u)) return u
 
-  const bundled = viteBundledUrlToCanonical.has(u) ? u : canonicalToViteBundledUrl.get(canonicalPublicImagePath(u))
-  if (bundled) return bundled
-
   const canon = canonicalPublicImagePath(u)
   if (canon.startsWith('/image/')) {
-    const fromCanon = canonicalToViteBundledUrl.get(canon)
-    if (fromCanon) return fromCanon
     return publicAssetUrl(canon)
   }
 

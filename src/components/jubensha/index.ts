@@ -1,19 +1,7 @@
+/** 轻量入口：勿在此 barrel 再导出 JBSGameFlow 等对局模块，避免误静态 import 拉进首包 */
 export { JubenshaHallApp } from './JubenshaHallApp'
 export { JUBENSHA_HALL_UNDER_DEV } from './jubenshaDevFlags'
 export { JubenshaHallUnderDev } from './JubenshaHallUnderDev'
-export { JBSGameFlow } from './gameFlow/JBSGameFlow'
-export { JBSFlowProvider, useJBSFlow } from './gameFlow/chatRoom/JBSFlowEngine'
-export type { JBSStep, JBSChatMessage, DrawerTab } from './gameFlow/chatRoom/jbsFlowTypes'
-export type { FlowState, LockedRole, DeckRoleCard } from './gameFlow/gameFlowTypes'
-export { buildRoleSystemPrompt } from './gameFlow/gameFlowTypes'
-export { LibraryHome } from './LibraryHome'
-export { ScriptBookCard } from './ScriptBookCard'
-export { ScriptDetailPage } from './ScriptDetailPage'
-export { MyJournal } from './MyJournal'
-export { BookmarkSlipCard } from './BookmarkSlipCard'
-export { ContactDB, buildContactDBFromWeChat } from './contactDB'
-export { bookCoverLayoutId } from './bookCoverLayout'
-export { useJubenshaBookmarks } from './jubenshaBookmarks'
 export type {
   JubenshaScript,
   PlayRecord,
