@@ -149,7 +149,7 @@ export function DatingLanguageSettingsFields({
         <div className="min-w-0 flex-1 pr-1">
           <p className="text-[15px] font-medium text-black">同步翻译对白</p>
           <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-            开启后一并落库对白译文（主线剧情 / 平行事件 / IF 线相同）；默认由聊天模型写。仅当 API 设置勾选翻译「使用副接口」时改走翻译服务。点击对白句可在上方查看。
+            开启后同一次回复里先写对白原文，文末再附译文附录并落库（主线 / 平行 / IF 相同）。默认不额外请求翻译 API；仅当 API 设置勾选翻译「使用副接口」时才另走翻译服务。点击对白句可在上方查看。
           </p>
         </div>
         <WxSwitch
@@ -162,7 +162,7 @@ export function DatingLanguageSettingsFields({
         <div className="min-w-0 flex-1 pr-1">
           <p className="text-[15px] font-medium text-black">同步翻译内心 OS</p>
           <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-            开启后一并落库 OS 译文（主线 / 平行 / IF 相同）；默认由聊天模型写。仅当勾选翻译副接口时改走翻译服务。点击灰色内心句可在上方查看。
+            开启后同一次回复里先写 OS 原文，文末再附译文附录并落库（主线 / 平行 / IF 相同）。默认不额外请求翻译 API；仅当勾选翻译副接口时才另走翻译服务。点击灰色内心句可在上方查看。
           </p>
         </div>
         <WxSwitch

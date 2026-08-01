@@ -609,9 +609,9 @@ export function buildDatingLanguageAppendix(params: {
       parts.push(
         `
 【同步翻译 · 客户端翻译 API · 硬项】
-本轮已开启 ${bits.join(' / ')} 同步翻译，且使用**翻译副接口**。译文由客户端调用翻译服务商生成（目标：${transLabel} / ${transNative}），**不要**由你在正文里写译文。
-- **禁止**输出 \`[译]\` / \`【译】\` / \`[翻译]\` 行。
-- **禁止**把 ${transNative} 译文写进对白引号、内心 \`**…**\`、旁白，或单独成段夹在剧情里。
+本轮已开启 ${bits.join(' / ')} 同步翻译，且使用**翻译副接口**。译文由客户端在剧情落库后再调用翻译服务商生成（目标：${transLabel} / ${transNative}），**不要**由你写译文。
+- **禁止**输出 \`[译]\` / \`【译】\` / \`[翻译]\` / \`【同步译文】\` 附录。
+- **禁止**把 ${transNative} 译文写进对白引号、内心 \`**…**\`、旁白，或夹在剧情中间。
 - 对白仍只用 **${dialogueNative}**；内心 OS 仍只用 **${osNative}**；旁白仍只用 **${plotNative}**。
 `.trim(),
       )
@@ -628,26 +628,27 @@ export function buildDatingLanguageAppendix(params: {
         speakerName: params.characterName,
         speakerPersonaBrief: params.characterPersonaBrief,
       })
-      const whereBits: string[] = []
+      const appendixBits: string[] = []
       if (dialogueSyncOn) {
-        whereBits.push(
-          '每句**角色对白**（弯引号 /「」/ 英文引号闭合后，或 VN【对白】行末）紧跟单独一行 \`[译]……\`',
+        appendixBits.push(
+          '先写小节 \`对白：\`，再按正文中对白**出现顺序**逐条 \`1|译文\`、\`2|译文\`…（条数须与对白句数一致）',
         )
       }
       if (osSyncOn) {
-        whereBits.push(
-          '每段**内心 OS**（\`**…**\` 闭合后，或 VN【内心】行末）紧跟单独一行 \`[译]……\`',
+        appendixBits.push(
+          '再写一行 \`内心：\`，按正文中内心 OS**出现顺序**逐条 \`1|译文\`、\`2|译文\`…（条数须与 OS 段数一致）',
         )
       }
       parts.push(
         `
-【同步输出翻译 · 硬项】
-本轮已开启 ${bits.join(' / ')} 同步翻译（由聊天模型同轮输出）。目标语言：**${transLabel}（${transNative}）**。
-- ${whereBits.join('；')}
-- \`[译]\` 行**不**算剧情正文；客户端会剥离并挂到对应句下方。
-- 「……」须**忠于上一句原文**（像系统翻译：通顺但不加戏；禁止另写一句、禁止「（轻笑）」等原文没有的括号舞台指示）。
-- **禁止**把译文写进对白引号、内心标记或旁白里冒充原文。
-- 旁白仍只用 **${plotNative}**；对白仍只用 **${dialogueNative}**；内心仍只用 **${osNative}**。
+【同步输出翻译 · 同轮一次 · 硬项】
+本轮已开启 ${bits.join(' / ')} 同步翻译（**仅此一次请求**：先写干净原文，文末再附译文附录）。目标语言：**${transLabel}（${transNative}）**。
+- **正文阶段**：只写旁白 / 对白 / 内心 OS 原文。旁白用 **${plotNative}**；对白用 **${dialogueNative}**；内心用 **${osNative}**。
+- **禁止**在对白或 OS 后紧跟 \`[译]\`；**禁止**把译文夹进引号、\`**…**\` 或旁白中间。
+- **全文写完后**，另起一段，原样输出标题行 \`【同步译文】\`，然后：
+  - ${appendixBits.join('\n  - ')}
+- 附录不属于剧情正文；客户端会裁掉附录并把译文挂到对应句。
+- 每条译文须**忠于对应原文**（通顺、不加戏；禁止另写一句；禁止原文没有的「（轻笑）」等舞台指示）。
 
 ${voice}
 
@@ -715,6 +716,128 @@ export function inferDatingRelationHintForTranslation(params: {
   }
   bits.push(`称呼须与 ${name}↔${player} 的既有关系一致，勿按词典默认义笼统翻译`)
   return bits.join('；')
+}
+
+const SYNC_TRANS_APPENDIX_MARKERS = ['【同步译文】', '<<<SYNC_TRANSLATIONS>>>', '【译文附录】'] as const
+
+/** 定位文末「【同步译文】」附录起点（取最后一次出现，避免正文误提） */
+export function findDatingSyncTranslationAppendixStart(raw: string): number {
+  const text = String(raw ?? '')
+  let best = -1
+  for (const m of SYNC_TRANS_APPENDIX_MARKERS) {
+    const i = text.lastIndexOf(m)
+    if (i > best) best = i
+  }
+  return best
+}
+
+function stripSyncTransLineNoise(line: string): string {
+  return String(line ?? '')
+    .replace(TRANS_PREFIX_RE, '')
+    .replace(/^\d+\s*[|｜．.、:：)）]\s*/u, '')
+    .replace(/^[-*•]\s+/u, '')
+    .trim()
+}
+
+/** 解析 \`【同步译文】\` 附录正文 → 对白/内心译文列表（按出现顺序） */
+export function parseDatingSyncTranslationAppendix(appendixBody: string): {
+  dialogueTranslatedTexts: string[]
+  innerOsTranslatedTexts: string[]
+} {
+  const dialogueTranslatedTexts: string[] = []
+  const osTranslatedTexts: string[] = []
+  let mode: 'none' | 'dialogue' | 'os' = 'none'
+  for (const rawLine of String(appendixBody ?? '').split('\n')) {
+    const t = rawLine.trim()
+    if (!t) continue
+    if (/^<<<END_SYNC_TRANSLATIONS>>>/i.test(t)) break
+    if (/^(?:对白|【对白译】|\[对白\])\s*[:：]?\s*$/iu.test(t)) {
+      mode = 'dialogue'
+      continue
+    }
+    if (/^(?:内心|OS|心声|【内心译】|\[内心\])\s*[:：]?\s*$/iu.test(t)) {
+      mode = 'os'
+      continue
+    }
+    const dialogueHeaderInline = t.match(/^(?:对白|【对白译】|\[对白\])\s*[:：]\s*(.+)$/iu)
+    if (dialogueHeaderInline) {
+      mode = 'dialogue'
+      const body = stripSyncTransLineNoise(dialogueHeaderInline[1] || '')
+      if (body) dialogueTranslatedTexts.push(body)
+      continue
+    }
+    const osHeaderInline = t.match(/^(?:内心|OS|心声|【内心译】|\[内心\])\s*[:：]\s*(.+)$/iu)
+    if (osHeaderInline) {
+      mode = 'os'
+      const body = stripSyncTransLineNoise(osHeaderInline[1] || '')
+      if (body) osTranslatedTexts.push(body)
+      continue
+    }
+    if (mode === 'none') continue
+    const body = stripSyncTransLineNoise(t)
+    if (!body) continue
+    if (mode === 'dialogue') dialogueTranslatedTexts.push(body)
+    else osTranslatedTexts.push(body)
+  }
+  return { dialogueTranslatedTexts, innerOsTranslatedTexts: osTranslatedTexts }
+}
+
+/**
+ * 切开「先原文、后【同步译文】附录」。
+ * 兼容旧版句后紧跟 \`[译]\`（附录为空时由 peel 处理）。
+ */
+export function splitDatingSyncTranslationAppendix(raw: string): {
+  content: string
+  dialogueTranslatedTexts: string[]
+  innerOsTranslatedTexts: string[]
+} {
+  const text = String(raw ?? '')
+  const start = findDatingSyncTranslationAppendixStart(text)
+  if (start < 0) {
+    return { content: text, dialogueTranslatedTexts: [], innerOsTranslatedTexts: [] }
+  }
+  let markerEnd = start
+  for (const m of SYNC_TRANS_APPENDIX_MARKERS) {
+    if (text.startsWith(m, start)) {
+      markerEnd = start + m.length
+      break
+    }
+  }
+  while (markerEnd < text.length && (text[markerEnd] === '\r' || text[markerEnd] === '\n')) {
+    markerEnd += 1
+  }
+  const content = text.slice(0, start).replace(/\s+$/u, '')
+  const parsed = parseDatingSyncTranslationAppendix(text.slice(markerEnd))
+  return {
+    content,
+    dialogueTranslatedTexts: parsed.dialogueTranslatedTexts,
+    innerOsTranslatedTexts: parsed.innerOsTranslatedTexts,
+  }
+}
+
+function mergeTranslationByIndex(
+  spans: { source: string }[],
+  appendixTexts: string[],
+  peeledPrev: PlotDialogueTranslation[],
+): PlotDialogueTranslation[] {
+  return spans.map((s, i) => {
+    const fromAppendix = String(appendixTexts[i] ?? '').trim()
+    const fromPeeled = String(peeledPrev[i]?.translatedText ?? '').trim()
+    let translatedText = fromAppendix || fromPeeled
+    const source = s.source.trim()
+    if (translatedText && isBadPeeledTranslation(source, translatedText, peeledPrev)) {
+      translatedText = fromAppendix && !isBadPeeledTranslation(source, fromAppendix, peeledPrev)
+        ? fromAppendix
+        : ''
+    }
+    if (translatedText && looksLikeMidSentenceTranslationFragment(translatedText)) {
+      translatedText = ''
+    }
+    if (translatedText && looksLikeTruncatedTranslation(source, translatedText)) {
+      translatedText = ''
+    }
+    return { source, translatedText }
+  })
 }
 
 async function fillMissingTranslations(params: {
@@ -785,7 +908,11 @@ async function fillMissingTranslations(params: {
   }
 }
 
-/** peel + 缺译补全（对白 / 内心 OS），供落库前调用 */
+/**
+ * 切开文末译文附录 + 兼容旧版句后 \`[译]\`。
+ * - 模型同轮路径（非副接口）：只用这一次回复里的译文，**不再**二次请求翻译 API。
+ * - 副接口路径：仍在落库前走翻译服务商补全/重译。
+ */
 export async function finalizeDatingPlotDialogueTranslations(params: {
   content: string
   syncEnabled: boolean
@@ -793,7 +920,7 @@ export async function finalizeDatingPlotDialogueTranslations(params: {
   translationLanguage?: string | null
   apiConfig?: ApiConfig | null
   translationRuntime?: TranslationRuntime | null
-  /** true：副接口开启，忽略模型 [译] 一律走翻译 API（模型译文仅作失败兜底） */
+  /** true：副接口开启，忽略模型译文一律走翻译 API */
   translationDedicatedApi?: boolean
   speakerName?: string
   listenerName?: string
@@ -810,7 +937,8 @@ export async function finalizeDatingPlotDialogueTranslations(params: {
   const dialogueSync = params.syncEnabled === true
   const osSync = params.innerOsSyncEnabled === true
   const dedicated = params.translationDedicatedApi === true
-  const peeled = peelDatingInlineTranslations(params.content, {
+  const split = splitDatingSyncTranslationAppendix(params.content)
+  const peeled = peelDatingInlineTranslations(split.content, {
     absorbLeakedOsChinese: osSync,
     absorbLeakedDialogueChinese: dialogueSync,
   })
@@ -827,7 +955,6 @@ export async function finalizeDatingPlotDialogueTranslations(params: {
     translationLanguage: params.translationLanguage,
     apiConfig: dedicated ? undefined : params.apiConfig,
     translationRuntime: dedicated ? params.translationRuntime : null,
-    // 副接口：一律重译；模型路径：只补缺译
     forceRetranslate: dedicated,
     speakerName: params.speakerName,
     listenerName: params.listenerName,
@@ -843,45 +970,29 @@ export async function finalizeDatingPlotDialogueTranslations(params: {
 
   if (dialogueSync) {
     const spans = extractDatingDialogueSpans(peeled.content)
-    let byIndex: PlotDialogueTranslation[] = spans.map((s, i) => {
-      const prev = peeled.dialogueTranslations[i]
-      const source = s.source.trim()
-      let translatedText = (prev?.translatedText || '').trim()
-      if (translatedText && isBadPeeledTranslation(source, translatedText, peeled.dialogueTranslations)) {
-        translatedText = ''
-      }
-      // 半截译文（如「的话题」「是最棒的」）清空后走补全，不用字数比丢弃
-      if (translatedText && looksLikeMidSentenceTranslationFragment(translatedText)) {
-        translatedText = ''
-      }
-      if (translatedText && looksLikeTruncatedTranslation(source, translatedText)) {
-        translatedText = ''
-      }
-      return { source, translatedText }
-    })
-    byIndex = await fillMissingTranslations({ byIndex, ...fillOpts })
+    let byIndex = mergeTranslationByIndex(
+      spans,
+      dedicated ? [] : split.dialogueTranslatedTexts,
+      peeled.dialogueTranslations,
+    )
+    // 仅翻译副接口才二次请求；模型同轮附录路径保持一次请求
+    if (dedicated) {
+      byIndex = await fillMissingTranslations({ byIndex, ...fillOpts })
+    }
     const filtered = byIndex.filter((r) => r.source)
     dialogueTranslations = filtered.some((r) => r.translatedText) ? filtered : undefined
   }
 
   if (osSync) {
     const spans = extractDatingInnerOsSpans(peeled.content)
-    let byIndex: PlotDialogueTranslation[] = spans.map((s, i) => {
-      const prev = peeled.innerOsTranslations[i]
-      const source = s.source.trim()
-      let translatedText = (prev?.translatedText || '').trim()
-      if (translatedText && isBadPeeledTranslation(source, translatedText, peeled.innerOsTranslations)) {
-        translatedText = ''
-      }
-      if (translatedText && looksLikeMidSentenceTranslationFragment(translatedText)) {
-        translatedText = ''
-      }
-      if (translatedText && looksLikeTruncatedTranslation(source, translatedText)) {
-        translatedText = ''
-      }
-      return { source, translatedText }
-    })
-    byIndex = await fillMissingTranslations({ byIndex, ...fillOpts })
+    let byIndex = mergeTranslationByIndex(
+      spans,
+      dedicated ? [] : split.innerOsTranslatedTexts,
+      peeled.innerOsTranslations,
+    )
+    if (dedicated) {
+      byIndex = await fillMissingTranslations({ byIndex, ...fillOpts })
+    }
     const filtered = byIndex.filter((r) => r.source)
     innerOsTranslations = filtered.some((r) => r.translatedText) ? filtered : undefined
   }
