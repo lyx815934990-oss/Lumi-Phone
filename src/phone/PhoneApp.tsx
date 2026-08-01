@@ -1,8 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { EntryNoticeModal } from './components/EntryNoticeModal'
 import { HomeScreen } from './components/HomeScreen'
+import { LazyChunkErrorBoundary } from './components/LazyChunkErrorBoundary'
 import { LazyRouteFallback } from './components/LazyRouteFallback'
+import { lazyWithRetry } from './lazyWithRetry'
 import { PhoneShell } from './components/PhoneShell'
 import { UserSystemAuthModal } from './components/UserSystemAuthModal'
 import { UserInfoCorrectionModal } from './components/UserInfoCorrectionModal'
@@ -44,68 +46,72 @@ import {
 import { consumeDiscordRegisterFromCommunityTroubleshoot } from './userSystem/discordRegisterFlags'
 import { storeDiscordRegisterPending } from './components/DiscordRegisterCompleteModal'
 
-const WeChatApp = lazy(() =>
+const WeChatApp = lazyWithRetry(() =>
   import('./apps/wechat/WeChatApp').then((m) => ({ default: m.WeChatApp })),
 )
-const UserAccountApp = lazy(() =>
+const UserAccountApp = lazyWithRetry(() =>
   import('./apps/userAccount/UserAccountApp').then((m) => ({ default: m.UserAccountApp })),
 )
-const CustomizeScreen = lazy(() =>
+const CustomizeScreen = lazyWithRetry(() =>
   import('./components/CustomizeScreen').then((m) => ({ default: m.CustomizeScreen })),
 )
-const LumiMeetAppRoute = lazy(() =>
+const LumiMeetAppRoute = lazyWithRetry(() =>
   import('./apps/lumiMeet/LumiMeetAppRoute').then((m) => ({ default: m.LumiMeetAppRoute })),
 )
-const ApiSettingsApp = lazy(() =>
+const ApiSettingsApp = lazyWithRetry(() =>
   import('./apps/api/ApiSettingsApp').then((m) => ({ default: m.ApiSettingsApp })),
 )
-const VoiceprintHubApp = lazy(() =>
+const VoiceprintHubApp = lazyWithRetry(() =>
   import('./apps/voiceprint/VoiceprintHubApp').then((m) => ({ default: m.VoiceprintHubApp })),
 )
-const DataArchiveApp = lazy(() =>
+const DataArchiveApp = lazyWithRetry(() =>
   import('./apps/dataArchive/DataArchiveApp').then((m) => ({ default: m.DataArchiveApp })),
 )
-const LoreArchiveApp = lazy(() =>
+const LoreArchiveApp = lazyWithRetry(() =>
   import('./apps/loreArchive/LoreArchiveApp').then((m) => ({ default: m.LoreArchiveApp })),
 )
-const RecycleBinApp = lazy(() =>
+const RecycleBinApp = lazyWithRetry(() =>
   import('./apps/recycleBin/RecycleBinApp').then((m) => ({ default: m.RecycleBinApp })),
 )
-const BackgroundNotifyApp = lazy(() =>
+const BackgroundNotifyApp = lazyWithRetry(() =>
   import('./apps/backgroundNotify/BackgroundNotifyApp').then((m) => ({
     default: m.BackgroundNotifyApp,
   })),
 )
-const SandboxApp = lazy(() =>
+const SandboxApp = lazyWithRetry(() =>
   import('./apps/sandbox/SandboxApp').then((m) => ({ default: m.SandboxApp })),
 )
-const EvolutionApp = lazy(() =>
+const EvolutionApp = lazyWithRetry(() =>
   import('./apps/evolution/EvolutionApp').then((m) => ({ default: m.EvolutionApp })),
 )
-const LumiTasteApp = lazy(() =>
+const LumiTasteApp = lazyWithRetry(() =>
   import('./apps/takeout/LumiTasteApp').then((m) => ({ default: m.LumiTasteApp })),
 )
-const AppPlaceholderScreen = lazy(() =>
+const AppPlaceholderScreen = lazyWithRetry(() =>
   import('./components/AppPlaceholderScreen').then((m) => ({ default: m.AppPlaceholderScreen })),
 )
-const EvolutionUpdatePushModal = lazy(() =>
+const EvolutionUpdatePushModal = lazyWithRetry(() =>
   import('./apps/evolution/EvolutionUpdatePushModal').then((m) => ({
     default: m.EvolutionUpdatePushModal,
   })),
 )
-const ListenTogetherPlayerBootstrap = lazy(() =>
+const ListenTogetherPlayerBootstrap = lazyWithRetry(() =>
   import('../components/discoverListen/ListenTogetherPlayerBootstrap').then((m) => ({
     default: m.ListenTogetherPlayerBootstrap,
   })),
 )
-const TasteFeastCeremonyHost = lazy(() =>
+const TasteFeastCeremonyHost = lazyWithRetry(() =>
   import('./apps/takeout/TasteFeastCeremonyHost').then((m) => ({
     default: m.TasteFeastCeremonyHost,
   })),
 )
 
 function SuspenseApp({ children, label }: { children: ReactNode; label?: string }) {
-  return <Suspense fallback={<LazyRouteFallback label={label} />}>{children}</Suspense>
+  return (
+    <LazyChunkErrorBoundary label={label}>
+      <Suspense fallback={<LazyRouteFallback label={label} />}>{children}</Suspense>
+    </LazyChunkErrorBoundary>
+  )
 }
 
 type Route =
@@ -189,6 +195,39 @@ export function PhoneApp() {
     const t = window.setTimeout(() => setDeferSecondaryRuntime(true), 1800)
     return () => window.clearTimeout(t)
   }, [showSplash])
+
+  /** 桌面稳定后静默预取微信大包，降低点开时弱网重置概率 */
+  useEffect(() => {
+    if (showSplash || wechatKeepAlive) return
+    let cancelled = false
+    const run = () => {
+      if (cancelled) return
+      void import('./apps/wechat/WeChatApp').catch(() => {
+        /* 预取失败可忽略，真正打开时 lazyWithRetry 会再试 */
+      })
+    }
+    const ric = (
+      window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+        cancelIdleCallback?: (id: number) => void
+      }
+    ).requestIdleCallback
+    let idleId = 0
+    const warm = window.setTimeout(() => {
+      if (typeof ric === 'function') {
+        idleId = ric(run, { timeout: 5000 })
+      } else {
+        run()
+      }
+    }, 3500)
+    return () => {
+      cancelled = true
+      window.clearTimeout(warm)
+      if (idleId && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId)
+      }
+    }
+  }, [showSplash, wechatKeepAlive])
 
   useEffect(() => {
     if (localDevBypassAuth) openVerifiedRef.current = true

@@ -10,7 +10,9 @@ import {
   Store,
 } from 'lucide-react'
 import type { WeChatPersonaContact } from '../phone/types'
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { Suspense, useEffect, useState, type ReactNode } from 'react'
+import { LazyChunkErrorBoundary } from '../phone/components/LazyChunkErrorBoundary'
+import { lazyWithRetry } from '../phone/lazyWithRetry'
 
 import type { AnonymousQaWechatContext } from './anonymousQa/buildAnonymousQaPersonaContext'
 import type { MockContact } from './anonymousQa/types'
@@ -27,45 +29,47 @@ import { MomentsSerifNumericText } from './moments/ArchiveTimelineDateColumn'
 import type { OnOpenMomentParticipantProfile } from './moments/momentProfileNavigation'
 import { mockContactsToMomentRefs } from './moments/publishMomentUtils'
 
-const WeChatMomentsPage = lazy(() =>
+const WeChatMomentsPage = lazyWithRetry(() =>
   import('./moments/WeChatMomentsPage').then((m) => ({ default: m.WeChatMomentsPage })),
 )
-const DiscoverListenTogetherApp = lazy(() =>
+const DiscoverListenTogetherApp = lazyWithRetry(() =>
   import('./discoverListen/DiscoverListenTogetherApp').then((m) => ({
     default: m.DiscoverListenTogetherApp,
   })),
 )
-const AnonymousQnAApp = lazy(() =>
+const AnonymousQnAApp = lazyWithRetry(() =>
   import('./anonymousQa/AnonymousQnAApp').then((m) => ({ default: m.AnonymousQnAApp })),
 )
-const WeChatDiscoverLumiPulseApp = lazy(() =>
+const WeChatDiscoverLumiPulseApp = lazyWithRetry(() =>
   import('../phone/apps/lumiPulse/WeChatDiscoverLumiPulseApp').then((m) => ({
     default: m.WeChatDiscoverLumiPulseApp,
   })),
 )
-const LumiLiveApp = lazy(() =>
+const LumiLiveApp = lazyWithRetry(() =>
   import('../phone/apps/lumiLive').then((m) => ({ default: m.LumiLiveApp })),
 )
-const SubconsciousArchivesApp = lazy(() =>
+const SubconsciousArchivesApp = lazyWithRetry(() =>
   import('../phone/apps/wechat/diary/SubconsciousArchivesApp').then((m) => ({
     default: m.SubconsciousArchivesApp,
   })),
 )
-const JubenshaHallApp = lazy(() =>
+const JubenshaHallApp = lazyWithRetry(() =>
   import('./jubensha/JubenshaHallApp').then((m) => ({ default: m.JubenshaHallApp })),
 )
 
 function DiscoverSuspense({ children }: { children: ReactNode }) {
   return (
-    <Suspense
-      fallback={
-        <div className="flex h-full min-h-0 items-center justify-center bg-white text-[13px] text-[#8e8e8e]">
-          加载中…
-        </div>
-      }
-    >
-      {children}
-    </Suspense>
+    <LazyChunkErrorBoundary label="打开发现页">
+      <Suspense
+        fallback={
+          <div className="flex h-full min-h-0 items-center justify-center bg-white text-[13px] text-[#8e8e8e]">
+            加载中…
+          </div>
+        }
+      >
+        {children}
+      </Suspense>
+    </LazyChunkErrorBoundary>
   )
 }
 
