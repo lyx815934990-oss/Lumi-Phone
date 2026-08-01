@@ -148,6 +148,13 @@ export async function importDataFromFile(text: string): Promise<ImportArchiveRes
 
   if (typeof window !== 'undefined') {
     try {
+      // 先锁微信内存回写并清进程缓存，再派发事件；避免导入前打开的注册空态覆盖刚恢复的账号
+      const { markWechatStorePendingDiskRehydrate } = await import('../wechat/useWechatStore')
+      markWechatStorePendingDiskRehydrate()
+    } catch {
+      /* ignore */
+    }
+    try {
       const { emitWeChatStorageChanged } = await import('../wechat/newFriendsPersona/idb')
       emitWeChatStorageChanged()
     } catch {

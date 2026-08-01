@@ -219,7 +219,7 @@ import { WalletCardsPage } from './wallet/WalletCardsPage'
 import { AffectionPayPage } from './wallet/AffectionPayPage'
 import { walletSpend } from './wallet/walletMockStore'
 
-import lumiWechatAvatarUrl from '../../../../image/主屏幕图标.png'
+import { LUMI_ASSISTANT_AVATAR_URL } from './lumiAssistantAssets'
 
 import { WalletTransactionsPage } from './wallet/WalletTransactionsPage'
 import { WalletAffectionCardsPage } from './wallet/WalletAffectionCardsPage'
@@ -4268,7 +4268,7 @@ function WeChatAppInner({ onBack }: Props) {
           lumiFallbackNickname(r.characterId)
         const avatar =
           resolveCharacterAvatarUrl({ avatarUrl: ch?.avatarUrl }) ||
-          (r.characterId === WECHAT_LUMI_PEER_CHARACTER_ID ? lumiWechatAvatarUrl : '')
+          (r.characterId === WECHAT_LUMI_PEER_CHARACTER_ID ? LUMI_ASSISTANT_AVATAR_URL : '')
         const convKey = await resolveAccountScopedPrivateConversationKey({
           wechatAccountId: currentAccountId,
           characterId: r.characterId,
@@ -4376,7 +4376,7 @@ function WeChatAppInner({ onBack }: Props) {
           name: 'Lumi',
           time,
           preview,
-          avatarUrl: lumiWechatAvatarUrl,
+          avatarUrl: LUMI_ASSISTANT_AVATAR_URL,
           unread,
           sortTs,
         }
@@ -4431,7 +4431,7 @@ function WeChatAppInner({ onBack }: Props) {
     )
 
     const [lumiRowData, selfRowData] = await Promise.all([
-      buildOne(lumiKey, 'lumi', 'Lumi', lumiWechatAvatarUrl, WECHAT_LUMI_PEER_CHARACTER_ID, WECHAT_LUMI_PEER_CHARACTER_ID),
+      buildOne(lumiKey, 'lumi', 'Lumi', LUMI_ASSISTANT_AVATAR_URL, WECHAT_LUMI_PEER_CHARACTER_ID, WECHAT_LUMI_PEER_CHARACTER_ID),
       buildOne(
         selfKey,
         'self',
@@ -7116,7 +7116,7 @@ function WeChatAppInner({ onBack }: Props) {
                 contacts={state.wechatPersonaContacts as any}
                 playerIdentityId={playerIdentityId}
                 currentConversationKey={activeConversationKey}
-                lumiAvatarUrl={lumiWechatAvatarUrl}
+                lumiAvatarUrl={LUMI_ASSISTANT_AVATAR_URL}
                 onClose={() => setRoute({ name: 'chat', chat: route.fromChat })}
                 onPickChat={(chat) => setRoute({ name: 'chat', chat })}
               />
@@ -7289,7 +7289,7 @@ function WeChatAppInner({ onBack }: Props) {
                 contacts={state.wechatPersonaContacts as any}
                 playerIdentityId={playerIdentityId}
                 currentConversationKey={activeConversationKey}
-                lumiAvatarUrl={lumiWechatAvatarUrl}
+                lumiAvatarUrl={LUMI_ASSISTANT_AVATAR_URL}
                 title="选择联系人"
                 recentTitle="最近联系人"
                 listTitle="联系人"
@@ -7496,7 +7496,7 @@ function WeChatAppInner({ onBack }: Props) {
                         name: 'contact-profile',
                         target: { kind: 'lumi' },
                         remarkName: chatPeerContact?.remarkName ?? 'Lumi',
-                        avatarUrl: chatPeerContact?.avatarUrl ?? lumiWechatAvatarUrl,
+                        avatarUrl: chatPeerContact?.avatarUrl ?? LUMI_ASSISTANT_AVATAR_URL,
                         returnTo: { mode: 'chat', chat, reopenChatSettings: true },
                       })
                       return

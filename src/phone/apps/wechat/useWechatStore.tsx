@@ -70,6 +70,7 @@ import {
   WECHAT_USER_PROFILE_KV_KEY_LEGACY,
   type WechatProfile,
 } from './wechatProfileTypes'
+import { LUMI_ARCHIVE_IMPORTED_EVENT } from '../dataArchive/constants'
 
 export type UpdateWechatPasswordResult =
   | { ok: true }
@@ -127,8 +128,24 @@ type WechatStoreCache = {
 
 let wechatStoreCache: WechatStoreCache | null = null
 
+/**
+ * 数据中心导入后置位：禁止「内存通讯录 → bundle」回写，避免空注册态覆盖刚恢复的 IndexedDB。
+ * 由 `markWechatStorePendingDiskRehydrate` 打开，水合/重读磁盘完成后清除。
+ */
+let wechatStorePendingDiskRehydrate = false
+
 function clearWechatStoreCache(): void {
   wechatStoreCache = null
+}
+
+/** 归档写入磁盘后、派发事件前调用：清进程内缓存并锁住通讯录回写 */
+export function markWechatStorePendingDiskRehydrate(): void {
+  wechatStorePendingDiskRehydrate = true
+  clearWechatStoreCache()
+}
+
+function clearWechatStorePendingDiskRehydrate(): void {
+  wechatStorePendingDiskRehydrate = false
 }
 
 function snapshotWechatStoreCache(input: WechatStoreCache): void {
@@ -265,13 +282,97 @@ export function WechatStoreProvider({ children }: { children: ReactNode }) {
     [accounts],
   )
 
+  const rehydrateAccountsFromDisk = useCallback(async () => {
+    contactsReadyForBundleSyncRef.current = false
+    accountSwitchInFlightRef.current = true
+    clearWechatStoreCache()
+    bundleRef.current = null
+    try {
+      let bundle = await loadAccountsBundle()
+      if (!bundle) {
+        const legacy = await loadLegacyProfileOnly()
+        if (legacy) {
+          bundle = await migrateLegacyProfileToBundle(legacy, [])
+        }
+      }
+      if (!bundle || bundle.accounts.length === 0) {
+        setAccounts([])
+        setCurrentAccountId(null)
+        setProfile(null)
+        clearWeChatPersonaContacts()
+        setAccountSwitchRevision((n) => n + 1)
+        return
+      }
+      const bundleBeforeRepair = bundle
+      bundle = await repairMultiAccountPersonaContactsBundle(bundle)
+      if (bundle !== bundleBeforeRepair) await saveAccountsBundle(bundle)
+      bundleRef.current = bundle
+      setAccounts(bundle.accounts.map(cloneAccount))
+      setCurrentAccountId(bundle.currentAccountId)
+      let active = findAccountById(bundle, bundle.currentAccountId)
+      if (!active) {
+        setProfile(null)
+        clearWeChatPersonaContacts()
+        setAccountSwitchRevision((n) => n + 1)
+        return
+      }
+      const primaryAccountId = bundle.accounts[0]?.accountId
+      if (primaryAccountId) {
+        await attachOrphanPlayerIdentitiesToWechatAccount(primaryAccountId)
+      }
+      const sessionId = resolveAccountSessionIdentityId(active)
+      const reconciled = await reconcileAccountPersonaContacts({
+        bundle,
+        account: active,
+        sessionPlayerIdentityId: sessionId,
+        fromInMemory: [],
+      })
+      bundle = reconciled.bundle
+      bundleRef.current = bundle
+      setAccounts(bundle.accounts.map(cloneAccount))
+      await saveAccountsBundle(bundle)
+      active = findAccountById(bundle, bundle.currentAccountId) ?? active
+      const migratedBundle = await runLegacyGlobalCharacterCompatibilityMigration(bundle)
+      if (migratedBundle) {
+        bundle = migratedBundle
+        bundleRef.current = {
+          accounts: migratedBundle.accounts,
+          currentAccountId: migratedBundle.currentAccountId,
+        }
+        setAccounts(migratedBundle.accounts.map(cloneAccount))
+        setCurrentAccountId(migratedBundle.currentAccountId)
+        active = findAccountById(migratedBundle, migratedBundle.currentAccountId) ?? active
+      }
+      await applyActiveAccount(active, {
+        contactsOverride: active.personaContacts,
+        bumpRevision: true,
+      })
+      try {
+        const { syncWeChatDataInventoryBaseline } = await import('./wechatDataInventory')
+        void syncWeChatDataInventoryBaseline()
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      accountSwitchInFlightRef.current = false
+      clearWechatStorePendingDiskRehydrate()
+      contactsReadyForBundleSyncRef.current = true
+      setHydrated(true)
+    }
+  }, [applyActiveAccount, clearWeChatPersonaContacts])
+
   useEffect(() => {
     let cancelled = false
-    const hadCache = !!wechatStoreCache
+    const forceDisk = wechatStorePendingDiskRehydrate
+    const hadCache = !!wechatStoreCache && !forceDisk
     void (async () => {
       try {
         if (!hadCache) {
           await runOneTimeWechatProfileReset()
+        }
+        if (forceDisk) {
+          if (!cancelled) await rehydrateAccountsFromDisk()
+          return
         }
         let bundle = bundleRef.current ?? (await loadAccountsBundle())
         if (!bundle) {
@@ -333,6 +434,7 @@ export function WechatStoreProvider({ children }: { children: ReactNode }) {
         }
       } finally {
         if (!cancelled) {
+          clearWechatStorePendingDiskRehydrate()
           contactsReadyForBundleSyncRef.current = true
           setHydrated(true)
         }
@@ -344,8 +446,18 @@ export function WechatStoreProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅启动时迁移一次
   }, [])
 
+  /** 数据中心导入后：从 IndexedDB 重读微信账号，避免 keep-alive / 进程缓存仍停在注册前空态 */
+  useEffect(() => {
+    const onArchiveImported = () => {
+      void rehydrateAccountsFromDisk()
+    }
+    window.addEventListener(LUMI_ARCHIVE_IMPORTED_EVENT, onArchiveImported)
+    return () => window.removeEventListener(LUMI_ARCHIVE_IMPORTED_EVENT, onArchiveImported)
+  }, [rehydrateAccountsFromDisk])
+
   useEffect(() => {
     if (!hydrated) return
+    if (wechatStorePendingDiskRehydrate) return
     snapshotWechatStoreCache({
       profile,
       accounts,
@@ -358,6 +470,7 @@ export function WechatStoreProvider({ children }: { children: ReactNode }) {
   /** 通讯录变更后写回当前微信账号 bundle，避免刷新后仅存在 customization KV 而 bundle 为空被覆盖。 */
   useEffect(() => {
     if (!hydrated || !currentAccountId) return
+    if (wechatStorePendingDiskRehydrate) return
     if (!contactsReadyForBundleSyncRef.current) return
     if (accountSwitchInFlightRef.current) return
     if (suppressContactsBundleSyncRef.current) {
@@ -413,6 +526,7 @@ export function WechatStoreProvider({ children }: { children: ReactNode }) {
   /** 任意入口写入通讯录后，剔除当前微信账号本人（含人设页直接 replace）。 */
   useEffect(() => {
     if (!hydrated || !currentAccountId) return
+    if (wechatStorePendingDiskRehydrate) return
     if (!contactsReadyForBundleSyncRef.current) return
     const bundle = bundleRef.current
     if (!bundle) return
@@ -438,8 +552,10 @@ export function WechatStoreProvider({ children }: { children: ReactNode }) {
   /** Edge / 移动端后台回收标签页后：重读 IndexedDB，自动对齐通讯录并通知各页重读库。 */
   useEffect(() => {
     if (!hydrated || !currentAccountId) return
+    if (wechatStorePendingDiskRehydrate) return
     let timer: ReturnType<typeof setTimeout> | null = null
     const runRepair = () => {
+      if (wechatStorePendingDiskRehydrate) return
       if (document.visibilityState && document.visibilityState !== 'visible') return
       const bundle = bundleRef.current
       if (!bundle) return

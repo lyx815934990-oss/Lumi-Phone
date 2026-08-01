@@ -15,7 +15,8 @@ import type { Character } from './newFriendsPersona/types'
 import { WECHAT_LUMI_PEER_CHARACTER_ID, WECHAT_SELF_PEER_CHARACTER_ID } from './wechatConversationKey'
 import type { WechatProfile } from './wechatProfileTypes'
 
-import lumiDefaultAvatar from '../../../../image/主屏幕图标.png'
+import { resolveCharacterAvatarUrl } from '../../utils/characterAvatarUrl'
+import { LUMI_ASSISTANT_AVATAR_URL } from './lumiAssistantAssets'
 
 export type ContactProfileTarget =
   | { kind: 'lumi' }
@@ -215,12 +216,16 @@ export function ContactProfileCardScreen({
   }, [target.kind, character?.gender, selfAccountProfile?.gender])
 
   const avatarSrc = useMemo(() => {
+    if (target.kind === 'lumi') {
+      return (
+        resolveCharacterAvatarUrl({ avatarUrl: avatarUrlProp }) ||
+        LUMI_ASSISTANT_AVATAR_URL
+      )
+    }
     const a =
       avatarUrlProp?.trim() ||
       (target.kind === 'self' ? selfAccountProfile?.avatarUrl?.trim() : character?.avatarUrl?.trim())
-    if (a) return a
-    if (target.kind === 'lumi') return lumiDefaultAvatar
-    return ''
+    return resolveCharacterAvatarUrl({ avatarUrl: a }) || a || ''
   }, [avatarUrlProp, character?.avatarUrl, selfAccountProfile?.avatarUrl, target.kind])
 
   const onAvatarClick = useCallback(() => {

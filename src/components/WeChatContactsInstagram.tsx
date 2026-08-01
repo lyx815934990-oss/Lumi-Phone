@@ -1,7 +1,7 @@
 import { ChevronRight, HelpCircle, MessageSquare, Star, Tag, UserPlus, Users } from 'lucide-react'
 import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 
-import lumiAssistantLogoUrl from '../../image/主屏幕图标.png'
+import { LUMI_ASSISTANT_AVATAR_PATH } from '../phone/apps/wechat/lumiAssistantAssets'
 import { DEFAULT_PUBLIC_AVATAR_URL } from '../phone/types'
 import { resolveCharacterAvatarUrl } from '../phone/utils/characterAvatarUrl'
 
@@ -79,7 +79,7 @@ export const WECHAT_LUMI_ASSISTANT_CONTACT: WeChatContactRow = {
   id: 'wechat-lumi-assistant',
   remarkName: 'Lumi',
   tag: '小助手',
-  avatarUrl: lumiAssistantLogoUrl,
+  avatarUrl: LUMI_ASSISTANT_AVATAR_PATH,
 }
 
 export const WECHAT_DEFAULT_CONTACTS: Contact[] = []
@@ -265,7 +265,10 @@ export function WeChatContactsInstagram({
             className="flex w-full items-center gap-3 px-4 py-4 text-left transition-colors duration-200 hover:bg-[#fafafa]"
           >
             <img
-              src={WECHAT_LUMI_ASSISTANT_CONTACT.avatarUrl || AVATAR_PLACEHOLDER}
+              src={
+                resolveCharacterAvatarUrl({ avatarUrl: WECHAT_LUMI_ASSISTANT_CONTACT.avatarUrl }) ||
+                AVATAR_PLACEHOLDER
+              }
               alt=""
               width={44}
               height={44}
