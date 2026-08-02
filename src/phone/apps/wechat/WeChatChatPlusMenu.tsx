@@ -48,18 +48,26 @@ export type WeChatPlusActionId =
   | 'check_phone'
   | 'games'
 
-const PAGE1: { id: WeChatPlusActionId; label: string; Icon: LucideIcon }[] = [
+type PlusMenuItem = {
+  id: WeChatPlusActionId
+  label: string
+  Icon: LucideIcon
+  /** 仅占位展示，不可点击 */
+  disabled?: boolean
+}
+
+const PAGE1: PlusMenuItem[] = [
   { id: 'photo', label: '照片', Icon: Image },
   { id: 'camera', label: '拍摄', Icon: Camera },
   { id: 'call', label: '音视频通话', Icon: PhoneCall },
   { id: 'location', label: '位置', Icon: MapPin },
   { id: 'redpacket', label: '红包', Icon: Gift },
   { id: 'transfer', label: '转账', Icon: CreditCard },
-  { id: 'screen_share', label: '一起刷', Icon: MonitorSmartphone },
+  { id: 'screen_share', label: '一起刷', Icon: MonitorSmartphone, disabled: true },
   { id: 'favorite', label: '收藏', Icon: Star },
 ]
 
-const PAGE2: { id: WeChatPlusActionId; label: string; Icon: LucideIcon }[] = [
+const PAGE2: PlusMenuItem[] = [
   { id: 'games', label: '游戏', Icon: Gamepad2 },
   { id: 'heart_words', label: '心语', Icon: Heart },
   { id: 'read_ignore', label: '已读不回', Icon: EyeOff },
@@ -121,13 +129,36 @@ function PlusMenuGridCell({
   onPress,
   suppressClickRef,
   actionId,
+  disabled = false,
 }: {
   label: string
   Icon: LucideIcon
   onPress: () => void
   suppressClickRef: React.MutableRefObject<boolean>
   actionId: WeChatPlusActionId
+  disabled?: boolean
 }) {
+  if (disabled) {
+    return (
+      <div
+        className="flex w-full cursor-default flex-col items-center justify-start rounded-lg bg-transparent p-0 opacity-40"
+        aria-disabled="true"
+        title="占位功能，暂不可用"
+      >
+        <div className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[12px] bg-[#f5f5f5]">
+          {actionId === 'redpacket' ? (
+            <RedPacketIcon size={24} />
+          ) : actionId === 'transfer' ? (
+            <TransferArrowsIcon size={24} />
+          ) : (
+            <Icon size={24} strokeWidth={2} className="text-black" aria-hidden />
+          )}
+        </div>
+        <p className="mt-2 text-center text-[12px] leading-none text-black">{label}</p>
+      </div>
+    )
+  }
+
   return (
     <Pressable
       type="button"
@@ -263,6 +294,7 @@ export function WeChatChatPlusMenuPanel({ onAction }: { onAction: (id: WeChatPlu
                 onPress={() => onAction(it.id)}
                 suppressClickRef={suppressClickRef}
                 actionId={it.id}
+                disabled={it.disabled}
               />
             ))}
           </PlusMenuPage>
@@ -275,6 +307,7 @@ export function WeChatChatPlusMenuPanel({ onAction }: { onAction: (id: WeChatPlu
                 onPress={() => onAction(it.id)}
                 suppressClickRef={suppressClickRef}
                 actionId={it.id}
+                disabled={it.disabled}
               />
             ))}
           </PlusMenuPage>
