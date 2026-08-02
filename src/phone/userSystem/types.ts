@@ -3,6 +3,7 @@ export type UserAuditStatus = 'pending' | 'approved' | 'rejected' | 'correction_
 export type CommunityVerifyReason =
   | 'ok'
   | 'skipped_admin'
+  | 'skipped_admin_created'
   | 'not_configured'
   | 'missing_dc_id'
   | 'invalid_dc_id'

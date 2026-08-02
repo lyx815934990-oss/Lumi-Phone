@@ -909,3 +909,55 @@ export async function changeUserPassword(payload: {
   if (!r.ok) return r
   return { ok: true, message: r.data.message || '密码已修改' }
 }
+
+export async function changeUserUsername(payload: {
+  currentPassword: string
+  newUsername: string
+}): Promise<{ ok: true; message: string; username: string; profile: UserProfile } | { ok: false; error: string }> {
+  if (!getAuthToken()) return { ok: false, error: '登录已失效，请重新登录后再修改账号名' }
+  const r = await request<{
+    message?: string
+    token?: string
+    status?: UserLoginStatus
+    profile?: Record<string, unknown>
+  }>('POST', '/api/user/change-username', payload, true)
+  if (!r.ok) return r
+  if (!r.data.token || !r.data.status || !r.data.profile) {
+    return { ok: false, error: '修改成功但会话刷新失败，请重新登录' }
+  }
+  try {
+    localStorage.setItem(TOKEN_KEY, r.data.token)
+    localStorage.setItem(USERNAME_KEY, r.data.status.username || payload.newUsername)
+  } catch {
+    /* ignore */
+  }
+  writeCachedUserStatus(r.data.status)
+  const p = r.data.profile
+  const profile: UserProfile = {
+    username: String(p.username ?? r.data.status.username ?? ''),
+    qq: String(p.qq ?? ''),
+    dcId: String(p.dcId ?? ''),
+    discordHandle: String(p.discordHandle ?? ''),
+    discordDisplayName: String(p.discordDisplayName ?? ''),
+    auditStatus: (p.auditStatus as UserProfile['auditStatus']) ?? 'pending',
+    auditRejectReason: String(p.auditRejectReason ?? ''),
+    auditInquiryImages: Array.isArray(p.auditInquiryImages)
+      ? p.auditInquiryImages.filter((x): x is string => typeof x === 'string')
+      : [],
+    correctionRequestedAt: String(p.correctionRequestedAt ?? ''),
+    banStatus: (p.banStatus as UserProfile['banStatus']) ?? 'normal',
+    banReason: String(p.banReason ?? ''),
+    createdAt: String(p.createdAt ?? ''),
+    communityVerified: typeof p.communityVerified === 'boolean' ? p.communityVerified : undefined,
+    communityVerifyReason:
+      typeof p.communityVerifyReason === 'string' ? p.communityVerifyReason : undefined,
+    communityVerifyMessage:
+      typeof p.communityVerifyMessage === 'string' ? p.communityVerifyMessage : undefined,
+  }
+  return {
+    ok: true,
+    message: r.data.message || '账号名已修改',
+    username: profile.username,
+    profile,
+  }
+}

@@ -26,6 +26,9 @@ export function communityRoleStatusLabel(
     if (status.communityVerifyReason === 'skipped_admin') {
       return { label: '管理员（未绑 Discord）', tone: 'pending' }
     }
+    if (status.communityVerifyReason === 'skipped_admin_created') {
+      return { label: '管理员开通（免身份组）', tone: 'normal' }
+    }
     return { label: '已获得', tone: 'normal' }
   }
   if (status.communityVerifyReason === 'discord_unavailable') {

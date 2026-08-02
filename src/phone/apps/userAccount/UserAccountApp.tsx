@@ -23,6 +23,7 @@ import {
 import { type UserAccountTab, type UserProfile } from '../../userSystem/types'
 import { UserAccountAnnouncementPanel } from './UserAccountAnnouncementPanel'
 import { UserAccountChangePasswordPanel } from './UserAccountChangePasswordPanel'
+import { UserAccountChangeUsernamePanel } from './UserAccountChangeUsernamePanel'
 import { UserAccountFixDiscordIdPanel } from './UserAccountFixDiscordIdPanel'
 import { UserAccountReportPanel } from './UserAccountReportPanel'
 import { UserAccountUnbanPanel } from './UserAccountUnbanPanel'
@@ -551,6 +552,15 @@ export function UserAccountApp({ onBack, initialTab = 'overview', initialAuthTab
           onUpdated={setProfile}
         />
       ) : null}
+      <UserAccountChangeUsernamePanel
+        t={t}
+        inputCls={inputCls}
+        dividerCls={drawerBorder}
+        currentUsername={profile?.username || getStoredUsername()}
+        onInfo={setInfo}
+        onError={setError}
+        onUpdated={setProfile}
+      />
       <UserAccountChangePasswordPanel
         t={t}
         inputCls={inputCls}
