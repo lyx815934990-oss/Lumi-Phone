@@ -391,7 +391,7 @@ export function UserAccountApp({ onBack, initialTab = 'overview', initialAuthTab
             </p>
           </div>
           <p className={`text-[12px] leading-5 ${t.muted}`}>
-            请使用 Discord 一键注册。授权成功后将弹出面板填写 Lumi 账号与密码；QQ 号可选填，但建议填写以便找回账密。
+            请使用 Discord 一键注册。授权成功后将弹出面板填写 Lumi 账号与密码；QQ 号可选填，但建议填写。找回账密需 Discord 用户名，并再填 QQ 或 Discord 数字 ID。
           </p>
           {isDiscordOAuthConfigured() ? (
             <DiscordLoginButton

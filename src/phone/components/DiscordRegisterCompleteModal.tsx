@@ -195,7 +195,7 @@ export function DiscordRegisterCompleteModal({
                   </p>
                 ) : (
                   <p className={`mt-2 text-[13px] leading-6 ${t.muted}`}>
-                    请设置 Lumi 账号与密码。QQ 号可选填，但将作为找回账密的重要信息，建议填写。
+                    请设置 Lumi 账号与密码。QQ 号可选填，但找回账密需同时验证 Discord 用户名与 QQ / Discord 数字 ID，建议填写。
                   </p>
                 )}
 

@@ -27,6 +27,7 @@ export function UserAccountRecoverPanel({
   onBack,
   onFillLogin,
 }: Props) {
+  const [discordHandle, setDiscordHandle] = useState('')
   const [qq, setQq] = useState('')
   const [dcId, setDcId] = useState('')
   const [loading, setLoading] = useState(false)
@@ -36,15 +37,21 @@ export function UserAccountRecoverPanel({
   const handleRecover = useCallback(async () => {
     setError('')
     setResult(null)
+    const handleTrim = discordHandle.trim().replace(/^@+/, '')
     const qqTrim = qq.trim()
     const dcTrim = dcId.trim()
+    if (!handleTrim) {
+      setError('请填写 Discord 用户名')
+      return
+    }
     if (!qqTrim && !dcTrim) {
-      setError('请至少填写 QQ 号或 Discord ID 其中一项')
+      setError('请再填写 QQ 号或 Discord 数字 ID 其中一项')
       return
     }
     setLoading(true)
     try {
       const r = await recoverAccountByContact({
+        discordHandle: handleTrim,
         ...(qqTrim ? { qq: qqTrim } : {}),
         ...(dcTrim ? { dcId: dcTrim } : {}),
       })
@@ -56,7 +63,7 @@ export function UserAccountRecoverPanel({
     } finally {
       setLoading(false)
     }
-  }, [qq, dcId])
+  }, [discordHandle, qq, dcId])
 
   const copyText = useCallback(async (text: string) => {
     try {
@@ -69,7 +76,7 @@ export function UserAccountRecoverPanel({
   return (
     <div className={`space-y-3 ${cardCls}`}>
       <p className={`text-[12px] leading-5 ${mutedCls}`}>
-        只需填写 QQ 号或 Discord ID 其中一项即可找回；若两项都填，须与注册时同一账号完全一致。
+        必须填写 Discord 用户名，并再填写 QQ 号或 Discord 数字 ID 其中一项；各项须与注册时同一账号完全一致。
       </p>
       {error ? (
         <div className="rounded-[10px] border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-[13px] text-[#B91C1C]">
@@ -120,7 +127,17 @@ export function UserAccountRecoverPanel({
       ) : (
         <>
           <label className="block">
-            <span className={`mb-1 block text-[12px] ${labelCls}`}>QQ 号（选填）</span>
+            <span className={`mb-1 block text-[12px] ${labelCls}`}>Discord 用户名（必填）</span>
+            <input
+              className={inputCls}
+              value={discordHandle}
+              onChange={(e) => setDiscordHandle(e.target.value)}
+              autoComplete="off"
+              placeholder="与注册时一致，不含 @ 前缀亦可"
+            />
+          </label>
+          <label className="block">
+            <span className={`mb-1 block text-[12px] ${labelCls}`}>QQ 号（与下方二选一）</span>
             <input
               className={inputCls}
               style={accountInputNumStyle}
@@ -128,19 +145,19 @@ export function UserAccountRecoverPanel({
               onChange={(e) => setQq(e.target.value)}
               inputMode="numeric"
               autoComplete="off"
-              placeholder="与注册时一致，可与 Discord ID 二选一"
+              placeholder="与注册时一致"
             />
           </label>
           <p className={`text-center text-[11px] ${mutedCls}`}>— 或 —</p>
           <label className="block">
-            <span className={`mb-1 block text-[12px] ${labelCls}`}>Discord ID（选填）</span>
+            <span className={`mb-1 block text-[12px] ${labelCls}`}>Discord 数字 ID（与上方二选一）</span>
             <input
               className={inputCls}
               style={accountInputNumStyle}
               value={dcId}
               onChange={(e) => setDcId(e.target.value)}
               autoComplete="off"
-              placeholder="与注册时一致，可与 QQ 号二选一"
+              placeholder="17–20 位数字 ID"
             />
           </label>
           <button

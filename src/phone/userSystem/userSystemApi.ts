@@ -727,6 +727,7 @@ export async function registerUser(payload: {
 }
 
 export async function recoverAccountByContact(payload: {
+  discordHandle: string
   qq?: string
   dcId?: string
 }): Promise<{ ok: true; username: string; password: string } | { ok: false; error: string }> {
