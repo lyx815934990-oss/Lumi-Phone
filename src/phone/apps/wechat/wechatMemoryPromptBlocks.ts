@@ -303,23 +303,22 @@ export async function formatUnsummarizedPrivateChatBlock(params: {
 }
 
 /**
- * 约会线下专用：未总结私聊按剧情「现在」拆成近端 / 往事。
- * - **近端**：同日或晚于「现在」、或（无剧情戳时）落库晚于上一轮线下 —— 须承接为已知事实
- * - **往事**：跨日更早的未总结 —— **仍注入**，仅禁止写成此刻刚聊
- * 不再把「早于现在几小时」的同晚消息整段丢掉。
+ * 约会线下专用：注入「未总结·私聊」原文（记忆游标之后）。
+ * 游标仍由自动总结维护，此处只用来划分未总结 vs 已总结；已总结走长期记忆块。
+ * 按剧情「现在」再拆近端 / 往事：同日保留为近端；跨日更早标往事（仍注入，禁止当此刻）。
+ * 若会话键对不上导致为空，可传 characterId 按角色回退拉取近端气泡再按游标过滤。
  */
 export async function formatDatingUnsummarizedPrivateChatSplit(params: {
   conversationKey: string
+  /** 会话键无消息时，按角色 id 回退扫近端私聊 */
+  characterId?: string | null
   maxMessages?: number
   maxChars?: number
   storyNowMs?: number | null
   lastOfflineAiPlotTs?: number | null
 }): Promise<{ nearBlock: string; pastBlock: string; nearCount: number; pastCount: number }> {
   const ck = params.conversationKey.trim()
-  if (!ck) return { nearBlock: '', pastBlock: '', nearCount: 0, pastCount: 0 }
-  const cursor = await personaDb.getMemorySummaryCursorTimestamp(ck)
-  // 只按记忆游标取未总结；勿用上一轮线下墙钟把同晚线上整段裁掉
-  const fromTs = resolveUnsummarizedFromTimestamp(cursor)
+  const cid = String(params.characterId ?? '').trim()
   const lim = Math.max(
     1,
     Math.min(
@@ -327,12 +326,6 @@ export async function formatDatingUnsummarizedPrivateChatSplit(params: {
       Math.floor(params.maxMessages ?? MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT),
     ),
   )
-  const rows = await personaDb.listWeChatChatMessagesFromTimestampAsc({
-    conversationKey: ck,
-    fromTimestampInclusive: fromTs,
-    limit: lim,
-  })
-  if (!rows.length) return { nearBlock: '', pastBlock: '', nearCount: 0, pastCount: 0 }
 
   const storyNowMs =
     typeof params.storyNowMs === 'number' && Number.isFinite(params.storyNowMs)
@@ -343,10 +336,83 @@ export async function formatDatingUnsummarizedPrivateChatSplit(params: {
       ? params.lastOfflineAiPlotTs
       : null
 
+  const cursor = ck ? await personaDb.getMemorySummaryCursorTimestamp(ck) : null
+  const fromTs = resolveUnsummarizedFromTimestamp(cursor)
+
+  let rows: WeChatChatMessage[] = []
+  if (ck) {
+    try {
+      rows = await personaDb.listWeChatChatMessagesFromTimestampAsc({
+        conversationKey: ck,
+        fromTimestampInclusive: fromTs,
+        limit: lim,
+      })
+    } catch {
+      rows = []
+    }
+  }
+
+  // 会话键错位时：按角色拉近端，再按「该条所属会话自己的游标」过滤未总结
+  if (!rows.length && cid) {
+    try {
+      const byChar = await personaDb.listWeChatChatMessagesRecentByCharacter({
+        characterId: cid,
+        limit: Math.min(200, lim),
+      })
+      const cursorCache = new Map<string, number | null>()
+      const pending: WeChatChatMessage[] = []
+      for (const m of byChar) {
+        if (m.isRecalled || isMeetImportedWeChatMessageId(m.id)) continue
+        const msgCk = String(m.conversationKey ?? '').trim()
+        if (!msgCk || msgCk.startsWith('wxgrp:')) continue
+        let msgCursor = cursorCache.get(msgCk)
+        if (msgCursor === undefined) {
+          msgCursor = await personaDb.getMemorySummaryCursorTimestamp(msgCk)
+          cursorCache.set(msgCk, msgCursor)
+        }
+        const msgFrom = resolveUnsummarizedFromTimestamp(msgCursor ?? null)
+        if (m.timestamp >= msgFrom) pending.push(m)
+      }
+      rows = pending.sort((a, b) => a.timestamp - b.timestamp).slice(-lim)
+    } catch {
+      rows = []
+    }
+  }
+
+  rows = rows.filter((m) => !m.isRecalled && !isMeetImportedWeChatMessageId(m.id))
+  if (!rows.length) return { nearBlock: '', pastBlock: '', nearCount: 0, pastCount: 0 }
+
+  // 同日气泡全部纳入近端窗（防被 lim 截断挤掉同晚更早条）
+  if (storyNowMs != null) {
+    try {
+      const byId = new Map(rows.map((m) => [m.id, m]))
+      const keys = new Set<string>()
+      if (ck) keys.add(ck)
+      for (const m of rows) {
+        const mk = String(m.conversationKey ?? '').trim()
+        if (mk && !mk.startsWith('wxgrp:')) keys.add(mk)
+      }
+      for (const key of keys) {
+        const keyCursor =
+          key === ck ? cursor : await personaDb.getMemorySummaryCursorTimestamp(key)
+        const keyFrom = resolveUnsummarizedFromTimestamp(keyCursor ?? null)
+        const allCk = await personaDb.listWeChatChatMessagesByConversationKey(key)
+        for (const m of allCk) {
+          if (m.isRecalled || isMeetImportedWeChatMessageId(m.id)) continue
+          if (m.timestamp < keyFrom) continue
+          const storyMs = parseStoryAnchorLabelToMs(m.storyTimeLabel)
+          if (storyMs != null && sameStoryCalendarDayMs(storyMs, storyNowMs)) byId.set(m.id, m)
+        }
+      }
+      rows = [...byId.values()].sort((a, b) => a.timestamp - b.timestamp)
+    } catch {
+      /* keep rows */
+    }
+  }
+
   const nearLines: string[] = []
   const pastLines: string[] = []
   for (const m of rows) {
-    if (isMeetImportedWeChatMessageId(m.id)) continue
     const line = formatPrivateLineUnsummarized(m, { includeTimestamp: true })
     if (!line) continue
     const near = isDatingUnsummarizedPrivateNearTerm({
@@ -369,13 +435,13 @@ export async function formatDatingUnsummarizedPrivateChatSplit(params: {
   )
 
   const nearBlock = nearBody
-    ? `【近端·未总结私聊（同日或晚于故事「现在」/上一轮线下之后）】\n` +
-      `每条前缀为剧情时间（有则优先）或系统落库时刻。角色**已知**这些线上内容；本轮线下须服从，末条优先承接。\n` +
+    ? `【未总结·近端私聊（同日或晚于故事「现在」）】\n` +
+      `每条前缀为剧情时间（有则优先）或系统落库时刻。记忆游标之后、尚未写入长期记忆；角色已知，本轮线下须服从，末条优先承接。\n` +
       `${nearBody}`
     : ''
   const pastBlock = pastBody
-    ? `【往事·未总结私聊（剧情日早于「现在」）】\n` +
-      `每条前缀为剧情时间（有则优先）或系统落库时刻。**仍是角色已知事实，须纳入上下文**；仅可回溯提及，**禁止**写成此刻刚聊、正在分别或即将离开。\n` +
+    ? `【未总结·往事私聊（剧情日早于「现在」）】\n` +
+      `每条前缀为剧情时间（有则优先）或系统落库时刻。仍是未总结且角色已知；仅可回溯，**禁止**写成此刻刚聊、正在分别或即将离开。\n` +
       `${pastBody}`
     : ''
 

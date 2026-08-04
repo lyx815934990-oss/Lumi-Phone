@@ -37,7 +37,6 @@ import { finalizeWorldBookAfterAutoSummaryPhase, finalizeWorldBookAfterPerAiRoun
 import {
   buildMemoryRelevanceHaystack,
   buildNpcGroupChatsUnsummarizedDigestForPrivatePrompt,
-  buildRecentPrivateChatRoundsWithTimeBlock,
   formatDatingUnsummarizedPrivateChatSplit,
   MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
   MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
@@ -2363,7 +2362,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `${datingScheduleBlock}` +
     (npcNetworkBlock.trim() ? `${npcNetworkBlock.trim()}\n\n` : '') +
     (presentNetworkBlock ? `${presentNetworkBlock}\n\n` : '') +
-    `${progressHint}\n` +
+    `${progressHint}\n` +792783bccb79b85295f2ace22c2a9c3f_720.png
     `${epilogueRelationshipBaselineBlock}\n\n`
   const memoryTailBlock =
     `【剧情时间轴·当前状态】（故事内「现在」；承接地点/时段/服装优先对照本块；**高于**下方语义召回与向量长期记忆）：${storyCalendarHint}\n${
@@ -2376,13 +2375,13 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `${storyCalendarChronologyRule}` +
     `${onlinePrivBoundaryReminder}` +
     `${wechatDialogueParityReminder}` +
-    `尚未总结·私聊（**线上已发生事实**｜含近端/往事拆分与近端固定原文窗｜末尾最新优先；${
+    `未总结·私聊（**尚未写入长期记忆的线上原文**｜按剧情日拆近端/往事｜末尾最新优先；${
       onlineInjectScope?.storyNowLabel?.trim() || onlineInjectScope?.storyCalendarAnchor?.trim()
         ? '**故事内「现在」见【跨通道·故事内时刻对齐】**；'
         : ''
     }每条方括号前缀：**有剧情时间则优先用剧情时间**，否则才是设备落库钟点；同日近端须承接，跨日往事禁止当此刻刚聊）：\n${unsPrivClipped || '（暂无）'}\n\n` +
-    `尚未总结·群聊（**线上已发生事实**｜同一时间窗；末尾最新优先）：\n${unsGrpClipped || '（暂无）'}\n\n` +
-    `尚未总结·线下剧情（落库先后；末尾最新优先）：\n${unsOffClipped || '（暂无）'}\n\n` +
+    `未总结·群聊（**尚未写入长期记忆的线上原文**｜末尾最新优先）：\n${unsGrpClipped || '（暂无）'}\n\n` +
+    `未总结·线下剧情（落库先后；末尾最新优先）：\n${unsOffClipped || '（暂无）'}\n\n` +
     `【历史摘录·文风隔离】下条「最近剧情」**只**供提取事实、关系、未收束点与空间关系；**禁止**模仿旧稿措辞/网文腔；须按 system 文风与禁词表落笔。\n` +
     `${godHistoryIsolationNote}` +
     `${mainCharacterOffstageHistoryNote}` +
@@ -2391,10 +2390,10 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       historyClipped || '（暂无历史）'
     }\n\n` +
     `${storyTimelineVectorRecallRule}` +
-    `【剧情时间轴·语义召回/近端摘要】（往事补全；**不得**覆盖上方当前状态与尚未总结/最近剧情末尾）：\n${
+    `【剧情时间轴·语义召回/近端摘要】（往事补全；**不得**覆盖上方当前状态与未总结/最近剧情末尾）：\n${
       storyTimelineRecallAndNear || '（暂无）'
     }\n\n` +
-    `长期记忆（关键词触发 + 向量语义筛选；**优先级最低的事实补全层**；与上方尚未总结冲突时以上方为准；已总结微信内容仍属线上事实底线）：\n` +
+    `已总结·长期记忆（关键词 + 向量召回；**已写入记忆库的总结**；与上方未总结原文冲突时以未总结末尾为准）：\n` +
     `【向量召回·已发生硬规则】下列长期记忆**均为已发生历史**；**禁止**复述事情经过或重演旧场，**仅可**当作历史事件提起。\n${
       longMemClipped || '（暂无）'
     }\n\n`
@@ -2922,78 +2921,60 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       let unsummarizedPrivateBlock = ''
       let unsummarizedGroupBlock = ''
       let onlineInjectScope: DatingOnlineInjectScopeMeta | undefined
-      if (convKey && !convKey.startsWith('wxgrp:')) {
-        const onlineBounds = await resolveOnlineMessageTimeBoundsForConversation({
-          conversationKey: convKey,
-          minMessageTimestamp: lastOfflineAiPlotTs,
+      // 未总结私聊：按游标划分；会话键对不上时按角色回退。已总结另走长期记忆块。
+      try {
+        const split = await formatDatingUnsummarizedPrivateChatSplit({
+          conversationKey: convKey && !convKey.startsWith('wxgrp:') ? convKey : '',
+          characterId: cid,
+          maxMessages: MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
+          maxChars: MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
+          storyNowMs,
+          lastOfflineAiPlotTs,
         })
-        let recentPrivateRounds = ''
-        try {
-          // 固定近端 N 轮：同日较早保留；仅剔除跨日早于故事「现在」的旧气泡
-          recentPrivateRounds = (
-            await buildRecentPrivateChatRoundsWithTimeBlock({
-              conversationKey: convKey,
-              minMessageTimestamp: lastOfflineAiPlotTs,
-              minStoryCalendarMs: storyNowMs,
-            })
-          ).trim()
-        } catch {
-          recentPrivateRounds = ''
-        }
-        try {
-          // 未总结私聊：按剧情日拆近端/往事，跨日更早仍注入（标往事），禁止整段丢弃同晚消息
-          const split = await formatDatingUnsummarizedPrivateChatSplit({
-            conversationKey: convKey,
-            maxMessages: MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
-            maxChars: MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
-            storyNowMs,
+        const privateMessageCount = split.nearCount + split.pastCount
+        if (privateMessageCount > 0) {
+          const onlineBounds =
+            convKey && !convKey.startsWith('wxgrp:')
+              ? await resolveOnlineMessageTimeBoundsForConversation({
+                  conversationKey: convKey,
+                  minMessageTimestamp: lastOfflineAiPlotTs,
+                })
+              : { count: privateMessageCount, minTs: null, maxTs: null }
+          onlineInjectScope = {
+            minMessageTimestamp:
+              lastOfflineAiPlotTs != null
+                ? lastOfflineAiPlotTs + 1
+                : ((convKey
+                    ? await personaDb.getMemorySummaryCursorTimestamp(convKey)
+                    : null) ?? 0) + 1,
             lastOfflineAiPlotTs,
-          })
-          const privateMessageCount = split.nearCount + split.pastCount
-          const hasPrivInject = Boolean(split.nearBlock || split.pastBlock || recentPrivateRounds)
-          if (hasPrivInject) {
-            onlineInjectScope = {
-              minMessageTimestamp:
-                lastOfflineAiPlotTs != null
-                  ? lastOfflineAiPlotTs + 1
-                  : (await personaDb.getMemorySummaryCursorTimestamp(convKey) ?? 0) + 1,
-              lastOfflineAiPlotTs,
-              privateMessageCount: onlineBounds.count || split.nearCount || privateMessageCount,
-              onlineInjectMinTs: onlineBounds.minTs,
-              onlineInjectMaxTs: onlineBounds.maxTs,
-              storyCalendarAnchor: storyCalendarAnchor || null,
-              storyNowLabel: storyNowLabel || null,
-            }
-            const storySync = buildCrossChannelStoryTimeSyncRule({
-              storyCalendarAnchor,
-              storyNowLabel,
-              hasOnlineInject: true,
-            })
-            const cursorPart = [split.nearBlock, split.pastBlock].filter(Boolean).join('\n\n')
-            const cursorWithFooter = cursorPart
-              ? `${cursorPart}\n${formatDatingOnlineInjectScopeFooter({
-                  ...onlineInjectScope,
-                  privateMessageCount: split.nearCount || onlineInjectScope.privateMessageCount,
-                })}`
-              : ''
-            unsummarizedPrivateBlock = [storySync, recentPrivateRounds, cursorWithFooter]
-              .filter(Boolean)
-              .join('\n\n')
+            privateMessageCount: onlineBounds.count || privateMessageCount,
+            onlineInjectMinTs: onlineBounds.minTs,
+            onlineInjectMaxTs: onlineBounds.maxTs,
+            storyCalendarAnchor: storyCalendarAnchor || null,
+            storyNowLabel: storyNowLabel || null,
           }
-        } catch {
-          unsummarizedPrivateBlock = recentPrivateRounds
-            ? [
-                buildCrossChannelStoryTimeSyncRule({
-                  storyCalendarAnchor,
-                  storyNowLabel,
-                  hasOnlineInject: true,
-                }),
-                recentPrivateRounds,
-              ]
-                .filter(Boolean)
-                .join('\n\n')
-            : ''
+          const storySync = buildCrossChannelStoryTimeSyncRule({
+            storyCalendarAnchor,
+            storyNowLabel,
+            hasOnlineInject: true,
+          })
+          const cursorPart = [split.nearBlock, split.pastBlock].filter(Boolean).join('\n\n')
+          unsummarizedPrivateBlock = [
+            storySync,
+            cursorPart,
+            formatDatingOnlineInjectScopeFooter({
+              ...onlineInjectScope,
+              privateMessageCount: split.nearCount || onlineInjectScope.privateMessageCount,
+            }),
+          ]
+            .filter(Boolean)
+            .join('\n\n')
         }
+      } catch {
+        unsummarizedPrivateBlock = ''
+      }
+      if (convKey && !convKey.startsWith('wxgrp:')) {
         try {
           const anchorGroupId =
             peekPrivateChatGroupAnchorFromDockStaging(cid) ??
