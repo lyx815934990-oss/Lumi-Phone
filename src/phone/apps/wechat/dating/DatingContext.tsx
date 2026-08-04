@@ -2362,7 +2362,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `${datingScheduleBlock}` +
     (npcNetworkBlock.trim() ? `${npcNetworkBlock.trim()}\n\n` : '') +
     (presentNetworkBlock ? `${presentNetworkBlock}\n\n` : '') +
-    `${progressHint}\n` +792783bccb79b85295f2ace22c2a9c3f_720.png
+    `${progressHint}\n` +
     `${epilogueRelationshipBaselineBlock}\n\n`
   const memoryTailBlock =
     `【剧情时间轴·当前状态】（故事内「现在」；承接地点/时段/服装优先对照本块；**高于**下方语义召回与向量长期记忆）：${storyCalendarHint}\n${
