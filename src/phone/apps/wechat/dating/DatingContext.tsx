@@ -2814,10 +2814,8 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       storyNowLabel?: string
     }> => {
       const cid = characterId.trim()
-      const { chRow, sessionPid, conversationKey: convKey } = await resolveDatingWeChatConversationScope(
-        cid,
-        relevance?.sessionPlayerIdentityId,
-      )
+      const { chRow, sessionPid, conversationKey: convKey, wechatAccountId } =
+        await resolveDatingWeChatConversationScope(cid, relevance?.sessionPlayerIdentityId)
 
       const offlinePlotSnap = relevance?.offlineUnsummarizedPlotSnapshot ?? []
       const lastOfflineAiPlotTs = resolveLastOfflineAiPlotTimestampMs(offlinePlotSnap)
@@ -2921,11 +2919,12 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       let unsummarizedPrivateBlock = ''
       let unsummarizedGroupBlock = ''
       let onlineInjectScope: DatingOnlineInjectScopeMeta | undefined
-      // 未总结私聊：按游标划分；会话键对不上时按角色回退。已总结另走长期记忆块。
+      // 线下私聊原文：不按记忆游标过滤；会话键/马甲错位时按角色扫桶。已总结另走长期记忆块。
       try {
         const split = await formatDatingUnsummarizedPrivateChatSplit({
           conversationKey: convKey && !convKey.startsWith('wxgrp:') ? convKey : '',
           characterId: cid,
+          wechatAccountId,
           maxMessages: MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
           maxChars: MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
           storyNowMs,
