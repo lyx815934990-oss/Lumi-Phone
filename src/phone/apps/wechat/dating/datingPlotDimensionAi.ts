@@ -13,8 +13,19 @@ import {
   WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE,
 } from '../wechatChatLanguage'
 import { buildWorldbookContext } from '../../../worldbook/buildWorldbookContext'
-import { getWorldbookLoreEntriesSnapshot } from '../../../worldbook/worldbookLoreStore'
+import {
+  buildWechatReplyRomanceSections,
+  resolveLoreArchiveBuiltinPresetToggles,
+} from '../../../worldbook/loreArchiveBuiltinPresets'
+import {
+  getLoreArchiveBuiltinPresetTogglesSnapshot,
+  getWorldbookLoreEntriesSnapshot,
+} from '../../../worldbook/worldbookLoreStore'
+import { PROSE_FORBIDDEN_LEXICON_PROMPT } from '../proseForbiddenLexiconPrompt'
+import { MBTI_OUTPUT_BAN_RULE } from '../mbtiOutputBan'
 import { splitDatingAssistantOutput } from './plotCoT'
+import { buildDatingStyleSystemAppend } from './datingStylePrompt'
+import { OFFLINE_DATING_RICH_INNER_OS_APPENDIX } from './offlineDatingRichInnerOsAppendix'
 import {
   buildDatingLanguageAppendix,
   finalizeDatingPlotDialogueTranslations,
@@ -22,6 +33,7 @@ import {
 } from './datingLanguagePrompt'
 import {
   type CharacterInfo,
+  type NarrativeGenOptions,
   type NarrativePerspective,
   type PlotDialogueTranslation,
   type PlotDimensionKind,
@@ -86,6 +98,8 @@ function buildDimensionSystemPrompt(
     outputLanguage?: string | null
     isVnMode?: boolean
     languageSettings?: DimensionLanguageSettings | null
+    /** 与主线约会同一套文风（用户设定或默认汪曾祺白描） */
+    styleGenOptions?: Pick<NarrativeGenOptions, 'stylePrompt' | 'referenceSnippet'> | null
   },
 ): string {
   const charName = character.realName.trim() || '对方'
@@ -118,9 +132,16 @@ function buildDimensionSystemPrompt(
   - **只允许**锚点 cast **以外**的其他人物/群体在别处同时发生什么（真正的屏外 elsewhere）。
   - 锚点内角色**不知道**本切片内容；本切片也**不得**写成他们全知旁观或复述锚点细节。
 - **因果锁**：不得改写锚点已定事实；平行切片不得替代主线正文。`
-      : `【任务·IF线】从锚点剧情节点出发，写一段**假设分歧**后的虚构分支片段（「若当时……」）。
-- 明确是 IF/假设线想象，**不影响**主线已定 canon；勿写成主线已发生事实。
-- 须点出或暗示分歧点（一句即可），再展开该分支下的一小段剧情。`
+      : `【任务·IF 分支】从锚点剧情节点出发，写一段「若当时换了选择」后的**沉浸剧情片段**。
+- **文风对齐（最高优先级之一）**：须与主线约会剧情**同一套笔触**——动作与对白优先、短句推进、贴地白描；**禁止**换成网文霸总腔、长篇抒情堆砌、鸡汤收束或设定讲解体。
+- 开篇用一两句自然点出分歧（可用「若……」），随后像真正发生的当面戏一样写下去；**不要**跳出故事讲解「这是假设分支」。
+- 本段仅为想象分支，**不得**改写锚点已定事实；但叙述时禁止在正文出现「主线 / 正史 / 设定 / 分支线」等元叙事说法。
+- 气质只通过具体言行体现：禁止用人格标签、心理学术语或英文设定黑话代替描写。`
+
+  const styleDuty =
+    kind === 'if'
+      ? `【文风·与主线同轨】本段 IF 分支必须读起来像同一作者写的下一页约会正文，而不是另一套「幻想文/同人文」笔法。优先模仿下方【写作风格约束】与【参考笔触学习】，以及锚点正文本身的句式密度与对白口吻。`
+      : `【文风·与主线同轨】本段须与主线约会剧情同一白描质感；动作与对白优先，禁空泛抒情与油腻套话。`
 
   const perspectiveRule =
     kind === 'parallel'
@@ -151,18 +172,42 @@ function buildDimensionSystemPrompt(
     relationHint: langSettings?.relationHint,
     characterPersonaBrief: langSettings?.characterPersonaBrief,
   })
-  const worldbookDuty = `【档案室效力】上列世界书/档案室规范对本段「${PLOT_DIMENSION_LABELS[kind]}」**同样生效**（含关系阶段、亲密分寸、禁止项等）；不得因是旁支切片或假设线而绕过。`
+  const worldbookDuty = `【档案室效力】上列世界书/档案室规范对本段「${PLOT_DIMENSION_LABELS[kind]}」**同样生效**（含关系阶段、亲密分寸、禁止项等）；不得因是旁支切片或假设线而绕过。
+【内置预设·同等生效】档案室若已开启「纯爱克制 / Lumi 高质量爱情观 / 情感破冰与告白」等内置预设，对本段**与主线约会同等效力**：亲密分寸、关系阶段闸门、禁止强制爱不得因是 IF 分支或平行切片而放宽；气质仍服从人设，但边界硬底线不可破。`
+  const toggles = getLoreArchiveBuiltinPresetTogglesSnapshot()
+  const romanceBuiltinBlock = buildWechatReplyRomanceSections(toggles).trim()
+  const resolvedPresets = resolveLoreArchiveBuiltinPresetToggles(toggles)
+  const richOsBlock = resolvedPresets.offlineRichInnerOs
+    ? `【档案室预设·多内心 OS·已开启】本段线下旁支同样适用（覆盖默认 OS 过短敷衍）：\n${OFFLINE_DATING_RICH_INNER_OS_APPENDIX}`
+    : ''
+  const styleAppend = buildDatingStyleSystemAppend(
+    opts.styleGenOptions
+      ? {
+          stylePrompt: opts.styleGenOptions.stylePrompt,
+          referenceSnippet: opts.styleGenOptions.referenceSnippet,
+        }
+      : undefined,
+  )
 
-  const raw = `${cuDirective}${archiveBlock ? `${archiveBlock}\n\n` : ''}${worldbookDuty}
+  const metaBan = `【禁止元叙事出戏】正文中禁止出现：IF线、假设线、平行宇宙、主线、正史、OOC、CP、设定、人设卡、以及英文 meta 词（如 canon / AU / OC / IC）。禁止用「细碎的电流」「化掉的雪」「唯一的锚点」等网文滥抒情收束。`
 
-你是线下约会「${PLOT_DIMENSION_LABELS[kind]}」辅助写手。
+  const raw = `${cuDirective}${MBTI_OUTPUT_BAN_RULE}
+
+${archiveBlock ? `${archiveBlock}\n\n` : ''}${worldbookDuty}
+${romanceBuiltinBlock ? `\n\n${romanceBuiltinBlock}` : ''}
+${richOsBlock ? `\n\n${richOsBlock}` : ''}
+
+你是线下约会「${PLOT_DIMENSION_LABELS[kind]}」写手：与主线约会**同一文风管线、同一档案室约束**，不是另一套模板腔助手。
 ${modeNote}
+${styleDuty}
 ${perspectiveRule}
 ${languageRule}
 ${languageAppendix ? `\n${languageAppendix}\n` : ''}
 ${taskBlock}
+${metaBan}
+${styleAppend}
 
-【禁止 MBTI 出戏】旁白与对白中禁止写出 ENFP/INFJ 等四字母或「快乐修勾」「INFJ 清冷感」等类型学套话。
+${PROSE_FORBIDDEN_LEXICON_PROMPT}
 
 【输出铁律】
 - **禁止**输出 \`<thinking>\`、思维链、JSON、Markdown 围栏或任何解释性前后缀。
@@ -289,6 +334,9 @@ export async function generateDatingPlotDimensionAi(params: {
   /** VN 模式下按 vn 板块注入档案室；否则 offline_plot */
   isVnMode?: boolean
   languageSettings?: DimensionLanguageSettings | null
+  /** 与主线约会相同的文风设定；缺省则用默认汪曾祺白描 */
+  stylePrompt?: string | null
+  referenceSnippet?: string | null
 }): Promise<string> {
   const {
     kind,
@@ -305,12 +353,20 @@ export async function generateDatingPlotDimensionAi(params: {
     outputLanguage,
     isVnMode,
     languageSettings,
+    stylePrompt,
+    referenceSnippet,
   } = params
   const target = Math.max(1, Math.round(Number(lengthTargetChars) || 500))
   const minChars = Math.max(1, Math.round(target * 0.85))
   const maxChars = Math.round(target * 1.15)
   const guide = String(writingGuide ?? '').trim()
   const langCode = normalizeWeChatChatLanguageCode(outputLanguage, WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE)
+  const styleGenOptions = {
+    ...(String(stylePrompt ?? '').trim() ? { stylePrompt: String(stylePrompt).trim() } : {}),
+    ...(String(referenceSnippet ?? '').trim()
+      ? { referenceSnippet: String(referenceSnippet).trim() }
+      : {}),
+  }
 
   if (!apiConfig?.apiUrl || !apiConfig?.apiKey || !apiConfig?.modelId) {
     await new Promise((r) => window.setTimeout(r, 280))
@@ -327,6 +383,7 @@ export async function generateDatingPlotDimensionAi(params: {
     outputLanguage: langCode,
     isVnMode: isVnMode === true,
     languageSettings,
+    styleGenOptions: Object.keys(styleGenOptions).length ? styleGenOptions : null,
   })
 
   const parallelUserBlock =
@@ -338,7 +395,15 @@ export async function generateDatingPlotDimensionAi(params: {
 4. 锚点内角色不知晓本切片（屏外非全知信息，不是他们的视角）。
 
 `
-      : ''
+      : kind === 'if'
+        ? `【IF 分支·执行清单】
+1. 先读锚点正文的句式与对白口吻，本段必须同一笔触，禁止换成更油、更长、更「同人文」的腔。
+2. 用一两句点出「若当时……」的分歧，再写当面动作与对白推进；禁空泛抒情收束。
+3. 正文禁止出现 MBTI、canon、IF线、主线/正史等出戏词。
+4. 若档案室已开「纯爱克制」等：亲密分寸与主线一致；未确立情侣禁止越级亲密，禁止强制爱。
+
+`
+        : ''
 
   const langLabel = weChatChatLanguageLabel(langCode)
   const langNative = weChatChatLanguageNativeName(langCode)
@@ -367,10 +432,10 @@ export async function generateDatingPlotDimensionAi(params: {
       : `【输出语言】旁白 **${langLabel}（${langNative}）**；对白 **${weChatChatLanguageLabel(dialogueCode)}（${weChatChatLanguageNativeName(dialogueCode)}）**；内心 OS **${weChatChatLanguageLabel(osCode)}（${weChatChatLanguageNativeName(osCode)}）**。\n`
   const userRaw =
     `角色：${character.realName}\n标签：${character.identityTags.join('、') || '无'}\n人设摘要：${character.prompt.slice(0, 900)}\n\n` +
-    `【近端剧情摘录（仅供承接语气，勿复述）】\n${tailContext.slice(0, 2400)}\n\n` +
-    `【锚点剧情正文（本${PLOT_DIMENSION_LABELS[kind]}的参照节点）】\n${anchorPlotBody.slice(0, 4200)}\n\n` +
+    `【近端剧情摘录（仅供承接语气与文风，勿整段复述）】\n${tailContext.slice(0, 2400)}\n\n` +
+    `【锚点剧情正文（本${PLOT_DIMENSION_LABELS[kind]}的参照节点；句式与对白口吻须对齐）】\n${anchorPlotBody.slice(0, 4200)}\n\n` +
     parallelUserBlock +
-    `【篇幅】正文约 ${minChars}～${maxChars} 汉字（若目标语非汉语，以等价信息量对齐该篇幅）。\n` +
+    `【篇幅】正文约 ${minChars}～${maxChars} 汉字（若目标语非汉语，以等价信息量对齐该篇幅）。宁短勿水；禁止为凑字堆感官与同义排比。\n` +
     langHint +
     syncHint +
     (guide ? `【用户写作引导·须优先服从】\n${guide.slice(0, 480)}\n` : '【用户写作引导】（未填写，按锚点自然延伸即可）\n') +
@@ -391,7 +456,7 @@ export async function generateDatingPlotDimensionAi(params: {
           { role: 'system', content: system },
           { role: 'user', content: user },
         ],
-        { temperature: kind === 'if' ? 0.78 : 0.68 },
+        { temperature: kind === 'if' ? 0.7 : 0.68 },
       )
       lastErr = null
       break

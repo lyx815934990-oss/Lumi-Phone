@@ -148,6 +148,7 @@ import {
   plotWithVersionIndex,
 } from './plotVersions'
 import { buildDatingStyleSystemAppend } from './datingStylePrompt'
+import { loadDatingStyleTuning } from './styleTuningStorage'
 import {
   buildDatingLanguageAppendix,
   finalizeDatingPlotDialogueTranslations,
@@ -1142,6 +1143,19 @@ async function enrichAiPlotWithOptionalDimensions(params: {
     translationDedicatedApi: params.translationDedicatedApi === true,
   })
   const listenerName = playerName || '用户'
+  const styleFromGen = {
+    ...(params.mergedGen?.stylePrompt?.trim()
+      ? { stylePrompt: params.mergedGen.stylePrompt.trim() }
+      : {}),
+    ...(params.mergedGen?.referenceSnippet?.trim()
+      ? { referenceSnippet: params.mergedGen.referenceSnippet.trim() }
+      : {}),
+  }
+  const styleFromStore = loadDatingStyleTuning(params.char.id)
+  const stylePrompt =
+    styleFromGen.stylePrompt || styleFromStore.stylePrompt.trim() || undefined
+  const referenceSnippet =
+    styleFromGen.referenceSnippet || styleFromStore.referenceSnippet.trim() || undefined
 
   let plot = params.aiPlot
   const genBase = {
@@ -1158,6 +1172,8 @@ async function enrichAiPlotWithOptionalDimensions(params: {
     outputLanguage: languageSettings.plotOutputLanguage,
     isVnMode: params.archiveSnap.modePreference === 'vn',
     languageSettings,
+    stylePrompt,
+    referenceSnippet,
   }
 
   if (wantParallel) {
@@ -4234,6 +4250,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       })
       const apiCfg =
         apiConfig?.apiUrl?.trim() && apiConfig?.apiKey?.trim() ? apiConfig : null
+      const styleTuning = loadDatingStyleTuning(charId)
       const rawContent = await generateDatingPlotDimensionAi({
         kind,
         character: char,
@@ -4249,6 +4266,8 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         outputLanguage: languageSettings.plotOutputLanguage,
         isVnMode: archive.modePreference === 'vn',
         languageSettings,
+        stylePrompt: styleTuning.stylePrompt.trim() || undefined,
+        referenceSnippet: styleTuning.referenceSnippet.trim() || undefined,
       })
       const finalized = await finalizeDatingDimensionTranslations({
         content: rawContent,
