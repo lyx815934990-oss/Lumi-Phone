@@ -38,7 +38,7 @@ import {
   buildMemoryRelevanceHaystack,
   buildNpcGroupChatsUnsummarizedDigestForPrivatePrompt,
   buildRecentPrivateChatRoundsWithTimeBlock,
-  formatUnsummarizedPrivateChatBlock,
+  formatDatingUnsummarizedPrivateChatSplit,
   MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
   MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
 } from '../wechatMemoryPromptBlocks'
@@ -2087,7 +2087,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   const wechatDialogueParityReminder =
     wechatUnsummarizedRefLen > 8
       ? godPerspective
-        ? `【当轮强提醒·对白口吻】「尚未总结」摘录为微信线上口吻参考；本轮为上帝视角**屏外场景**，角色对白限于 NPC 之间或独处自语，**禁止**当作与玩家当面说话，**禁止**把玩家写成在场。\n`
+        ? `【当轮强提醒·对白口吻】「尚未总结」私聊是 ${character.realName} **已收到/已读的线上事实**（角色已知）；本轮上帝视角写其独处/屏外时须能想起、查看手机或据此反应，**禁止**装作完全不知道。对白限于 NPC 之间或独处自语，**禁止**把玩家写成在场当面说话。\n`
         : `【当轮强提醒·对白口吻】下方「尚未总结」块为**同一 ${character.realName}** 的微信原文：**事实与约定优先服从**，口吻仅作辅助——口语、短句、活人感；场景是面对面，**不是**换个人写小说腔长台词；**勿**在引号对白里堆「（笑）」类括号神态（须在思维链【文句风控卡】/预检 4 中闭环）。\n`
       : ''
   const trimmedUserForReminder = (userText ?? '').trim()
@@ -2376,11 +2376,11 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `${storyCalendarChronologyRule}` +
     `${onlinePrivBoundaryReminder}` +
     `${wechatDialogueParityReminder}` +
-    `尚未总结·私聊（**线上已发生事实**｜含近端固定原文窗｜末尾最新优先；${
+    `尚未总结·私聊（**线上已发生事实**｜含近端/往事拆分与近端固定原文窗｜末尾最新优先；${
       onlineInjectScope?.storyNowLabel?.trim() || onlineInjectScope?.storyCalendarAnchor?.trim()
-        ? '**故事内时刻见【跨通道·故事内时刻对齐】，**'
+        ? '**故事内「现在」见【跨通道·故事内时刻对齐】**；'
         : ''
-    }有前缀时为**设备落库时刻**，**不是**故事内剧情时间；须服从）：\n${unsPrivClipped || '（暂无）'}\n\n` +
+    }每条方括号前缀：**有剧情时间则优先用剧情时间**，否则才是设备落库钟点；同日近端须承接，跨日往事禁止当此刻刚聊）：\n${unsPrivClipped || '（暂无）'}\n\n` +
     `尚未总结·群聊（**线上已发生事实**｜同一时间窗；末尾最新优先）：\n${unsGrpClipped || '（暂无）'}\n\n` +
     `尚未总结·线下剧情（落库先后；末尾最新优先）：\n${unsOffClipped || '（暂无）'}\n\n` +
     `【历史摘录·文风隔离】下条「最近剧情」**只**供提取事实、关系、未收束点与空间关系；**禁止**模仿旧稿措辞/网文腔；须按 system 文风与禁词表落笔。\n` +
@@ -2929,8 +2929,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         })
         let recentPrivateRounds = ''
         try {
-          // 固定近端 N 轮原文；必须剔除「早于故事现在 / 上一轮线下」的旧气泡，
-          // 否则未总结的 5/1「要离开」会在 5/10 归来后仍被当成近端事实。
+          // 固定近端 N 轮：同日较早保留；仅剔除跨日早于故事「现在」的旧气泡
           recentPrivateRounds = (
             await buildRecentPrivateChatRoundsWithTimeBlock({
               conversationKey: convKey,
@@ -2942,18 +2941,16 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           recentPrivateRounds = ''
         }
         try {
-          const privRaw = await formatUnsummarizedPrivateChatBlock({
+          // 未总结私聊：按剧情日拆近端/往事，跨日更早仍注入（标往事），禁止整段丢弃同晚消息
+          const split = await formatDatingUnsummarizedPrivateChatSplit({
             conversationKey: convKey,
             maxMessages: MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
             maxChars: MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
-            minMessageTimestamp: lastOfflineAiPlotTs ?? undefined,
-            minStoryCalendarMs: storyNowMs,
-            includeMessageTimestamps: true,
-            clipPreferRecent: true,
+            storyNowMs,
+            lastOfflineAiPlotTs,
           })
-          const privBody = stripUnsummarizedBlockFooter(privRaw)
-          const privateMessageCount = countUnsummarizedInjectLines(privBody)
-          const hasPrivInject = Boolean(privBody || recentPrivateRounds)
+          const privateMessageCount = split.nearCount + split.pastCount
+          const hasPrivInject = Boolean(split.nearBlock || split.pastBlock || recentPrivateRounds)
           if (hasPrivInject) {
             onlineInjectScope = {
               minMessageTimestamp:
@@ -2961,7 +2958,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
                   ? lastOfflineAiPlotTs + 1
                   : (await personaDb.getMemorySummaryCursorTimestamp(convKey) ?? 0) + 1,
               lastOfflineAiPlotTs,
-              privateMessageCount: onlineBounds.count || privateMessageCount,
+              privateMessageCount: onlineBounds.count || split.nearCount || privateMessageCount,
               onlineInjectMinTs: onlineBounds.minTs,
               onlineInjectMaxTs: onlineBounds.maxTs,
               storyCalendarAnchor: storyCalendarAnchor || null,
@@ -2972,10 +2969,14 @@ export function DatingProvider({ children }: { children: ReactNode }) {
               storyNowLabel,
               hasOnlineInject: true,
             })
-            const cursorPart = privBody
-              ? `${privBody}\n${formatDatingOnlineInjectScopeFooter(onlineInjectScope)}`
+            const cursorPart = [split.nearBlock, split.pastBlock].filter(Boolean).join('\n\n')
+            const cursorWithFooter = cursorPart
+              ? `${cursorPart}\n${formatDatingOnlineInjectScopeFooter({
+                  ...onlineInjectScope,
+                  privateMessageCount: split.nearCount || onlineInjectScope.privateMessageCount,
+                })}`
               : ''
-            unsummarizedPrivateBlock = [storySync, recentPrivateRounds, cursorPart]
+            unsummarizedPrivateBlock = [storySync, recentPrivateRounds, cursorWithFooter]
               .filter(Boolean)
               .join('\n\n')
           }
