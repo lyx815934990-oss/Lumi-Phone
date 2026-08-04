@@ -57,12 +57,15 @@ export type DiaryVirtualPage = {
   body: string
 }
 
-function getMeasureContext(fontFamily: string | null): CanvasRenderingContext2D | null {
+function getMeasureContext(
+  fontFamily: string | null,
+  language?: string | null,
+): CanvasRenderingContext2D | null {
   if (typeof document === 'undefined') return null
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
-  ctx.font = `${DIARY_BODY_FONT_SIZE}px ${diaryFontStack(fontFamily)}`
+  ctx.font = `${DIARY_BODY_FONT_SIZE}px ${diaryFontStack(fontFamily, language)}`
   return ctx
 }
 
@@ -115,9 +118,10 @@ export function wrapDiaryContentToLines(
   content: string,
   contentWidth: number,
   fontFamily: string | null,
+  language?: string | null,
 ): string[] {
   const width = Math.max(120, Math.round(contentWidth))
-  const ctx = getMeasureContext(fontFamily)
+  const ctx = getMeasureContext(fontFamily, language)
   if (!ctx) {
     const approxChars = Math.max(8, Math.floor(width / DIARY_BODY_FONT_SIZE))
     return content
@@ -162,11 +166,12 @@ export function buildDiaryVirtualPages(
     firstPageBodyLines: DIARY_FIRST_PAGE_BODY_LINES,
     continuationBodyLines: DIARY_CONTINUATION_BODY_LINES,
   },
+  language?: string | null,
 ): DiaryVirtualPage[] {
   const pages: DiaryVirtualPage[] = []
 
   entries.forEach((entry, entryIndex) => {
-    const lines = wrapDiaryContentToLines(entry.content, contentWidth, fontFamily)
+    const lines = wrapDiaryContentToLines(entry.content, contentWidth, fontFamily, language)
     const firstCapacity = diaryContentLineCapacity(layout.firstPageBodyLines)
     const contCapacity = diaryContentLineCapacity(layout.continuationBodyLines)
     const firstPageLines = lines.slice(0, firstCapacity)

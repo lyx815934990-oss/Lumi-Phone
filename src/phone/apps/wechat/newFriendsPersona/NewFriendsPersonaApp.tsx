@@ -1993,13 +1993,95 @@ function PersonaEditPage({
     (didSync: boolean) => {
       if (!contactSyncPrompt) return
       const { character, pendingBack } = contactSyncPrompt
-      if (didSync) {
-        replaceWeChatPersonaContacts([character.id], [contactEntryFromCharacter(character)])
+      const finish = () => {
+        setContactSyncPrompt(null)
+        if (pendingBack) void performBack()
       }
-      setContactSyncPrompt(null)
-      if (pendingBack) void performBack()
+      if (!didSync) {
+        finish()
+        return
+      }
+      void (async () => {
+        try {
+          const acc = currentAccountId?.trim() || character.wechatAccountId?.trim() || ''
+          const rootId =
+            character.generatedForCharacterId?.trim() || character.id.trim()
+          const existingIds = new Set(
+            phoneState.wechatPersonaContacts.map((c) => c.characterId.trim()).filter(Boolean),
+          )
+          const networkChars: Character[] = []
+          if (rootId) {
+            try {
+              const root =
+                rootId === character.id.trim()
+                  ? character
+                  : (await personaDb.getCharacter(rootId)) ?? null
+              if (root) {
+                if (
+                  !acc ||
+                  characterAccessibleToWechatAccount(root, acc, linkedCharacterIdSet) ||
+                  root.id === character.id
+                ) {
+                  networkChars.push(root.id === character.id ? character : root)
+                }
+                const npcs = acc
+                  ? await personaDb.listNpcsForAccessibleRoot(
+                      rootId,
+                      acc,
+                      [...existingIds],
+                    )
+                  : await personaDb.listNpcsFor(rootId)
+                for (const n of npcs) {
+                  if (!n?.id?.trim()) continue
+                  networkChars.push(n.id === character.id ? character : n)
+                }
+              }
+            } catch {
+              /* ignore network expand */
+            }
+          }
+          if (!networkChars.some((c) => c.id === character.id)) {
+            networkChars.push(character)
+          }
+
+          // 当前保存角色始终刷新展示；同人脉其它角色仅补尚未在通讯录中的
+          const byId = new Map<string, Character>()
+          for (const ch of networkChars) {
+            const cid = ch.id.trim()
+            if (!cid) continue
+            if (cid === character.id.trim()) byId.set(cid, character)
+            else if (!byId.has(cid)) byId.set(cid, ch)
+          }
+
+          const removeIds: string[] = []
+          const addEntries: ReturnType<typeof contactEntryFromCharacter>[] = []
+          for (const [cid, ch] of byId) {
+            if (cid === character.id.trim() || !existingIds.has(cid)) {
+              removeIds.push(cid)
+              addEntries.push(contactEntryFromCharacter(ch))
+            }
+          }
+          if (removeIds.length) {
+            replaceWeChatPersonaContacts(removeIds, addEntries)
+          }
+        } catch {
+          replaceWeChatPersonaContacts(
+            [character.id],
+            [contactEntryFromCharacter(character)],
+          )
+        } finally {
+          finish()
+        }
+      })()
     },
-    [contactSyncPrompt, performBack, replaceWeChatPersonaContacts],
+    [
+      contactSyncPrompt,
+      currentAccountId,
+      linkedCharacterIdSet,
+      performBack,
+      phoneState.wechatPersonaContacts,
+      replaceWeChatPersonaContacts,
+    ],
   )
 
   const setField = <K extends keyof Character>(k: K, v: Character[K]) => {

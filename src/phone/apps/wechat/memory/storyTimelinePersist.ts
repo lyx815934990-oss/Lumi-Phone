@@ -13,6 +13,7 @@ import {
   syncDatingPlotSummaryCursorFromPlotRows,
 } from './storyTimelineDatingCursorSync'
 import { recallStoryTimelineRowsByVector } from './storyTimelineRowRecall'
+import { storyDayTimeToMs, syncNetworkStoryNowFromPrimary } from './storyTimelineNetworkNowSync'
 import { MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS } from './memorySummaryRetention'
 import {
   buildStoryTimelinePlotRowFromDelta,
@@ -64,6 +65,17 @@ export async function persistStoryTimelineFromSummaryDelta(
   const merged = mergeStoryTimelineState(prev, cid, enforcedDelta, scope)
   if (!merged) return
   await personaDb.putStoryTimelineState(merged)
+  try {
+    await syncNetworkStoryNowFromPrimary({
+      sourceCharacterId: cid,
+      storyDay: merged.currentStoryDay,
+      storyTime: merged.currentStoryTime,
+      storyNowMs: storyDayTimeToMs(merged.currentStoryDay, merged.currentStoryTime),
+      syncOnlineClock: true,
+    })
+  } catch {
+    /* 人脉时间同步失败不影响主写入 */
+  }
 
   const recordedAt =
     typeof opts?.recordedAtMs === 'number' && Number.isFinite(opts.recordedAtMs)
@@ -205,6 +217,18 @@ export async function rebuildStoryTimelineFromDatingPlots(
         ? { manualAnchorBlock: prevState.manualAnchorBlock }
         : {}),
     })
+    try {
+      // rebuild 人脉：重建主状态后对齐同圈剧情「现在」
+      await syncNetworkStoryNowFromPrimary({
+        sourceCharacterId: cid,
+        storyDay: merged.currentStoryDay,
+        storyTime: merged.currentStoryTime,
+        storyNowMs: storyDayTimeToMs(merged.currentStoryDay, merged.currentStoryTime),
+        syncOnlineClock: true,
+      })
+    } catch {
+      /* ignore */
+    }
   }
   for (const row of plotRows) {
     const pid = row.plotId?.trim()

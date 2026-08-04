@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, Languages, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { useCurrentApiConfig, useTranslationRuntime } from '../../api/ApiSettingsContext'
+import { batchTranslateWeChatBubbleTexts } from '../wechatChatLanguage'
 import { LinedDiarySheet } from './LinedDiarySheet'
 import {
   buildDiaryVirtualPages,
@@ -15,6 +17,7 @@ import {
   ensureDiaryInUniverseTimeHasYear,
   loadDiaryStoryYearHint,
 } from './diaryInUniverseTime'
+import { isDiaryWritingChinese } from './diaryLanguage'
 import { resolveCharacterRealName } from './resolveCharacterRealName'
 import { useDiaryStore } from './useDiaryStore'
 
@@ -67,8 +70,11 @@ export function DiaryReader({
   onDeleteEntry,
 }: DiaryReaderProps) {
   const book = useDiaryStore((s) => s.getBook(charId))
+  const patchEntryTranslation = useDiaryStore((s) => s.patchEntryTranslation)
+  const chatApiConfig = useCurrentApiConfig()
+  const translationRuntime = useTranslationRuntime()
   const allEntries = useMemo(() => book?.entries ?? [], [book?.entries])
-  const entries = useMemo(() => {
+  const sourceEntries = useMemo(() => {
     if (!focusEntryId) return allEntries
     const one = allEntries.find((e) => e.id === focusEntryId)
     return one ? [one] : []
@@ -83,7 +89,13 @@ export function DiaryReader({
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [signatureName, setSignatureName] = useState(displayName)
   const [storyYearHint, setStoryYearHint] = useState<string | null>(null)
+  const [showZhTranslation, setShowZhTranslation] = useState(false)
+  const [translating, setTranslating] = useState(false)
+  const [translateError, setTranslateError] = useState<string | null>(null)
+  /** 当前页按页缓存的简体译文（无整篇译文时使用） */
+  const [pageZhCache, setPageZhCache] = useState<Record<string, { title: string; body: string }>>({})
   const measureRef = useRef<HTMLDivElement>(null)
+  const canShowTranslateBtn = !isDiaryWritingChinese(book?.diaryOutputLanguage)
 
   useEffect(() => {
     let cancelled = false
@@ -98,7 +110,24 @@ export function DiaryReader({
   useEffect(() => {
     setPageIndex(0)
     setDirection(0)
+    setShowZhTranslation(false)
+    setTranslateError(null)
+    setPageZhCache({})
   }, [charId, focusEntryId])
+
+  const entries = useMemo(() => {
+    if (!showZhTranslation) return sourceEntries
+    return sourceEntries.map((e) => {
+      const zhTitle = (e.translatedTitle ?? '').trim()
+      const zhContent = (e.translatedContent ?? '').trim()
+      if (!zhContent) return e
+      return {
+        ...e,
+        title: zhTitle || e.title,
+        content: zhContent,
+      }
+    })
+  }, [showZhTranslation, sourceEntries])
 
   useEffect(() => {
     let cancelled = false
@@ -137,16 +166,45 @@ export function DiaryReader({
       contentWidth,
       book?.fontFamily ?? null,
       pageLayout,
+      // 看译文时按中文排版；原文按日记书写语言叠假名/谚文回退
+      showZhTranslation ? 'zh-CN' : book?.diaryOutputLanguage,
     )
     if (!storyYearHint) return pages
     return pages.map((page) => ({
       ...page,
       inUniverseTime: ensureDiaryInUniverseTimeHasYear(page.inUniverseTime, storyYearHint),
     }))
-  }, [book?.fontFamily, contentWidth, entries, fontsReady, pageLayout, storyYearHint])
+  }, [
+    book?.diaryOutputLanguage,
+    book?.fontFamily,
+    contentWidth,
+    entries,
+    fontsReady,
+    pageLayout,
+    showZhTranslation,
+    storyYearHint,
+  ])
 
   const total = virtualPages.length
-  const current = total > 0 ? virtualPages[Math.min(pageIndex, total - 1)]! : null
+  const currentRaw = total > 0 ? virtualPages[Math.min(pageIndex, total - 1)]! : null
+  const current = useMemo(() => {
+    if (!currentRaw) return null
+    if (showZhTranslation) {
+      const entryHasFullZh = sourceEntries.some(
+        (e) => e.id === currentRaw.entryId && (e.translatedContent ?? '').trim(),
+      )
+      if (entryHasFullZh) return currentRaw
+    }
+    if (!showZhTranslation) return currentRaw
+    const key = `${currentRaw.entryId}:${currentRaw.chunkIndex}`
+    const cached = pageZhCache[key]
+    if (!cached) return currentRaw
+    return {
+      ...currentRaw,
+      title: currentRaw.isFirstChunk ? cached.title || currentRaw.title : currentRaw.title,
+      body: cached.body || currentRaw.body,
+    }
+  }, [currentRaw, pageZhCache, showZhTranslation, sourceEntries])
 
   useEffect(() => {
     if (pageIndex > 0 && pageIndex >= total) {
@@ -165,6 +223,96 @@ export function DiaryReader({
     setDirection(1)
     setPageIndex((v) => v + 1)
   }
+
+  const handleToggleTranslate = useCallback(async () => {
+    if (!currentRaw) return
+    setTranslateError(null)
+    if (showZhTranslation) {
+      setShowZhTranslation(false)
+      setPageIndex(0)
+      setDirection(0)
+      return
+    }
+
+    const focus = sourceEntries.find((e) => e.id === currentRaw.entryId)
+    if (focus && (focus.translatedContent ?? '').trim()) {
+      setShowZhTranslation(true)
+      setPageIndex(0)
+      setDirection(0)
+      return
+    }
+
+    const pageKey = `${currentRaw.entryId}:${currentRaw.chunkIndex}`
+    if (pageZhCache[pageKey]?.body?.trim()) {
+      setShowZhTranslation(true)
+      return
+    }
+
+    if (!translationRuntime && !chatApiConfig) {
+      setTranslateError('未配置翻译或聊天 API')
+      return
+    }
+
+    setTranslating(true)
+    try {
+      // 优先整篇翻译并落库，阅读时可整篇切到中文重分页
+      if (focus && focus.content.trim()) {
+        const [zhTitle, zhContent] = await batchTranslateWeChatBubbleTexts({
+          apiConfig: chatApiConfig,
+          translationRuntime,
+          texts: [focus.title, focus.content],
+          targetLanguage: 'zh-CN',
+          speakerName: displayName,
+        })
+        if (zhContent?.trim()) {
+          patchEntryTranslation(charId, focus.id, {
+            translatedTitle: (zhTitle ?? '').trim() || focus.title,
+            translatedContent: zhContent.trim(),
+          })
+          setShowZhTranslation(true)
+          setPageIndex(0)
+          setDirection(0)
+          return
+        }
+      }
+
+      const texts = currentRaw.isFirstChunk
+        ? [currentRaw.title, currentRaw.body]
+        : [currentRaw.body]
+      const out = await batchTranslateWeChatBubbleTexts({
+        apiConfig: chatApiConfig,
+        translationRuntime,
+        texts,
+        targetLanguage: 'zh-CN',
+        speakerName: displayName,
+      })
+      const zhTitle = currentRaw.isFirstChunk ? (out[0] ?? '').trim() : currentRaw.title
+      const zhBody = (currentRaw.isFirstChunk ? out[1] : out[0] ?? '').trim()
+      if (!zhBody) {
+        setTranslateError('翻译失败，请稍后重试')
+        return
+      }
+      setPageZhCache((prev) => ({
+        ...prev,
+        [pageKey]: { title: zhTitle || currentRaw.title, body: zhBody },
+      }))
+      setShowZhTranslation(true)
+    } catch {
+      setTranslateError('翻译失败，请稍后重试')
+    } finally {
+      setTranslating(false)
+    }
+  }, [
+    charId,
+    chatApiConfig,
+    currentRaw,
+    displayName,
+    pageZhCache,
+    patchEntryTranslation,
+    showZhTranslation,
+    sourceEntries,
+    translationRuntime,
+  ])
 
   const entryLabel =
     current && entries.length > 1
@@ -191,10 +339,26 @@ export function DiaryReader({
         <div className="min-w-0 flex-1 text-center">
           <div className="truncate text-[16px] font-medium text-gray-900">{displayName}</div>
           <div className="text-[10px] tracking-[0.2em] text-gray-400">
-            {focusEntryId ? '阅读日记' : '私语档案'}
+            {focusEntryId ? (showZhTranslation ? '阅读日记 · 中文' : '阅读日记') : '私语档案'}
           </div>
         </div>
-        <div className="w-10 shrink-0">
+        <div className="flex shrink-0 items-center justify-end gap-0.5">
+          {canShowTranslateBtn && currentRaw ? (
+            <button
+              type="button"
+              aria-label={showZhTranslation ? '显示原文' : '翻译成中文'}
+              disabled={translating}
+              onClick={() => void handleToggleTranslate()}
+              className={`flex h-10 min-w-10 items-center justify-center gap-0.5 rounded-full px-1.5 text-[11px] transition-colors disabled:opacity-45 ${
+                showZhTranslation
+                  ? 'bg-gray-900 text-white'
+                  : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
+              }`}
+            >
+              <Languages className="size-3.5" strokeWidth={1.5} />
+              <span>{translating ? '…' : showZhTranslation ? '原文' : '翻译'}</span>
+            </button>
+          ) : null}
           {focusEntryId && onDeleteEntry ? (
             !deleteConfirm ? (
               <button
@@ -218,6 +382,8 @@ export function DiaryReader({
                 删
               </button>
             )
+          ) : !canShowTranslateBtn || !currentRaw ? (
+            <div className="w-10" />
           ) : null}
         </div>
       </header>
@@ -248,6 +414,7 @@ export function DiaryReader({
               <LinedDiarySheet
                 page={current}
                 fontFamily={book?.fontFamily ?? null}
+                language={showZhTranslation ? 'zh-CN' : book?.diaryOutputLanguage}
                 signatureName={signatureName}
               />
             </motion.div>
@@ -292,9 +459,9 @@ export function DiaryReader({
         </div>
       ) : null}
 
-      {generateError ? (
+      {generateError || translateError ? (
         <div className="absolute bottom-[calc(8.5rem+env(safe-area-inset-bottom,0px))] left-4 right-4 z-10 rounded-xl border border-red-100 bg-red-50/90 px-3 py-2 text-center text-[12px] text-red-600">
-          {generateError}
+          {translateError || generateError}
         </div>
       ) : null}
 

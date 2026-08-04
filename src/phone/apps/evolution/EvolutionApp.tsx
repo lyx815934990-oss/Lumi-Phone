@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import { Pressable } from '../../components/Pressable'
 import { useCustomization } from '../../CustomizationContext'
+import { FeatureEntryGuide } from './FeatureEntryGuide'
 import {
   getHistoricalEvolutionRecords,
   getLatestEvolutionRecord,
@@ -195,15 +196,8 @@ function CategorySection({
                   <h3 className="font-serif text-lg font-semibold tracking-wide text-[#1C1C1E]">
                     {mod.moduleName}
                   </h3>
-                  {cat.type === 'feature' && mod.entryPath ? (
-                    <div className="mt-3 mb-5 flex items-start gap-2.5 rounded-2xl border border-[#1C1C1E]/[0.06] bg-[#F4F4F5] px-3.5 py-2.5">
-                      <span className="mt-0.5 shrink-0 rounded-full bg-[#1C1C1E] px-2 py-0.5 font-mono text-[10px] font-medium tracking-[0.16em] text-white">
-                        入口
-                      </span>
-                      <p className="min-w-0 flex-1 text-[13px] font-medium leading-snug tracking-wide text-[#1C1C1E]">
-                        {mod.entryPath}
-                      </p>
-                    </div>
+                  {cat.type === 'feature' && mod.entryGuideId ? (
+                    <FeatureEntryGuide entryGuideId={mod.entryGuideId} variant="card" />
                   ) : (
                     <div className="mb-4" />
                   )}

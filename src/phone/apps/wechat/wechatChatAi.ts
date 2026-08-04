@@ -3,6 +3,12 @@ import {
   UNIFIED_MEET_ONLY_MEMORY_SUMMARY_SYSTEM,
 } from '../lumiMeet/meetMemorySummaryPrompt'
 import { buildWeChatHomeProfilePromptBlock } from '../lumiMeet/meetUserProfileSnapshot'
+import type { MutualFriendChainPayload } from './mutualFriend'
+import {
+  formatMutualFriendChainConsoleSummary,
+  parseMutualFriendChainMarkers,
+  stripMutualFriendChainFromBubbles,
+} from './mutualFriend'
 import type { ApiConfig } from '../api/types'
 import type {
   Character,
@@ -283,6 +289,7 @@ const WECHAT_PEER_REGENERATE_REPLY_APPENDIX = `
 2）上下文**不含**你方本轮旧稿；须当作对该条用户消息的**首次作答**，**禁止**洗稿、同义复述或微调旧句交差。
 3）须有**可区分的新钩子**：对白措辞、信息披露顺序、动作/emoji、交涉策略至少一项明显不同。
 4）不得捏造与「尚未总结」「剧情时间轴·当前状态」「尾声延展」明文冲突的已定事实；「尾声延展」以当前注入为准（客户端可能已回滚旧稿补丁）。
+5）若开启共同好友链：客户端已撤回同轮旧传话记录/投递。气泡若写「去传话/已甩给他/去打听」等，**必须在文末重新输出完整 <<MUTUAL_FRIEND_CHAIN>> 标记块**；禁止只口头宣称（口头宣称 ≠ 系统记账）。
 `.trim()
 
 export type WeChatChatPromptMode = 'lumi-assistant' | 'persona'
@@ -743,6 +750,8 @@ export function buildSystemContent(params: {
    * 由 requestWeChatPeerReplyText 传入，避免垫在 system 末尾被记忆块淹没。
    */
   earlyOutputAppendix?: string
+  /** 共同好友传话协议附录（联动聊天模式开启时由 ChatRoom 注入） */
+  mutualFriendChainNotes?: string
 }): string {
   const worldBookIdentity = params.worldBookPlayerIdentity ?? params.playerIdentity
   const expandNames = resolveCharUserNamesForPrompt({
@@ -919,6 +928,9 @@ export function buildSystemContent(params: {
     params.promptMode === 'persona' ? params.networkNpcPronounBlock?.trim() || '' : ''
   const networkRelationships =
     params.promptMode === 'persona' ? params.networkRelationshipsBlock?.trim() || '' : ''
+  const mutualFriendChain =
+    params.promptMode === 'persona' ? params.mutualFriendChainNotes?.trim() || '' : ''
+  const mutualFriendChainBlock = mutualFriendChain ? `\n\n---\n${mutualFriendChain}\n` : ''
   /**
    * 效力层级（高→低，无导演意图/无独立文风层）：
    * 重新回复偏向（若有）→ 角色档案/人设世界书 → 输出格式硬约束 → 玩家身份 →
@@ -927,7 +939,7 @@ export function buildSystemContent(params: {
   const rawMain =
     `${WECHAT_ROLEPLAY_SYSTEM_PROMPT}${priorityLadder}` +
     `${replyBias}${regenAppendix}${earlyOutput}${fictionCot}` +
-    `${pi}${loreBlock}${extra}${networkRelationships}${networkNpcPronoun}` +
+    `${pi}${loreBlock}${extra}${networkRelationships}${networkNpcPronoun}${mutualFriendChainBlock}` +
     `${memoryTail}` +
     `${altProbe}${currentTime}${schedule}${peerLine}`
   return appendLinkPreview(linkedExpand(rawMain))
@@ -1130,6 +1142,7 @@ function logWeChatAiReplyDebug(
   raw: string,
   bubbles: string[],
   forwardHistory?: WeChatChatHistoryPayload | null,
+  mutualFriendChain?: MutualFriendChainPayload | null,
 ) {
   const compactRaw = String(raw ?? '')
     .replace(/\r/g, '\\r')
@@ -1154,6 +1167,10 @@ function logWeChatAiReplyDebug(
   logConsole('ai', `[${tag}] 原始输出(raw): ${previewRaw || '<empty>'}`)
   logConsole('ai', `[${tag}] 解析气泡(count=${bubbles.length}): ${lines || '<empty>'}`)
   logConsole('ai', `[${tag}] 解析聊天记录卡片: ${fh}`)
+  logConsole(
+    'ai',
+    `[${tag}] 联动聊天: ${formatMutualFriendChainConsoleSummary(mutualFriendChain ?? null)}`,
+  )
 }
 
 function extractThinkingBlock(raw: string): { visible: string; thinking?: string } {
@@ -1190,6 +1207,8 @@ export type WeChatPeerReplyResult = {
   rawText?: string
   /** 模型在本轮末尾提交的「尾声延展」世界书覆盖（若有；priority=after） */
   worldBookPatches?: WorldBookAfterPatch[]
+  /** 共同好友链：主回复末尾标记块（已从可见气泡剥离） */
+  mutualFriendChain?: MutualFriendChainPayload | null
 }
 export const WECHAT_RECALL_ACTION_TOKEN = '[__RECALL__]'
 
@@ -1243,7 +1262,8 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
   const { plotRaw } = splitDatingAiResponseAndUnifiedMemoryJson(String(raw ?? ''))
   const t0 = stripAssistantFence(plotRaw)
   if (!t0) return { bubbles: [], worldBookPatches: undefined }
-  const { visible: noThinking, thinking } = extractThinkingBlock(t0)
+  const { text: withoutMutualFriend, payload: mutualFriendFromRaw } = parseMutualFriendChainMarkers(t0)
+  const { visible: noThinking, thinking } = extractThinkingBlock(withoutMutualFriend || t0)
   const { rest: afterWbPatch, patches: worldBookPatches } = extractWorldBookAfterPatchBlock(noThinking)
   const parts = splitRawByForwardHistory(afterWbPatch)
   const orderedSegments: WeChatPeerReplyOrderedSegment[] = []
@@ -1278,13 +1298,22 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
     })
     .filter((seg): seg is WeChatPeerReplyOrderedSegment => seg != null)
 
+  const mfStrip = stripMutualFriendChainFromBubbles(sanitizedBubbles)
+  const mfSegs = sanitizedSegments
+    .map((seg) => {
+      if (seg.kind !== 'bubble') return seg
+      const r = parseMutualFriendChainMarkers(seg.text)
+      return r.text.trim() ? { kind: 'bubble' as const, text: r.text.trim() } : null
+    })
+    .filter((seg): seg is WeChatPeerReplyOrderedSegment => seg != null)
   return {
-    bubbles: sanitizedBubbles,
-    orderedSegments: sanitizedSegments,
+    bubbles: mfStrip.bubbles.length ? mfStrip.bubbles : sanitizedBubbles,
+    orderedSegments: mfSegs.length ? mfSegs : sanitizedSegments,
     thinking,
     danmakuLines: danmakuMerged,
     worldBookPatches,
     forwardHistory: forwardHistory ?? undefined,
+    mutualFriendChain: mutualFriendFromRaw ?? mfStrip.payload,
   }
 }
 
@@ -1691,6 +1720,8 @@ export async function requestWeChatPeerReplyBubbles(params: {
   sharedLinkPreviewBlock?: string
   /** 每轮摘要表：要求模型在回复末尾追加 unified memory markup */
   perRoundMemoryAppendix?: string
+  /** 共同好友传话协议附录 */
+  mutualFriendChainNotes?: string
 }): Promise<WeChatPeerReplyResult> {
   const cfg = params.apiConfig
   if (!cfg?.apiUrl?.trim() || !cfg.apiKey?.trim() || !cfg.modelId?.trim()) {
@@ -1831,6 +1862,7 @@ export async function requestWeChatPeerReplyBubbles(params: {
     worldBookUserLineLabel: params.worldBookUserLineLabel,
     sharedLinkPreviewBlock: params.sharedLinkPreviewBlock,
     earlyOutputAppendix: outputAppendix,
+    mutualFriendChainNotes: params.mutualFriendChainNotes,
   })
   const memoryMomentImages = (params.longTermMemoryMomentImages ?? [])
     .map((u) => u.trim())
@@ -1879,7 +1911,7 @@ export async function requestWeChatPeerReplyBubbles(params: {
   const parsed = parseWeChatPeerReplyWithThinking(text)
   // 线上已切换为“后台内隐 CoT”，不再要求可见思维链重试。
   const bubbles = parsed.bubbles
-  logWeChatAiReplyDebug('text', text, bubbles, parsed.forwardHistory)
+  logWeChatAiReplyDebug('text', text, bubbles, parsed.forwardHistory, parsed.mutualFriendChain)
   return {
     bubbles: bubbles.length ? bubbles : ['收到。'],
     orderedSegments: parsed.orderedSegments?.length
@@ -1890,6 +1922,7 @@ export async function requestWeChatPeerReplyBubbles(params: {
     worldBookPatches: parsed.worldBookPatches,
     forwardHistory: parsed.forwardHistory,
     rawText: text,
+    mutualFriendChain: parsed.mutualFriendChain,
   }
 }
 
@@ -2190,6 +2223,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   perRoundMemoryAppendix?: string
   /** 用户在本聊天展示的微信头像（会话覆盖优先；有则多模态注入） */
   playerWechatAvatarUrl?: string | null
+  /** 共同好友传话协议附录 */
+  mutualFriendChainNotes?: string
 }): Promise<WeChatPeerReplyResult> {
   const cfg = params.apiConfig
   if (!cfg?.apiUrl?.trim() || !cfg.apiKey?.trim() || !cfg.modelId?.trim()) {
@@ -2249,6 +2284,7 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
     worldBookPlayerIdentity: params.worldBookPlayerIdentity,
     worldBookUserLineLabel: params.worldBookUserLineLabel,
     sharedLinkPreviewBlock: params.sharedLinkPreviewBlock,
+    mutualFriendChainNotes: params.mutualFriendChainNotes,
   })
   const isLumi = params.promptMode === 'lumi-assistant'
   const roleName = params.character?.name?.trim() || (isLumi ? 'Lumi' : '对方')
@@ -2393,7 +2429,7 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
     })
     const p0 = parseWeChatPeerReplyWithThinking(text)
     const b0 = p0.bubbles
-    logWeChatAiReplyDebug('vision-main', text, b0, p0.forwardHistory)
+    logWeChatAiReplyDebug('vision-main', text, b0, p0.forwardHistory, p0.mutualFriendChain)
     return {
       bubbles: b0.length ? b0 : ['收到。'],
       orderedSegments: p0.orderedSegments?.length
@@ -2403,6 +2439,7 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       danmakuLines: p0.danmakuLines,
       worldBookPatches: p0.worldBookPatches,
       forwardHistory: p0.forwardHistory,
+      mutualFriendChain: p0.mutualFriendChain,
     }
   } catch {
     logConsole(
@@ -2417,7 +2454,7 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       })
       const p1 = parseWeChatPeerReplyWithThinking(text)
       const b1 = p1.bubbles
-      logWeChatAiReplyDebug('vision-alt', text, b1, p1.forwardHistory)
+      logWeChatAiReplyDebug('vision-alt', text, b1, p1.forwardHistory, p1.mutualFriendChain)
       return {
         bubbles: b1.length ? b1 : ['收到。'],
         orderedSegments: p1.orderedSegments?.length
@@ -2427,6 +2464,7 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
         danmakuLines: p1.danmakuLines,
         worldBookPatches: p1.worldBookPatches,
         forwardHistory: p1.forwardHistory,
+        mutualFriendChain: p1.mutualFriendChain,
       }
     }
     try {
@@ -2487,7 +2525,7 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
     })
     const p2 = parseWeChatPeerReplyWithThinking(text.trim() ? text : '收到。')
     const b2 = p2.bubbles
-    logWeChatAiReplyDebug('vision-fallback-text', text, b2, p2.forwardHistory)
+    logWeChatAiReplyDebug('vision-fallback-text', text, b2, p2.forwardHistory, p2.mutualFriendChain)
     return {
       bubbles: b2.length ? b2 : [text.trim() || '收到。'],
       orderedSegments: p2.orderedSegments?.length
@@ -2497,6 +2535,7 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       danmakuLines: p2.danmakuLines,
       worldBookPatches: p2.worldBookPatches,
       forwardHistory: p2.forwardHistory,
+      mutualFriendChain: p2.mutualFriendChain,
     }
   }
 }

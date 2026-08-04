@@ -34,7 +34,11 @@ import { isUserActivated, needsUserInfoCorrection, type UserAccountTab, type Use
 import { isLocalDevBypassAuth, LOCAL_DEV_MOCK_STATUS } from './userSystem/localDevMode'
 import { ApiSettingsProvider } from './apps/api/ApiSettingsContext'
 import { LUMI_SYS_FIRST_BOOT_KEY } from './apps/dataArchive/constants'
-import { shouldOfferEvolutionPush } from './apps/evolution/evolutionPushStorage'
+import {
+  shouldOfferEvolutionPush,
+  resetEvolutionPushDismissals,
+  clearLegacyEvolutionPushSessionDismiss,
+} from './apps/evolution/evolutionPushStorage'
 import { LUMI_PULSE_NAVIGATE_EVENT } from './apps/lumiPulse/lumiPulseNavigation'
 import { WorldbookLoreProvider } from './worldbook/worldbookLoreStore'
 import type { AppSlot } from './types'
@@ -507,6 +511,18 @@ export function PhoneApp() {
     void import('./apps/evolution/evolutionLogData').then(({ getLatestEvolutionRecord }) => {
       if (cancelled) return
       const version = getLatestEvolutionRecord().version
+      clearLegacyEvolutionPushSessionDismiss()
+      // 开发环境：URL 带 ?evolutionPush=1 时强制清关闭标记并弹出
+      if (import.meta.env.DEV) {
+        try {
+          const q = new URLSearchParams(window.location.search)
+          if (q.get('evolutionPush') === '1') {
+            resetEvolutionPushDismissals()
+          }
+        } catch {
+          // ignore
+        }
+      }
       if (!shouldOfferEvolutionPush(version)) {
         setShowEvolutionPush(false)
         return

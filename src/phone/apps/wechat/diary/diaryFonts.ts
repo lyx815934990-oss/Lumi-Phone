@@ -209,11 +209,56 @@ export function resolveDiaryFontFamily(
   return presetById.get(STYLE_POOL_IDS.neat[0]!)!.family
 }
 
-export function diaryFontStack(family: string | null | undefined): string {
+/**
+ * 非中文日记的字形回退（接在中文笔迹主字体之后）。
+ * 浏览器按字符选字：汉字尽量用主笔迹；假名/谚文等主字体没有的字，落到对应语言字体。
+ */
+const DIARY_LANG_SCRIPT_FALLBACKS: Record<string, string> = {
+  // 主笔迹缺字后的系统日文回退（不要放在中文笔迹前面，否则会抢走汉字）
+  ja: "'YuKyokasho', 'Hiragino Maru Gothic ProN', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'MS PGothic'",
+  ko: "'Nanum Pen Script', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Nanum Gothic'",
+  en: "'Segoe Print', 'Comic Sans MS', 'Chalkboard SE', cursive",
+  fr: "'Segoe Print', 'Comic Sans MS', cursive",
+  de: "'Segoe Print', 'Comic Sans MS', cursive",
+  es: "'Segoe Print', 'Comic Sans MS', cursive",
+  ru: "'Segoe Print', 'Comic Sans MS', cursive",
+}
+
+/** 语言码 → 脚本回退栈（仅用于主笔迹缺字时） */
+export function diaryLanguageScriptFallback(language?: string | null): string {
+  const code = String(language ?? '')
+    .trim()
+    .toLowerCase()
+  if (!code || code === 'zh-cn' || code === 'zh-tw' || code.startsWith('zh')) return ''
+  const short = code.split('-')[0] || code
+  return DIARY_LANG_SCRIPT_FALLBACKS[short] || DIARY_LANG_SCRIPT_FALLBACKS[code] || ''
+}
+
+export function diaryFontStack(family: string | null | undefined, language?: string | null): string {
   const preset = family ? presetByFamily.get(family) : null
-  if (preset) return `'${preset.family}', ${preset.fallback}`
-  const fallback = presetById.get(STYLE_POOL_IDS.neat[0]!)!
-  return `'${fallback.family}', ${fallback.fallback}`
+  const base = preset
+    ? `'${preset.family}', ${preset.fallback}`
+    : (() => {
+        const fallback = presetById.get(STYLE_POOL_IDS.neat[0]!)!
+        return `'${fallback.family}', ${fallback.fallback}`
+      })()
+  const script = diaryLanguageScriptFallback(language)
+  if (!script) return base
+  const primary = base.split(',')[0]?.trim() || base
+  const rest = base.includes(',') ? base.slice(base.indexOf(',') + 1).trim() : ''
+  const short = String(language ?? '')
+    .trim()
+    .toLowerCase()
+    .split('-')[0]
+  /**
+   * 日语：仅假名范围的 DiaryJaKana 放最前（unicode-range 不会抢汉字）；
+   * 中文笔迹其次；系统日文字体再次（补子集缺字）。
+   */
+  if (short === 'ja') {
+    const mid = rest ? `${primary}, ${script}, ${rest}` : `${primary}, ${script}`
+    return `'DiaryJaKana', ${mid}`
+  }
+  return rest ? `${primary}, ${script}, ${rest}` : `${primary}, ${script}`
 }
 
 export function diaryFontLabel(family: string | null | undefined): string | null {
@@ -223,13 +268,29 @@ export function diaryFontLabel(family: string | null | undefined): string | null
 let injectPromise: Promise<void> | null = null
 const loadedFamilies = new Set<string>()
 
+/**
+ * 日语假名专用补字（unicode-range 仅覆盖假名，不会抢走汉字笔迹）。
+ * 本地子集来自 Klee One（手写感），约 28KB；缺字时再落到系统日文字体。
+ */
+const DIARY_JA_KANA_SRC = `${import.meta.env.BASE_URL}diary-fonts/klee-one-kana.woff2`
+const DIARY_JA_KANA_FACE_CSS = `
+@font-face{
+  font-family:'DiaryJaKana';
+  font-style:normal;
+  font-weight:400;
+  font-display:swap;
+  src:url('${DIARY_JA_KANA_SRC}') format('woff2');
+  unicode-range:U+3040-309F,U+30A0-30FF,U+31F0-31FF,U+FF66-FF9D,U+3005,U+30FC,U+3099-309C;
+}`.replace(/\s+/g, ' ').trim()
+
 function injectFontFaces(): void {
   if (typeof document === 'undefined') return
   const styleId = 'diary-handwriting-fonts'
   if (document.getElementById(styleId)) return
-  const css = DIARY_FONT_LIBRARY.map(
-    (p) => `@font-face{font-family:'${p.family}';src:url('${p.src}') format('truetype');font-display:swap;}`,
-  ).join('')
+  const css =
+    DIARY_FONT_LIBRARY.map(
+      (p) => `@font-face{font-family:'${p.family}';src:url('${p.src}') format('truetype');font-display:swap;}`,
+    ).join('') + DIARY_JA_KANA_FACE_CSS
   const el = document.createElement('style')
   el.id = styleId
   el.textContent = css

@@ -125,6 +125,39 @@ export function formatWeChatChatTimestamp(messageTimeMs: number, currentTimeMs: 
  * 只和“上一次已经展示过时间戳的消息时间”比较，
  * 这样即使消息很多，也能保证每超过 5 分钟重新出现一次时间提示。
  */
+/**
+ * 「信息」会话列表右侧相对时间标签。
+ * `currentTimeMs` 应为角色剧情「现在」（自定义时钟 / 剧情锚点），不要默认用手机墙钟，
+ * 否则剧情日消息会被相对成「跨年」。
+ * - 当天：仅时间点
+ * - 跨 0 点（昨天）：昨天 + 时间点
+ * - 超过 1 天且一周内：星期几 + 时间点
+ * - 跨周（同年更早）：月日 + 时间点
+ * - 跨年：仅年月日
+ */
+export function formatWeChatMessagesTabTimestamp(
+  messageTimeMs: number,
+  currentTimeMs: number = Date.now(),
+): string {
+  const ms = Math.round(messageTimeMs)
+  const nowMs = Math.round(currentTimeMs)
+  if (!Number.isFinite(ms) || ms <= 0) return '—'
+  const nowSafe = Number.isFinite(nowMs) && nowMs > 0 ? nowMs : Date.now()
+
+  const target = new Date(ms)
+  const now = new Date(nowSafe)
+  const hhmm = `${pad2(target.getHours())}:${pad2(target.getMinutes())}`
+  const dayDiff = Math.round((startOfDay(nowSafe) - startOfDay(ms)) / 86400000)
+
+  if (dayDiff <= 0) return hhmm
+  if (dayDiff === 1) return `昨天 ${hhmm}`
+  if (dayDiff <= 6) return `${WEEKDAY_LABELS[target.getDay()]} ${hhmm}`
+  if (target.getFullYear() === now.getFullYear()) {
+    return `${target.getMonth() + 1}月${target.getDate()}日 ${hhmm}`
+  }
+  return `${target.getFullYear()}年${target.getMonth() + 1}月${target.getDate()}日`
+}
+
 export function shouldRenderWeChatTimestamp(previousShownTimeMs: number | null, currentMessageTimeMs: number): boolean {
   if (previousShownTimeMs == null) return true
   return currentMessageTimeMs - previousShownTimeMs >= WECHAT_TIMESTAMP_GAP_MS

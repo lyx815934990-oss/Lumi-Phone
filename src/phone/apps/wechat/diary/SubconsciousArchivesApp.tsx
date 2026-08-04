@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { AnonymousQaWechatContext } from '../../../../components/anonymousQa/buildAnonymousQaPersonaContext'
 import type { MockContact } from '../../../../components/anonymousQa/types'
+import { useCurrentApiConfig, useTranslationRuntime } from '../../api/ApiSettingsContext'
+import { batchTranslateWeChatBubbleTexts } from '../wechatChatLanguage'
 import { DiaryBookPreview } from './DiaryBookPreview'
 import { generateSubconsciousDiaryEntry } from './diaryAi'
 import { formatDiaryGenerateError } from './parseDiaryAiResponse'
@@ -9,6 +11,7 @@ import { archiveDiaryEntryToMemory, removeDiaryEntryFromMemory } from './diaryMe
 import { DiaryArchiveHome } from './DiaryArchiveHome'
 import { DiaryGenerateOverlay } from './DiaryGenerateOverlay'
 import { DiaryReader } from './DiaryReader'
+import { isDiaryWritingChinese, normalizeDiaryOutputLanguage } from './diaryLanguage'
 import type { DiaryEntry } from './diaryTypes'
 import { useDiaryStore } from './useDiaryStore'
 
@@ -42,6 +45,8 @@ export function SubconsciousArchivesApp({
   const ensureBook = useDiaryStore((s) => s.ensureBook)
   const booksDueForAutoWrite = useDiaryStore((s) => s.booksDueForAutoWrite)
   const hydrated = useDiaryStore((s) => s.hydrated)
+  const chatApiConfig = useCurrentApiConfig()
+  const translationRuntime = useTranslationRuntime()
 
   const [preview, setPreview] = useState<BookTarget | null>(null)
   const [diaryView, setDiaryView] = useState<DiaryView>(null)
@@ -65,10 +70,12 @@ export function SubconsciousArchivesApp({
 
       try {
         const book = getBook(charId) ?? ensureBook(charId)
+        const diaryLang = normalizeDiaryOutputLanguage(book.diaryOutputLanguage)
         const ai = await generateSubconsciousDiaryEntry({
           characterId: charId,
           wechatCtx,
           existingFontFamily: book.fontFamily,
+          diaryOutputLanguage: diaryLang,
           recentEntries: book.entries.map((e) => ({
             title: e.title,
             inUniverseTime: e.inUniverseTime,
@@ -81,6 +88,26 @@ export function SubconsciousArchivesApp({
           inUniverseTime: ai.inUniverseTime,
           content: ai.content,
           createdAt: Date.now(),
+        }
+
+        if (
+          book.translationSyncEnabled === true &&
+          !isDiaryWritingChinese(diaryLang) &&
+          (translationRuntime || chatApiConfig || wechatCtx.apiConfig)
+        ) {
+          try {
+            const [zhTitle, zhContent] = await batchTranslateWeChatBubbleTexts({
+              apiConfig: wechatCtx.apiConfig ?? chatApiConfig,
+              translationRuntime,
+              texts: [ai.title, ai.content],
+              targetLanguage: 'zh-CN',
+              speakerName: preview?.charId === charId ? preview.displayName : undefined,
+            })
+            if (zhTitle?.trim()) entry.translatedTitle = zhTitle.trim()
+            if (zhContent?.trim()) entry.translatedContent = zhContent.trim()
+          } catch {
+            /* 同步翻译失败不阻断日记落库 */
+          }
         }
 
         appendEntry(charId, entry, ai.font_style ?? null)
@@ -100,7 +127,7 @@ export function SubconsciousArchivesApp({
         if (!opts?.silent) setGenerating(false)
       }
     },
-    [appendEntry, ensureBook, getBook, wechatCtx],
+    [appendEntry, chatApiConfig, ensureBook, getBook, preview?.charId, preview?.displayName, translationRuntime, wechatCtx],
   )
 
   const handleDeleteEntry = useCallback(

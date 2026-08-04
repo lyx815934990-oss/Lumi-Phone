@@ -3346,6 +3346,23 @@ export function emitWeChatStorageChanged(): void {
   window.dispatchEvent(new CustomEvent('wechat-storage-changed'))
 }
 
+/** 同一会话设置串行 upsert，避免 get→put 竞态冲掉 playerChatAvatarUrl 等字段 */
+const chatConvSettingsUpsertChains = new Map<string, Promise<void>>()
+
+function enqueueChatConvSettingsUpsert(conversationKey: string, task: () => Promise<void>): Promise<void> {
+  const key = conversationKey.trim()
+  if (!key) return task()
+  const prev = chatConvSettingsUpsertChains.get(key) ?? Promise.resolve()
+  const next = prev.catch(() => undefined).then(task)
+  chatConvSettingsUpsertChains.set(key, next)
+  void next.finally(() => {
+    if (chatConvSettingsUpsertChains.get(key) === next) {
+      chatConvSettingsUpsertChains.delete(key)
+    }
+  })
+  return next
+}
+
 /** 仅微信内置相册条目增删时触发（记忆相册预览监听此事件，避免全局 storage 刷屏） */
 export function emitWeChatAlbumItemsChanged(): void {
   if (typeof window === 'undefined') return
@@ -5304,7 +5321,10 @@ export class PersonaDb {
       conversationKey,
       peerCharacterId: peerForMerge,
       playerIdentityId: normalized.playerIdentityId,
-      messageTimestamp: normalized.timestamp,
+      messageTimestamp:
+        typeof normalized.systemRecordedAt === 'number' && Number.isFinite(normalized.systemRecordedAt)
+          ? normalized.systemRecordedAt
+          : Date.now(),
     })
     if (normalized.type === 'character' && !quiet) {
       const st = await this.getChatConversationSettings(conversationKey)
@@ -7798,7 +7818,10 @@ export class PersonaDb {
         conversationKey: msg.conversationKey,
         peerCharacterId: msg.characterId,
         playerIdentityId: msg.playerIdentityId,
-        messageTimestamp: msg.timestamp,
+        messageTimestamp:
+          typeof msg.systemRecordedAt === 'number' && Number.isFinite(msg.systemRecordedAt)
+            ? msg.systemRecordedAt
+            : Date.now(),
       })
     }
     emitWeChatStorageChanged()
@@ -9565,7 +9588,22 @@ export class PersonaDb {
       >
     >,
   ): Promise<void> {
-    const existing = await this.getChatConversationSettings(params.conversationKey)
+    const conversationKey = params.conversationKey.trim()
+    if (!conversationKey) return
+    return enqueueChatConvSettingsUpsert(conversationKey, async () => {
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(CHAT_CONV_SETTINGS_STORE)) {
+      db.close()
+      return
+    }
+    const tx = db.transaction(CHAT_CONV_SETTINGS_STORE, 'readwrite')
+    const store = tx.objectStore(CHAT_CONV_SETTINGS_STORE)
+    const existingRaw = await new Promise<unknown>((resolve, reject) => {
+      const req = store.get(conversationKey)
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error ?? new Error('getChatConversationSettings(tx)'))
+    })
+    const existing = normalizeChatConversationSettingsRow(existingRaw)
     const now = Date.now()
     let uiOnlyHiddenBeforeTimestamp: number | undefined
     if (params.clearUiOnlyHiddenBeforeTimestamp) {
@@ -9592,7 +9630,7 @@ export class PersonaDb {
       friendRequestAcceptedAtMs = existing?.friendRequestAcceptedAtMs
     }
     const row: ChatConversationSettingsRow = {
-      conversationKey: params.conversationKey.trim(),
+      conversationKey,
       peerCharacterId: params.peerCharacterId.trim() || existing?.peerCharacterId?.trim() || '',
       // 勿用“后来的会话身份”覆盖已有 playerIdentityId，否则索引漂移会导致列表读不到「不显示/置顶」等设置
       playerIdentityId: existing?.playerIdentityId?.trim() || params.playerIdentityId.trim(),
@@ -9869,16 +9907,11 @@ export class PersonaDb {
         ? { friendRequestAcceptedAtMs }
         : {}),
     }
-    const db = await openDb()
-    if (!db.objectStoreNames.contains(CHAT_CONV_SETTINGS_STORE)) {
-      db.close()
-      return
-    }
-    const tx = db.transaction(CHAT_CONV_SETTINGS_STORE, 'readwrite')
-    tx.objectStore(CHAT_CONV_SETTINGS_STORE).put(row)
+    store.put(row)
     await txDone(tx)
     db.close()
     emitWeChatStorageChanged()
+    })
   }
 
   /**

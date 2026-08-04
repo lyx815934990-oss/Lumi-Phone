@@ -5,6 +5,10 @@ export interface DiaryEntry {
   inUniverseTime: string
   content: string
   createdAt: number
+  /** 同步翻译生成的简体中文标题（书写语言非中文时） */
+  translatedTitle?: string
+  /** 同步翻译生成的简体中文正文 */
+  translatedContent?: string
 }
 
 export interface CharacterDiaryBook {
@@ -16,6 +20,10 @@ export interface CharacterDiaryBook {
   /** 自动记录频率（毫秒）；0 表示关闭 */
   autoWriteInterval: number
   lastWrittenAt: number
+  /** 日记书写语言（复用聊天语言码，默认 zh-CN） */
+  diaryOutputLanguage?: string
+  /** 生成时同步产出简体中文译文 */
+  translationSyncEnabled?: boolean
   entries: DiaryEntry[]
 }
 

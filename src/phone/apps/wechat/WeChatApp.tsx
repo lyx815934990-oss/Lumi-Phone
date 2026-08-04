@@ -215,6 +215,7 @@ import { WeChatSettingsStubScreen } from './settings/WeChatSettingsStubScreen'
 import { AccountSecurityPage } from './settings/accountSecurity/AccountSecurityPage'
 import { useWeChatCurrentTime } from './time/useWeChatCurrentTime'
 import { isCharacterTimePerceptionEnabled } from './time/wechatTimeUtils'
+import { formatMessagesTabTimeForThread, resolveSessionListSortTs } from './time/messagesTabStoryTime'
 import { WalletCardsPage } from './wallet/WalletCardsPage'
 import { AffectionPayPage } from './wallet/AffectionPayPage'
 import { walletSpend } from './wallet/walletMockStore'
@@ -4358,13 +4359,17 @@ function WeChatAppInner({ onBack }: Props) {
             ? '发消息给自己，当作备忘录'
             : `点击开始与 ${name || '角色'} 聊天`
       let time = '—'
-      const msgTs = last ? last.timestamp : 0
-      const sortTs = Math.max(msgTs, st?.lastMessageTime ?? 0)
+      const sortTs = resolveSessionListSortTs({
+        lastMessage: last,
+        settingsLastMessageTime: st?.lastMessageTime,
+      })
       if (last) {
         const pv = formatWeChatMessagesTabPreviewFromStoredMessage(last)
         preview = pv.slice(0, 48) + (pv.length > 48 ? '…' : '')
-        const d = new Date(last.timestamp)
-        time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+        time = await formatMessagesTabTimeForThread({
+          lastMessage: last,
+          storyClockCharacterId: kind === 'persona' ? peerCharacterId : null,
+        })
       }
       if (kind === 'lumi') {
         return {
@@ -4484,13 +4489,17 @@ function WeChatAppInner({ onBack }: Props) {
           ])
           let preview = '点击开始群聊'
           let time = '—'
-          const msgTs = last ? last.timestamp : 0
-          const sortTs = Math.max(msgTs, st?.lastMessageTime ?? 0)
+          const sortTs = resolveSessionListSortTs({
+            lastMessage: last,
+            settingsLastMessageTime: st?.lastMessageTime,
+          })
           if (last) {
             const pv = formatWeChatMessagesTabPreviewFromStoredMessage(last)
             preview = pv.slice(0, 48) + (pv.length > 48 ? '…' : '')
-            const d = new Date(last.timestamp)
-            time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+            time = await formatMessagesTabTimeForThread({
+              lastMessage: last,
+              storyClockCharacterId: last.characterId,
+            })
           }
           const listTitle = g.remark.trim() || g.name
           const avatarUrl = g.avatar.trim() || undefined
@@ -4935,8 +4944,11 @@ function WeChatAppInner({ onBack }: Props) {
       setChatSessionPrefs(null)
       return
     }
+    const key = activeConversationKey
+    let cancelled = false
     const load = () => {
-      void personaDb.getChatConversationSettings(activeConversationKey).then((s) => {
+      void personaDb.getChatConversationSettings(key).then((s) => {
+        if (cancelled) return
         const next = {
           danmaku: s?.isDanmakuMode ?? false,
           thinkingChain: s?.showThinkingChain === true,
@@ -4967,9 +4979,14 @@ function WeChatAppInner({ onBack }: Props) {
       })
     }
     load()
-    const on = () => load()
+    const on = () => {
+      if (!cancelled) load()
+    }
     window.addEventListener('wechat-storage-changed', on)
-    return () => window.removeEventListener('wechat-storage-changed', on)
+    return () => {
+      cancelled = true
+      window.removeEventListener('wechat-storage-changed', on)
+    }
   }, [activeConversationKey])
 
   /**

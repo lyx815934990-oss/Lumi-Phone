@@ -5,12 +5,20 @@ import { personaDb } from '../newFriendsPersona/idb'
 import type { Character } from '../newFriendsPersona/types'
 import { buildSystemContent } from '../wechatChatAi'
 import { buildMemoryRelevanceHaystack } from '../wechatMemoryPromptBlocks'
-import { loadDiaryOfflineSummaryPromptBlock } from './loadDiaryOfflineSummaryPrompt'
 import {
   ensureDiaryInUniverseTimeHasYear,
   loadDiaryStoryYearHint,
 } from './diaryInUniverseTime'
 import { parseDiaryAiModelText } from './parseDiaryAiResponse'
+import {
+  buildDiaryOutputLanguageAppendix,
+  isDiaryWritingChinese,
+  normalizeDiaryOutputLanguage,
+} from './diaryLanguage'
+import {
+  formatDiaryRecentContextUserBlock,
+  loadDiaryMemoryContext,
+} from './loadDiaryMemoryContext'
 import {
   type DiaryAiResult,
   DIARY_CONTENT_MAX_CHARS,
@@ -21,7 +29,10 @@ function buildDiarySystemAppendix(params: {
   charName: string
   needsFontBinding: boolean
   recentDiarySnippet: string
+  diaryOutputLanguage?: string | null
 }): string {
+  const writingChinese = isDiaryWritingChinese(params.diaryOutputLanguage)
+  const langAppendix = buildDiaryOutputLanguageAppendix(params.diaryOutputLanguage)
   const fontLine = params.needsFontBinding
     ? `- 当前尚未绑定笔迹（或笔迹已重置）。请在 JSON 中返回最符合你文化水平与人设的 font_style 代号：
   · 文化水平正常或偏高：只能选 sharp / neat / wild
@@ -30,30 +41,40 @@ function buildDiarySystemAppendix(params: {
   · 文盲、学历很低、不常写字：只能选 lazy / elegant（潦草字体库），勿选 neat / sharp / wild`
     : '- 字体已永久绑定，不要返回 font_style 字段。'
 
-  return `
----
-【系统任务：潜意识日记生成】
-你正在书写你（${params.charName}）的绝密私人日记。用户（玩家）无法在剧情里看到这些话。
-请参考系统上下文中已提供的：基础设定、世界书法则、最近聊天、深层长期记忆，以及 user 消息中的线下剧情摘要。
-
-要求：
-- 这是极度私密的日记，请卸下你对外的伪装。傲娇的可以写下懊悔，高冷的可以写下疯狂的占有欲。
-- 不要重复你最近写过的心声；若情绪相近，写出新的细节或转折。
-- 【时间顺序】严格按剧情实际发生先后叙述：先发生的写在前，后发生的写在后。若上下文里先手机聊天、后面对面/项圈等互动，日记须先写聊天再写后续；勿因某段更强烈就倒叙或打乱时序。
-- 正文须写完整、自然收束，最后一句语义完整，不要写到一半戛然而止。
-- inUniverseTime 必须包含公历年份（格式如 2026年7月2日 傍晚），须与【剧情时间轴】/线下摘要中的故事日期一致，勿写真实落库日期。
-- 【书写质感】正文必须以中文汉字为主书写，像正常人写日记一样。
+  const writingQuality = writingChinese
+    ? `- 【书写质感】正文必须以中文汉字为主书写，像正常人写日记一样。
   · 文盲、学历很低、不常写字的人设：只会写的字用汉字，**仅对少数不会写的难字/生僻词**用拼音顶替（全文拼音词建议 3～6 处，不要超过 8 处）；常用字（我、你、她、的、了、很、不、是等）必须用汉字。
-  · 正确示例：我都快站不住了。她扯着我的xiàng圈，有点疼，但是我真的很喜欢。她问我是不是狼，我不知道，她说我是什么就是什么……我好怕她嫌弃我的铁……那胳膊到现在还……
-  · 错误示例：wǒ dōu kuài zhàn bù zhǔ le、tā chě zhe wǒ de xiàng quān —— 禁止整句或整段拼音罗马音。
+  · 正确示例：今天雨好大。她把雨sǎn借给我，自己淋着走了。我心里有点过意不去，又有点开心……回到宿舍袜子还是湿的。
+  · 错误示例：jīn tiān yǔ hǎo dà、tā bǎ yǔ sǎn jiè gěi wǒ —— 禁止整句或整段拼音罗马音。
   · 不会写的字：只写拼音，或只写你能写出来的字/错别字，二选一，禁止叠用；禁止「nán过（难过）」这类拼音后再括号补汉字。
   · 偶尔写错别字时，用括号补正即可（如：很闲（咸）），不要和拼音混用。
   · 涂改格式「[涂]错字|正字」全文最多 0～1 处。
   · 文化水平正常或偏高的人设：通顺书面语，全汉字，不要拼音，不要故意写错，不要使用 [涂]。
-  · 标题与署名行由系统处理，content 里不要重复写你的名字。
+  · 标题与署名行由系统处理，content 里不要重复写你的名字。`
+    : `- 【书写质感】title 与 content 按上方【日记书写语言】书写，像正常人写日记一样。
+  · 勿夹杂未要求的其它语言整句；不要输出拼音罗马音顶替。
+  · 文化水平正常或偏高：通顺书面语，不要故意写错，不要使用 [涂]。
+  · 标题与署名行由系统处理，content 里不要重复写你的名字。`
+
+  return `
+---
+【系统任务：私人日记生成】
+你正在书写你（${params.charName}）的私人日记（仅玩家在档案里可读，剧情角色看不到）。
+请参考系统上下文中已提供的：基础设定、世界书法则、【剧情时间轴·当前状态】、深层长期记忆，以及 user 消息中按时间锚点拆好的线下摘要与线上片段。
+${langAppendix ? `\n${langAppendix}\n` : ''}
+要求：
+- 这是私人日记，可写真实情绪、心动、别扭、吃醋、懊悔与日常碎念，语气偏自然中性到温柔即可。
+- 须符合人设分寸：卸下对外伪装 ≠ 放大阴暗面。傲娇可写别扭的懊悔，高冷可写克制的想念；允许浪漫与亲密回忆，但禁止病态偏执、监视控制、标记/囚禁式占有、恐吓威胁，以及「没有对方就无法活 / 只许想我」式极端独白。
+- 除非人设与近期剧情明确导向，否则不要主动写成病娇、猎奇或过度色情的占有戏；亲密描写点到为止，更侧重心情与相处细节。
+- 不要重复你最近写过的心声；若情绪相近，写出新的细节或转折。
+- 【时间顺序】以【剧情时间轴·当前状态】与【日记书写锚点】为故事「现在」。先写更早的事、后写更近的事；user 里「往事·未总结私聊」只能回溯，**禁止**在正文后半又写回「即将分别 / 还没回来」等已被线下推进否定的状态。勿因某段情绪更强就打乱时序或倒回旧线上时刻。
+- 正文须写完整、自然收束，最后一句语义完整，不要写到一半戛然而止。
+- 【自然段】content 须像手写日记一样自然分段，**禁止**整篇挤成一大段。段与段之间用 \\n\\n（空一行）；分段数量与节奏由你按内容自行判断（如按事件、情绪转折、时空切换等落笔），勿机械凑段。
+- inUniverseTime 必须包含公历年份（格式如 2026年7月2日 傍晚），须与【剧情时间轴·当前状态】/线下摘要中的故事日期一致，勿写真实落库日期；通常应贴近「现在」锚点。
+${writingQuality}
 ${fontLine}
 - 严格返回 JSON，不要 Markdown，不要解释。
-- JSON 合法性（重要）：content 必须是单行 JSON 字符串；换行请写成 \\n，双引号请写成 \\"；[涂]错字|正字 格式可原样保留。
+- JSON 合法性（重要）：content 在 JSON 里仍是一个字符串；段间换行写成 \\n\\n，句内不要无故硬换行；双引号写成 \\"；[涂]错字|正字 格式可原样保留。
 - 同一次输出须包含 memory_summary（供长期记忆入库的摘要表，**禁止抄写日记 content 原文**）：
   · memory_summary.row_title：4～10 字检索标题（概括本篇私密情绪或事件）
   · memory_summary.row_keywords：3～5 个检索词，每条 ≤5 个汉字
@@ -61,7 +82,7 @@ ${fontLine}
 {
   "title": "符合你性格的日记标题（极简）",
   "inUniverseTime": "须含年份的剧情时间（如：2026年7月2日 傍晚，赶往公爵府的路上；或 2026年7月3日 凌晨三点，雨）",
-  "content": "日记正文（字数 ${DIARY_CONTENT_MIN_CHARS}-${DIARY_CONTENT_MAX_CHARS} 字）",
+  "content": "第一段……\\n\\n第二段……（共 ${DIARY_CONTENT_MIN_CHARS}-${DIARY_CONTENT_MAX_CHARS} 字；按文意用 \\n\\n 自然分段）",
   "memory_summary": {
     "row_title": "摘要短标题",
     "row_keywords": ["词1", "词2", "词3"],
@@ -79,6 +100,7 @@ export async function generateSubconsciousDiaryEntry(params: {
   wechatCtx: AnonymousQaWechatContext
   existingFontFamily: string | null
   recentEntries: Array<{ title: string; inUniverseTime: string }>
+  diaryOutputLanguage?: string | null
 }): Promise<DiaryAiResult> {
   const cfg = params.wechatCtx.apiConfig
   if (!cfg?.apiUrl?.trim() || !cfg.apiKey?.trim() || !cfg.modelId?.trim()) {
@@ -91,30 +113,33 @@ export async function generateSubconsciousDiaryEntry(params: {
 
   const charName = character.name?.trim() || '角色'
   const needsFontBinding = !params.existingFontFamily
+  const diaryOutputLanguage = normalizeDiaryOutputLanguage(params.diaryOutputLanguage)
+  const writingChinese = isDiaryWritingChinese(diaryOutputLanguage)
 
   const hay = buildMemoryRelevanceHaystack([charName, '日记', '内心独白'])
-  const [pack, offlineSummaryBlock, storyYearHint] = await Promise.all([
+  const [pack, storyYearHint] = await Promise.all([
     buildAnonymousQaPersonaPromptPack({
       characterId: cid,
       wechatCtx: params.wechatCtx,
       relevanceHaystack: hay,
     }),
-    loadDiaryOfflineSummaryPromptBlock(cid),
     loadDiaryStoryYearHint(cid),
   ])
 
-  const recentContext = [
-    offlineSummaryBlock || '',
-    pack.unsummarizedPrivateNotes
-      ? `【最近私聊（未总结，按时间由旧到新）】\n${pack.unsummarizedPrivateNotes}`
-      : '',
-    pack.unsummarizedGroupNotes
-      ? `【最近群聊参照（由旧到新）】\n${pack.unsummarizedGroupNotes}`
-      : '',
-    pack.unsMeet ? `【遇见承接】\n${pack.unsMeet}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+  const diaryMem = await loadDiaryMemoryContext({
+    characterId: cid,
+    conversationKey: pack.conversationKey,
+    relevanceHaystack: buildMemoryRelevanceHaystack([
+      hay,
+      pack.longTermMemoryNotes?.slice(0, 800),
+      pack.unsummarizedPrivateNotes?.slice(0, 800),
+    ]),
+    apiConfig: cfg,
+    unsummarizedGroupNotes: pack.unsummarizedGroupNotes,
+    unsMeet: pack.unsMeet,
+  })
+
+  const recentContext = formatDiaryRecentContextUserBlock(diaryMem)
 
   const baseSystem = buildSystemContent({
     character: pack.character,
@@ -123,8 +148,10 @@ export async function generateSubconsciousDiaryEntry(params: {
     promptMode: 'persona',
     longTermMemoryNotes: pack.longTermMemoryNotes || undefined,
     worldBackgroundPrompt: pack.worldBackgroundPrompt,
-    unsummarizedPrivateNotes: pack.unsummarizedPrivateNotes || undefined,
-    unsummarizedGroupNotes: pack.unsummarizedGroupNotes || undefined,
+    storyTimelineNotes: diaryMem.storyTimeline || undefined,
+    // 未总结私聊改由 user 块按剧情「现在」拆分注入，避免与时间轴抢序、双重放大旧线上
+    unsummarizedPrivateNotes: undefined,
+    unsummarizedGroupNotes: undefined,
     chatMemberIds: [cid],
   })
 
@@ -138,10 +165,11 @@ export async function generateSubconsciousDiaryEntry(params: {
     charName,
     needsFontBinding,
     recentDiarySnippet,
+    diaryOutputLanguage,
   })
 
-  const userTask = `请根据下列近期上下文，书写一篇全新的潜意识日记。
-上下文各段均已按时间由旧到新排列；写日记时按同样时间顺序回忆，后文事件不可写在前文之前。
+  const userTask = `请根据下列近期上下文，书写一篇全新的私人日记（语气自然、贴合人设，勿写成病态占有独白）。
+以【日记书写锚点】/【剧情时间轴·当前状态】为「现在」；线下摘要与近端线上可承接当下，往事·线上仅可回溯，禁止正文后半倒回更早的分别/离开时刻。
 ${recentContext ? `\n${recentContext}` : ''}`
 
   const messages: OpenAiCompatibleMessage[] = [
@@ -149,7 +177,7 @@ ${recentContext ? `\n${recentContext}` : ''}`
     { role: 'user', content: userTask },
   ]
 
-  const chatOpts = { temperature: 0.88, max_tokens: 6500 }
+  const chatOpts = { temperature: 0.78, max_tokens: 6500 }
   let raw = await openAiCompatibleChat(cfg, messages, chatOpts)
   let parsed = parseDiaryAiModelText(raw, { allowFontStyle: needsFontBinding })
 
@@ -182,7 +210,7 @@ ${recentContext ? `\n${recentContext}` : ''}`
     )
   }
 
-  if (isMostlyPinyinRomanization(parsed.content)) {
+  if (writingChinese && isMostlyPinyinRomanization(parsed.content)) {
     await retryForContent(
       '上一版几乎全是拼音罗马音，不符合文盲手写习惯。请重新输出 JSON：正文以中文汉字为主，仅对少数不会写的难字用拼音（全文 3～6 处），禁止整句拼音。',
     )

@@ -2,6 +2,7 @@ import type { ApiConfigCore } from '../../api/types'
 import { personaDb } from '../newFriendsPersona/idb'
 import type { Character } from '../newFriendsPersona/types'
 import { fetchStoryTimelineSummaryFallback } from './storyTimelineSummaryFallback'
+import { storyDayTimeToMs, syncNetworkStoryNowFromPrimary } from './storyTimelineNetworkNowSync'
 import {
   buildStoryTimelinePlotRowFromDelta,
   composeStoryTimelineCalendarAnchorLabel,
@@ -163,6 +164,25 @@ export async function fanOutStoryTimelineLinkedRows(params: {
     }
   }
 
+  const primaryDay = params.sharedPrimaryDelta?.story_day?.trim() || ''
+  const primaryTime = params.sharedPrimaryDelta?.story_time?.trim() || ''
+  if (primaryDay && params.entries.length) {
+    // 人脉「现在」对齐：用本轮主时间点推进各 linked NPC（及同圈）的剧情时钟
+    const seedId = params.entries.map((e) => e.characterId.trim()).find(Boolean)
+    if (seedId) {
+      try {
+        await syncNetworkStoryNowFromPrimary({
+          sourceCharacterId: seedId,
+          storyDay: primaryDay,
+          storyTime: primaryTime || undefined,
+          storyNowMs: storyDayTimeToMs(primaryDay, primaryTime || null),
+          syncOnlineClock: true,
+        })
+      } catch {
+        /* ignore */
+      }
+    }
+  }
   return [...new Set(labels.map((x) => x.trim()).filter(Boolean))]
 }
 

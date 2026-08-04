@@ -1,7 +1,12 @@
-/** 系统演进录入机推送 · 今日关闭 / 会话关闭 */
+/** 系统演进录入机推送 · 今日关闭 / 本次关闭 */
 
-const TODAY_DISMISS_KEY = 'lumi-evolution-push-dismissed-date-v1'
-const SESSION_DISMISS_KEY = 'lumi-evolution-push-session-dismissed-v1'
+const TODAY_DISMISS_KEY = 'lumi-evolution-push-dismissed-date-v2'
+
+/**
+ * 「关闭」仅本次页面生命周期有效（刷新 / 重新打开会再弹）。
+ * 切勿用 sessionStorage：同标签刷新不会清掉，会和文案「刷新仍提醒」冲突。
+ */
+const sessionDismissedVersions = new Set<string>()
 
 export function evolutionPushTodayKey(d = new Date()): string {
   const y = d.getFullYear()
@@ -33,18 +38,25 @@ export function dismissEvolutionPushForToday(version: string): void {
 }
 
 export function isEvolutionPushDismissedThisSession(version: string): boolean {
-  if (typeof window === 'undefined') return true
-  try {
-    return window.sessionStorage.getItem(SESSION_DISMISS_KEY) === version.trim()
-  } catch {
-    return false
-  }
+  return sessionDismissedVersions.has(version.trim())
 }
 
 export function dismissEvolutionPushThisSession(version: string): void {
+  const v = version.trim()
+  if (!v) return
+  sessionDismissedVersions.add(v)
+}
+
+/** 本地测试：清掉「今日关闭 / 本次关闭」，下次满足条件会再弹 */
+export function resetEvolutionPushDismissals(): void {
+  sessionDismissedVersions.clear()
   if (typeof window === 'undefined') return
   try {
-    window.sessionStorage.setItem(SESSION_DISMISS_KEY, version.trim())
+    window.localStorage.removeItem(TODAY_DISMISS_KEY)
+    window.localStorage.removeItem('lumi-evolution-push-dismissed-date-v1')
+    // 清掉旧版误用的 sessionStorage，避免历史残留继续挡弹窗
+    window.sessionStorage.removeItem('lumi-evolution-push-session-dismissed-v1')
+    window.sessionStorage.removeItem('lumi-evolution-push-session-dismissed-v2')
   } catch {
     // ignore
   }
@@ -54,4 +66,17 @@ export function shouldOfferEvolutionPush(version: string): boolean {
   const v = version.trim()
   if (!v) return false
   return !isEvolutionPushHiddenToday(v) && !isEvolutionPushDismissedThisSession(v)
+}
+
+/** 一次性清掉旧版 sessionStorage 残留（曾导致「没点今日关闭却刷新也不弹」） */
+let clearedLegacySessionDismiss = false
+export function clearLegacyEvolutionPushSessionDismiss(): void {
+  if (clearedLegacySessionDismiss || typeof window === 'undefined') return
+  clearedLegacySessionDismiss = true
+  try {
+    window.sessionStorage.removeItem('lumi-evolution-push-session-dismissed-v1')
+    window.sessionStorage.removeItem('lumi-evolution-push-session-dismissed-v2')
+  } catch {
+    // ignore
+  }
 }

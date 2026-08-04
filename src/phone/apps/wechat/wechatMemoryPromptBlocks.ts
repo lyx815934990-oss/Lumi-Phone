@@ -190,6 +190,11 @@ export async function formatUnsummarizedPrivateChatBlock(params: {
   clipPreferRecent?: boolean
   /** 替换默认块尾说明 */
   footerNote?: string
+  /**
+   * 故事「现在」毫秒。有剧情戳且严格早于此的消息不注入
+   * （防：5/1 未总结「要离开」在线下已到 5/10 归来后仍当近端事实）。
+   */
+  minStoryCalendarMs?: number | null
 }): Promise<string> {
   const ck = params.conversationKey.trim()
   if (!ck) return ''
@@ -206,9 +211,17 @@ export async function formatUnsummarizedPrivateChatBlock(params: {
   })
   if (!rows.length) return ''
   const includeTs = params.includeMessageTimestamps === true
+  const storyFloor =
+    typeof params.minStoryCalendarMs === 'number' && Number.isFinite(params.minStoryCalendarMs)
+      ? params.minStoryCalendarMs
+      : null
   const lines: string[] = []
   for (const m of rows) {
     if (isMeetImportedWeChatMessageId(m.id)) continue
+    if (storyFloor != null) {
+      const storyMs = parseStoryAnchorLabelToMs(m.storyTimeLabel)
+      if (storyMs != null && storyMs < storyFloor) continue
+    }
     const line = formatPrivateLineUnsummarized(m, { includeTimestamp: includeTs })
     if (line) lines.push(line)
   }
@@ -242,11 +255,21 @@ export async function formatUnsummarizedPrivateChatBlock(params: {
 /**
  * 线上私聊：固定注入最近 N 轮「对方回复」及其间用户消息，每条带时间前缀（剧情时间优先）。
  * 不依赖总结游标——游标推过后未总结块可能为空，仍须让模型看见近端气泡时刻。
+ *
+ * 约会线下生成请传入 minMessageTimestamp / minStoryCalendarMs，避免「最新几轮」仍是
+ * 数日前未总结的「要离开」而线下已推进到归来之后。
  */
 export async function buildRecentPrivateChatRoundsWithTimeBlock(params: {
   conversationKey: string
   retainAiRounds?: number
   maxChars?: number
+  /** 仅保留系统落库晚于此的消息（约会：上一轮线下 AI 之后） */
+  minMessageTimestamp?: number | null
+  /**
+   * 故事「现在」毫秒。有剧情戳且严格早于此的消息不进近端窗
+   *（无剧情戳时仍可靠 minMessageTimestamp 过滤）。
+   */
+  minStoryCalendarMs?: number | null
 }): Promise<string> {
   const ck = params.conversationKey.trim()
   if (!ck) return ''
@@ -256,7 +279,23 @@ export async function buildRecentPrivateChatRoundsWithTimeBlock(params: {
   )
   try {
     const all = await personaDb.listWeChatChatMessagesByConversationKey(ck)
-    const usable = all.filter((m) => !m.isRecalled && !isMeetImportedWeChatMessageId(m.id))
+    const wallFloor =
+      typeof params.minMessageTimestamp === 'number' && Number.isFinite(params.minMessageTimestamp)
+        ? params.minMessageTimestamp
+        : null
+    const storyFloor =
+      typeof params.minStoryCalendarMs === 'number' && Number.isFinite(params.minStoryCalendarMs)
+        ? params.minStoryCalendarMs
+        : null
+    const usable = all.filter((m) => {
+      if (m.isRecalled || isMeetImportedWeChatMessageId(m.id)) return false
+      if (wallFloor != null && !(m.timestamp > wallFloor)) return false
+      if (storyFloor != null) {
+        const storyMs = parseStoryAnchorLabelToMs(m.storyTimeLabel)
+        if (storyMs != null && storyMs < storyFloor) return false
+      }
+      return true
+    })
     if (!usable.length) return ''
     const window = selectRecentWeChatMessagesAiRoundWindow(usable, rounds)
     if (!window.length) return ''
@@ -274,9 +313,13 @@ export async function buildRecentPrivateChatRoundsWithTimeBlock(params: {
       body = parts.join('\n')
       if (body.length > charCap) body = `${body.slice(-charCap)}\n…（更早近端私聊已截断）`
     }
+    const filterNote =
+      wallFloor != null || storyFloor != null
+        ? '已剔除早于上一轮线下/故事「现在」的气泡；'
+        : ''
     return [
       `【最近私聊原文（固定最近 ${rounds} 轮对方回复，含其间用户消息）】`,
-      `每条前缀为**剧情时间**（有则优先）或**发送时系统/自定义时钟**；用于判断谁多久没回、间隔是否合理。`,
+      `每条前缀为**剧情时间**（有则优先）或**发送时系统/自定义时钟**；${filterNote}用于判断谁多久没回、间隔是否合理。`,
       body,
     ].join('\n')
   } catch {

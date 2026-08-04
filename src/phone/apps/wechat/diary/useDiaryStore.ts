@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { personaDb } from '../newFriendsPersona/idb'
 import type { CharacterDiaryBook, DiaryEntry, DiaryFontStyleCode, DiaryPersistedRoot } from './diaryTypes'
 import { DIARY_KV_KEY } from './diaryTypes'
+import { normalizeDiaryOutputLanguage } from './diaryLanguage'
 import { pickDiaryFontForRebind, resolveDiaryFontFamily } from './diaryFonts'
 
 type DiaryStore = {
@@ -14,6 +15,15 @@ type DiaryStore = {
   getBook: (charId: string) => CharacterDiaryBook | null
   ensureBook: (charId: string) => CharacterDiaryBook
   setAutoWriteInterval: (charId: string, intervalMs: number) => void
+  setDiaryLanguageSettings: (
+    charId: string,
+    patch: { diaryOutputLanguage?: string; translationSyncEnabled?: boolean },
+  ) => void
+  patchEntryTranslation: (
+    charId: string,
+    entryId: string,
+    translation: { translatedTitle: string; translatedContent: string },
+  ) => void
   resetFontFamily: (charId: string) => void
   deleteEntry: (charId: string, entryId: string) => void
   appendEntry: (charId: string, entry: DiaryEntry, fontStyle?: DiaryFontStyleCode | null) => void
@@ -52,6 +62,14 @@ function normalizeRoot(raw: unknown): DiaryPersistedRoot {
               inUniverseTime: String(e.inUniverseTime ?? '').trim(),
               content: String(e.content ?? '').trim(),
               createdAt: typeof e.createdAt === 'number' ? e.createdAt : Date.now(),
+              ...(typeof (e as DiaryEntry).translatedTitle === 'string' &&
+              (e as DiaryEntry).translatedTitle!.trim()
+                ? { translatedTitle: (e as DiaryEntry).translatedTitle!.trim() }
+                : {}),
+              ...(typeof (e as DiaryEntry).translatedContent === 'string' &&
+              (e as DiaryEntry).translatedContent!.trim()
+                ? { translatedContent: (e as DiaryEntry).translatedContent!.trim() }
+                : {}),
             }))
         : []
       books[charId] = {
@@ -64,6 +82,10 @@ function normalizeRoot(raw: unknown): DiaryPersistedRoot {
         autoWriteInterval:
           typeof book.autoWriteInterval === 'number' && book.autoWriteInterval >= 0 ? book.autoWriteInterval : 0,
         lastWrittenAt: typeof book.lastWrittenAt === 'number' ? book.lastWrittenAt : 0,
+        diaryOutputLanguage: normalizeDiaryOutputLanguage(
+          typeof book.diaryOutputLanguage === 'string' ? book.diaryOutputLanguage : undefined,
+        ),
+        translationSyncEnabled: book.translationSyncEnabled === true,
         entries: entries.sort((a, b) => b.createdAt - a.createdAt),
       }
     }
@@ -79,6 +101,8 @@ function emptyBook(charId: string): CharacterDiaryBook {
     fontRebindAvoid: null,
     autoWriteInterval: 0,
     lastWrittenAt: 0,
+    diaryOutputLanguage: 'zh-CN',
+    translationSyncEnabled: false,
     entries: [],
   }
 }
@@ -151,6 +175,45 @@ export const useDiaryStore = create<DiaryStore>((set, get) => ({
     const next = patchBook(get().root, acc, charId, (book) => ({
       ...book,
       autoWriteInterval: ms,
+    }))
+    set({ root: next })
+    schedulePersist(next)
+  },
+
+  setDiaryLanguageSettings(charId, patch) {
+    const acc = get().currentAccountId
+    if (!acc) return
+    const next = patchBook(get().root, acc, charId, (book) => ({
+      ...book,
+      ...(typeof patch.diaryOutputLanguage === 'string'
+        ? { diaryOutputLanguage: normalizeDiaryOutputLanguage(patch.diaryOutputLanguage) }
+        : {}),
+      ...(typeof patch.translationSyncEnabled === 'boolean'
+        ? { translationSyncEnabled: patch.translationSyncEnabled }
+        : {}),
+    }))
+    set({ root: next })
+    schedulePersist(next)
+  },
+
+  patchEntryTranslation(charId, entryId, translation) {
+    const acc = get().currentAccountId
+    const eid = entryId.trim()
+    if (!acc || !eid) return
+    const title = translation.translatedTitle.trim()
+    const content = translation.translatedContent.trim()
+    if (!title && !content) return
+    const next = patchBook(get().root, acc, charId, (book) => ({
+      ...book,
+      entries: book.entries.map((e) =>
+        e.id === eid
+          ? {
+              ...e,
+              ...(title ? { translatedTitle: title } : {}),
+              ...(content ? { translatedContent: content } : {}),
+            }
+          : e,
+      ),
     }))
     set({ root: next })
     schedulePersist(next)

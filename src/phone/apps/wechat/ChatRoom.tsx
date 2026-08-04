@@ -250,6 +250,18 @@ import {
 } from './wechatCharacterImageRequestDetect'
 import { logConsole } from './consoleLogger'
 import {
+  applyMutualFriendChainFromMainReply,
+  buildMutualFriendChainPromptAppendix,
+  formatMutualFriendChainConsoleSummary,
+  LinkedChatTriggerModal,
+  listMutualFriendNetworkCharacterIds,
+  listMutualFriendPeersForCharacter,
+  loadMutualFriendLinkedMode,
+  revokeMutualFriendChainSideEffectsForRetry,
+  stripMutualFriendChainFromBubbles,
+  type LinkedChatNotice,
+} from './mutualFriend'
+import {
   requestWeChatHeartWhisper,
   requestWeChatCharacterPsyche,
   requestWeChatGroupPsyche,
@@ -620,9 +632,11 @@ import { ChatMessageList } from './chatRoom/ChatMessageList'
 import { probeChatRender, probeMemoDeps } from './chatRoom/chatRenderProbe'
 import { useChatQueue } from './chatRoom/useChatQueue'
 import {
+  getStashedOpponentRevealJobCount,
   hasStashedOpponentRevealJobs,
   setOpponentRevealLiveConversation,
   stashOpponentRevealJobs,
+  subscribeOpponentRevealQueueStore,
   takeStashedOpponentRevealJobs,
 } from './chatRoom/opponentRevealQueueStore'
 import { computeRevealDelayMs } from './chatRoom/computeRevealDelayMs'
@@ -2683,6 +2697,9 @@ export function ChatRoomInner({
   conversationKeyLiveRef.current = conversationKey
   const chatRouteVisibleRef = useRef(chatRouteVisible)
   chatRouteVisibleRef.current = chatRouteVisible
+  /** 卸载后仍可能有 flushAiReplies 异步续跑；入队须改走全局暂存，避免气泡掉进死实例本地队列 */
+  const chatRoomMountedRef = useRef(true)
+  chatRoomMountedRef.current = true
   /** flushAiReplies 绑定会话 key；后台 flush 时与可见 conversationKey 可能不一致 */
   const flushOpponentRevealConvKeyRef = useRef<string | null>(null)
   const stashOpponentRevealJobsByKey = useCallback((jobs: OpponentRevealJob[]) => {
@@ -2925,13 +2942,41 @@ export function ChatRoomInner({
     }
   }, [peerAvatarUrl, useLumiProjectAssistantPrompt, personaCharacterId, conversationCharacterId])
 
+  /** 会话表里的本聊天头像（与 props 双通道，避免切换会话时 props 短暂丢失/竞态被冲掉） */
+  const [localPlayerChatAvatarUrl, setLocalPlayerChatAvatarUrl] = useState('')
+  useEffect(() => {
+    const ck = conversationKey.trim()
+    if (!ck) {
+      setLocalPlayerChatAvatarUrl('')
+      return
+    }
+    let cancelled = false
+    const load = () => {
+      void personaDb.getChatConversationSettings(ck).then((s) => {
+        if (cancelled) return
+        setLocalPlayerChatAvatarUrl((s?.playerChatAvatarUrl ?? '').trim())
+      })
+    }
+    load()
+    const on = () => {
+      if (!cancelled) load()
+    }
+    window.addEventListener('wechat-storage-changed', on)
+    return () => {
+      cancelled = true
+      window.removeEventListener('wechat-storage-changed', on)
+    }
+  }, [conversationKey])
+
   const playerAvatarResolved = useMemo(() => {
-    const chatOverride = resolveWechatAppAvatar(playerChatAvatarUrl)
-    if (chatOverride.trim()) return chatOverride.trim()
+    const chatOverride =
+      resolveWechatAppAvatar(playerChatAvatarUrl).trim() ||
+      resolveWechatAppAvatar(localPlayerChatAvatarUrl).trim()
+    if (chatOverride) return chatOverride
     const resolved =
       resolveWechatAppAvatar(playerAvatarUrl) || resolveWechatAppAvatar(state.profile.avatarImageUrl)
     return resolved.trim() || undefined
-  }, [playerChatAvatarUrl, playerAvatarUrl, state.profile.avatarImageUrl])
+  }, [playerChatAvatarUrl, localPlayerChatAvatarUrl, playerAvatarUrl, state.profile.avatarImageUrl])
 
   /**
    * 私聊专用：仅从 IndexedDB 拼「群聊近期消息摘录」，**不调用模型**（与约会线下剧情参考同源思路）。
@@ -5281,6 +5326,7 @@ export function ChatRoomInner({
   const { openConsole } = useWeChatConsole()
   const [composerToast, setComposerToast] = useState<string | null>(null)
   const [centerToast, setCenterToast] = useState<string | null>(null)
+  const [linkedChatNotice, setLinkedChatNotice] = useState<LinkedChatNotice | null>(null)
   const keyboardDebugEnabled = !!state.ui.keyboardDebugEnabled
   const keyboardDebugInsetPx = Math.max(-220, Math.min(220, Math.round(state.ui.keyboardDebugInsetPx || 0)))
   const toastTimerRef = useRef<number | null>(null)
@@ -6246,7 +6292,10 @@ export function ChatRoomInner({
       : computeOpponentStaggerDelayMs(job.msg)
   }, [])
 
-  const { resetDrainState: resetOpponentRevealDrainState } = useChatQueue({
+  const {
+    resetDrainState: resetOpponentRevealDrainState,
+    kick: kickChatQueueDrain,
+  } = useChatQueue({
     pendingQueue,
     jobsRef: opponentRevealJobsRef,
     timerRef: opponentRevealTimerRef,
@@ -6271,9 +6320,12 @@ export function ChatRoomInner({
       setBackgroundNotifyPendingWork({ wechatRevealPending: true })
     }
     syncPendingQueueFromRef()
+    /** 不依赖 pendingQueue 指纹变化：jobsRef 已有货时强制启动 drain，避免切页恢复后空转 */
+    kickChatQueueDrain()
   }, [
     clearOpponentRevealIdle,
     isOpponentRevealJobForLiveConversation,
+    kickChatQueueDrain,
     onOpponentRevealQueueActive,
     syncPendingQueueFromRef,
   ])
@@ -6295,13 +6347,18 @@ export function ChatRoomInner({
         deferredBubbleRevealJobsRef.current.push(...stamped)
         return
       }
+      /**
+       * 组件已卸载时 conversationKeyLiveRef 仍可能等于会话 key，若继续推进本地 jobsRef，
+       * 气泡会掉进死实例队列（无 timer、也不会进全局暂存）→ 切页后「消息一直出不来」。
+       */
+      const canDriveLocalReveal = chatRoomMountedRef.current
       const forLive: OpponentRevealJob[] = []
       for (const j of stamped) {
         const jobKey = j.forConversationKey.trim()
-        if (
-          liveConvKey &&
+        const isLiveKey =
+          !!liveConvKey &&
           (jobKey === liveConvKey || isSameWeChatStorageConversationMigration(jobKey, liveConvKey))
-        ) {
+        if (canDriveLocalReveal && isLiveKey) {
           if (jobKey !== liveConvKey) j.forConversationKey = liveConvKey
           forLive.push(j)
         } else if (jobKey) {
@@ -6359,6 +6416,23 @@ export function ChatRoomInner({
   useEffect(() => {
     return () => setOpponentRevealLiveConversation(null)
   }, [])
+
+  /**
+   * 卸载实例的 flush 仍可能往本会话 stash 塞气泡；live 实例须立刻取出续跑，
+   * 否则 liveRevealConversationKey 挡住后台 drain，队列会一直躺着。
+   */
+  useEffect(() => {
+    const ck = conversationKey.trim()
+    if (!ck) return
+    const pull = () => {
+      if (!chatRoomMountedRef.current) return
+      if (conversationKeyLiveRef.current.trim() !== ck) return
+      if (getStashedOpponentRevealJobCount(ck) <= 0) return
+      restoreStashedOpponentRevealQueueRef.current()
+    }
+    pull()
+    return subscribeOpponentRevealQueueStore(pull)
+  }, [conversationKey])
 
   useEffect(() => {
     /** 切朋友圈/消息列表等：ChatRoom 仍 dock 挂载，继续逐条露出，勿 cancel timer（否则 processingRef 死锁） */
@@ -6517,11 +6591,13 @@ export function ChatRoomInner({
     restoreStashedOpponentRevealQueueRef.current()
   }, [conversationKey, cancelOpponentRevealTimer, stashOpponentRevealJobsByKey])
 
-  /** 离开聊天室（去发红包页等）：队列按会话暂存，回聊天室后续跑逐条露出 */
+  /** 离开聊天室（去记忆/相册等人脉外层页）：队列按会话暂存，回聊天室后续跑逐条露出 */
   useEffect(() => {
     return () => {
+      chatRoomMountedRef.current = false
       cancelOpponentRevealTimer()
-      const jobs = opponentRevealJobsRef.current.splice(0)
+      const deferred = deferredBubbleRevealJobsRef.current.splice(0)
+      const jobs = [...deferred, ...opponentRevealJobsRef.current.splice(0)]
       const ck = conversationKeyLiveRef.current.trim()
       if (jobs.length === 0) {
         onOpponentRevealQueueActiveRef.current?.(false)
@@ -7988,7 +8064,8 @@ export function ChatRoomInner({
     const setFlushPending = (n: number) => setConversationPendingAiReplies(flushConversationKey, n)
     const isFlushQueueStopped = () => isConversationOpponentQueueStopped(flushConversationKey)
     const clearFlushQueueStop = () => setConversationOpponentQueueStop(flushConversationKey, false)
-    const flushIsLive = () => conversationKeyLiveRef.current.trim() === flushConversationKey
+    const flushIsLive = () =>
+      chatRoomMountedRef.current && conversationKeyLiveRef.current.trim() === flushConversationKey
     const setTypingIfLive = (v: boolean) => {
       if (flushIsLive()) setTypingVisible(v)
     }
@@ -8344,6 +8421,8 @@ export function ChatRoomInner({
         let roundImageAllowed = false
         let roundImageCountTarget = 0
         let privatePeerReplyRetryParams: Parameters<typeof requestWeChatPeerReplyBubbles>[0] | null = null
+        let mutualFriendAllowedPeerIds = new Set<string>()
+        let mutualFriendChainNotes: string | undefined
         let roundUserImageForProfile: { base64: string; mime: WeChatImageMime } | null = null
         try {
           const hasApi =
@@ -9243,6 +9322,43 @@ export function ChatRoomInner({
                 danmakuLines: [...(gm.danmakuLines ?? []).map((s) => String(s ?? '').trim()).filter(Boolean)],
               }
             } else {
+              // 联动聊天模式：人脉圈共享开关开启且有可传话对象时注入共同好友链协议
+              mutualFriendChainNotes = undefined
+              mutualFriendAllowedPeerIds = new Set()
+              if (!lumiAssistantChat && pm === 'persona' && character?.id?.trim()) {
+                try {
+                  const { rootId } = await listMutualFriendNetworkCharacterIds(character)
+                  const peers = await listMutualFriendPeersForCharacter(character)
+                  if (
+                    rootId &&
+                    peers.length > 0 &&
+                    loadMutualFriendLinkedMode(rootId, playerIdentityId)
+                  ) {
+                    mutualFriendAllowedPeerIds = new Set(peers.map((p) => p.characterId))
+                    const appendix = buildMutualFriendChainPromptAppendix({
+                      currentCharacterId: character.id,
+                      peers,
+                    }).trim()
+                    mutualFriendChainNotes = appendix || undefined
+                    logConsole(
+                      'ai',
+                      `联动聊天：已注入协议（可传话对象 ${peers.length} 人：${peers
+                        .map((p) => p.displayName)
+                        .slice(0, 8)
+                        .join('、')}${peers.length > 8 ? '…' : ''}）`,
+                    )
+                  } else if (!rootId || !peers.length) {
+                    logConsole('ai', '联动聊天：未注入（当前角色无人脉关系）')
+                  } else {
+                    logConsole('ai', '联动聊天：未注入（开关未开启）')
+                  }
+                } catch {
+                  logConsole('ai', '联动聊天：未注入（读取人脉失败）')
+                }
+              }
+              const mutualFriendExtras = mutualFriendChainNotes
+                ? { mutualFriendChainNotes }
+                : {}
               if (img?.base64?.trim()) {
               const userImageIsSticker = Boolean(lastSelfWithImage?.text?.trim().startsWith('[表情包]'))
               const meetWechatAiExtras = {
@@ -9306,6 +9422,7 @@ export function ChatRoomInner({
                 nonPrimarySpeakerLine,
                 worldBookPlayerIdentity: worldBookPlayerIdentityForAi,
                 worldBookUserLineLabel: worldBookUserLineLabelForAi,
+                ...mutualFriendExtras,
                 ...(playerAvatarResolved ? { playerWechatAvatarUrl: playerAvatarResolved } : {}),
               }
               if (userImageIsSticker) {
@@ -9321,6 +9438,7 @@ export function ChatRoomInner({
                   imageBase64: img.base64.trim(),
                   imageMime: img.type ?? 'image/jpeg',
                   userImageIsSticker,
+                  ...mutualFriendExtras,
                   ...(playerAvatarResolved ? { playerWechatAvatarUrl: playerAvatarResolved } : {}),
                   ...meetWechatAiExtras,
                   ...altExtras,
@@ -9423,6 +9541,7 @@ export function ChatRoomInner({
                 nonPrimarySpeakerLine,
                 worldBookPlayerIdentity: worldBookPlayerIdentityForAi,
                 worldBookUserLineLabel: worldBookUserLineLabelForAi,
+                ...mutualFriendExtras,
                 ...(playerAvatarResolved ? { playerWechatAvatarUrl: playerAvatarResolved } : {}),
               }
               aiReply = await requestWeChatPeerReplyBubbles(privatePeerReplyRetryParams)
@@ -9674,6 +9793,38 @@ export function ChatRoomInner({
               seg.kind === 'bubble' ? { kind: 'bubble' as const, text: filtered[i++] ?? '' } : seg,
             )
             .filter((seg) => seg.kind !== 'bubble' || seg.text.trim())
+        }
+        if (roomType !== 'group' && !lumiAssistantChat) {
+          const mfStripped = stripMutualFriendChainFromBubbles(bubbles)
+          const mfPayload = aiReply.mutualFriendChain ?? mfStripped.payload
+          if (mfPayload || mfStripped.bubbles.length !== bubbles.length) {
+            bubbles = mfStripped.bubbles
+            rebuildOrderedSegmentsFromBubbles(bubbles)
+          }
+          if (mfPayload && mutualFriendAllowedPeerIds.size && character?.id?.trim()) {
+            const currentDisplayName =
+              (character.name || character.wechatNickname || peerNotifyTitle || '').trim() || '对方'
+            logConsole(
+              'ai',
+              `联动聊天：本轮有输出 → ${formatMutualFriendChainConsoleSummary(mfPayload)}`,
+            )
+            void applyMutualFriendChainFromMainReply({
+              payload: mfPayload,
+              currentCharacterId: character.id,
+              currentDisplayName,
+              allowedPeerIds: mutualFriendAllowedPeerIds,
+              sourceConversationKey: flushConversationKey,
+              playerIdentityId,
+              wechatAccountId: currentAccountId,
+              onLinkedChatNotice: (notice) => {
+                setLinkedChatNotice(notice)
+              },
+            }).catch((err) => {
+              logConsole('ai', `共同好友传话投递失败：${err instanceof Error ? err.message : String(err)}`)
+            })
+          } else if (mutualFriendAllowedPeerIds.size) {
+            logConsole('ai', '联动聊天：本轮无联动块输出')
+          }
         }
         if (roomType !== 'group' && !lumiAssistantChat && characterImageGenEnabled) {
           const roundImageCountRange = parseStoredImageRoundCountRange(
@@ -12461,6 +12612,18 @@ export function ChatRoomInner({
         queueMicrotask(() => {
           void flushAiReplies(flushConversationKey)
         })
+      } else {
+        /**
+         * flush 忙碌期间 storage 监听会跳过 hydrate；结束后补一次，
+         * 让「切页期间后台落库」的气泡能回到当前/稍后重挂的聊天列表。
+         */
+        queueMicrotask(() => {
+          try {
+            window.dispatchEvent(new Event('wechat-storage-changed'))
+          } catch {
+            /* ignore */
+          }
+        })
       }
     }
   }, [
@@ -14004,9 +14167,26 @@ export function ChatRoomInner({
         return next
       })
 
+      /** 撤回同轮联动副作用，避免「已转达」记录让重新回复只口头宣称、不出标记块 */
+      const anchorTs = Number(msgs[lastRealSelfIdx]?.timestamp ?? 0)
+      if (conversationCharacterId.trim() && conversationKey.trim() && Number.isFinite(anchorTs) && anchorTs > 0) {
+        try {
+          await revokeMutualFriendChainSideEffectsForRetry({
+            characterId: conversationCharacterId,
+            conversationKey,
+            sinceTimestamp: anchorTs,
+            playerIdentityId,
+            wechatAccountId: currentAccountId,
+          })
+        } catch {
+          /* 撤回失败不阻断重新回复 */
+        }
+      }
+
       retryReplyBiasRef.current = [
         '[系统提示] 用户请求「重新回复」：须视为对该轮用户消息的**首次生成**。上下文已移除你方本轮旧稿，**禁止**引用、延续或复读旧内容；仅依据该条用户消息及更早历史重新作答。',
         '【重新回复】须写出与旧稿**可区分**的新对白/新信息/新节奏；禁止同义洗稿。若 system 中「尾声延展」已恢复为补丁前基准，勿再按旧稿关系态复读。',
+        '【联动聊天】若本轮对白要写「去传话/已甩给他/去打听」等，必须在文末重新输出完整 <<MUTUAL_FRIEND_CHAIN>> 标记块；禁止只口头宣称。同轮旧传话记录已撤回。',
         bias,
       ]
         .filter((x) => x.trim())
@@ -14063,6 +14243,7 @@ export function ChatRoomInner({
       cancelOpponentRevealTimer,
       conversationCharacterId,
       conversationKey,
+      currentAccountId,
       deferResetProactiveMessageCountdown,
       extractMessages,
       flushAiReplies,
@@ -17427,6 +17608,10 @@ export function ChatRoomInner({
         }}
       />
       <WeChatCenterToast message={centerToast} />
+      <LinkedChatTriggerModal
+        notice={linkedChatNotice}
+        onClose={() => setLinkedChatNotice(null)}
+      />
 
       <AnimatePresence>
         {forwardModeSheetOpen ? (

@@ -76,8 +76,10 @@ import {
   formatGregorianStoryDayFromMs,
   createEmptyStoryTimelineState,
 } from '../memory/storyTimelineTypes'
+import { syncNetworkStoryNowFromPrimary } from '../memory/storyTimelineNetworkNowSync'
 import {
   formatStoryTimeClockFromMs,
+  isWeChatClockAlignedWithStoryFloor,
   parseStoryAnchorLabelToMs,
   syncStoryTimelineNowFromOnlineClock,
 } from '../time/applyOnlineChatTimeFusion'
@@ -2042,6 +2044,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
           `**禁止**提前兑现线上明确推迟的事；**禁止**与线上一致信息矛盾；**禁止**只借摘录学口吻却无视约定与排期；` +
           `**禁止**线上末条仍是同一晚同地点的远程对话，线下却无过渡跳到次日清晨或无关换场；` +
           `**禁止**线上仍冷淡公事、线下却写成暧昧/心动/私人越界（关系温度须与摘录及尾声延展一致，除非用户当轮明确打破）。` +
+          `若故事「现在」已晚于某段「要离开/分别」聊天，该段为**往事**（可能已归来），**禁止**当作本轮即将再走或尚未归来。` +
           `「玩家输入/导演指令/屏外引导」只决定**当轮镜头与推进方式**，给角色自主行动空间，**不得**覆盖或改写线上已定事实；若指令与事实冲突，**以线上事实为准**。` +
           `「最近剧情」旧稿若违背线上事实，须以线上事实**修正**承接。` +
           (godPerspective
@@ -2833,6 +2836,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         }
       }
       // 时钟已推进但 sync 未写库（例如未点保存）：仍以流动线上时钟为「现在」，并尽量落盘
+      // 若线上仍停在真实墙钟、未对齐剧情日历，禁止把剧情「现在」推到系统时间
       try {
         const timeRow = await personaDb.getCharacterTimeSettings(cid)
         const cfg = timeRow?.config ? normalizeWeChatTimeConfig(timeRow.config) : null
@@ -2843,10 +2847,17 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           }).trim()
           const liveMsParsed = parseStoryAnchorLabelToMs(liveLabel)
           const stateMsParsed = parseStoryAnchorLabelToMs(stateStoryLabel)
+          // 无剧情「现在」时不拿墙钟硬写；有锚点时须已对齐故事日历
+          const alignedToStory =
+            stateMsParsed != null &&
+            isWeChatClockAlignedWithStoryFloor(liveTimeMs, stateMsParsed, 'custom', {
+              customBaseTime: cfg.customBaseTime,
+            })
           if (
+            alignedToStory &&
             liveLabel &&
             liveMsParsed != null &&
-            (stateMsParsed == null || liveMsParsed > stateMsParsed)
+            liveMsParsed > stateMsParsed
           ) {
             stateStoryLabel = liveLabel
             const prev =
@@ -2859,6 +2870,17 @@ export function DatingProvider({ children }: { children: ReactNode }) {
               currentStoryTime: formatStoryTimeClockFromMs(liveTimeMs),
               todos: [],
             })
+            try {
+              await syncNetworkStoryNowFromPrimary({
+                sourceCharacterId: cid,
+                storyDay: formatGregorianStoryDayFromMs(liveTimeMs),
+                storyTime: formatStoryTimeClockFromMs(liveTimeMs),
+                storyNowMs: liveTimeMs,
+                syncOnlineClock: true,
+              })
+            } catch {
+              /* ignore */
+            }
           }
         }
       } catch {
@@ -2874,6 +2896,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       }
       const storyNowLabel = pickLaterStoryLabel(stateStoryLabel, offlineLastCalendarAnchor)
       const storyCalendarAnchor = offlineLastCalendarAnchor
+      const storyNowMs = parseStoryAnchorLabelToMs(storyNowLabel)
 
       let unsummarizedPrivateBlock = ''
       let unsummarizedGroupBlock = ''
@@ -2885,10 +2908,13 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         })
         let recentPrivateRounds = ''
         try {
-          // 固定近端 N 轮原文（不依赖总结游标；已被总结的轮次仍须进上下文）
+          // 固定近端 N 轮原文；必须剔除「早于故事现在 / 上一轮线下」的旧气泡，
+          // 否则未总结的 5/1「要离开」会在 5/10 归来后仍被当成近端事实。
           recentPrivateRounds = (
             await buildRecentPrivateChatRoundsWithTimeBlock({
               conversationKey: convKey,
+              minMessageTimestamp: lastOfflineAiPlotTs,
+              minStoryCalendarMs: storyNowMs,
             })
           ).trim()
         } catch {
@@ -2900,6 +2926,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             maxMessages: MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
             maxChars: MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
             minMessageTimestamp: lastOfflineAiPlotTs ?? undefined,
+            minStoryCalendarMs: storyNowMs,
             includeMessageTimestamps: true,
             clipPreferRecent: true,
           })

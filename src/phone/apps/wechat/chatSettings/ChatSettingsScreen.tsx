@@ -43,6 +43,13 @@ import {
   summarizeChatReplyLanguageSettingsRow,
 } from './ChatReplyLanguageSettingsBlock'
 import { personaDb } from '../newFriendsPersona/idb'
+import {
+  listMutualFriendPeersForCharacter,
+  loadMutualFriendLinkedMode,
+  saveMutualFriendLinkedMode,
+} from '../mutualFriend'
+import { resolvePrivateChatNetworkRootId } from '../privateChatNetworkNpcPronoun'
+import { LinkedChatModeHelpButton } from './LinkedChatModeHelp'
 import { ChatFindChatHistoryScreen } from './ChatFindChatHistoryScreen'
 import {
   ChatEmojiProbabilitySettingsScreen,
@@ -248,6 +255,10 @@ export function ChatSettingsScreen({
   const [clearOpen, setClearOpen] = useState(false)
   const [inviteGroupOpen, setInviteGroupOpen] = useState(false)
   const [replyLangOpen, setReplyLangOpen] = useState(false)
+  const [linkedChatModeOn, setLinkedChatModeOn] = useState(false)
+  const [linkedChatModeAvailable, setLinkedChatModeAvailable] = useState(false)
+  const [linkedChatUnavailableHint, setLinkedChatUnavailableHint] = useState('')
+  const [linkedNetworkRootId, setLinkedNetworkRootId] = useState<string | null>(null)
   const chatBgFileRef = useRef<HTMLInputElement | null>(null)
   const chatAvatarFileRef = useRef<HTMLInputElement | null>(null)
 
@@ -272,7 +283,30 @@ export function ChatSettingsScreen({
       const kv = await personaDb.getPhoneKv(`busy-conv:${conversationKey}`)
       setGlobalModeBusyEnabled(typeof kv === 'boolean' ? kv : true)
     }
-  }, [conversationKey, peerCharacterId])
+
+    // 联动聊天模式：人脉圈共享开关（同根下各相关角色聊天信息页状态一致）
+    try {
+      const peer = await personaDb.getCharacter(peerCharacterId)
+      const rootId = await resolvePrivateChatNetworkRootId(peer)
+      const peers = peer ? await listMutualFriendPeersForCharacter(peer) : []
+      const available = Boolean(rootId && peers.length > 0)
+      setLinkedNetworkRootId(rootId)
+      setLinkedChatModeAvailable(available)
+      setLinkedChatModeOn(
+        available && rootId ? loadMutualFriendLinkedMode(rootId, playerIdentityId) : false,
+      )
+      if (available) {
+        setLinkedChatUnavailableHint('')
+      } else {
+        setLinkedChatUnavailableHint('当前角色无人脉关系，无法开启联动。')
+      }
+    } catch {
+      setLinkedNetworkRootId(null)
+      setLinkedChatModeAvailable(false)
+      setLinkedChatModeOn(false)
+      setLinkedChatUnavailableHint('当前角色无人脉关系，无法开启联动。')
+    }
+  }, [conversationKey, peerCharacterId, playerIdentityId])
 
   useEffect(() => {
     void load()
@@ -1009,6 +1043,40 @@ export function ChatSettingsScreen({
               onToggle={() => void patch({ isDanmakuMode: !effective.isDanmakuMode })}
             />
           </ListRow>
+          {linkedChatModeAvailable ? (
+            <ListRow borderBottom>
+              <div className="flex min-w-0 flex-1 items-center">
+                <span className="text-[16px] text-black">联动聊天模式</span>
+                <LinkedChatModeHelpButton />
+              </div>
+              <WxSwitch
+                on={linkedChatModeOn}
+                onToggle={() => {
+                  const root = linkedNetworkRootId?.trim()
+                  if (!root) return
+                  const next = !linkedChatModeOn
+                  saveMutualFriendLinkedMode({
+                    networkRootId: root,
+                    playerIdentityId,
+                    enabled: next,
+                  })
+                  setLinkedChatModeOn(next)
+                }}
+              />
+            </ListRow>
+          ) : (
+            <ListRow borderBottom>
+              <div className="min-w-0 flex-1 pr-2">
+                <div className="flex items-center">
+                  <span className="text-[16px] text-[#b0b0b0]">联动聊天模式</span>
+                  <LinkedChatModeHelpButton />
+                </div>
+                <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                  {linkedChatUnavailableHint || '当前角色无人脉关系，无法开启联动。'}
+                </p>
+              </div>
+            </ListRow>
+          )}
           <ListRow borderBottom>
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">回复思维链（CoT）</span>

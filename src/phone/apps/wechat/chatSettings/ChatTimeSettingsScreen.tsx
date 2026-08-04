@@ -156,7 +156,9 @@ export function ChatTimeSettingsScreen({
     if (floor.hasFloor && floor.floorMs != null) {
       perception = true
       const live = resolveWeChatCurrentTimeMs(config)
-      const aligned = isWeChatClockAlignedWithStoryFloor(live, floor.floorMs, config.mode)
+      const aligned = isWeChatClockAlignedWithStoryFloor(live, floor.floorMs, config.mode, {
+        customBaseTime: config.customBaseTime,
+      })
       if (!aligned) {
         // 有剧情锚点时，线上「现在」须落在剧情日历上（默认=锚点）；不能拿真实墙钟 Math.max 糊弄
         config = normalizeWeChatTimeConfig({

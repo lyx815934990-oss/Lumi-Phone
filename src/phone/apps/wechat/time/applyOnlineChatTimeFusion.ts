@@ -4,10 +4,14 @@ import {
   composeStoryTimelineCalendarAnchorLabel,
   createEmptyStoryTimelineState,
   formatGregorianStoryDayFromMs,
+  formatStoryTimelineListTimeLabel,
   parseStoryCalendarDayStartMs,
   type StoryTimelineState,
 } from '../memory/storyTimelineTypes'
 import { personaDb } from '../newFriendsPersona/idb'
+import {
+  syncNetworkStoryNowFromPrimary,
+} from '../memory/storyTimelineNetworkNowSync'
 import type { WeChatTimeConfig } from '../newFriendsPersona/types'
 import { normalizeWeChatTimeConfig } from './wechatTimeUtils'
 
@@ -19,17 +23,55 @@ export type StoryTimeFloorInfo = {
   hasFloor: boolean
 }
 
+const WALL_CLOCK_SLACK_MS = 3 * 60_000
+const STORY_AHEAD_OF_FLOOR_SLACK_MS = 2 * 60_000
+
+/** 是否仍紧贴真实墙钟（用于识别「未按剧情对齐的系统时间」） */
+export function looksLikeRealWallClockMs(
+  ms: number,
+  nowMs: number = Date.now(),
+  slackMs: number = WALL_CLOCK_SLACK_MS,
+): boolean {
+  if (!Number.isFinite(ms) || !Number.isFinite(nowMs) || ms <= 0) return false
+  return Math.abs(ms - nowMs) <= Math.max(0, slackMs)
+}
+
 /**
  * 自定义时钟是否已落在「剧情锚点往后」的故事日历上。
- * 系统墙钟（如真实 2026）即使数值大于剧情日（如 2025 夜），也不算对齐。
+ * 系统墙钟即使数值大于剧情日（含同年：真实 2026-08-04 vs 剧情 2026-08-03），也不算对齐。
  */
 export function isWeChatClockAlignedWithStoryFloor(
   liveMs: number,
   floorMs: number,
   mode: WeChatTimeConfig['mode'],
+  opts?: { customBaseTime?: number; nowMs?: number },
 ): boolean {
   if (mode !== 'custom') return false
   if (!Number.isFinite(liveMs) || !Number.isFinite(floorMs) || liveMs < floorMs) return false
+
+  const now = typeof opts?.nowMs === 'number' && Number.isFinite(opts.nowMs) ? opts.nowMs : Date.now()
+  const base =
+    typeof opts?.customBaseTime === 'number' && Number.isFinite(opts.customBaseTime)
+      ? opts.customBaseTime
+      : null
+
+  // 自定义基点仍是「刚从真实墙钟抄来」且明显晚于剧情锚点 → 未对齐，应对齐到锚点
+  if (
+    base != null &&
+    looksLikeRealWallClockMs(base, now) &&
+    base - floorMs > STORY_AHEAD_OF_FLOOR_SLACK_MS
+  ) {
+    return false
+  }
+  // 未提供基点时：live 本身贴墙钟且远超锚点，同样视为未对齐（防误把剧情「现在」推到系统时间）
+  if (
+    base == null &&
+    looksLikeRealWallClockMs(liveMs, now) &&
+    liveMs - floorMs > STORY_AHEAD_OF_FLOOR_SLACK_MS
+  ) {
+    return false
+  }
+
   const floorY = new Date(floorMs).getFullYear()
   const liveY = new Date(liveMs).getFullYear()
   if (liveY === floorY) return true
@@ -76,19 +118,9 @@ function labelFromState(state: StoryTimelineState | null | undefined): string {
   }).trim()
 }
 
-/** 解析角色当前剧情时间下限（state 优先，否则线下 plot 锚点） */
-export async function resolveCharacterStoryTimeFloor(characterId: string): Promise<StoryTimeFloorInfo> {
+async function resolvePlotDerivedStoryFloor(characterId: string): Promise<StoryTimeFloorInfo | null> {
   const cid = characterId.trim()
-  if (!cid) return { label: '', floorMs: null, hasFloor: false }
-
-  const state = await personaDb.getStoryTimelineState(cid)
-  const stateLabel = labelFromState(state)
-  if (stateLabel) {
-    const floorMs = parseStoryAnchorLabelToMs(stateLabel)
-    if (floorMs != null) {
-      return { label: stateLabel, floorMs, hasFloor: true }
-    }
-  }
+  if (!cid) return null
 
   try {
     const plots = await loadDatingPlotsFromKv(cid)
@@ -101,15 +133,76 @@ export async function resolveCharacterStoryTimeFloor(characterId: string): Promi
     ).trim()
     if (plotLabel) {
       const floorMs = parseStoryAnchorLabelToMs(plotLabel)
-      return {
-        label: plotLabel,
-        floorMs,
-        hasFloor: floorMs != null || Boolean(plotLabel),
+      if (floorMs != null) {
+        return { label: plotLabel, floorMs, hasFloor: true }
       }
     }
   } catch {
-    // ignore plot load failures
+    /* ignore plot load failures */
   }
+
+  try {
+    const rows = await personaDb.listStoryTimelinePlotRowsByCharacterId(cid)
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      const label = formatStoryTimelineListTimeLabel(rows[i]?.rowText ?? '').trim()
+      if (!label) continue
+      const floorMs = parseStoryAnchorLabelToMs(label)
+      if (floorMs == null) continue
+      // 跳过已贴墙钟的行，优先找回真实剧情锚点
+      if (looksLikeRealWallClockMs(floorMs)) continue
+      return { label, floorMs, hasFloor: true }
+    }
+  } catch {
+    /* ignore row load failures */
+  }
+
+  return null
+}
+
+/** 解析角色当前剧情时间下限（state 优先，否则线下 plot / 时间轴行锚点） */
+export async function resolveCharacterStoryTimeFloor(characterId: string): Promise<StoryTimeFloorInfo> {
+  const cid = characterId.trim()
+  if (!cid) return { label: '', floorMs: null, hasFloor: false }
+
+  const state = await personaDb.getStoryTimelineState(cid)
+  const stateLabel = labelFromState(state)
+  const stateMs = stateLabel ? parseStoryAnchorLabelToMs(stateLabel) : null
+  const plotFloor = await resolvePlotDerivedStoryFloor(cid)
+
+  // state「现在」已被墙钟污染时，回退到剧情条目/线下锚点（如 8/3 17:30）
+  if (
+    stateMs != null &&
+    looksLikeRealWallClockMs(stateMs) &&
+    plotFloor?.floorMs != null &&
+    !looksLikeRealWallClockMs(plotFloor.floorMs) &&
+    plotFloor.floorMs < stateMs
+  ) {
+    return plotFloor
+  }
+
+  if (stateLabel && stateMs != null) {
+    return { label: stateLabel, floorMs: stateMs, hasFloor: true }
+  }
+
+  // 人脉根剧情锚点：当前角色尚无「现在」时，回退到同人脉主角，避免 NPC 落到系统墙钟
+  try {
+    const self = await personaDb.getCharacter(cid)
+    const rootId = self?.generatedForCharacterId?.trim()
+    if (rootId && rootId !== cid) {
+      const rootState = await personaDb.getStoryTimelineState(rootId)
+      const rootLabel = labelFromState(rootState)
+      if (rootLabel) {
+        const floorMs = parseStoryAnchorLabelToMs(rootLabel)
+        if (floorMs != null && !looksLikeRealWallClockMs(floorMs)) {
+          return { label: rootLabel, floorMs, hasFloor: true }
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  if (plotFloor) return plotFloor
 
   if (state?.currentStoryDay?.trim() || state?.currentStoryTime?.trim()) {
     const fallback = [state.currentStoryDay?.trim(), state.currentStoryTime?.trim()].filter(Boolean).join(' ')
@@ -186,6 +279,17 @@ export async function applyOnlineChatTimeFusion(
     todos: [],
   }
   await personaDb.putStoryTimelineState(next)
+  try {
+    await syncNetworkStoryNowFromPrimary({
+      sourceCharacterId: cid,
+      storyDay,
+      storyTime,
+      storyNowMs: chosen,
+      syncOnlineClock: true,
+    })
+  } catch {
+    /* ignore */
+  }
 
   const storyLabel = composeStoryTimelineCalendarAnchorLabel({
     story_day: storyDay,
@@ -224,7 +328,12 @@ export async function syncStoryTimelineNowFromOnlineClock(params: {
   let chosen = live
   if (chosen < floor.floorMs) chosen = floor.floorMs
 
-  if (!isWeChatClockAlignedWithStoryFloor(chosen, floor.floorMs, 'custom')) {
+  const cfg = normalizeWeChatTimeConfig(settings?.config)
+  if (
+    !isWeChatClockAlignedWithStoryFloor(chosen, floor.floorMs, 'custom', {
+      customBaseTime: cfg.customBaseTime,
+    })
+  ) {
     return { storyLabel: floor.label, synced: false }
   }
 
@@ -251,5 +360,16 @@ export async function syncStoryTimelineNowFromOnlineClock(params: {
     todos: [],
   }
   await personaDb.putStoryTimelineState(next)
+  try {
+    await syncNetworkStoryNowFromPrimary({
+      sourceCharacterId: cid,
+      storyDay,
+      storyTime,
+      storyNowMs: chosen,
+      syncOnlineClock: true,
+    })
+  } catch {
+    /* ignore */
+  }
   return { storyLabel, synced: true }
 }

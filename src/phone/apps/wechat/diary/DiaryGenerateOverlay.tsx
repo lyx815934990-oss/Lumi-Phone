@@ -4,8 +4,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 const CEREMONY_LINES = [
   '正在同步思维网络...',
   '正在解析近期记忆...',
-  '正在潜入潜意识层...',
-  '正在书写不可告人的独白...',
+  '正在整理内心感受...',
+  '正在写下私人日记...',
 ]
 
 export function DiaryGenerateOverlay({ open }: { open: boolean }) {

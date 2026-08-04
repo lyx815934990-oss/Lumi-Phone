@@ -36,14 +36,17 @@ function RuledBackground({ lineCount }: { lineCount: number }) {
 export function LinedDiarySheet({
   page,
   fontFamily,
+  language,
   signatureName,
 }: {
   page: DiaryVirtualPage
   fontFamily: string | null
+  /** 书写语言：日语等会叠假名/谚文回退字体 */
+  language?: string | null
   /** 日记署名：角色真实姓名 */
   signatureName: string
 }) {
-  const hand = diaryFontStack(fontFamily)
+  const hand = diaryFontStack(fontFamily, language)
   const bodyLineCount = page.bodyLineCount
   const contentCapacity = diaryContentLineCapacity(bodyLineCount)
   const textLines = page.body.split('\n').slice(0, contentCapacity)
@@ -74,21 +77,21 @@ export function LinedDiarySheet({
           }}
         >
           {page.isFirstChunk ? (
-            <header className="relative z-[1] shrink-0 pb-1 pt-2">
-              <div className="flex items-start justify-between gap-3">
-                <h2
-                  className="min-w-0 flex-1 text-left text-gray-800"
-                  style={{ fontSize: 20, lineHeight: `${DIARY_BODY_LINE_HEIGHT}px` }}
-                >
-                  {page.title}
-                </h2>
+            <header className="relative z-[1] shrink-0 space-y-0.5 pb-1 pt-2">
+              <h2
+                className="w-full text-left text-gray-800"
+                style={{ fontSize: 20, lineHeight: `${DIARY_BODY_LINE_HEIGHT}px` }}
+              >
+                {page.title}
+              </h2>
+              {page.inUniverseTime ? (
                 <time
-                  className="shrink-0 text-gray-500"
+                  className="block w-full text-left text-gray-500"
                   style={{ fontSize: 14, lineHeight: `${DIARY_BODY_LINE_HEIGHT}px` }}
                 >
                   {page.inUniverseTime}
                 </time>
-              </div>
+              ) : null}
               <div
                 className="text-gray-400"
                 style={{ fontSize: 15, lineHeight: `${DIARY_BODY_LINE_HEIGHT}px` }}
