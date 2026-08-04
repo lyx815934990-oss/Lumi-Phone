@@ -98,7 +98,7 @@ export function formatDatingOnlineInjectScopeFooter(meta: DatingOnlineInjectScop
       `；${meta.onlineInjectMinTs != null ? '设备落库钟点见各行前缀或本注' : '本块按发送顺序排列'}，**勿把设备钟点当剧情时刻**`
     : `每条前缀为**系统落库时刻**（真实钟点，非剧情时间）`
   return (
-    `（↑ 未总结私聊原文（记忆游标之后、尚未写入长期记忆）；近端约 ${meta.privateMessageCount} 条（同日或相关时段）${span}；` +
+    `（↑ 未总结私聊原文（自${anchor}之后、尚未写入长期记忆）；近端约 ${meta.privateMessageCount} 条（同日或相关时段）${span}；` +
     `${timeNote}。上方若另有「未总结·往事私聊」亦是角色已知，仅禁止当此刻；已总结内容见长期记忆块。）`
   )
 }
