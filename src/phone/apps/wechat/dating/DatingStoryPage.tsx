@@ -35,6 +35,7 @@ import { personaDb } from '../newFriendsPersona/idb'
 import type { Character, CharacterDanmakuSettingsRow, PlayerIdentity, WeChatGlobalSettingsRow } from '../newFriendsPersona/types'
 import { formatWorldBackgroundForPrompt } from '../newFriendsPersona/worldBackgroundFormat'
 import { loadOfflineDatingPlotsPromptBlock } from './loadOfflineDatingPlotsForWechatPrompt'
+import { formatCharacterMemoriesForPromptInjection } from '../memory/formatCharacterMemoriesForPromptInjection'
 import { requestWeChatHeartWhisper, type ChatTranscriptTurn } from '../wechatChatAi'
 import { buildMemoryRelevanceHaystack } from '../wechatMemoryPromptBlocks'
 import { formatHeartWhisperGenerateError, HeartWhisperModal } from '../HeartWhisperModal'
@@ -886,9 +887,6 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
           : null
       const transcript = buildTranscriptFromDatingPlots()
       const hay = buildMemoryRelevanceHaystack(transcript.map((t) => t.text))
-      const { formatCharacterMemoriesForPromptInjection } = await import(
-        '../memory/formatCharacterMemoriesForPromptInjection'
-      )
       const memoryNotes = (
         await formatCharacterMemoriesForPromptInjection(cid, hay, {
           apiConfig: apiConfig?.apiUrl?.trim() && apiConfig?.apiKey?.trim() ? apiConfig : null,

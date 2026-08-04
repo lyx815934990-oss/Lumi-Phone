@@ -127,7 +127,13 @@ import {
   DATING_PLOT_COMPLETION_TIMEOUT_MS,
 } from './types'
 import { extractTimelineDeltaFromMemoryJsonText, extractTimelineSnapshotTextFromAiTextRaw } from './datingPlotTimelineSnapshot'
-import { formatOfflineUnsummarizedBlockFromPlotSnapshots } from './loadOfflineDatingPlotsForWechatPrompt'
+import {
+  buildUnsummarizedOfflineDatingText,
+  formatOfflineUnsummarizedBlockFromPlotSnapshots,
+  loadOfflineDatingPlotsPromptBlock,
+} from './loadOfflineDatingPlotsForWechatPrompt'
+import { formatCharacterMemoriesForPromptInjection } from '../memory/formatCharacterMemoriesForPromptInjection'
+import { dualNarrativeStoryFieldsFromDelta } from '../memory/dualNarrativeTime'
 import { loadDatingNpcNetworkPromptBlock } from './datingNpcNetworkPrompt'
 import { datingPlotBodyForPromptInjection, splitDatingAssistantOutput, resolveDatingPlotDisplayFromItem } from './plotCoT'
 import { PROSE_FORBIDDEN_LEXICON_PROMPT } from '../proseForbiddenLexiconPrompt'
@@ -203,7 +209,6 @@ import {
   isDatingPlotGenerating,
   subscribeDatingPlotGeneration,
 } from './datingPlotGenerationEvents'
-import { buildUnsummarizedOfflineDatingText } from './loadOfflineDatingPlotsForWechatPrompt'
 import {
   buildWorldBookAfterChatTrace,
   buildWorldBookAfterPatchRowsFromSingleCharacter,
@@ -3055,9 +3060,6 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         storyTimelineBlock = ''
       }
 
-      const { formatCharacterMemoriesForPromptInjection } = await import(
-        '../memory/formatCharacterMemoriesForPromptInjection'
-      )
       const longTermMemory = await formatCharacterMemoriesForPromptInjection(cid, hay, {
         apiConfig: apiConfig?.apiUrl?.trim() && apiConfig?.apiKey?.trim() ? apiConfig : null,
         conversationKey: convKey || undefined,
@@ -3293,7 +3295,6 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           sessionPlayerIdentityId: memCtx.sessionPlayerIdentityId,
           offlineUnsummarizedPlotSnapshot: plotItemsToSnapshots(arch.plots),
         })
-        const { loadOfflineDatingPlotsPromptBlock } = await import('./loadOfflineDatingPlotsForWechatPrompt')
         const offlineDatingPlotsContext = await loadOfflineDatingPlotsPromptBlock(pid, char.realName)
         const transcript = plotsToDanmakuTranscript(arch.plots, char.realName)
         const lines = await requestWeChatDanmakuVarietyShow({
@@ -3480,7 +3481,6 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             storyCalendarAnchor: resolveStoryCalendarAnchorFromPlotItems(plotsForModel),
           })
           const wbRevertNew = sanitizeWorldBookAfterRevertEntries(aiGen.worldBookAfterRevertEntries)
-          const { dualNarrativeStoryFieldsFromDelta } = await import('../memory/dualNarrativeTime')
           const storyFields = dualNarrativeStoryFieldsFromDelta(timelineDelta)
           let aiPlot: PlotItem = {
             id: uid('ai'),
@@ -4079,10 +4079,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             storyCalendarAnchor: resolveStoryCalendarAnchorFromPlotItems(before),
           })
         const nextRevert = sanitizeWorldBookAfterRevertEntries(aiGenRegen.worldBookAfterRevertEntries)
-        const { dualNarrativeStoryFieldsFromDelta: storyFieldsFromDeltaRegen } = await import(
-          '../memory/dualNarrativeTime'
-        )
-        const regenStory = storyFieldsFromDeltaRegen(timelineDeltaRegen)
+        const regenStory = dualNarrativeStoryFieldsFromDelta(timelineDeltaRegen)
         let nextPlot: PlotItem = {
           ...appendAiRegenerateVersion(
             plotSlot,

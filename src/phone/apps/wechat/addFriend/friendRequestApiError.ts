@@ -23,6 +23,13 @@ export function formatApiClientError(err: unknown, emptyFallback = '请求失败
   ) {
     return '网络请求中断（浏览器未收到完整响应）。网关侧可能已生成成功；请再试一次，或换更稳的线路/缩短目标字数。'
   }
+  if (
+    lower.includes('importing a module script failed') ||
+    lower.includes('failed to fetch dynamically imported module') ||
+    lower.includes('error loading dynamically imported module')
+  ) {
+    return '页面脚本加载失败（多为弱网或站点刚更新）。请刷新页面后重试。'
+  }
   if (lower.includes('unauthorized') || lower.includes('401') || lower.includes('invalid api key')) {
     return 'API 密钥无效或未授权，请在 API 设置中检查配置。'
   }
@@ -50,6 +57,8 @@ export function isTransientNetworkError(err: unknown): boolean {
     lower.includes('network request failed') ||
     lower.includes('the network connection was lost') ||
     lower.includes('ns_error_net') ||
+    lower.includes('importing a module script failed') ||
+    lower.includes('failed to fetch dynamically imported module') ||
     lower === 'load failed'
   )
 }
