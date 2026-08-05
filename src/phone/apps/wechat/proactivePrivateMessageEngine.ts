@@ -401,10 +401,12 @@ async function fireProactiveMessage(row: ChatConversationSettingsRow): Promise<v
       const messages = await personaDb.listWeChatChatMessagesByConversationKey(key)
       const transcript = storedMessagesToTranscript(messages).slice(-48)
       const msSinceLastUserMessage = computeMsSinceLastUserMessage(messages, gameNowForRound)
+      const msWallSinceLastUserMessage = computeMsSinceLastUserMessage(messages, realNow)
 
       const replyBias = [
         buildProactivePrivateMessageReplyBias(messages, {
           msSinceLastUserMessage,
+          msWallSinceLastUserMessage,
           affection: psycheAffection,
           relationshipDef: psycheRelationshipDef,
         }),

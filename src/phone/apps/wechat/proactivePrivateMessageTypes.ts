@@ -113,11 +113,17 @@ export function hasProactiveMessageScheduleSaved(
   return (row?.proactiveMessageLastFiredAtMs ?? 0) > 0
 }
 
-/** 好感度 ≥ 此值时，可视为「较亲密」关系，久未回复时偏日常报备 */
+/** 好感度 ≥ 此值时，可视为「较亲密」关系，久未回复时可夹带日常报备 */
 export const PROACTIVE_INTIMATE_AFFECTION_MIN = 60
 
-/** 用户距上次发言超过此时长（毫秒），且关系较亲密时，优先报备有趣日常 */
+/** 用户距上次发言超过此时长（毫秒），且关系较亲密时，可夹带有趣日常报备 */
 export const PROACTIVE_LONG_USER_SILENCE_MS = 4 * 60 * 60 * 1000
+
+/** 沉默达此时长：角色应能表现出轻度疑惑/惦念（仍禁止查岗施压） */
+export const PROACTIVE_SOFT_WONDER_SILENCE_MS = 2 * 60 * 60 * 1000
+
+/** 沉默达此时长：应更明显意识到「好久没回了」，可结合上次话题轻声关心 */
+export const PROACTIVE_VERY_LONG_SILENCE_MS = 8 * 60 * 60 * 1000
 
 /** 主动消息与普通私聊共用的输出节奏说明（条数不设上限） */
 const PROACTIVE_OUTPUT_PARITY_HINT =
@@ -131,7 +137,8 @@ export const PROACTIVE_INITIATION_USER_NUDGE =
   PROACTIVE_OUTPUT_PARITY_HINT +
   '这是**角色发给用户**，不是用户发给你，**禁止**替用户续写 user 侧台词、禁止模拟用户发消息。' +
   '对白里「我」指角色本人，「你」指用户。' +
-  '若你们关系较亲密且用户已有一阵子没回：优先像真正在意对方那样，**报备一两件有趣日常**（吃到好吃的、路上趣事、工作小插曲、看到联想到用户的东西等），让用户感到被放心上；勿查岗、勿质问「怎么不理我」。'
+  '须对照下方【用户上次发言】与【沉默时长】：用户已久未回复时，应像真人一样感到惦记或轻度疑惑（可结合对方上次说到的行程/事），' +
+  '可报备日常，也可轻声关心一句；**禁止**查岗、连环催、道德绑架式「怎么不理我」。'
 
 export const PROACTIVE_PRIVATE_MESSAGE_REPLY_BIAS = [
   '【主动消息·最高优先级】',
@@ -141,20 +148,24 @@ export const PROACTIVE_PRIVATE_MESSAGE_REPLY_BIAS = [
   '**禁止**身份倒错：勿替用户（user 席位）发言、勿模拟用户发消息、勿写成用户在向你汇报。',
   '对白中的「我/我的」默认指**角色本人**；称呼用户用「你」。',
   '须结合最近对话话题、关系与人设推进或延展，**禁止**复读、换皮重发上一轮已说过的话或同义句。',
-  '可分享日常、问候、接梗、轻调侃或新信息；勿机械模板「你怎么不理我」。',
-  '**较亲密关系 + 用户久未回复**时：优先**报备有趣日常**（刚吃到/看到的、路上小事、联想到用户的小细节），传达「惦记你、想跟你分享」；让用户感到被在意、被放心上；禁止查岗、禁止 guilt tripping。',
-  '若用户尚未回应你上一轮发言（且不属于上述亲密报备场景）：可**酌情**一句轻问在干嘛、忙不忙等（贴合语境即可，**非必须**）；禁止施压、质问或连环催促。',
-  '用户可能正在忙或未看手机，语气自然有度。',
+  '可分享日常、问候、接梗、轻调侃或新信息。',
+  '**必须服从【用户上次发言】与【沉默时长】**：用户已数小时未回时，角色应知道「对方上次说到哪、隔了多久」——可轻度疑惑、惦记、关心到没（尤其对方上次在赶路/坐车/说去某地），也可顺带报备日常；',
+  '**禁止**装作完全不知道对方多久没回；**禁止**查岗、质问连环催、guilt tripping（「是不是不想理我了」）。',
   '**寻味点外卖**：若想主动给用户点外卖，须遵守输出协议中的 `外卖 店=… 菜=…`；店 ID 与菜名只能从协议附带的寻味菜单价目表原样选取；口语与指令须一致（禁止嘴上说 A 店、指令点 B 店）；口语里**禁止编造具体金额**，卡片会显示真实总价。',
 ].join('\n')
 
 const PROACTIVE_INTIMATE_DAILY_LIFE_SHARE_BIAS = [
-  '【亲密·久未回复·日常报备（优先）】',
-  '你们关系较亲密，用户已有一阵子没回消息；本轮**优先**像真正在意对方那样，主动分享一两件**具体、有趣、生活化**的日常片段。',
-  '可参考：刚吃到/喝到的好东西、路上或店里看见的趣事、工作/学习小插曲、天气或季节感、看到某样东西联想到用户、睡前/刚醒的小状态等——须贴合人设与最近聊天语境，**禁止**编造与用户已知设定冲突的细节。',
-  '目标是让用户感到**被惦记、被放心上**；分享本身即是关心，不必每轮都追问「你怎么不回」。',
-  '若结尾需要一句惦念，最多**一句**轻、软、不施压（如「忙完记得看一眼」「想到你了」）；**禁止**查岗、质问、连环催回复、道德绑架式「是不是不想理我了」。',
-  '语气像给朋友/在意的人随手发微信，自然、有温度，不要公告体或客服腔。',
+  '【亲密·久未回复·可报备日常】',
+  '你们关系较亲密，用户已有一阵子没回；可主动分享一两件**具体、有趣、生活化**的日常片段（吃到/看到的、路上小事、联想到用户等），让对方感到被惦记。',
+  '同时须对照【沉默时长】与【用户上次发言】：若已久未回或对方上次在赶路/未结束的行程，**应有**轻度疑惑或关心（一两句即可），勿只报备日常却完全无视「怎么还没回」。',
+  '惦念最多自然带一两句，轻、软、不施压；**禁止**查岗、质问、连环催回复、道德绑架。',
+  '语气像给在意的人随手发微信，不要公告体或客服腔。',
+].join('\n')
+
+const PROACTIVE_VERY_LONG_SILENCE_BIAS = [
+  '【久未回复·应有感知】',
+  '用户距上次发言已很久。角色作为正常人应感到疑惑或担心「怎么还没回/到了没/忙完了没」，可结合对方上次提到的事轻声问一句。',
+  '可夹带日常，但**禁止**整轮只聊自己、完全无视长时间沉默；仍禁止查岗施压与连环催。',
 ].join('\n')
 
 /** 用户已发言但角色尚未回复时：与手动催回复同路，不再追加「主动开口」占位 user 消息 */
@@ -171,12 +182,16 @@ export function computeMsSinceLastUserMessage(
   messages: WeChatChatMessage[],
   nowMs: number = Date.now(),
 ): number | null {
+  const lastUser = getLastPlayerMessage(messages)
+  if (!lastUser) return null
+  return Math.max(0, nowMs - lastUser.timestamp)
+}
+
+function getLastPlayerMessage(messages: WeChatChatMessage[]): WeChatChatMessage | null {
   const userMessages = messages
     .filter((m) => !m.isRecalled && m.type === 'player')
     .sort((a, b) => a.timestamp - b.timestamp)
-  const lastUser = userMessages[userMessages.length - 1]
-  if (!lastUser) return null
-  return Math.max(0, nowMs - lastUser.timestamp)
+  return userMessages[userMessages.length - 1] ?? null
 }
 
 function formatProactiveSilenceDuration(ms: number): string {
@@ -185,15 +200,41 @@ function formatProactiveSilenceDuration(ms: number): string {
     return `约 ${minutes} 分钟`
   }
   if (ms < 24 * 60 * 60 * 1000) {
-    const hours = Math.max(1, Math.round(ms / 3_600_000))
+    const hours = Math.max(1, Math.round((ms / 3_600_000) * 10) / 10)
+    const whole = Math.round(hours)
+    if (Math.abs(hours - whole) < 0.05) return `约 ${whole} 小时`
     return `约 ${hours} 小时`
   }
   const days = Math.max(1, Math.round(ms / 86_400_000))
   return days >= 2 ? `约 ${days} 天` : '约 1 天'
 }
 
+function formatProactiveLastUserTimeLabel(m: WeChatChatMessage): string {
+  const story = m.storyTimeLabel?.trim()
+  if (story) return story
+  try {
+    const d = new Date(m.timestamp)
+    if (!Number.isFinite(d.getTime())) return '未知时刻'
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  } catch {
+    return '未知时刻'
+  }
+}
+
+function looksLikeInTransitOrUnfinishedPlan(text: string): boolean {
+  const t = text.trim()
+  if (!t) return false
+  return /大巴|公交|地铁|火车|高铁|飞机|坐车|在车上|赶路|在路上|出发|去往|去.{0,8}(那边|那里|学校|家|公司|车站)|还没到|快到了|在等车/.test(
+    t,
+  )
+}
+
 export type ProactivePrivateMessageReplyBiasContext = {
+  /** 故事/会话时钟下距用户上次发言 */
   msSinceLastUserMessage?: number | null
+  /** 设备真实时间距用户上次发言（故事时钟未推进时补强「隔夜未回」感知） */
+  msWallSinceLastUserMessage?: number | null
   affection?: number | null
   relationshipDef?: string | null
 }
@@ -222,11 +263,24 @@ export function resolveProactiveMessageAiRound(messages: WeChatChatMessage[]): {
   }
 }
 
+function resolveEffectiveSilenceMs(ctx: ProactivePrivateMessageReplyBiasContext): number | null {
+  const a =
+    typeof ctx.msSinceLastUserMessage === 'number' && Number.isFinite(ctx.msSinceLastUserMessage)
+      ? ctx.msSinceLastUserMessage
+      : null
+  const b =
+    typeof ctx.msWallSinceLastUserMessage === 'number' && Number.isFinite(ctx.msWallSinceLastUserMessage)
+      ? ctx.msWallSinceLastUserMessage
+      : null
+  if (a == null && b == null) return null
+  return Math.max(a ?? 0, b ?? 0)
+}
+
 function shouldPreferIntimateDailyLifeShare(ctx: ProactivePrivateMessageReplyBiasContext): boolean {
   const affection = ctx.affection
-  const silenceMs = ctx.msSinceLastUserMessage
+  const silenceMs = resolveEffectiveSilenceMs(ctx)
   if (typeof affection !== 'number' || !Number.isFinite(affection)) return false
-  if (typeof silenceMs !== 'number' || !Number.isFinite(silenceMs)) return false
+  if (silenceMs == null) return false
   return affection >= PROACTIVE_INTIMATE_AFFECTION_MIN && silenceMs >= PROACTIVE_LONG_USER_SILENCE_MS
 }
 
@@ -249,6 +303,22 @@ export function buildProactivePrivateMessageReplyBias(
   const lastOverall = allSorted[allSorted.length - 1]
   const pendingUserReply = hasPendingUserMessageWithoutReply(messages)
   const preferIntimateDailyShare = !pendingUserReply && shouldPreferIntimateDailyLifeShare(ctx)
+  const lastUser = getLastPlayerMessage(messages)
+  const storySilenceMs =
+    typeof ctx.msSinceLastUserMessage === 'number' && Number.isFinite(ctx.msSinceLastUserMessage)
+      ? ctx.msSinceLastUserMessage
+      : lastUser
+        ? Math.max(0, Date.now() - lastUser.timestamp)
+        : null
+  const wallSilenceMs =
+    typeof ctx.msWallSinceLastUserMessage === 'number' && Number.isFinite(ctx.msWallSinceLastUserMessage)
+      ? ctx.msWallSinceLastUserMessage
+      : null
+  // 感知用：取故事时钟与真实时钟中更长的沉默（防故事钟未推进时隔夜仍像「刚聊完」）
+  const silenceMs =
+    storySilenceMs != null || wallSilenceMs != null
+      ? Math.max(storySilenceMs ?? 0, wallSilenceMs ?? 0)
+      : null
 
   const lines: string[] = [
     pendingUserReply ? PROACTIVE_REPLY_PENDING_USER_BIAS : PROACTIVE_PRIVATE_MESSAGE_REPLY_BIAS,
@@ -280,19 +350,54 @@ export function buildProactivePrivateMessageReplyBias(
     )
   }
 
-  if (preferIntimateDailyShare) {
-    const silenceMs = ctx.msSinceLastUserMessage!
+  // 用户未回时：始终注入「上次何时说了什么 + 沉默多久」，避免模型装作不知道
+  if (userHasNotRepliedSince && lastUser) {
+    const lastText = String(lastUser.content || '').trim().slice(0, 280)
+    const timeLabel = formatProactiveLastUserTimeLabel(lastUser)
+    const storyLabel =
+      storySilenceMs != null ? formatProactiveSilenceDuration(storySilenceMs) : null
+    const wallLabel =
+      wallSilenceMs != null ? formatProactiveSilenceDuration(wallSilenceMs) : null
+    const silenceLabel =
+      silenceMs != null ? formatProactiveSilenceDuration(silenceMs) : '未知（按聊天记录自行判断）'
+    const inTransit = looksLikeInTransitOrUnfinishedPlan(lastText)
+    const silenceLines = [
+      storyLabel && wallLabel && storyLabel !== wallLabel
+        ? `【沉默时长】故事/会话时钟约 ${storyLabel}；设备真实时间约 ${wallLabel}（取较长者感知：${silenceLabel}）。角色已知用户已久未回。`
+        : `【沉默时长】距用户上次发言已 ${silenceLabel}（角色已知）。`,
+    ]
+    lines.push(
+      '【用户上次发言】',
+      `时间：${timeLabel}`,
+      lastText ? `内容：${lastText}` : '内容：（非文本/空）',
+      ...silenceLines,
+      '角色须把上述时间与内容当作已知事实：可惦记、可轻度疑惑对方怎么还没回；',
+      inTransit
+        ? '对方上次提到赶路/在车上/去往某处等未收束行程时，应更自然地关心「到了没/还在路上吗/忙完了没」一类，勿假装不知道对方在途中。'
+        : '若沉默已久，勿只顾自说自话完全无视「好久没回」。',
+      '仍禁止查岗式质问、连环催回复与道德绑架。',
+    )
+    if (silenceMs != null && silenceMs >= PROACTIVE_VERY_LONG_SILENCE_MS) {
+      lines.push(PROACTIVE_VERY_LONG_SILENCE_BIAS)
+    } else if (silenceMs != null && silenceMs >= PROACTIVE_SOFT_WONDER_SILENCE_MS) {
+      lines.push(
+        '【轻度沉默感知】已有数小时未回，可自然带一点疑惑或惦念（一两句），语气贴合人设。',
+      )
+    }
+  } else if (userHasNotRepliedSince) {
+    lines.push(
+      '【用户尚未回应你上一轮】可结合语境轻问一句在干嘛、忙不忙等；语气贴合人设，勿质问、勿连环催回复。',
+    )
+  }
+
+  if (preferIntimateDailyShare && silenceMs != null) {
     const relHint =
       typeof ctx.relationshipDef === 'string' && ctx.relationshipDef.trim()
         ? ctx.relationshipDef.trim()
         : `好感度约 ${Math.round(ctx.affection!)}`
     lines.push(
       PROACTIVE_INTIMATE_DAILY_LIFE_SHARE_BIAS,
-      `【关系与沉默时长】${relHint}；用户距上次发言已 ${formatProactiveSilenceDuration(silenceMs)}。`,
-    )
-  } else if (userHasNotRepliedSince) {
-    lines.push(
-      '【用户尚未回应你上一轮】可结合语境酌情轻问一句在干嘛、忙不忙等（非必须）；语气贴合人设，勿质问、勿连环催回复。',
+      `【关系】${relHint}；沉默见上方【沉默时长】。`,
     )
   }
 
