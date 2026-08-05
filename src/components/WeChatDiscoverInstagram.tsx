@@ -7,6 +7,7 @@ import {
   MessageCircleQuestionMark,
   Radio,
   ScrollText,
+  Sparkles,
   Store,
 } from 'lucide-react'
 import type { WeChatPersonaContact } from '../phone/types'
@@ -56,13 +57,33 @@ const SubconsciousArchivesApp = lazyWithRetry(() =>
 const JubenshaHallApp = lazyWithRetry(() =>
   import('./jubensha/JubenshaHallApp').then((m) => ({ default: m.JubenshaHallApp })),
 )
+const QimuApp = lazyWithRetry(() =>
+  import('../phone/apps/wechat/qimu').then((m) => ({ default: m.QimuApp })),
+)
 
-function DiscoverSuspense({ children }: { children: ReactNode }) {
+function DiscoverSuspense({
+  children,
+  onClose,
+}: {
+  children: ReactNode
+  /** 加载中 / 加载失败时左上角关闭，退回发现列表 */
+  onClose?: () => void
+}) {
   return (
-    <LazyChunkErrorBoundary label="打开发现页">
+    <LazyChunkErrorBoundary label="打开发现页" onClose={onClose}>
       <Suspense
         fallback={
-          <div className="flex h-full min-h-0 items-center justify-center bg-white text-[13px] text-[#8e8e8e]">
+          <div className="relative flex h-full min-h-0 items-center justify-center bg-white text-[13px] text-[#8e8e8e]">
+            {onClose ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="absolute left-3 top-3 z-10 flex h-9 min-w-9 items-center justify-center rounded-full bg-black/6 px-3 text-[14px] font-medium text-black/70 active:bg-black/12"
+                aria-label="关闭"
+              >
+                关闭
+              </button>
+            ) : null}
             加载中…
           </div>
         }
@@ -80,6 +101,7 @@ type DiscoverActionId =
   | 'weibo'
   | 'lumi-live'
   | 'subconscious-archives'
+  | 'qimu'
   | 'jubensha'
   | 'shop'
 
@@ -119,6 +141,7 @@ const DISCOVER_ACTIONS: DiscoverAction[] = [
   { id: 'weibo', label: '微博广场', icon: Globe2 },
   { id: 'lumi-live', label: '浮光直播', icon: Radio },
   { id: 'subconscious-archives', label: '私语档案', icon: ScrollText },
+  { id: 'qimu', label: '绮幕', icon: Sparkles },
   { id: 'jubensha', label: '剧本杀馆', icon: BookOpen },
   { id: 'shop', label: '小店', icon: Store },
 ]
@@ -150,6 +173,7 @@ export function WeChatDiscoverInstagram({
     | 'weibo'
     | 'lumi-live'
     | 'subconscious-archives'
+    | 'qimu'
     | 'jubensha'
   >('list')
   useEffect(() => {
@@ -188,7 +212,7 @@ export function WeChatDiscoverInstagram({
   if (activeView === 'moments') {
     return (
       <div className={`h-full min-h-0 ${className}`}>
-        <DiscoverSuspense>
+        <DiscoverSuspense onClose={() => setActiveView('list')}>
           <WeChatMomentsPage
             onBack={() => setActiveView('list')}
             wechatNickname={momentsDisplayName}
@@ -206,7 +230,7 @@ export function WeChatDiscoverInstagram({
   }
   if (activeView === 'listen-together') {
     return (
-      <DiscoverSuspense>
+      <DiscoverSuspense onClose={() => setActiveView('list')}>
         <DiscoverListenTogetherApp
           className={`h-full min-h-0 ${className}`}
           onBack={() => setActiveView('list')}
@@ -217,7 +241,7 @@ export function WeChatDiscoverInstagram({
   if (activeView === 'anonymous-qa') {
     return (
       <div className={`h-full min-h-0 ${className}`}>
-        <DiscoverSuspense>
+        <DiscoverSuspense onClose={() => setActiveView('list')}>
           <AnonymousQnAApp
             onBack={() => setActiveView('list')}
             currentUserName={currentUserName ?? momentsDisplayName}
@@ -230,7 +254,7 @@ export function WeChatDiscoverInstagram({
   }
   if (activeView === 'weibo') {
     return (
-      <DiscoverSuspense>
+      <DiscoverSuspense onClose={() => setActiveView('list')}>
         <WeChatDiscoverLumiPulseApp
           className={`h-full min-h-0 ${className}`}
           onBack={() => {
@@ -243,7 +267,7 @@ export function WeChatDiscoverInstagram({
   }
   if (activeView === 'lumi-live') {
     return (
-      <DiscoverSuspense>
+      <DiscoverSuspense onClose={() => setActiveView('list')}>
         <LumiLiveApp
           className={`h-full min-h-0 ${className}`}
           onBack={() => setActiveView('list')}
@@ -255,7 +279,7 @@ export function WeChatDiscoverInstagram({
   }
   if (activeView === 'subconscious-archives') {
     return (
-      <DiscoverSuspense>
+      <DiscoverSuspense onClose={() => setActiveView('list')}>
         <SubconsciousArchivesApp
           className={`h-full min-h-0 ${className}`}
           onBack={() => setActiveView('list')}
@@ -265,10 +289,22 @@ export function WeChatDiscoverInstagram({
       </DiscoverSuspense>
     )
   }
+  if (activeView === 'qimu') {
+    return (
+      <div className={`h-full min-h-0 ${className}`}>
+        <DiscoverSuspense onClose={() => setActiveView('list')}>
+          <QimuApp
+            onBack={() => setActiveView('list')}
+            personaContacts={personaContacts}
+          />
+        </DiscoverSuspense>
+      </div>
+    )
+  }
   if (activeView === 'jubensha') {
     return (
       <div className={`h-full min-h-0 ${className}`}>
-        <DiscoverSuspense>
+        <DiscoverSuspense onClose={() => setActiveView('list')}>
           <JubenshaHallApp
             onBack={() => setActiveView('list')}
             currentUserName={momentsDisplayName}
@@ -302,6 +338,7 @@ export function WeChatDiscoverInstagram({
                       if (item.id === 'weibo') setActiveView('weibo')
                       if (item.id === 'lumi-live') setActiveView('lumi-live')
                       if (item.id === 'subconscious-archives') setActiveView('subconscious-archives')
+                      if (item.id === 'qimu') setActiveView('qimu')
                       if (item.id === 'jubensha') setActiveView('jubensha')
                     }}
                     className="flex w-full items-center px-4 py-4 text-left transition-colors duration-200 hover:bg-[#fafafa]"

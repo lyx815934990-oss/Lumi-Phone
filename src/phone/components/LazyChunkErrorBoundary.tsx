@@ -3,6 +3,8 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 type Props = {
   children: ReactNode
   label?: string
+  /** 失败/重试界面左上角关闭（如退回发现列表） */
+  onClose?: () => void
 }
 
 type State = {
@@ -12,10 +14,14 @@ type State = {
 
 function isChunkLoadError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error ?? '')
+  const lower = msg.toLowerCase()
   return (
-    msg.includes('Failed to fetch dynamically imported module') ||
-    msg.includes('Importing a module script failed') ||
-    msg.includes('error loading dynamically imported module')
+    lower.includes('failed to fetch dynamically imported module') ||
+    lower.includes('importing a module script failed') ||
+    lower.includes('error loading dynamically imported module') ||
+    lower.includes('load failed') ||
+    // Chromium: ERR_CONNECTION_RESET / Failed to fetch
+    (lower.includes('failed to fetch') && lower.includes('module'))
   )
 }
 
@@ -34,8 +40,18 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
     }
   }
 
+  /**
+   * React.lazy 会 sticky 缓存失败的 Promise，仅清 error + remount 不会重新拉 chunk。
+   * 带 cache-bust 软刷新，才能真正重新下载。
+   */
   private handleRetry = () => {
-    this.setState((s) => ({ error: null, retryKey: s.retryKey + 1 }))
+    try {
+      const u = new URL(window.location.href)
+      u.searchParams.set('__lazy_retry', String(Date.now()))
+      window.location.replace(u.href)
+    } catch {
+      window.location.reload()
+    }
   }
 
   private handleReload = () => {
@@ -45,7 +61,17 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#f2f2f4] px-6 text-center">
+        <div className="relative flex h-full min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#f2f2f4] px-6 text-center">
+          {this.props.onClose ? (
+            <button
+              type="button"
+              onClick={this.props.onClose}
+              className="absolute left-3 top-3 z-10 flex h-9 min-w-9 items-center justify-center rounded-full bg-black/6 px-3 text-[14px] font-medium text-black/70 active:bg-black/12"
+              aria-label="关闭"
+            >
+              关闭
+            </button>
+          ) : null}
           <p className="text-[15px] font-medium text-black/75">
             {this.props.label ? `${this.props.label}失败` : '模块加载失败'}
           </p>
@@ -71,6 +97,10 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
         </div>
       )
     }
-    return <div key={this.state.retryKey} className="flex h-full min-h-0 flex-1 flex-col">{this.props.children}</div>
+    return (
+      <div key={this.state.retryKey} className="flex h-full min-h-0 flex-1 flex-col">
+        {this.props.children}
+      </div>
+    )
   }
 }
