@@ -106,6 +106,7 @@ export function LoreEditor({ draft, roster, onChange, onBack, autoSaveLabel }: P
   const setCharacterAll = (all: boolean) => {
     onChange({
       ...draft,
+      // 切到「限定角色」时先留空 ids；保存时若仍为空会规范化回「全部角色」
       characterScope: all ? { mode: 'all' } : { mode: 'characters', ids: [] },
       updatedAt: Date.now(),
     })

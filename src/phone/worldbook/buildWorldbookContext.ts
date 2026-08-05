@@ -22,7 +22,8 @@ function entryMatchesCharacterScope(entry: LoreEntry, inScene: Set<string>): boo
   const cs = entry.characterScope
   if (!cs || cs.mode === 'all') return true
   const ids = cs.mode === 'characters' ? cs.ids ?? [] : []
-  if (!ids.length) return false
+  // 限定角色但未勾选任何 id：视为无效配置，回退为「全部角色」以免条目静默永不注入
+  if (!ids.length) return true
   return ids.some((id) => inScene.has(String(id ?? '').trim()))
 }
 
@@ -70,7 +71,11 @@ export function buildWorldbookContext(
     if (e.enabled === false) return false
     if (!String(e.content ?? '').trim()) return false
     if (!entryMatchesPlate(e.plateScope, plateArg)) return false
-    if (!inScene.size && e.characterScope?.mode === 'characters') return false
+    const cs = e.characterScope
+    const targetedIds =
+      cs?.mode === 'characters' ? (cs.ids ?? []).map((x) => String(x ?? '').trim()).filter(Boolean) : []
+    // 限定了具体角色但当前场景无成员 id：无法匹配 → 跳过；空 ids 视为全部角色
+    if (!inScene.size && targetedIds.length > 0) return false
     return entryMatchesCharacterScope(e, inScene)
   })
 
@@ -99,10 +104,10 @@ export function buildWorldbookContext(
   const lines: string[] = []
   lines.push('【档案与世界书】')
   lines.push(
-    '请务必在叙事与设定理解中严格遵守下列条目。条目按标注的生效板块与作用角色筛选；正文建议统一使用占位符「{{char}}」指当前人设角色本人、「{{user}}」指玩家本人（注入前已替换为姓名）。若条目限定具体角色：仅该角色在台词、心理与知情范围内受其约束。',
+    '请务必在叙事与设定理解中严格遵守下列条目。条目按标注的生效板块与作用角色筛选；正文建议统一使用占位符「{{char}}」指当前人设角色本人、「{{user}}」指玩家本人（注入前已替换为姓名）。若条目限定具体角色：仅该角色在台词、心理与知情范围内受其约束；未点名的其他角色不受该条约束。',
   )
   lines.push(
-    '【效力层级】**角色人设上的「世界书条目」/「约会对象·世界书」高于本段（全局档案室）**。本段高于会话后方内置的通用扮演说明、高质量爱情观/告白引擎等恋爱参考、《线上回复输出协议》中的语气建议、表情包目录等。若本段与人设世界书冲突，**以人设世界书为准**，弱化或忽略本段冲突句；客户端硬性格式（换行对应多条气泡、禁止 JSON/Markdown 围栏等）仍须遵守。',
+    '【效力层级】**本段（全局档案室）与角色人设上的「世界书条目」/「约会对象·世界书」同级最高设定**，线上私聊与线下剧情均须遵守。二者冲突时：取更具体、更不可违背的约束（硬禁忌/关系阶段/禁止项优先于软气质描写），**禁止**以「人设气质」为由整段忽略本段硬规则；亦禁止用本段软参考覆盖人设明文口癖与性格。客户端硬性格式（换行对应多条气泡、禁止 JSON/Markdown 围栏等）仍须遵守。',
   )
 
   let n = 1
@@ -136,7 +141,11 @@ export function listWorldbookTracePills(
     if (e.enabled === false) return false
     if (!String(e.content ?? '').trim()) return false
     if (!entryMatchesPlate(e.plateScope, plateArg)) return false
-    if (!inScene.size && e.characterScope?.mode === 'characters') return false
+    const cs = e.characterScope
+    const targetedIds =
+      cs?.mode === 'characters' ? (cs.ids ?? []).map((x) => String(x ?? '').trim()).filter(Boolean) : []
+    // 限定了具体角色但当前场景无成员 id：无法匹配 → 跳过；空 ids 视为全部角色
+    if (!inScene.size && targetedIds.length > 0) return false
     return entryMatchesCharacterScope(e, inScene)
   })
 

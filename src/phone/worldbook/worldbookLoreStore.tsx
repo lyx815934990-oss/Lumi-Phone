@@ -29,6 +29,22 @@ let snap: Snap = {
 const listeners = new Set<() => void>()
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 
+/** 启动时先从 localStorage 同步预热，避免异步 IDB 未完成前 AI 注入读到空档案室 */
+;(function bootstrapLoreArchiveFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(LUMI_LORE_ARCHIVE_KV_KEY)
+    if (!raw?.trim()) return
+    const parsed = parseStore(JSON.parse(raw) as unknown)
+    snap = {
+      entries: parsed.entries,
+      hydrated: false,
+      builtinPresets: resolveLoreArchiveBuiltinPresetToggles(parsed.builtinPresets),
+    }
+  } catch {
+    // ignore corrupt bootstrap
+  }
+})()
+
 function emit() {
   listeners.forEach((l) => l())
 }
@@ -168,7 +184,17 @@ function getSnap(): Snap {
 }
 
 export function upsertLoreEntry(entry: LoreEntry) {
-  const next = [...snap.entries.filter((e) => e.id !== entry.id), entry].sort(
+  const normalized =
+    normalizeArchiveEntryPartial({
+      id: entry.id,
+      title: entry.title,
+      content: entry.content,
+      enabled: entry.enabled !== false,
+      plateScope: entry.plateScope,
+      characterScope: entry.characterScope,
+      updatedAt: entry.updatedAt,
+    }) ?? entry
+  const next = [...snap.entries.filter((e) => e.id !== normalized.id), normalized].sort(
     (a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0),
   )
   snap = { ...snap, entries: next }

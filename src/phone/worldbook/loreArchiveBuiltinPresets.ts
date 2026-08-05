@@ -66,7 +66,7 @@ export function buildWechatReplyRomanceSections(
   const parts: string[] = []
   if (resolved.lumiDoctrineOfLove || resolved.activeConfession || resolved.pureRestrainLove) {
     parts.push(
-      '【内置恋爱参考·效力说明】下列爱情观/告白/纯爱克制引擎为中性相处参考，**低于**角色档案与人设世界书；气质、主动程度与表达方式以人设为准，禁止写成霸总或强势主导；其中「尊重边界、禁止强制爱」为硬底线。',
+      '【内置恋爱参考·效力说明】下列爱情观/告白/纯爱克制引擎与**人设世界书、全局档案室同级最高设定**（线上私聊与线下剧情均生效）。气质与口吻仍按人设表达；「尊重边界、禁止强制爱、关系阶段闸门」等硬底线**不得**以人设气质为由绕过；禁止写成霸总或强势主导。',
     )
   }
   if (resolved.lumiDoctrineOfLove) parts.push(LUMI_DOCTRINE_OF_LOVE_APPENDIX)
@@ -83,19 +83,19 @@ export function buildWechatThinkingChainRomanceSteps(
   let stepNo = 5
   if (resolved.lumiDoctrineOfLove) {
     steps.push(
-      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「Lumi 高质量爱情观」（中性参考，**不得覆盖人设**；条文已在输出协议；禁止复述）`,
+      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「Lumi 高质量爱情观」（与人设/全局档案同级；硬底线不可破；条文已在输出协议；禁止复述）`,
     )
     stepNo += 1
   }
   if (resolved.activeConfession) {
     steps.push(
-      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「情感破冰与告白引擎」（推进节奏服从人设；条文已在输出协议；禁止复述）`,
+      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「情感破冰与告白引擎」（与人设/全局档案同级；推进节奏用人设口吻表达；条文已在输出协议；禁止复述）`,
     )
     stepNo += 1
   }
   if (resolved.pureRestrainLove) {
     steps.push(
-      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「纯爱克制」（先判关系阶段；直球不压迫；萌而不自知/害羞；情侣亲密须先忍再问；禁止强制爱与非情侣越级；条文已在输出协议；禁止复述）`,
+      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「纯爱克制」（与人设/全局档案同级；先判关系阶段；直球不压迫；禁止强制爱与非情侣越级；条文已在输出协议；禁止复述）`,
     )
     stepNo += 1
   }
@@ -109,17 +109,17 @@ export function buildOfflineRomanceThinkingChainSections(
   const parts: string[] = []
   if (resolved.lumiDoctrineOfLove) {
     parts.push(`【Lumi高质量爱情观】
-以下为恋爱相处**中性参考**（非最高优先级）。须在思维链中对照自检，但**不得**覆盖【约会对象·档案/世界书】或角色人设；气质与表达强度以人设为准，禁止借本节写成霸总/强势主导：
+以下为恋爱相处最高设定之一（与人设世界书/全局档案室同级；线上线下均生效）。须在思维链中对照自检；气质与表达强度用人设口吻落地，禁止借本节写成霸总/强势主导；硬底线不可破：
 ${LUMI_DOCTRINE_OF_LOVE_APPENDIX}`)
   }
   if (resolved.activeConfession) {
     parts.push(`【{{char}} 情感破冰与告白演绎引擎】
-以下为情感推进参考；须在思维链中校准是否触发破冰/告白，但**节奏与语气服从人设世界书**；禁止为「推进」改成霸总腔：
+以下为情感推进最高设定之一（与人设/全局档案同级）。须在思维链中校准是否触发破冰/告白；语气用人设表达，禁止为「推进」改成霸总腔：
 ${CHARACTER_EMOTION_CONFESSION_ENGINE_APPENDIX}`)
   }
   if (resolved.pureRestrainLove) {
     parts.push(`【纯爱克制】
-以下为纯爱相处参考；须在思维链中对照自检（**先判好感/暧昧/已确立情侣**、直球不压迫、萌而不自知、害羞外显、非情侣禁止吻与吻手等越级亲密、情侣须先忍再问、禁止强制爱），但**气质与表达强度服从人设**；「尊重边界」为硬底线：
+以下为纯爱相处最高设定之一（与人设/全局档案同级；线上线下均生效）。须在思维链中对照自检（**先判好感/暧昧/已确立情侣**、直球不压迫、萌而不自知、害羞外显、非情侣禁止吻与吻手等越级亲密、情侣须先忍再问、禁止强制爱）；气质用人设表达，「尊重边界」为硬底线：
 ${PURE_RESTRAIN_LOVE_APPENDIX}`)
   }
   if (resolved.offlineRichInnerOs) {

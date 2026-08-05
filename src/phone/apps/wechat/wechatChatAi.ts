@@ -87,6 +87,32 @@ import type { WeChatChatHistoryPayload } from './newFriendsPersona/types'
 import { WECHAT_FRIEND_REQUEST_ADJUDICATION_OUTPUT_APPENDIX } from './wechatFriendRequestAdjudicationPrompt'
 import { WECHAT_ROLEPLAY_SYSTEM_PROMPT } from './wechatChatPrompt'
 import { PROACTIVE_INITIATION_USER_NUDGE } from './proactivePrivateMessageTypes'
+
+/**
+ * Gemini 等网关：`Requests ending with a model turn are not supported`
+ * 「继续回复」/空输入催回复时历史常以角色气泡结尾，须补一条 user 占位。
+ */
+const WECHAT_CONTINUE_WHEN_LAST_IS_ASSISTANT_NUDGE =
+  '[系统·继续回复] 用户本回合没有新发消息（可能点了「继续回复」或催回复）。' +
+  '请你以**角色本人**身份继续发微信气泡（assistant 侧输出）。' +
+  '禁止替用户发言、禁止模拟用户发消息。对白里「我」指角色、「你」指用户。'
+
+function ensureChatMessagesDoNotEndWithAssistantTurn(
+  messages: OpenAiCompatibleMessage[],
+  nudge?: string,
+): void {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const role = messages[i]?.role
+    if (role === 'system') continue
+    if (role === 'assistant') {
+      messages.push({
+        role: 'user',
+        content: nudge?.trim() || WECHAT_CONTINUE_WHEN_LAST_IS_ASSISTANT_NUDGE,
+      })
+    }
+    break
+  }
+}
 import { buildStickerCatalogPromptBlock, ensureStickerStoreHydrated } from './stickers/stickerStore'
 import { buildWechatClassicEmojiCatalogPromptBlock } from './stickers/wechatClassicEmojiPrompt'
 import { collectRecentCharacterStickerRefsFromTranscript } from './stickers/stickerAntiRepeat'
@@ -865,14 +891,14 @@ export function buildSystemContent(params: {
     ? ''
     : isRegenBias
       ? `\n\n---\n【效力层级·重新回复】本轮对上一气泡不满意重写。` +
-        `「本轮回复偏向」为**内容最高优先级**；其次服从**角色档案与人设世界书**；` +
-        `输出格式硬约束（换行分条/禁 JSON/Markdown）次之，且须高于全局档案室；` +
+        `「本轮回复偏向」为**内容最高优先级**；其次服从**角色档案、人设世界书与全局档案室世界书**（三者同级）；` +
+        `输出格式硬约束（换行分条/禁 JSON/Markdown）次之；` +
         `不得捏造与「尚未总结」「剧情时间轴·当前状态」「尾声延展」明文冲突的已定事实。\n`
       : `\n\n---\n【效力层级·微信私聊】` +
-        `**角色档案与人设世界书** > 输出格式硬约束（换行分条/禁 JSON/Markdown）> 玩家身份铁律 > 全局档案室世界书 > 世界背景/NPC网/尾声延展·关系 > ` +
-        `内置恋爱参考（高质量爱情观/告白引擎等，不得覆盖人设） > ` +
+        `**角色档案 + 人设世界书 + 全局档案室世界书**（同级最高设定）> 输出格式硬约束（换行分条/禁 JSON/Markdown）> 玩家身份铁律 > 世界背景/NPC网/尾声延展·关系 > ` +
+        `内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
         `剧情时间轴·当前状态 > 尚未总结（末尾最新）与线下摘录末尾 > 时间轴语义召回/近端摘要 > 向量长期记忆。` +
-        `人设世界书与全局档案冲突时**以人设为准**；输出格式不得压过人设气质与口吻，但客户端硬性分条/禁围栏仍须遵守；本轮用户消息决定接话方向，**不得**改写已定事实；角色在边界内可自主行动。\n`
+        `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；输出格式不得压过人设气质与口吻，但客户端硬性分条/禁围栏仍须遵守；本轮用户消息决定接话方向，**不得**改写已定事实；角色在边界内可自主行动。\n`
 
   const linkedExpand = (raw: string) =>
     expandLinkedMemoryPlaceholders(raw, {
@@ -914,7 +940,7 @@ export function buildSystemContent(params: {
       extra += `\n---\n【世界背景（次于档案与世界书、人设世界书；若与下方世界书冲突，以世界书为准）】\n${wbg}\n`
     }
     if (wb.trim()) {
-      extra += `\n---\n【世界书条目（人设绑定·最高设定优先；高于全局档案室与内置恋爱参考；条目间冲突以本段人设为准）】\n${wb}\n`
+      extra += `\n---\n【世界书条目（人设绑定·与全局档案室同级最高设定；条目间冲突取更具体硬约束）】\n${wb}\n`
     }
     const chatAfterDyn = buildChatAfterWorldBookDynamicSection(params.character)
     if (chatAfterDyn.trim()) {
@@ -933,8 +959,8 @@ export function buildSystemContent(params: {
   const mutualFriendChainBlock = mutualFriendChain ? `\n\n---\n${mutualFriendChain}\n` : ''
   /**
    * 效力层级（高→低，无导演意图/无独立文风层）：
-   * 重新回复偏向（若有）→ 角色档案/人设世界书 → 输出格式硬约束 → 玩家身份 →
-   * 全局档案室/NPC/尾声 → 时间轴·当前状态 → 尚未总结/线下末尾 → 语义召回/近端 → 向量长期记忆
+   * 重新回复偏向（若有）→ 角色档案/人设世界书/全局档案室（同级）→ 输出格式硬约束 → 玩家身份 →
+   * NPC/尾声 → 时间轴·当前状态 → 尚未总结/线下末尾 → 语义召回/近端 → 向量长期记忆
    */
   const rawMain =
     `${WECHAT_ROLEPLAY_SYSTEM_PROMPT}${priorityLadder}` +
@@ -1895,6 +1921,11 @@ export async function requestWeChatPeerReplyBubbles(params: {
       content: params.proactiveInitiationNudge?.trim() || PROACTIVE_INITIATION_USER_NUDGE,
     })
   }
+  // 继续回复等：历史以角色回合结尾时补 user，避免 Gemini 400
+  ensureChatMessagesDoNotEndWithAssistantTurn(
+    messages,
+    params.proactiveInitiationNudge?.trim() || undefined,
+  )
 
   const text = await callWeChatPeerReplyChat(cfg, messages, {
     memoryMomentImages,
@@ -2802,7 +2833,11 @@ export async function requestWeChatGroupPsyche(params: {
       content: `${base}${memoryImagesAppendix}\n\n---\n【群聊心语生成规则】\n${WECHAT_GROUP_PSYCHE_SYSTEM_PROMPT}\n\n【NPC 名单】（每行一项：id | 显示名 | npc_pronoun；在「对你看法」里用 npc_pronoun 指代该 NPC 本人，写「你」指用户）\n${rosterLines}${stripHint}`,
     },
     ...history,
-    { role: 'user', content: '请基于刚刚最后一轮群聊对话，输出群聊心语 markup（仅 [HEART_WHISPER_GROUP] 块，禁止 JSON）。' },
+    {
+      role: 'user',
+      content:
+        '请基于刚刚最后一轮群聊对话，完整输出群聊心语 XML（仅 <heart_whisper_group>…</heart_whisper_group>，禁止 JSON）。每位 NPC 一段 <character>，子标签须全部闭合。',
+    },
   ]
   const text = await callWeChatPeerReplyChat(cfg, messages, {
     memoryMomentImages,
@@ -2901,26 +2936,49 @@ export async function requestWeChatHeartWhisper(params: {
   })
   const history = transcriptToMessages(params.transcript.slice(-24))
   const userPronoun = resolveUserPronoun(params.playerIdentity)
+  const heartUserAsk =
+    '请基于刚刚最后一轮对话，完整输出心语 XML（仅 <heart_whisper>…</heart_whisper>，禁止 JSON）。五个子标签都必须有实质内容并写完闭合标签；<thoughts> 至少两句，<view_on_user> 至少一句，禁止截断或留空。'
   const messages: OpenAiCompatibleMessage[] = [
     {
       role: 'system',
-      content: `${base}\n\n---\n【心语生成规则】\n${WECHAT_HEART_WHISPER_SYSTEM_PROMPT}${heartSplitDirective ? `\n\n${heartSplitDirective}` : ''}\n\n【本轮代词约束】\n在「对用户看法」字段里，用户必须被称为“${userPronoun}”，指**本窗口发言人**；禁止出现 ta/TA/Ta。`,
+      content: `${base}\n\n---\n【心语生成规则】\n${WECHAT_HEART_WHISPER_SYSTEM_PROMPT}${heartSplitDirective ? `\n\n${heartSplitDirective}` : ''}\n\n【本轮代词约束】\n在 <view_on_user> 里，用户必须被称为“${userPronoun}”，指**本窗口发言人**；禁止出现 ta/TA/Ta。`,
     },
     ...history,
-    { role: 'user', content: '请基于刚刚最后一轮对话，输出心语 markup（仅 [HEART_WHISPER] 块，禁止 JSON）。' },
+    { role: 'user', content: heartUserAsk },
   ]
-  const text = await openAiCompatibleChat(cfg, messages, { temperature: 0.78, max_tokens: 1400 })
-  const parsed = parseHeartWhisperFromModel(text)
+  const chatOpts = { temperature: 0.78, max_tokens: 2800 } as const
+  let text = await openAiCompatibleChat(cfg, messages, chatOpts)
+  let parsed = parseHeartWhisperFromModel(text)
+  // 推理模型常把 token 花在思维链上，正文在 thoughts/view_on_user 处被截断；旧逻辑会填假占位句，看起来像「截断的心语」。
+  if (!parsed.innerThoughts.trim() || !parsed.userImpression.trim()) {
+    text = await openAiCompatibleChat(
+      cfg,
+      [
+        ...messages.slice(0, -1),
+        {
+          role: 'user',
+          content:
+            heartUserAsk +
+            '\n（上次返回不完整：请重新输出完整 <heart_whisper> XML，务必写完并闭合 <thoughts> 与 <view_on_user>。）',
+        },
+      ],
+      chatOpts,
+    )
+    parsed = parseHeartWhisperFromModel(text)
+  }
+  if (!parsed.innerThoughts.trim() || !parsed.userImpression.trim()) {
+    throw new Error(
+      '心语不完整：模型未写完 <thoughts> 或 <view_on_user>（常见于输出截断或推理占满额度）。请再点一次「生成心语」，或换非推理/更长输出的模型。',
+    )
+  }
   const nowMs = typeof params.nowMs === 'number' && Number.isFinite(params.nowMs) ? params.nowMs : Date.now()
   return {
     timestamp: formatHeartWhisperTimestamp(nowMs),
     location: parsed.location || '未知地点',
     action: parsed.action || '轻轻调整了坐姿',
     outfit: parsed.outfit || '日常便装',
-    innerThoughts: parsed.innerThoughts || '这会儿脑子里还在反复想刚才的对话细节。',
-    userImpression:
-      normalizeUserImpressionPronoun(parsed.userImpression, userPronoun) ||
-      `${userPronoun}的表达很直接，让我愿意继续认真回应。`,
+    innerThoughts: parsed.innerThoughts.trim(),
+    userImpression: normalizeUserImpressionPronoun(parsed.userImpression, userPronoun),
   }
 }
 

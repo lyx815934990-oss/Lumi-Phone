@@ -1131,7 +1131,7 @@ export function ChatSettingsScreen({
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">网络玩梗词库</span>
               <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                开启后注入轻量玩梗句式灵感，角色可自然接梗、吐槽；默认关。对方难过或认真倾诉时自动收梗，仍服从人设与世界书。
+                开启后注入玩梗句式灵感：轻松/调情/互损轮次会要求至少一点梗感；对方难过或认真倾诉时自动收梗。气质仍服从人设。
               </p>
             </div>
             <WxSwitch

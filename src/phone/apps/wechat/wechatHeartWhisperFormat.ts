@@ -1,7 +1,8 @@
 /**
- * 心语稳定 markup（替换易碎 JSON）。
- * 单聊：[HEART_WHISPER] + 字段行；群聊：[HEART_WHISPER_GROUP] + 多段 [角色]。
- * 解析侧仍兼容旧 JSON，避免旧会话/模型偶发回退失败。
+ * 心语稳定 XML（闭合标签；禁止 JSON）。
+ * 单聊：<heart_whisper>…</heart_whisper>
+ * 群聊：<heart_whisper_group> + 多段 <character>…
+ * 解析仍兼容上一版「[HEART_WHISPER] + 中文字段行」markup，便于过渡。
  */
 
 export type HeartWhisperFields = {
@@ -21,43 +22,52 @@ export type GroupHeartWhisperEntry = {
   impression_on_user: string
 }
 
-const PRIVATE_BLOCK_RE =
-  /\[HEART_WHISPER\](?![_\w])\s*([\s\S]*?)(?=\n\s*\[HEART_WHISPER_GROUP\]|$)/i
-const GROUP_BLOCK_RE = /\[HEART_WHISPER_GROUP\]\s*([\s\S]*)$/i
-const ROLE_SPLIT_RE = /(?:^|\n)\s*\[角色\]\s*/i
-
 export const WECHAT_HEART_WHISPER_MARKUP_FORMAT = `
-【输出格式】禁止 JSON、禁止 markdown 代码围栏、禁止前后解释或思维链标签外露。只输出下列 markup（字段名须保留）：
+【输出格式】只输出下列 XML（标签名须一字不差）。禁止 JSON、禁止 markdown 代码围栏、禁止前后解释或思维链标签外露。
 
-[HEART_WHISPER]
-地点：（简短；此刻具体地点，结合当前剧情）
-动作：（简短；此刻一个微小或具体的肢体动作）
-着装：（简短；此刻穿着）
-内心：（第一人称内心独白；可多行。基于刚才的回复延伸未说出口的想法；直白、不加修饰）
-对用户看法：（第三人称；客观描述此刻对 User 的看法或感觉；可多行。禁止 ta，须用外部给定的「他」或「她」）
+<heart_whisper>
+<location>此刻具体地点（简短）</location>
+<action>此刻一个微小或具体的肢体动作（简短）</action>
+<outfit>此刻穿着（简短）</outfit>
+<thoughts>
+第一人称内心独白；可多行。基于刚才的回复延伸未说出口的想法；直白、不加修饰；至少 2～4 句，禁止只写一句空话。
+</thoughts>
+<view_on_user>
+第三人称；客观描述此刻对 User 的看法或感觉；可多行。至少 1～2 句。禁止 ta，须用外部给定的「他」或「她」。
+</view_on_user>
+</heart_whisper>
+
+【硬性完整】五个子标签都必须有实质内容且写完对应闭合标签；「thoughts」「view_on_user」不得为空、不得省略。若篇幅紧张，优先写完后两段再结束，禁止半截截断、禁止只输出前半段。
 `.trim()
 
 export const WECHAT_GROUP_HEART_WHISPER_MARKUP_FORMAT = `
-【输出格式】禁止 JSON、禁止 markdown 代码围栏、禁止前后解释。只输出下列 markup：
+【输出格式】只输出下列 XML（标签名须一字不差）。禁止 JSON、禁止 markdown 代码围栏、禁止前后解释。
 
-[HEART_WHISPER_GROUP]
-[角色]
-id：（必须与名单中的 character_id 完全一致）
-地点：（简短）
-着装：（简短）
-姿态：（简短；动作或姿态）
-内心：（第一人称独白；可多行；直白陈述）
-对你看法：（转述句式：npc_pronoun + 觉得/认为 + 你 + …；禁止用户真名；可多行）
-[角色]
-id：…
-地点：…
-着装：…
-姿态：…
-内心：…
-对你看法：…
+<heart_whisper_group>
+<character>
+<id>必须与名单中的 character_id 完全一致</id>
+<location>简短地点</location>
+<outfit>简短着装</outfit>
+<action>简短动作或姿态</action>
+<thoughts>
+第一人称独白；可多行；直白陈述
+</thoughts>
+<view_on_user>
+转述句式：npc_pronoun + 觉得/认为 + 你 + …；禁止用户真名；可多行
+</view_on_user>
+</character>
+<character>
+<id>…</id>
+<location>…</location>
+<outfit>…</outfit>
+<action>…</action>
+<thoughts>…</thoughts>
+<view_on_user>…</view_on_user>
+</character>
+</heart_whisper_group>
 
 【硬性要求】
-- [角色] 段数必须等于名单 NPC 人数；每人恰好一段，不得遗漏 id，不得多出名单外的 id。
+- <character> 段数必须等于名单 NPC 人数；每人恰好一段，不得遗漏 id，不得多出名单外的 id。
 - id 必须与名单一致（大小写一致）。
 - 所有字段不得为空；信息不足时用简短合理占位，禁止写 null。
 `.trim()
@@ -84,6 +94,129 @@ function thinkingAwareSearchBases(raw: string): string[] {
   return [...new Set(ordered)]
 }
 
+function txt(v: unknown): string {
+  return String(v ?? '').trim()
+}
+
+/** 抽取闭合 XML 标签正文；无闭合时尽量截到下一标签，兼容输出截断。 */
+function parseXmlTag(src: string, tag: string, nextTags: string[] = []): string {
+  const closed = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}\\s*>`, 'i')
+  const m = closed.exec(src)
+  if (m) return txt(m[1])
+  const open = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*)$`, 'i')
+  const m2 = open.exec(src)
+  if (!m2) return ''
+  let rest = m2[1] ?? ''
+  if (nextTags.length) {
+    const stopRe = new RegExp(`<\\/?(?:${nextTags.join('|')})\\b`, 'i')
+    const stop = rest.search(stopRe)
+    if (stop >= 0) rest = rest.slice(0, stop)
+  }
+  return txt(rest)
+}
+
+function parseXmlBlock(src: string, tag: string): string | null {
+  const closed = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}\\s*>`, 'i')
+  const m = closed.exec(src)
+  if (m) return m[1] ?? ''
+  const open = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*)$`, 'i')
+  const m2 = open.exec(src)
+  return m2 ? m2[1] ?? '' : null
+}
+
+const PRIVATE_FIELD_NEXT = ['location', 'action', 'outfit', 'thoughts', 'view_on_user', 'heart_whisper']
+const GROUP_FIELD_NEXT = [
+  'id',
+  'character_id',
+  'location',
+  'outfit',
+  'clothing',
+  'action',
+  'posture',
+  'thoughts',
+  'view_on_user',
+  'impression',
+  'character',
+]
+
+function parsePrivateXmlInner(inner: string): HeartWhisperFields | null {
+  const location = parseXmlTag(inner, 'location', PRIVATE_FIELD_NEXT)
+  const action = parseXmlTag(inner, 'action', PRIVATE_FIELD_NEXT) || parseXmlTag(inner, 'posture', PRIVATE_FIELD_NEXT)
+  const outfit = parseXmlTag(inner, 'outfit', PRIVATE_FIELD_NEXT) || parseXmlTag(inner, 'clothing', PRIVATE_FIELD_NEXT)
+  const innerThoughts =
+    parseXmlTag(inner, 'thoughts', PRIVATE_FIELD_NEXT) ||
+    parseXmlTag(inner, 'monologue', PRIVATE_FIELD_NEXT) ||
+    parseXmlTag(inner, 'inner_thoughts', PRIVATE_FIELD_NEXT)
+  const userImpression =
+    parseXmlTag(inner, 'view_on_user', PRIVATE_FIELD_NEXT) ||
+    parseXmlTag(inner, 'impression', PRIVATE_FIELD_NEXT) ||
+    parseXmlTag(inner, 'user_impression', PRIVATE_FIELD_NEXT)
+  if (!location && !action && !outfit && !innerThoughts && !userImpression) return null
+  return { location, action, outfit, innerThoughts, userImpression }
+}
+
+function parseGroupCharacterXml(inner: string): GroupHeartWhisperEntry | null {
+  const character_id =
+    parseXmlTag(inner, 'id', GROUP_FIELD_NEXT) || parseXmlTag(inner, 'character_id', GROUP_FIELD_NEXT)
+  if (!character_id) return null
+  const location = parseXmlTag(inner, 'location', GROUP_FIELD_NEXT)
+  const clothing =
+    parseXmlTag(inner, 'outfit', GROUP_FIELD_NEXT) || parseXmlTag(inner, 'clothing', GROUP_FIELD_NEXT)
+  const posture =
+    parseXmlTag(inner, 'action', GROUP_FIELD_NEXT) || parseXmlTag(inner, 'posture', GROUP_FIELD_NEXT)
+  const monologue =
+    parseXmlTag(inner, 'thoughts', GROUP_FIELD_NEXT) ||
+    parseXmlTag(inner, 'monologue', GROUP_FIELD_NEXT) ||
+    parseXmlTag(inner, 'inner_thoughts', GROUP_FIELD_NEXT)
+  const impression_on_user =
+    parseXmlTag(inner, 'view_on_user', GROUP_FIELD_NEXT) ||
+    parseXmlTag(inner, 'impression', GROUP_FIELD_NEXT) ||
+    parseXmlTag(inner, 'impression_on_user', GROUP_FIELD_NEXT)
+  return { character_id, location, clothing, posture, monologue, impression_on_user }
+}
+
+function parsePrivateFromXml(raw: string): HeartWhisperFields | null {
+  for (const base of thinkingAwareSearchBases(raw)) {
+    if (!/<heart_whisper\b/i.test(base)) continue
+    const inner = parseXmlBlock(base, 'heart_whisper')
+    if (inner == null) continue
+    const parsed = parsePrivateXmlInner(inner)
+    if (parsed) return parsed
+  }
+  return null
+}
+
+function parseGroupFromXml(raw: string): GroupHeartWhisperEntry[] | null {
+  for (const base of thinkingAwareSearchBases(raw)) {
+    if (!/<heart_whisper_group\b/i.test(base) && !/<character\b/i.test(base)) continue
+    const body = parseXmlBlock(base, 'heart_whisper_group') ?? base
+    const out: GroupHeartWhisperEntry[] = []
+    const charRe = /<character\b[^>]*>([\s\S]*?)<\/character\s*>/gi
+    let m: RegExpExecArray | null
+    let lastEnd = 0
+    while ((m = charRe.exec(body))) {
+      const entry = parseGroupCharacterXml(m[1] ?? '')
+      if (entry) out.push(entry)
+      lastEnd = m.index + m[0].length
+    }
+    // 截断：最后一个未闭合 <character>
+    const openTail = body.slice(lastEnd).match(/<character\b[^>]*>([\s\S]*)$/i)
+    if (openTail?.[1]) {
+      const entry = parseGroupCharacterXml(openTail[1])
+      if (entry && !out.some((x) => x.character_id === entry.character_id)) out.push(entry)
+    }
+    if (out.length) return out
+  }
+  return null
+}
+
+/* ── 兼容旧版「[HEART_WHISPER] + 中文字段行」── */
+
+const LEGACY_PRIVATE_BLOCK_RE =
+  /\[HEART_WHISPER\](?![_\w])\s*([\s\S]*?)(?=\n\s*\[HEART_WHISPER_GROUP\]|$)/i
+const LEGACY_GROUP_BLOCK_RE = /\[HEART_WHISPER_GROUP\]\s*([\s\S]*)$/i
+const LEGACY_ROLE_SPLIT_RE = /(?:^|\n)\s*\[角色\]\s*/i
+
 function fieldLine(block: string, keys: string[]): string {
   const lines = block.split(/\r?\n/)
   for (const key of keys) {
@@ -109,23 +242,19 @@ function multilineAfter(block: string, keys: string[]): string {
     const first = (m[1] ?? '').trim()
     if (first) parts.push(first)
     for (let j = i + 1; j < lines.length; j++) {
-      const raw = lines[j]!
-      const t = raw.trim()
+      const rawLine = lines[j]!
+      const t = rawLine.trim()
       if (!t) {
         parts.push('')
         continue
       }
       if (stopRe.test(t) && !keyRe.test(t)) break
       if (/^\[角色\]/i.test(t) || /^\[HEART_WHISPER/i.test(t)) break
-      parts.push(raw)
+      parts.push(rawLine)
     }
     return parts.join('\n').replace(/\n+$/g, '').trim()
   }
   return ''
-}
-
-function txt(v: unknown): string {
-  return String(v ?? '').trim()
 }
 
 function parsePrivateMarkupBlock(block: string): HeartWhisperFields | null {
@@ -164,10 +293,10 @@ function parseGroupRoleBlock(block: string): GroupHeartWhisperEntry | null {
   return { character_id, location, clothing, posture, monologue, impression_on_user }
 }
 
-function parsePrivateFromMarkup(raw: string): HeartWhisperFields | null {
+function parsePrivateFromLegacyMarkup(raw: string): HeartWhisperFields | null {
   for (const base of thinkingAwareSearchBases(raw)) {
     if (!/\[HEART_WHISPER\]/i.test(base) && !/地点\s*[:：]/.test(base)) continue
-    const m = PRIVATE_BLOCK_RE.exec(base)
+    const m = LEGACY_PRIVATE_BLOCK_RE.exec(base)
     const block = (m?.[1] ?? base).trim()
     const parsed = parsePrivateMarkupBlock(block)
     if (parsed) return parsed
@@ -175,15 +304,14 @@ function parsePrivateFromMarkup(raw: string): HeartWhisperFields | null {
   return null
 }
 
-function parseGroupFromMarkup(raw: string): GroupHeartWhisperEntry[] | null {
+function parseGroupFromLegacyMarkup(raw: string): GroupHeartWhisperEntry[] | null {
   for (const base of thinkingAwareSearchBases(raw)) {
     if (!/\[HEART_WHISPER_GROUP\]/i.test(base) && !/\[角色\]/i.test(base)) continue
-    const m = GROUP_BLOCK_RE.exec(base)
+    const m = LEGACY_GROUP_BLOCK_RE.exec(base)
     const body = (m?.[1] ?? base).trim()
-    const chunks = body.split(ROLE_SPLIT_RE).map((s) => s.trim()).filter(Boolean)
+    const chunks = body.split(LEGACY_ROLE_SPLIT_RE).map((s) => s.trim()).filter(Boolean)
     const out: GroupHeartWhisperEntry[] = []
     for (const chunk of chunks) {
-      // 去掉可能残留的块头
       const cleaned = chunk.replace(/^\[HEART_WHISPER_GROUP\]\s*/i, '').trim()
       const entry = parseGroupRoleBlock(cleaned)
       if (entry) out.push(entry)
@@ -193,143 +321,20 @@ function parseGroupFromMarkup(raw: string): GroupHeartWhisperEntry[] | null {
   return null
 }
 
-/** 旧 JSON 回退：单聊 */
-function parsePrivateFromJson(raw: string): HeartWhisperFields | null {
-  for (const base of thinkingAwareSearchBases(raw)) {
-    const start = base.indexOf('{')
-    if (start < 0) continue
-    let depth = 0
-    let inStr = false
-    let esc = false
-    let end = -1
-    for (let i = start; i < base.length; i += 1) {
-      const c = base[i]!
-      if (inStr) {
-        if (esc) {
-          esc = false
-          continue
-        }
-        if (c === '\\') {
-          esc = true
-          continue
-        }
-        if (c === '"') inStr = false
-        continue
-      }
-      if (c === '"') {
-        inStr = true
-        continue
-      }
-      if (c === '{') depth += 1
-      else if (c === '}') {
-        depth -= 1
-        if (depth === 0) {
-          end = i
-          break
-        }
-      }
-    }
-    const jsonText =
-      end > start ? base.slice(start, end + 1) : (() => {
-        const e = base.lastIndexOf('}')
-        return e > start ? base.slice(start, e + 1) : ''
-      })()
-    if (!jsonText) continue
-    try {
-      const j = JSON.parse(jsonText) as Record<string, unknown>
-      return {
-        location: txt(j.location),
-        action: txt(j.action),
-        outfit: txt(j.outfit),
-        innerThoughts: txt(j.inner_thoughts ?? j.innerThoughts),
-        userImpression: txt(j.view_on_user ?? j.userImpression),
-      }
-    } catch {
-      /* try next base */
-    }
-  }
-  return null
-}
-
-/** 旧 JSON 回退：群聊 */
-function parseGroupFromJson(raw: string): GroupHeartWhisperEntry[] | null {
-  for (const base of thinkingAwareSearchBases(raw)) {
-    const start = base.indexOf('{')
-    if (start < 0) continue
-    let depth = 0
-    let inStr = false
-    let esc = false
-    let end = -1
-    for (let i = start; i < base.length; i += 1) {
-      const c = base[i]!
-      if (inStr) {
-        if (esc) {
-          esc = false
-          continue
-        }
-        if (c === '\\') {
-          esc = true
-          continue
-        }
-        if (c === '"') inStr = false
-        continue
-      }
-      if (c === '"') {
-        inStr = true
-        continue
-      }
-      if (c === '{') depth += 1
-      else if (c === '}') {
-        depth -= 1
-        if (depth === 0) {
-          end = i
-          break
-        }
-      }
-    }
-    const jsonText =
-      end > start ? base.slice(start, end + 1) : (() => {
-        const e = base.lastIndexOf('}')
-        return e > start ? base.slice(start, e + 1) : ''
-      })()
-    if (!jsonText) continue
-    try {
-      const j = JSON.parse(jsonText) as { entries?: unknown }
-      const arr = Array.isArray(j.entries) ? j.entries : []
-      const out: GroupHeartWhisperEntry[] = []
-      for (const it of arr) {
-        const o = (it ?? {}) as Record<string, unknown>
-        const cid = txt(o.character_id ?? o.charId ?? o.characterId)
-        if (!cid) continue
-        out.push({
-          character_id: cid,
-          location: txt(o.location),
-          clothing: txt(o.clothing ?? o.outfit),
-          posture: txt(o.posture ?? o.action),
-          monologue: txt(o.monologue ?? o.inner_thoughts),
-          impression_on_user: txt(o.impression_on_user ?? o.view_on_user),
-        })
-      }
-      if (out.length) return out
-    } catch {
-      /* try next */
-    }
-  }
-  return null
-}
-
 export function parseHeartWhisperOutput(raw: string): HeartWhisperFields {
-  const markup = parsePrivateFromMarkup(raw)
-  if (markup) return markup
-  const json = parsePrivateFromJson(raw)
-  if (json) return json
-  throw new Error('心语解析失败：模型返回可能混入了思维链、截断或非约定 markup。请重试或更换模型。')
+  const xml = parsePrivateFromXml(raw)
+  if (xml) return xml
+  const legacy = parsePrivateFromLegacyMarkup(raw)
+  if (legacy) return legacy
+  throw new Error('心语解析失败：模型未返回约定的 <heart_whisper> XML（可能混入思维链、截断或仍输出 JSON）。请重试或更换模型。')
 }
 
 export function parseGroupHeartWhisperOutput(raw: string): GroupHeartWhisperEntry[] {
-  const markup = parseGroupFromMarkup(raw)
-  if (markup?.length) return markup
-  const json = parseGroupFromJson(raw)
-  if (json?.length) return json
-  throw new Error('群聊心语解析失败：模型返回可能混入了思维链、截断或非约定 markup。请重试或更换模型。')
+  const xml = parseGroupFromXml(raw)
+  if (xml?.length) return xml
+  const legacy = parseGroupFromLegacyMarkup(raw)
+  if (legacy?.length) return legacy
+  throw new Error(
+    '群聊心语解析失败：模型未返回约定的 <heart_whisper_group> XML（可能混入思维链、截断或仍输出 JSON）。请重试或更换模型。',
+  )
 }

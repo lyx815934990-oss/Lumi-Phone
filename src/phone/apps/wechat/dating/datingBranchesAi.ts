@@ -223,7 +223,12 @@ ${formatBlock}
 - 若玩家当场开口，对白用「…」括起来；**禁止**内心OS；若只有动作/决定，可全旁白。
 - 格式示例：我靠近一步。「别躲。」`
 
-  const archiveBlock = buildWorldbookContext([], getWorldbookLoreEntriesSnapshot(), 'offline_plot').trim()
+  const datingWbIds = [character.id].map((x) => String(x ?? '').trim()).filter(Boolean)
+  const archiveBlock = buildWorldbookContext(
+    datingWbIds,
+    getWorldbookLoreEntriesSnapshot(),
+    'offline_plot',
+  ).trim()
   const branchCharName = character.realName.trim() || '对方'
   const branchUserName = idPlayerName || '用户'
   const cuNames = { charName: branchCharName, userName: branchUserName }

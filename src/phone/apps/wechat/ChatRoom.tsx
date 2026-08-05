@@ -5285,6 +5285,13 @@ export function ChatRoomInner({
 
   const [retryReplyPromptOpen, setRetryReplyPromptOpen] = useState(false)
   const [retryReplyBiasDraft, setRetryReplyBiasDraft] = useState('')
+  const [continueReplyPromptOpen, setContinueReplyPromptOpen] = useState(false)
+  const [continueReplyBiasDraft, setContinueReplyBiasDraft] = useState('')
+  const [generateReplyPromptOpen, setGenerateReplyPromptOpen] = useState(false)
+  const [generateReplyBiasDraft, setGenerateReplyBiasDraft] = useState('')
+  const [generateReplyToneDraft, setGenerateReplyToneDraft] = useState('')
+  const [generateReplyMinCharsDraft, setGenerateReplyMinCharsDraft] = useState('')
+  const [generateReplyMaxCharsDraft, setGenerateReplyMaxCharsDraft] = useState('')
   const [cameraOpen, setCameraOpen] = useState(false)
   const [photoPickerOpen, setPhotoPickerOpen] = useState(false)
   const [favoritesPickerOpen, setFavoritesPickerOpen] = useState(false)
@@ -8384,10 +8391,14 @@ export function ChatRoomInner({
             /* ignore */
           }
         }
-        /** 档案室法则仅匹配 NPC，不包含玩家身份 */
+        /** 档案室法则仅匹配 NPC；人设绑定 id 优先，缺省回退会话角色 id（避免限定角色条目因空成员被滤掉） */
         const privateWorldbookMemberIds: string[] = [
           ...new Set(
-            [personaCharacterId?.trim()].filter((x): x is string => !!x && x !== '__none__'),
+            [
+              fxPersonaCharacterId?.trim(),
+              fxConversationCharacterId?.trim(),
+              character?.id?.trim(),
+            ].filter((x): x is string => !!x && x !== '__none__'),
           ),
         ]
         let loreSceneMemberIds: string[] = privateWorldbookMemberIds
@@ -8470,6 +8481,24 @@ export function ChatRoomInner({
               setFlushPending(0)
               continue
             }
+            // 会话开关以 DB 为准（避免 flushAiReplies 闭包陈旧；后台 flush 也不依赖当前页 props）
+            let includeThinkingChain = thinkingChainEnabled === true
+            let includeForwardHistoryCard = forwardHistoryCardEnabled === true
+            let includePulseDmScreenshot = pulseDmScreenshotEnabled === true
+            let includeProfileImageChange = profileImageChangeEnabled === true
+            let includeInternetMemeLexicon = internetMemeLexiconEnabled === true
+            try {
+              const liveConv = await personaDb.getChatConversationSettings(flushConversationKey)
+              if (liveConv) {
+                includeThinkingChain = liveConv.showThinkingChain === true
+                includeForwardHistoryCard = liveConv.forwardHistoryCardEnabled === true
+                includePulseDmScreenshot = liveConv.pulseDmScreenshotEnabled === true
+                includeProfileImageChange = liveConv.profileImageChangeEnabled === true
+                includeInternetMemeLexicon = liveConv.internetMemeLexiconEnabled === true
+              }
+            } catch {
+              /* 读失败则沿用 props */
+            }
             const reversed = [...extractMessages(transcriptItems)].reverse()
             const lastOther = reversed.find((x) => x.kind === 'msg' && x.from === 'other') as ChatMsg | undefined
             const lastSelfVoice = reversed.find((x) => x.kind === 'msg' && x.from === 'self' && !!x.voice) as ChatMsg | undefined
@@ -8489,7 +8518,14 @@ export function ChatRoomInner({
               roomType !== 'group' && !lumiAssistantChat && personaCharacterId?.trim()
                 ? loadStarMakerAgencyReplyBias(personaCharacterId)
                 : ''
-            const mergedReplyBias = [roundReplyBias, voiceEmotionBias, agencyChatBias]
+            const memeLexiconBias = includeInternetMemeLexicon
+              ? [
+                  '【网络玩梗词库·本轮必守】本会话已开启玩梗词库。',
+                  '若本轮气氛轻松/调情/互损/得意/猜谜/emoji 逗你：可见气泡中须有 **1** 处自然梗感（按人设改写，勿复读词库原句）；整轮零梗视为不合格。',
+                  '仅当真倾诉、真冲突、自伤等禁区时收梗。',
+                ].join('\n')
+              : ''
+            const mergedReplyBias = [roundReplyBias, voiceEmotionBias, agencyChatBias, memeLexiconBias]
               .filter((x) => x.trim())
               .join('\n\n')
             const recallPreview = pendingRecalledUserTextRef.current?.trim() || ''
@@ -8722,12 +8758,6 @@ export function ChatRoomInner({
             }
             // 发请求前再拼一次 transcript，避免重新回复/删稿与异步 flush 交错时仍带入本轮旧对方稿
             transcript = itemsToTranscript(buildChatItemsForAiTranscript(), transcriptSpeakerOpts)
-            // 按会话设置决定是否注入后台思维链 CoT（默认关）
-            const includeThinkingChain = thinkingChainEnabled === true
-            const includeForwardHistoryCard = forwardHistoryCardEnabled === true
-            const includePulseDmScreenshot = pulseDmScreenshotEnabled === true
-            const includeProfileImageChange = profileImageChangeEnabled === true
-            const includeInternetMemeLexicon = internetMemeLexiconEnabled === true
             const busyCfg =
               busyGs.busyMode === 'character'
                 ? {
@@ -12674,6 +12704,11 @@ export function ChatRoomInner({
     createMiniGameDeclineRevealJob,
     ensureVoiceMessageAudio,
     syncAiReplyPipelineActive,
+    thinkingChainEnabled,
+    forwardHistoryCardEnabled,
+    pulseDmScreenshotEnabled,
+    profileImageChangeEnabled,
+    internetMemeLexiconEnabled,
   ])
 
   /** 群聊主回复（含 <<GROUP_SET_…>> 等）单次 completion：pending 恒为 1，避免连发/重叠触发多次模型调用。 */
@@ -12740,6 +12775,85 @@ export function ChatRoomInner({
     syncAiReplyPipelineActive,
     isConversationAiPipelineBusy,
   ])
+
+  /** 加号面板「继续回复」：可选填写本轮偏向后催角色再发一轮（不撤销旧气泡）。 */
+  const runContinueReply = useCallback(
+    (biasRaw: string) => {
+      const ck = conversationKey.trim()
+      if (ck && isConversationAiPipelineBusy(ck)) {
+        showComposerToast('对方正在回复中，请稍后再试')
+        return
+      }
+      if (ck) setConversationOpponentQueueStop(ck, false)
+      setScreenSharePaused(false)
+      const bias = biasRaw.trim()
+      retryReplyBiasRef.current = [
+        '[系统提示] 用户点了「继续回复」：本回合用户没有新发消息，请以**角色本人**身份再发一轮微信气泡。',
+        '须承接上文语境自然推进；禁止替用户发言、禁止模拟用户发消息；禁止复读上一轮同义句。',
+        bias ? `【继续回复偏向】${bias}` : '',
+      ]
+        .filter((x) => x.trim())
+        .join('\n\n')
+      triggerManualCharacterReply()
+      showComposerToast(bias ? '已按偏向继续回复' : '已继续回复')
+    },
+    [
+      conversationKey,
+      isConversationAiPipelineBusy,
+      setScreenSharePaused,
+      triggerManualCharacterReply,
+      showComposerToast,
+    ],
+  )
+
+  /** 加号面板「生成回复」：可设字数范围、内容偏向、语气风格后催角色再发一轮（不撤销旧气泡）。 */
+  const runGenerateReply = useCallback(
+    (opts: { bias: string; tone: string; minChars: string; maxChars: string }) => {
+      const ck = conversationKey.trim()
+      if (ck && isConversationAiPipelineBusy(ck)) {
+        showComposerToast('对方正在回复中，请稍后再试')
+        return
+      }
+      if (ck) setConversationOpponentQueueStop(ck, false)
+      setScreenSharePaused(false)
+      const bias = opts.bias.trim()
+      const tone = opts.tone.trim()
+      const minN = Number.parseInt(opts.minChars.trim(), 10)
+      const maxN = Number.parseInt(opts.maxChars.trim(), 10)
+      const hasMin = Number.isFinite(minN) && minN > 0
+      const hasMax = Number.isFinite(maxN) && maxN > 0
+      let lengthLine = ''
+      if (hasMin || hasMax) {
+        let lo = hasMin ? Math.max(1, Math.floor(minN)) : 1
+        let hi = hasMax ? Math.max(1, Math.floor(maxN)) : Math.max(lo, 120)
+        if (hi < lo) {
+          const t = lo
+          lo = hi
+          hi = t
+        }
+        lengthLine = `【字数范围】本轮全部可见文字气泡合计约 ${lo}～${hi} 字（按汉字估算，表情包/指令行不计）。宁短勿水；勿为凑字堆废话或同义复读。`
+      }
+      retryReplyBiasRef.current = [
+        '[系统提示] 用户点了「生成回复」：本回合用户没有新发消息，请以**角色本人**身份再发一轮微信气泡。',
+        '须承接上文语境自然推进；禁止替用户发言、禁止模拟用户发消息；禁止复读上一轮同义句。',
+        lengthLine,
+        tone ? `【语气风格】${tone}` : '',
+        bias ? `【内容偏向】${bias}` : '',
+      ]
+        .filter((x) => x.trim())
+        .join('\n\n')
+      triggerManualCharacterReply()
+      const tuned = Boolean(bias || tone || lengthLine)
+      showComposerToast(tuned ? '已按设定生成回复' : '已生成回复')
+    },
+    [
+      conversationKey,
+      isConversationAiPipelineBusy,
+      setScreenSharePaused,
+      triggerManualCharacterReply,
+      showComposerToast,
+    ],
+  )
 
   const handleSendGameInvite = useCallback(
     (gameType: MiniGameType) => {
@@ -14329,23 +14443,20 @@ export function ChatRoomInner({
           pendingAiRepliesRef.current = 0
           showComposerToast('已读不回：已暂停对方回复；发送消息或点「继续回复」可恢复')
           break
-        case 'busy':
-          manualAiPauseRef.current = true
-          setScreenSharePaused(true)
-          if (conversationKey.trim()) setConversationOpponentQueueStop(conversationKey.trim(), true)
-          setTypingVisible(false)
-          pendingAiRepliesRef.current = 0
-          showComposerToast('忙碌：已暂停对方回复')
+        case 'generate_reply':
+          setGenerateReplyBiasDraft('')
+          setGenerateReplyToneDraft('')
+          setGenerateReplyMinCharsDraft('')
+          setGenerateReplyMaxCharsDraft('')
+          setGenerateReplyPromptOpen(true)
           break
         case 'retry_reply':
           setRetryReplyBiasDraft('')
           setRetryReplyPromptOpen(true)
           break
         case 'continue_reply':
-          if (conversationKey.trim()) setConversationOpponentQueueStop(conversationKey.trim(), false)
-          setScreenSharePaused(false)
-          triggerManualCharacterReply()
-          showComposerToast('已继续回复')
+          setContinueReplyBiasDraft('')
+          setContinueReplyPromptOpen(true)
           break
         case 'console_logs':
           setStubPanel(null)
@@ -17414,6 +17525,183 @@ export function ChatRoomInner({
                 }}
               >
                 确认重试
+              </Pressable>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {continueReplyPromptOpen ? (
+        <div className="fixed inset-0 z-[1210] flex items-center justify-center bg-black/50 px-4" role="presentation">
+          <div className="w-full max-w-[360px] overflow-hidden rounded-[16px] bg-white shadow-lg">
+            <div className="px-5 pb-4 pt-5">
+              <h2 className="text-center text-[16px] font-semibold text-[#111]">继续回复偏向</h2>
+              <p className="mt-2 text-center text-[13px] leading-relaxed text-[#666]">
+                选填本轮希望角色续写的方向；不填也可直接继续。不会撤销已有气泡。
+              </p>
+              <textarea
+                value={continueReplyBiasDraft}
+                onChange={(e) => setContinueReplyBiasDraft(e.target.value.slice(0, 240))}
+                placeholder="例如：关心我到了没；语气轻松一点；换个话题说说今天的事"
+                className="mt-3 h-[96px] w-full resize-none rounded-[12px] border border-[#e5e5e5] px-3 py-2 text-[14px] leading-relaxed text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf]"
+              />
+            </div>
+            <div className="grid grid-cols-2 border-t border-[#e5e5e5]">
+              <Pressable
+                type="button"
+                className="h-[48px] text-[15px] text-[#111] active:bg-[#f5f5f5]"
+                onClick={() => {
+                  setContinueReplyPromptOpen(false)
+                  setContinueReplyBiasDraft('')
+                }}
+              >
+                取消
+              </Pressable>
+              <Pressable
+                type="button"
+                className="h-[48px] border-l border-[#e5e5e5] text-[15px] text-[#111] active:bg-[#f5f5f5]"
+                onClick={() => {
+                  const bias = continueReplyBiasDraft
+                  setContinueReplyPromptOpen(false)
+                  setContinueReplyBiasDraft('')
+                  runContinueReply(bias)
+                }}
+              >
+                确认继续
+              </Pressable>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {generateReplyPromptOpen ? (
+        <div className="fixed inset-0 z-[1210] flex items-center justify-center bg-black/50 px-4" role="presentation">
+          <div className="flex max-h-[min(88vh,640px)] w-full max-w-[360px] flex-col overflow-hidden rounded-[16px] bg-white shadow-lg">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 pb-4 pt-5">
+              <h2 className="text-center text-[16px] font-semibold text-[#111]">生成回复</h2>
+              <p className="mt-2 text-center text-[13px] leading-relaxed text-[#666]">
+                可设定本轮字数、内容偏向与语气；全部选填，不填也可直接生成。不会撤销已有气泡。
+              </p>
+
+              <p className="mt-4 text-[12px] font-medium text-[#333]">字数范围（选填）</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(
+                  [
+                    { label: '不限', min: '', max: '' },
+                    { label: '很短', min: '1', max: '20' },
+                    { label: '短', min: '15', max: '45' },
+                    { label: '适中', min: '40', max: '90' },
+                    { label: '较长', min: '80', max: '160' },
+                  ] as const
+                ).map((p) => {
+                  const active =
+                    generateReplyMinCharsDraft === p.min && generateReplyMaxCharsDraft === p.max
+                  return (
+                    <Pressable
+                      key={p.label}
+                      type="button"
+                      className={`rounded-full px-3 py-1.5 text-[12px] ${
+                        active ? 'bg-[#111] text-white' : 'bg-[#f3f3f3] text-[#333] active:bg-[#e8e8e8]'
+                      }`}
+                      onClick={() => {
+                        setGenerateReplyMinCharsDraft(p.min)
+                        setGenerateReplyMaxCharsDraft(p.max)
+                      }}
+                    >
+                      {p.label}
+                    </Pressable>
+                  )
+                })}
+              </div>
+              <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={500}
+                  value={generateReplyMinCharsDraft}
+                  onChange={(e) => setGenerateReplyMinCharsDraft(e.target.value.replace(/[^\d]/g, '').slice(0, 3))}
+                  placeholder="最少"
+                  className="h-10 w-full rounded-[10px] border border-[#e5e5e5] px-3 text-[14px] text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf]"
+                />
+                <span className="text-[13px] text-[#999]">～</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={500}
+                  value={generateReplyMaxCharsDraft}
+                  onChange={(e) => setGenerateReplyMaxCharsDraft(e.target.value.replace(/[^\d]/g, '').slice(0, 3))}
+                  placeholder="最多"
+                  className="h-10 w-full rounded-[10px] border border-[#e5e5e5] px-3 text-[14px] text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf]"
+                />
+              </div>
+
+              <p className="mt-4 text-[12px] font-medium text-[#333]">语气风格（选填）</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(['自然', '温柔', '冷淡', '玩笑', '认真', '撒娇', '毒舌'] as const).map((t) => {
+                  const active = generateReplyToneDraft === t
+                  return (
+                    <Pressable
+                      key={t}
+                      type="button"
+                      className={`rounded-full px-3 py-1.5 text-[12px] ${
+                        active ? 'bg-[#111] text-white' : 'bg-[#f3f3f3] text-[#333] active:bg-[#e8e8e8]'
+                      }`}
+                      onClick={() => setGenerateReplyToneDraft(active ? '' : t)}
+                    >
+                      {t}
+                    </Pressable>
+                  )
+                })}
+              </div>
+              <input
+                type="text"
+                value={generateReplyToneDraft}
+                onChange={(e) => setGenerateReplyToneDraft(e.target.value.slice(0, 40))}
+                placeholder="或自定义，例如：克制一点、半开玩笑"
+                className="mt-2 h-10 w-full rounded-[10px] border border-[#e5e5e5] px-3 text-[14px] text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf]"
+              />
+
+              <p className="mt-4 text-[12px] font-medium text-[#333]">内容偏向（选填）</p>
+              <textarea
+                value={generateReplyBiasDraft}
+                onChange={(e) => setGenerateReplyBiasDraft(e.target.value.slice(0, 240))}
+                placeholder="例如：先问我到了没，再吐槽今天的事；别提刚才吵架"
+                className="mt-2 h-[88px] w-full resize-none rounded-[12px] border border-[#e5e5e5] px-3 py-2 text-[14px] leading-relaxed text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf]"
+              />
+            </div>
+            <div className="grid shrink-0 grid-cols-2 border-t border-[#e5e5e5]">
+              <Pressable
+                type="button"
+                className="h-[48px] text-[15px] text-[#111] active:bg-[#f5f5f5]"
+                onClick={() => {
+                  setGenerateReplyPromptOpen(false)
+                  setGenerateReplyBiasDraft('')
+                  setGenerateReplyToneDraft('')
+                  setGenerateReplyMinCharsDraft('')
+                  setGenerateReplyMaxCharsDraft('')
+                }}
+              >
+                取消
+              </Pressable>
+              <Pressable
+                type="button"
+                className="h-[48px] border-l border-[#e5e5e5] text-[15px] text-[#111] active:bg-[#f5f5f5]"
+                onClick={() => {
+                  const payload = {
+                    bias: generateReplyBiasDraft,
+                    tone: generateReplyToneDraft,
+                    minChars: generateReplyMinCharsDraft,
+                    maxChars: generateReplyMaxCharsDraft,
+                  }
+                  setGenerateReplyPromptOpen(false)
+                  setGenerateReplyBiasDraft('')
+                  setGenerateReplyToneDraft('')
+                  setGenerateReplyMinCharsDraft('')
+                  setGenerateReplyMaxCharsDraft('')
+                  runGenerateReply(payload)
+                }}
+              >
+                确认生成
               </Pressable>
             </div>
           </div>

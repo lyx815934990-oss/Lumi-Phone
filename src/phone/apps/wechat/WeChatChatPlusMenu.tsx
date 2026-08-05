@@ -5,7 +5,6 @@ import { useCallback, useRef, useState, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
   Camera,
-  Clock,
   CreditCard,
   EyeOff,
   Gamepad2,
@@ -13,6 +12,7 @@ import {
   Heart,
   Image,
   MapPin,
+  MessageSquarePlus,
   MonitorSmartphone,
   PhoneCall,
   Play,
@@ -41,7 +41,7 @@ export type WeChatPlusActionId =
   | 'heart_words'
   | 'read_ignore'
   | 'retry_reply'
-  | 'busy'
+  | 'generate_reply'
   | 'continue_reply'
   | 'console_logs'
   | 'screen_share'
@@ -72,7 +72,7 @@ const PAGE2: PlusMenuItem[] = [
   { id: 'heart_words', label: '心语', Icon: Heart },
   { id: 'read_ignore', label: '已读不回', Icon: EyeOff },
   { id: 'retry_reply', label: '重新回复', Icon: RotateCcw },
-  { id: 'busy', label: '表示忙碌', Icon: Clock },
+  { id: 'generate_reply', label: '生成回复', Icon: MessageSquarePlus },
   { id: 'continue_reply', label: '继续回复', Icon: Play },
   { id: 'console_logs', label: '控制台', Icon: Terminal },
   { id: 'check_phone', label: '查手机', Icon: Smartphone },
