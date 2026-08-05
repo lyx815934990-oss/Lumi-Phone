@@ -38,8 +38,6 @@ import {
   buildMemoryRelevanceHaystack,
   buildNpcGroupChatsUnsummarizedDigestForPrivatePrompt,
   formatDatingUnsummarizedPrivateChatSplit,
-  formatPrivateLineUnsummarized,
-  formatUnsummarizedPrivateChatBlock,
   MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
   MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
 } from '../wechatMemoryPromptBlocks'
@@ -2377,11 +2375,11 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `${storyCalendarChronologyRule}` +
     `${onlinePrivBoundaryReminder}` +
     `${wechatDialogueParityReminder}` +
-    `未总结·私聊（**尚未写入长期记忆的线上原文**｜按剧情日拆近端/往事｜末尾最新优先；${
+    `未总结·私聊（**与聊天室一致：全部未总结线上原文**｜末尾最新优先；${
       onlineInjectScope?.storyNowLabel?.trim() || onlineInjectScope?.storyCalendarAnchor?.trim()
         ? '**故事内「现在」见【跨通道·故事内时刻对齐】**；'
         : ''
-    }每条方括号前缀：**有剧情时间则优先用剧情时间**，否则才是设备落库钟点；同日近端须承接，跨日往事禁止当此刻刚聊）：\n${unsPrivClipped || '（暂无）'}\n\n` +
+    }每条方括号前缀：**有剧情时间则优先用剧情时间**，否则才是设备落库钟点；**全部须承接**，跨日更早禁止写成此刻刚聊）：\n${unsPrivClipped || '（暂无）'}\n\n` +
     `未总结·群聊（**尚未写入长期记忆的线上原文**｜末尾最新优先）：\n${unsGrpClipped || '（暂无）'}\n\n` +
     `未总结·线下剧情（落库先后；末尾最新优先）：\n${unsOffClipped || '（暂无）'}\n\n` +
     `【历史摘录·文风隔离】下条「最近剧情」**只**供提取事实、关系、未收束点与空间关系；**禁止**模仿旧稿措辞/网文腔；须按 system 文风与禁词表落笔。\n` +
@@ -2922,11 +2920,9 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       let unsummarizedGroupBlock = ''
       let onlineInjectScope: DatingOnlineInjectScopeMeta | undefined
       const privateCk = convKey && !convKey.startsWith('wxgrp:') ? convKey : ''
-      // 线下私聊原文：不按记忆游标过滤。元数据查询失败不得清空已拼好的正文。
-      let splitNear = ''
-      let splitPast = ''
-      let splitNearCount = 0
-      let splitPastCount = 0
+      // 与聊天室一致：未总结线上私聊全部纳入；元数据失败不得清空正文
+      let privateBody = ''
+      let privateCount = 0
       try {
         const split = await formatDatingUnsummarizedPrivateChatSplit({
           conversationKey: privateCk,
@@ -2937,64 +2933,14 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           storyNowMs,
           lastOfflineAiPlotTs,
         })
-        splitNear = split.nearBlock
-        splitPast = split.pastBlock
-        splitNearCount = split.nearCount
-        splitPastCount = split.pastCount
+        privateBody = [split.nearBlock, split.pastBlock].filter(Boolean).join('\n\n')
+        privateCount = split.nearCount + split.pastCount
       } catch (err) {
-        console.warn('[dating] formatDatingUnsummarizedPrivateChatSplit failed', err)
+        console.warn('[dating] private unsummarized inject failed', err)
       }
-      // 回退 1：与 ChatRoom 同源「游标后未总结」块（会话键正确时能救命）
-      if (!splitNear && !splitPast && privateCk) {
-        try {
-          const raw = (
-            await formatUnsummarizedPrivateChatBlock({
-              conversationKey: privateCk,
-              maxMessages: MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
-              maxChars: MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
-              includeMessageTimestamps: true,
-              clipPreferRecent: true,
-            })
-          ).trim()
-          const body = stripUnsummarizedBlockFooter(raw)
-          if (body) {
-            splitNear = `【未总结·近端私聊（ChatRoom 同源回退）】\n${body}`
-            splitNearCount = countUnsummarizedInjectLines(body)
-          }
-        } catch (err) {
-          console.warn('[dating] formatUnsummarizedPrivateChatBlock fallback failed', err)
-        }
-      }
-      // 回退 2：按角色直接扫近端气泡（彻底不依赖会话键/游标）
-      if (!splitNear && !splitPast && cid) {
-        try {
-          const recent = await personaDb.listWeChatChatMessagesRecentByCharacter({
-            characterId: cid,
-            limit: 80,
-          })
-          const lines: string[] = []
-          for (const m of recent) {
-            if (m.isRecalled) continue
-            const mk = String(m.conversationKey ?? '').trim()
-            if (mk.startsWith('wxgrp:') || mk.startsWith('wxagrp:')) continue
-            const line = formatPrivateLineUnsummarized(m, { includeTimestamp: true })
-            if (line) lines.push(line)
-          }
-          if (lines.length) {
-            splitNear =
-              `【未总结·近端私聊（按角色扫聊天室回退）】\n` +
-              `每条前缀为剧情时间（有则优先）或系统落库时刻。角色已知，本轮线下须服从。\n` +
-              `${lines.join('\n')}`
-            splitNearCount = lines.length
-          }
-        } catch (err) {
-          console.warn('[dating] character recent private fallback failed', err)
-        }
-      }
-      const privateMessageCount = splitNearCount + splitPastCount
-      if (privateMessageCount > 0) {
+      if (privateCount > 0 && privateBody) {
         let onlineBounds: { count: number; minTs: number | null; maxTs: number | null } = {
-          count: privateMessageCount,
+          count: privateCount,
           minTs: null,
           maxTs: null,
         }
@@ -3002,25 +2948,15 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           if (privateCk) {
             onlineBounds = await resolveOnlineMessageTimeBoundsForConversation({
               conversationKey: privateCk,
-              minMessageTimestamp: lastOfflineAiPlotTs,
             })
           }
         } catch {
-          /* 仅元数据，不影响正文 */
-        }
-        let memCursorFloor = 1
-        try {
-          memCursorFloor =
-            lastOfflineAiPlotTs != null
-              ? lastOfflineAiPlotTs + 1
-              : ((privateCk ? await personaDb.getMemorySummaryCursorTimestamp(privateCk) : null) ?? 0) + 1
-        } catch {
-          memCursorFloor = lastOfflineAiPlotTs != null ? lastOfflineAiPlotTs + 1 : 1
+          /* 仅元数据 */
         }
         onlineInjectScope = {
-          minMessageTimestamp: memCursorFloor,
+          minMessageTimestamp: 1,
           lastOfflineAiPlotTs,
-          privateMessageCount: onlineBounds.count || privateMessageCount,
+          privateMessageCount: onlineBounds.count || privateCount,
           onlineInjectMinTs: onlineBounds.minTs,
           onlineInjectMaxTs: onlineBounds.maxTs,
           storyCalendarAnchor: storyCalendarAnchor || null,
@@ -3031,45 +2967,42 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           storyNowLabel,
           hasOnlineInject: true,
         })
-        const cursorPart = [splitNear, splitPast].filter(Boolean).join('\n\n')
         unsummarizedPrivateBlock = [
           storySync,
-          cursorPart,
+          privateBody,
           formatDatingOnlineInjectScopeFooter({
             ...onlineInjectScope,
-            privateMessageCount: splitNearCount || onlineInjectScope.privateMessageCount,
+            privateMessageCount: privateCount,
           }),
         ]
           .filter(Boolean)
           .join('\n\n')
       }
-      if (convKey && !convKey.startsWith('wxgrp:')) {
-        try {
-          const anchorGroupId =
-            peekPrivateChatGroupAnchorFromDockStaging(cid) ??
-            (await personaDb.getPrivateChatAnchorGroupId(cid, sessionPid))
-          const grpRaw = await buildNpcGroupChatsUnsummarizedDigestForPrivatePrompt({
-            npcCharacterId: cid,
-            sessionPlayerIdentityId: sessionPid,
-            boundPlayerIdentityId: chRow?.playerIdentityId,
-            anchorGroupId,
-            maxMessagesPerGroup: 60,
-            charCap: DATING_AI_REFERENCE_SECTION_CHAR_CAP,
-            minMessageTimestamp: lastOfflineAiPlotTs ?? undefined,
-            includeMessageTimestamps: true,
-          })
-          const grpBody = stripUnsummarizedBlockFooter(grpRaw)
-          const groupLineCount = countUnsummarizedInjectLines(grpBody)
-          if (grpBody) {
-            unsummarizedGroupBlock =
-              `${grpBody}\n${formatDatingGroupOnlineInjectScopeFooter({
-                lastOfflineAiPlotTs,
-                lineCount: groupLineCount,
-              })}`
-          }
-        } catch {
-          unsummarizedGroupBlock = ''
+      // 群聊未总结：同样不再用上一轮线下墙钟裁掉
+      try {
+        const anchorGroupId =
+          peekPrivateChatGroupAnchorFromDockStaging(cid) ??
+          (await personaDb.getPrivateChatAnchorGroupId(cid, sessionPid))
+        const grpRaw = await buildNpcGroupChatsUnsummarizedDigestForPrivatePrompt({
+          npcCharacterId: cid,
+          sessionPlayerIdentityId: sessionPid,
+          boundPlayerIdentityId: chRow?.playerIdentityId,
+          anchorGroupId,
+          maxMessagesPerGroup: 60,
+          charCap: DATING_AI_REFERENCE_SECTION_CHAR_CAP,
+          includeMessageTimestamps: true,
+        })
+        const grpBody = stripUnsummarizedBlockFooter(grpRaw)
+        const groupLineCount = countUnsummarizedInjectLines(grpBody)
+        if (grpBody) {
+          unsummarizedGroupBlock =
+            `${grpBody}\n${formatDatingGroupOnlineInjectScopeFooter({
+              lastOfflineAiPlotTs,
+              lineCount: groupLineCount,
+            })}`
         }
+      } catch {
+        unsummarizedGroupBlock = ''
       }
 
       /** 仅用于长期记忆相关性 haystack，**不**再写入约会正文（避免与「尚未总结」重复） */
