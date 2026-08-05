@@ -10,7 +10,13 @@ import {
   resolveWorldBookUserBinding,
 } from './charUserPlaceholders'
 import { getCharacterMemoryRelevanceTraceForPromptInjection } from './memory/formatCharacterMemoriesForPromptInjection'
-import { buildMemoryRelevanceHaystack } from './wechatMemoryPromptBlocks'
+import {
+  buildMemoryRelevanceHaystack,
+  formatDatingUnsummarizedPrivateChatSplit,
+  formatPrivateLineUnsummarized,
+  MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
+  MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
+} from './wechatMemoryPromptBlocks'
 import { stripPromptPolicyBlocksForTraceDisplay, stripUnsummarizedOnlineTimestampsForDisplay } from './memoryTraceDisplaySanitize'
 import {
   buildPrivateUnsummarizedTraceBlocks,
@@ -893,11 +899,47 @@ export async function publishDatingOfflineMemoryTrace(params: {
   const offlineCtxBody = offlinePlotRows.map((r) => r.snippet.trim()).filter(Boolean).join('\n\n')
 
   const unsChats: MemoryTraceData['contextMatrix']['recentContext']['unsummarizedChats'] = []
-  if (params.unsPrivateBlock.trim()) {
+  let unsPrivateForTrace = params.unsPrivateBlock.trim()
+  // 生成路径若漏注：溯源再按角色/会话扫一遍，避免「聊天室有消息、溯源永远空」
+  if (!unsPrivateForTrace) {
+    try {
+      const split = await formatDatingUnsummarizedPrivateChatSplit({
+        conversationKey: params.conversationKey?.trim() || '',
+        characterId: cid,
+        maxMessages: MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
+        maxChars: MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
+      })
+      unsPrivateForTrace = [split.nearBlock, split.pastBlock].filter(Boolean).join('\n\n').trim()
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!unsPrivateForTrace) {
+    try {
+      const recent = await personaDb.listWeChatChatMessagesRecentByCharacter({
+        characterId: cid,
+        limit: 80,
+      })
+      const lines: string[] = []
+      for (const m of recent) {
+        if (m.isRecalled) continue
+        const mk = String(m.conversationKey ?? '').trim()
+        if (mk.startsWith('wxgrp:') || mk.startsWith('wxagrp:')) continue
+        const line = formatPrivateLineUnsummarized(m, { includeTimestamp: true })
+        if (line) lines.push(line)
+      }
+      if (lines.length) {
+        unsPrivateForTrace = `【线上私聊原文（溯源回退）】\n${lines.join('\n')}`
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (unsPrivateForTrace) {
     unsChats.push({
       type: 'private',
       source: '尚未总结 · 私聊',
-      snippet: traceOnlineUnsummarizedSnippetForDisplay(params.unsPrivateBlock),
+      snippet: traceOnlineUnsummarizedSnippetForDisplay(unsPrivateForTrace),
     })
   }
   if (params.unsGroupBlock.trim()) {
@@ -930,7 +972,7 @@ export async function publishDatingOfflineMemoryTrace(params: {
     keywordHitCount: deep.keywordHits.length,
     longTermVectorCount: deep.vectorRetrievals.length,
     storyTimelineInjected: storyTimeline.injected,
-    unsummarizedPrivateInjected: !!params.unsPrivateBlock.trim(),
+    unsummarizedPrivateInjected: !!unsPrivateForTrace,
     unsummarizedGroupInjected: !!params.unsGroupBlock.trim(),
     unsummarizedOfflineInjected: !!offlineCtxBody,
     embeddingProviderMode: embeddingMode,

@@ -496,11 +496,13 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                   >
                     <div className="space-y-4 px-1">
                       <p className="text-[12px] text-neutral-600">
-                        当前会话载入近期消息{' '}
+                        本轮线下剧情历史{' '}
                         <span className="font-mono text-[12px] font-semibold tabular-nums" style={{ color: PLATINUM }}>
                           {matrix.recentContext.activeSessionMessages}
                         </span>{' '}
-                        条（滑动窗口；与下方「尚未总结」块并列服务于本轮推理）
+                        条（上限 32；指约会页剧情条数，
+                        <span className="font-semibold text-neutral-800">不是</span>
+                        线上私聊条数）。线上未总结原文见下方「尚未总结 · 私聊与群聊摘录」。
                       </p>
                       {injectedOfflinePlotRows.length > 0 ? (
                       <div>
