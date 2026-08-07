@@ -12,6 +12,11 @@ import { flushSync } from 'react-dom'
 import { personaDb, pullPhoneKvWithLocalStorageLegacy } from './apps/wechat/newFriendsPersona/idb'
 import { wechatChatRoomBgFallbackColor } from './apps/wechat/wechatChatRoomBg'
 import { mergeWeChatBubbleGlobal, migrateMislabeledLumiDefaultBubble } from './apps/wechat/wechatBubblePresets'
+import { normalizeWeChatBubbleSideFont } from './apps/wechat/wechatBubbleSideFonts'
+import {
+  emptyWeChatAvatarChrome,
+  normalizeWeChatAvatarChrome,
+} from './apps/wechat/wechatAvatarChrome'
 import { bumpWeChatPersonaContactsUserMutation } from './apps/wechat/wechatPersonaContactsUserMutation'
 import {
   DEFAULT_CUSTOMIZATION,
@@ -46,6 +51,10 @@ import {
 } from './types'
 import { migrateLegacyRootPublicUrl } from '../publicAssetUrl'
 import { LUMI_ARCHIVE_IMPORTED_EVENT } from './apps/dataArchive/constants'
+import {
+  ensurePhoneGlobalFontLoaded,
+  normalizePhoneCustomGlobalFont,
+} from './phoneGlobalFont'
 
 const STORAGE_KEY = 'lumi-phone-custom-v4'
 const LEGACY_STORAGE_KEY_V3 = 'lumi-phone-custom-v3'
@@ -152,9 +161,29 @@ function resolvePersonalCardProfileFromRaw(raw: Partial<CustomizationState>): Pr
 function normalizeState(raw: Partial<CustomizationState>): CustomizationState {
   const theme = { ...DEFAULT_CUSTOMIZATION.theme, ...raw.theme }
   theme.wallpaperUrl = migrateLegacyRootPublicUrl(theme.wallpaperUrl)
+  theme.customFont = normalizePhoneCustomGlobalFont(
+    (raw.theme as { customFont?: unknown } | undefined)?.customFont,
+    DEFAULT_CUSTOMIZATION.theme.customFont ?? null,
+  )
   // 迁移：旧默认正文字体自动升级到更明显的乙女风默认字体
   if (theme.fontFamily === LEGACY_STORY_FONT) {
     theme.fontFamily = DEFAULT_CUSTOMIZATION.theme.fontFamily
+  }
+  // 迁移：乙女柔美旧栈把 PingFang 提前，外链未加载时中文变黑体
+  if (
+    theme.fontFamily ===
+    '"Cormorant Garamond", "ZCOOL XiaoWei", "Noto Serif SC", "LXGW WenKai", "PingFang SC", "STKaiti", "KaiTi", "Georgia", "Garamond", "Times New Roman", serif'
+  ) {
+    theme.fontFamily =
+      '"Cormorant Garamond", "ZCOOL XiaoWei", "Noto Serif SC", "LXGW WenKai", "STKaiti", "KaiTi", "Songti SC", "STSong", "PingFang SC", "Georgia", "Garamond", "Times New Roman", serif'
+  }
+  // Lumi 旧栈：Noto Sans / PingFang 排在宋楷之前
+  if (
+    theme.fontFamily ===
+    '"Noto Serif SC", "Noto Sans SC", "PingFang SC", "PingFang TC", "Hiragino Sans GB", "STSong", "STKaiti", "FangSong", "KaiTi", "Georgia", "Garamond", "Times New Roman", serif'
+  ) {
+    theme.fontFamily =
+      '"Noto Serif SC", "STSong", "STKaiti", "FangSong", "KaiTi", "Songti SC", "Noto Sans SC", "PingFang SC", "PingFang TC", "Hiragino Sans GB", "Georgia", "Garamond", "Times New Roman", serif'
   }
   const wechatTheme = normalizeWeChatTheme(raw.wechatTheme)
   const musicMerged = { ...DEFAULT_CUSTOMIZATION.music, ...raw.music }
@@ -255,14 +284,45 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
 
   const normalizeChatRoomBg = (b: unknown, fallback: WeChatChatRoomBg): WeChatChatRoomBg => {
     if (!b || typeof b !== 'object') return fallback
-    const r = b as Partial<WeChatChatRoomBg>
+    const r = b as Record<string, unknown>
     if (r.mode === 'image') {
-      const imageUrl = migrateLegacyRootPublicUrl(pick(r.imageUrl, fallback.mode === 'image' ? fallback.imageUrl : ''))
+      const imageUrl = migrateLegacyRootPublicUrl(
+        pick(r.imageUrl, fallback.mode === 'image' ? fallback.imageUrl : ''),
+      )
       return {
         mode: 'image',
         imageUrl,
-        fallbackColor: pick(r.fallbackColor, fallback.mode === 'image' ? fallback.fallbackColor : '#EDEDED'),
+        fallbackColor: pick(
+          r.fallbackColor,
+          fallback.mode === 'image' ? fallback.fallbackColor : '#EDEDED',
+        ),
       }
+    }
+    if (r.mode === 'gradient') {
+      const stopsRaw = Array.isArray(r.stops)
+        ? r.stops.map((s) => String(s ?? '').trim()).filter(Boolean)
+        : undefined
+      const colorStart = pick(r.colorStart, '')
+      const colorEnd = pick(r.colorEnd, '')
+      const css = pick(r.css, '')
+      const angle =
+        typeof r.angle === 'number' && Number.isFinite(r.angle) ? Math.round(r.angle) : undefined
+      const gradientType = r.gradientType === 'radial' ? 'radial' : 'linear'
+      const fallbackColor = pick(
+        r.fallbackColor,
+        colorStart || (fallback.mode === 'solid' ? fallback.color : '#EDEDED'),
+      )
+      const out: WeChatChatRoomBg = {
+        mode: 'gradient',
+        gradientType,
+        fallbackColor,
+      }
+      if (angle != null) out.angle = angle
+      if (stopsRaw && stopsRaw.length) out.stops = stopsRaw
+      if (colorStart) out.colorStart = colorStart
+      if (colorEnd) out.colorEnd = colorEnd
+      if (css) out.css = css
+      return out
     }
     if (r.mode === 'solid') {
       const color = pick(r.color, fallback.mode === 'solid' ? fallback.color : '#EDEDED')
@@ -281,8 +341,8 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
     return {
       selfBubbleBg: pick(r.selfBubbleBg, fallback.selfBubbleBg),
       otherBubbleBg: pick(r.otherBubbleBg, fallback.otherBubbleBg),
-      selfBubbleRadiusPx: clamp(r.selfBubbleRadiusPx, 10, 28, fallback.selfBubbleRadiusPx),
-      otherBubbleRadiusPx: clamp(r.otherBubbleRadiusPx, 10, 28, fallback.otherBubbleRadiusPx),
+      selfBubbleRadiusPx: clamp(r.selfBubbleRadiusPx, 4, 28, fallback.selfBubbleRadiusPx),
+      otherBubbleRadiusPx: clamp(r.otherBubbleRadiusPx, 4, 28, fallback.otherBubbleRadiusPx),
       showAvatar: bool(r.showAvatar, fallback.showAvatar),
       avatarRadiusPx: clamp(r.avatarRadiusPx, 0, 18, fallback.avatarRadiusPx),
       showBubbleTail: bool(r.showBubbleTail, fallback.showBubbleTail),
@@ -294,7 +354,21 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
           ? r.bubbleTailStyle
           : fallback.bubbleTailStyle,
       mergeConsecutiveAvatarGroup: bool(r.mergeConsecutiveAvatarGroup, fallback.mergeConsecutiveAvatarGroup),
+      selfFont: normalizeWeChatBubbleSideFont(r.selfFont, fallback.selfFont ?? null),
+      otherFont: normalizeWeChatBubbleSideFont(r.otherFont, fallback.otherFont ?? null),
     }
+  }
+
+  const normalizeChatSkinOverrides = (v: unknown): Record<string, string> => {
+    if (!v || typeof v !== 'object') return {}
+    const out: Record<string, string> = {}
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      const key = String(k ?? '').trim()
+      if (!key.startsWith('--wx-chat-') && !key.startsWith('--wx-special-')) continue
+      if (typeof val !== 'string' || !val.trim()) continue
+      out[key] = val.trim()
+    }
+    return out
   }
 
   const LEGACY_OTHER_BUBBLE_SEMI = 'rgba(0, 0, 0, 0.04)'
@@ -428,6 +502,13 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
     pageBgByTab,
     headerByTab,
     conversationCard: normalizeFill(raw.conversationCard, base.conversationCard),
+    chatSkinOverrides: normalizeChatSkinOverrides(raw.chatSkinOverrides),
+    chatSkinScopedCss:
+      typeof raw.chatSkinScopedCss === 'string' ? raw.chatSkinScopedCss : '',
+    avatarChrome: normalizeWeChatAvatarChrome(
+      raw.avatarChrome,
+      base.avatarChrome ?? emptyWeChatAvatarChrome(),
+    ),
   }
 }
 
@@ -761,6 +842,10 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     const meta = document.querySelector('meta[name="theme-color"]')
     if (meta) meta.setAttribute('content', state.theme.background)
   }, [state.theme.background, state.theme.fontFamily])
+
+  useEffect(() => {
+    void ensurePhoneGlobalFontLoaded(state.theme.customFont)
+  }, [state.theme.customFont?.id, state.theme.customFont?.family])
 
   useEffect(() => {
     const id = 'lumi-user-custom-css'

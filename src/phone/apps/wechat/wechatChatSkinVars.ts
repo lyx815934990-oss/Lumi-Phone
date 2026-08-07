@@ -41,6 +41,8 @@ export const WECHAT_CHAT_SKIN_DEFAULTS = {
   specialLocTitle: '#0a0a0a',
   specialLocMuted: '#9ca3af',
   specialLocDistance: '#8B7355',
+  specialLocBg: '#ffffff',
+  specialLocBorder: 'rgba(0,0,0,0.08)',
 } as const
 
 const SKIN_VAR_MAP: Record<keyof typeof WECHAT_CHAT_SKIN_DEFAULTS, string> = {
@@ -80,6 +82,8 @@ const SKIN_VAR_MAP: Record<keyof typeof WECHAT_CHAT_SKIN_DEFAULTS, string> = {
   specialLocTitle: '--wx-special-loc-title',
   specialLocMuted: '--wx-special-loc-muted',
   specialLocDistance: '--wx-special-loc-distance',
+  specialLocBg: '--wx-special-loc-bg',
+  specialLocBorder: '--wx-special-loc-border',
 }
 
 export type WeChatChatSkinResolved = {
@@ -115,7 +119,35 @@ export function weChatChatSkinCssProperties(
   for (const [key, cssVar] of Object.entries(SKIN_VAR_MAP)) {
     out[cssVar] = values[key as keyof WeChatChatSkinResolved]
   }
+  const overrides = wechatTheme.chatSkinOverrides
+  if (overrides) {
+    for (const [cssVar, val] of Object.entries(overrides)) {
+      if (!cssVar.startsWith('--wx-chat-') && !cssVar.startsWith('--wx-special-')) continue
+      if (!val?.trim()) continue
+      out[cssVar] = val.trim()
+    }
+  }
   return out as CSSProperties
+}
+
+/** 写入皮肤默认 CSS 变量（主题制作机预览与微信聊天共用） */
+export function writeWeChatChatSkinDefaultCssVars(out: Record<string, string>): void {
+  for (const [key, cssVar] of Object.entries(SKIN_VAR_MAP)) {
+    out[cssVar] = WECHAT_CHAT_SKIN_DEFAULTS[key as keyof WeChatChatSkinResolved]
+  }
+}
+
+/** 合并气泡包 / 主题里的 --wx-chat-* / --wx-special-* 覆写 */
+export function mergeWeChatChatSkinOverrides(
+  out: Record<string, string>,
+  overrides: Record<string, string> | undefined | null,
+): void {
+  if (!overrides) return
+  for (const [cssVar, val] of Object.entries(overrides)) {
+    if (!cssVar.startsWith('--wx-chat-') && !cssVar.startsWith('--wx-special-')) continue
+    if (!val?.trim()) continue
+    out[cssVar] = val.trim()
+  }
 }
 
 export function weChatChatSkinCssVarLines(values: WeChatChatSkinResolved): string[] {
@@ -131,7 +163,10 @@ export const WECHAT_CHAT_SKIN_SELECTOR_DOC = [
   '[data-wx-chat-header] — Lumi 默认顶栏（非 Messenger 预设）',
   '[data-wx-chat-input-bar] — 底部输入栏外框',
   '[data-wx-chat-input-shell] — 输入框 / 「按住说话」内壳',
-  '[data-wx-bubble-side="self"|"other"] — 文字气泡侧',
-  '[data-wx-msg-kind="text"|"voice"|"red-packet"|"transfer"|"location"] — 消息类型',
-  '[data-wx-special-card] — Lumi 特殊消息卡片（红包/转账/位置等）',
+  '[data-wx-bubble-side="self"|"other"] — 文字气泡侧（外层）',
+  '[data-wx-bubble-content] — 文字气泡表面（填色/圆角所在节点；磨砂 blur 写这里）',
+  '[data-wx-msg-kind="text"|"voice"|"red-packet"|"transfer"|"location"|"voice-call"|"favorite"] — 消息类型',
+  '[data-wx-special-card] — 特殊消息卡片根（红包/转账/位置/通话/收藏等）',
+  '[data-wx-special-status] — 状态（pending|accepted|unclaimed|claimed|…）',
+  '[data-wx-special-part="icon"|"amount"|"label"|"status"|"footer"|"map"] — 卡内零件（可用 CSS 隐藏/重建）',
 ] as const

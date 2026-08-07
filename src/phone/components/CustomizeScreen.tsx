@@ -7,6 +7,11 @@ import { ImageCropperModal } from './ImageCropperModal'
 import { DockStyleSection } from './DockStyleSection'
 import { migrateLegacyRootPublicUrl, resolvePublicImageUrl } from '../../publicAssetUrl'
 import { DEFAULT_CUSTOMIZATION, DEFAULT_WALLPAPER_PATH, type AppSlot } from '../types'
+import {
+  PHONE_GLOBAL_FONT_FALLBACK_STACK,
+  clearPhoneGlobalFont,
+  uploadPhoneGlobalFont,
+} from '../phoneGlobalFont'
 
 type Props = {
   onBack: () => void
@@ -42,19 +47,19 @@ const FONT_PRESETS = [
     id: 'otome-default',
     label: '乙女柔美',
     value:
-      '"Cormorant Garamond", "ZCOOL XiaoWei", "Noto Serif SC", "LXGW WenKai", "PingFang SC", "STKaiti", "KaiTi", "Georgia", "Garamond", "Times New Roman", serif',
+      '"Cormorant Garamond", "ZCOOL XiaoWei", "Noto Serif SC", "LXGW WenKai", "STKaiti", "KaiTi", "Songti SC", "STSong", "PingFang SC", "Georgia", "Garamond", "Times New Roman", serif',
   },
   {
     id: 'lumi-story',
     label: 'Lumi',
     value:
-      '"Noto Serif SC", "Noto Sans SC", "PingFang SC", "PingFang TC", "Hiragino Sans GB", "STSong", "STKaiti", "FangSong", "KaiTi", "Georgia", "Garamond", "Times New Roman", serif',
+      '"Noto Serif SC", "STSong", "STKaiti", "FangSong", "KaiTi", "Songti SC", "Noto Sans SC", "PingFang SC", "PingFang TC", "Hiragino Sans GB", "Georgia", "Garamond", "Times New Roman", serif',
   },
   {
     id: 'art-serif',
     label: '艺术衬线（默认）',
     value:
-      '"Cormorant Garamond", "Noto Serif SC", "STKaiti", "KaiTi", "Times New Roman", serif',
+      '"Cormorant Garamond", "Noto Serif SC", "STKaiti", "KaiTi", "Songti SC", "STSong", "Times New Roman", serif',
   },
   {
     id: 'clean-ui',
@@ -129,6 +134,7 @@ export function CustomizeScreen({ onBack }: Props) {
   const styleImageInputRef = useRef<HTMLInputElement | null>(null)
   const cssInputRef = useRef<HTMLInputElement | null>(null)
   const gestureCssInputRef = useRef<HTMLInputElement | null>(null)
+  const globalFontInputRef = useRef<HTMLInputElement | null>(null)
   const [cropTarget, setCropTarget] = useState<AppSlot['id'] | null>(null)
   const [cropSrc, setCropSrc] = useState<string>('')
   const [wallpaperCropSrc, setWallpaperCropSrc] = useState<string>('')
@@ -137,6 +143,8 @@ export function CustomizeScreen({ onBack }: Props) {
   const [activeStyleApp, setActiveStyleApp] = useState<AppSlot['id']>('wechat')
   const [styleAppOpen, setStyleAppOpen] = useState(false)
   const [showLayoutResetToast, setShowLayoutResetToast] = useState(false)
+  const [globalFontBusy, setGlobalFontBusy] = useState(false)
+  const [globalFontErr, setGlobalFontErr] = useState<string | null>(null)
 
   const title = useMemo(() => {
     switch (section) {
@@ -660,14 +668,34 @@ export function CustomizeScreen({ onBack }: Props) {
                   background: theme.surface,
                   color: theme.text,
                 }}
-                value={theme.fontFamily}
-                onChange={(e) => setTheme({ fontFamily: e.target.value })}
+                value={
+                  FONT_PRESETS.some((p) => p.value === theme.fontFamily)
+                    ? theme.fontFamily
+                    : theme.customFont
+                      ? '__uploaded__'
+                      : '__custom_stack__'
+                }
+                onChange={(e) => {
+                  const v = e.target.value
+                  if (v === '__uploaded__' || v === '__custom_stack__') return
+                  const prev = theme.customFont
+                  setTheme({ fontFamily: v, customFont: null })
+                  if (prev?.id) void clearPhoneGlobalFont(prev)
+                }}
               >
                 {FONT_PRESETS.map((p) => (
                   <option key={p.id} value={p.value}>
                     {p.label}
                   </option>
                 ))}
+                {theme.customFont ? (
+                  <option value="__uploaded__">
+                    已上传 · {theme.customFont.fileName || '自定义字体'}
+                  </option>
+                ) : null}
+                {!FONT_PRESETS.some((p) => p.value === theme.fontFamily) && !theme.customFont ? (
+                  <option value="__custom_stack__">自定义字体栈</option>
+                ) : null}
               </select>
             </div>
 
@@ -702,9 +730,108 @@ export function CustomizeScreen({ onBack }: Props) {
                   color: theme.text,
                 }}
                 value={theme.fontFamily}
-                onChange={(e) => setTheme({ fontFamily: e.target.value })}
+                onChange={(e) => {
+                  const prev = theme.customFont
+                  setTheme({ fontFamily: e.target.value, customFont: null })
+                  if (prev?.id) void clearPhoneGlobalFont(prev)
+                }}
                 placeholder='"Cormorant Garamond", "ZCOOL XiaoWei", "Noto Serif SC", serif'
               />
+            </div>
+
+            <div
+              className="rounded-[14px] border px-3 py-3"
+              style={{ borderColor: theme.border, background: theme.surface }}
+            >
+              <FieldLabel>上传字体文件</FieldLabel>
+              <p className="mb-2 text-[11px] leading-snug" style={{ color: theme.textMuted }}>
+                导入后立即设为全局字体（主页、各 App 跟随 --phone-font）。支持 .ttf / .otf / .woff / .woff2。
+              </p>
+              <div className="flex gap-2">
+                <Pressable
+                  disabled={globalFontBusy}
+                  onClick={() => globalFontInputRef.current?.click()}
+                  className="flex-1 rounded-[12px] border px-3 py-2 text-[13px] disabled:opacity-50"
+                  style={{
+                    borderColor: theme.border,
+                    background: 'rgba(0,0,0,0.06)',
+                    color: theme.text,
+                  }}
+                >
+                  {globalFontBusy ? '上传中…' : theme.customFont ? '更换字体' : '上传并应用'}
+                </Pressable>
+                {theme.customFont ? (
+                  <Pressable
+                    disabled={globalFontBusy}
+                    onClick={() => {
+                      void (async () => {
+                        setGlobalFontBusy(true)
+                        setGlobalFontErr(null)
+                        try {
+                          await clearPhoneGlobalFont(theme.customFont)
+                          setTheme({
+                            fontFamily: PHONE_GLOBAL_FONT_FALLBACK_STACK,
+                            customFont: null,
+                          })
+                        } catch (e) {
+                          setGlobalFontErr(e instanceof Error ? e.message : '清除失败')
+                        } finally {
+                          setGlobalFontBusy(false)
+                        }
+                      })()
+                    }}
+                    className="rounded-[12px] border px-3 py-2 text-[13px] disabled:opacity-50"
+                    style={{
+                      borderColor: theme.border,
+                      background: 'transparent',
+                      color: theme.text,
+                    }}
+                  >
+                    清除
+                  </Pressable>
+                ) : null}
+                <input
+                  ref={globalFontInputRef}
+                  type="file"
+                  accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2,application/font-woff,application/font-woff2,application/x-font-ttf,application/x-font-otf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    e.target.value = ''
+                    if (!file) return
+                    setGlobalFontBusy(true)
+                    setGlobalFontErr(null)
+                    void (async () => {
+                      try {
+                        const prev = theme.customFont
+                        const { meta, fontFamilyStack } = await uploadPhoneGlobalFont(file)
+                        setTheme({ fontFamily: fontFamilyStack, customFont: meta })
+                        if (prev?.id && prev.id !== meta.id) {
+                          await clearPhoneGlobalFont(prev)
+                        }
+                      } catch (err) {
+                        setGlobalFontErr(err instanceof Error ? err.message : '上传失败')
+                      } finally {
+                        setGlobalFontBusy(false)
+                      }
+                    })()
+                  }}
+                />
+              </div>
+              <div
+                className="mt-2 rounded-[12px] border px-2.5 py-2 text-[11px] leading-snug"
+                style={{
+                  borderColor: theme.border,
+                  background: 'rgba(0,0,0,0.03)',
+                  color: theme.customFont ? theme.text : theme.textMuted,
+                  fontFamily: theme.customFont ? theme.fontFamily : undefined,
+                }}
+              >
+                {theme.customFont
+                  ? `已应用 · ${theme.customFont.fileName}`
+                  : '未上传自定义字体文件'}
+              </div>
+              {globalFontErr ? <p className="mt-1.5 text-[11px] text-red-600">{globalFontErr}</p> : null}
             </div>
           </div>
         ) : section === 'profile' ? (

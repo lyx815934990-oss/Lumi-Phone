@@ -87,8 +87,13 @@ import { resolvePublicImageUrl } from '../../../publicAssetUrl'
 import { wechatChatRoomBgFallbackColor, wechatChatRoomBgToStyle } from './wechatChatRoomBg'
 import { migrateMislabeledLumiDefaultBubble, resolveEffectiveChatInputBarForBubble } from './wechatBubblePresets'
 import { chatDisplayFontCssVars, resolveChatDisplayFontFamily } from './wechatBubbleTemplateFonts'
+import {
+  chatBubbleSideFontCssVars,
+  ensureWeChatBubbleSideFontsLoaded,
+} from './wechatBubbleSideFonts'
 import { resolveMessengerBubbleStyle } from './wechatMessengerSpecialBubbles'
 import { weChatChatSkinCssProperties } from './wechatChatSkinVars'
+import { wrapWeChatChatSkinScopedCss } from './bubblePack/scopedCss'
 import './wechatChatSkinScope.css'
 import { useCurrentApiConfig, useIsSubApiEnabled, useTranslationRuntime } from '../api/ApiSettingsContext'
 import type { ApiConfig } from '../api/types'
@@ -285,6 +290,10 @@ import {
   type WeChatPeerReplyOrderedSegment,
   type WeChatGroupMultiSpeakerMemberPrompt,
 } from './wechatChatAi'
+import {
+  requestWeChatUserReplyDraftBubbles,
+  splitWeChatComposerIntoBubbles,
+} from './wechatUserReplyDraftAi'
 import type { WeChatGroupMetaAction, WeChatGroupMultiSpeakerOrderedItem } from './groupChatModelMeta'
 import { applyWeChatGroupMetaFromModel } from './groupChatMetaApply'
 import {
@@ -371,6 +380,8 @@ import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
 } from './group/ChatGroupSpeakerAvatarWrap'
+import { WeChatAvatarChromeProvider } from './WeChatAvatarChromeWrap'
+import { WeChatChatSkinEngineProvider } from './WeChatChatSkinEngineContext'
 import { formatWorldBackgroundForPrompt } from './newFriendsPersona/worldBackgroundFormat'
 import { WeChatMessageBubbleRow, type WeChatBubbleReplyPreview } from './WeChatMessageBubbleRow'
 import { ImessageDetachedReplyBubble } from './wechatMessengerSpecialBubbles'
@@ -2870,14 +2881,20 @@ export function ChatRoomInner({
   )
   const bubbleSkinKey = useMemo(() => wechatBubbleSkinKey(bubble), [bubble])
   const showAvatar = bubble.showAvatar
-  const bubbleTailStyle = bubble.bubbleTailStyle
-  const messengerStyle = resolveMessengerBubbleStyle(bubble)
+  /** css 引擎：清空主题尾巴差异，特殊消息走结构壳 + scopedCss */
+  const cssSkinEngine = wechatTheme.chatSkinEngine === 'css'
+  const bubbleTailStyle = cssSkinEngine ? undefined : bubble.bubbleTailStyle
+  const messengerStyle = resolveMessengerBubbleStyle(
+    cssSkinEngine ? { ...bubble, showBubbleTail: false, bubbleTailStyle: undefined } : bubble,
+    wechatTheme.chatSkinEngine,
+  )
   const showBubbleTail =
+    !cssSkinEngine &&
     bubble.showBubbleTail &&
     (bubbleTailStyle === 'imessage' || bubbleTailStyle === 'telegram' || bubbleTailStyle === 'talkmaker' || bubbleTailStyle === 'wechat' || showAvatar)
-  const compactMessengerSpacing = bubbleTailStyle === 'telegram'
+  const compactMessengerSpacing = !cssSkinEngine && bubbleTailStyle === 'telegram'
   const usesMessengerBubbleTime =
-    bubbleTailStyle === 'telegram' || bubbleTailStyle === 'talkmaker'
+    !cssSkinEngine && (bubbleTailStyle === 'telegram' || bubbleTailStyle === 'talkmaker')
   const showTimestamp =
     wechatTheme.timestampStyle !== 'hidden' && bubbleTailStyle !== 'telegram'
   const mergeAvatarGroup =
@@ -5292,6 +5309,10 @@ export function ChatRoomInner({
   const [generateReplyToneDraft, setGenerateReplyToneDraft] = useState('')
   const [generateReplyMinCharsDraft, setGenerateReplyMinCharsDraft] = useState('')
   const [generateReplyMaxCharsDraft, setGenerateReplyMaxCharsDraft] = useState('')
+  const [generateReplyBubbleCountDraft, setGenerateReplyBubbleCountDraft] = useState('3')
+  const [generateReplyGenerating, setGenerateReplyGenerating] = useState(false)
+  /** 生成回复预览：可改后再发；发送时不触发角色回复 */
+  const [generateReplyPreviewBubbles, setGenerateReplyPreviewBubbles] = useState<string[] | null>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [photoPickerOpen, setPhotoPickerOpen] = useState(false)
   const [favoritesPickerOpen, setFavoritesPickerOpen] = useState(false)
@@ -12806,52 +12827,126 @@ export function ChatRoomInner({
     ],
   )
 
-  /** 加号面板「生成回复」：可设字数范围、内容偏向、语气风格后催角色再发一轮（不撤销旧气泡）。 */
+  /** 加号面板「生成回复」：以用户口吻拟多气泡草稿，弹出预览（非催角色回复）。 */
   const runGenerateReply = useCallback(
-    (opts: { bias: string; tone: string; minChars: string; maxChars: string }) => {
-      const ck = conversationKey.trim()
-      if (ck && isConversationAiPipelineBusy(ck)) {
-        showComposerToast('对方正在回复中，请稍后再试')
-        return
+    async (opts: {
+      bias: string
+      tone: string
+      minChars: string
+      maxChars: string
+      bubbleCount: string
+    }): Promise<boolean> => {
+      if (!apiConfig?.apiUrl?.trim() || !apiConfig?.apiKey?.trim() || !apiConfig?.modelId?.trim()) {
+        showComposerToast('请先配置聊天 API')
+        return false
       }
-      if (ck) setConversationOpponentQueueStop(ck, false)
-      setScreenSharePaused(false)
-      const bias = opts.bias.trim()
-      const tone = opts.tone.trim()
+      const countRaw = Number.parseInt(opts.bubbleCount.trim(), 10)
+      const bubbleCount = Number.isFinite(countRaw) ? Math.max(1, Math.min(12, countRaw)) : 3
       const minN = Number.parseInt(opts.minChars.trim(), 10)
       const maxN = Number.parseInt(opts.maxChars.trim(), 10)
-      const hasMin = Number.isFinite(minN) && minN > 0
-      const hasMax = Number.isFinite(maxN) && maxN > 0
-      let lengthLine = ''
-      if (hasMin || hasMax) {
-        let lo = hasMin ? Math.max(1, Math.floor(minN)) : 1
-        let hi = hasMax ? Math.max(1, Math.floor(maxN)) : Math.max(lo, 120)
-        if (hi < lo) {
-          const t = lo
-          lo = hi
-          hi = t
+      setGenerateReplyGenerating(true)
+      try {
+        const transcript = itemsToTranscript(buildChatItemsForAiTranscript(), {
+          groupSpeakerLabel:
+            roomType === 'group'
+              ? (m) => {
+                  const sid = m.senderCharacterId?.trim()
+                  if (!sid || sid === WECHAT_GROUP_USER_CHAR_ID) return undefined
+                  const mem = groupLive?.members?.find((x) => x.charId === sid)
+                  return (mem?.groupNickname || '').trim() || undefined
+                }
+              : undefined,
+        })
+
+        const pid = playerIdentityId.trim()
+        let playerIdentityBlock = ''
+        if (pid && pid !== '__none__') {
+          try {
+            const identity = await personaDb.getPlayerIdentity(pid)
+            playerIdentityBlock = buildWeChatPlayerIdentityPromptBlock(identity).trim()
+          } catch {
+            playerIdentityBlock = ''
+          }
         }
-        lengthLine = `【字数范围】本轮全部可见文字气泡合计约 ${lo}～${hi} 字（按汉字估算，表情包/指令行不计）。宁短勿水；勿为凑字堆废话或同义复读。`
+
+        const pc = (personaCharacterId?.trim() || conversationCharacterId.trim()) || ''
+        let characterPersonaBlock = ''
+        if (pc && pc !== WECHAT_LUMI_PEER_CHARACTER_ID && !useLumiProjectAssistantPrompt) {
+          try {
+            const ch = await personaDb.getCharacter(pc)
+            const card = buildCharacterCard(ch, { bioMaxChars: 420 }).trim()
+            const wb = buildWorldBookText(ch, 2400).trim()
+            characterPersonaBlock = [card ? `【角色名片】\n${card}` : '', wb ? `【角色世界书】\n${wb}` : '']
+              .filter(Boolean)
+              .join('\n\n')
+          } catch {
+            characterPersonaBlock = ''
+          }
+        }
+
+        let onlineContextNotes = ''
+        try {
+          const mem = await buildPrivateMemoryInjectionForAi(transcript, opts.bias)
+          onlineContextNotes = [
+            mem.storyTimeline?.trim() ? `【剧情时间轴·当前】\n${mem.storyTimeline.trim()}` : '',
+            mem.unsPrivate?.trim() ? `【尚未总结的私聊片段】\n${mem.unsPrivate.trim()}` : '',
+            mem.recentPrivateAiRounds?.trim()
+              ? `【近期私聊 AI 轮参考】\n${mem.recentPrivateAiRounds.trim()}`
+              : '',
+            mem.memory?.trim() ? `【长期记忆摘录】\n${mem.memory.trim().slice(0, 3200)}` : '',
+            mem.unsGroup?.trim() ? `【尚未总结的群聊片段】\n${mem.unsGroup.trim()}` : '',
+          ]
+            .filter(Boolean)
+            .join('\n\n')
+        } catch {
+          onlineContextNotes = ''
+        }
+
+        const draftText = await requestWeChatUserReplyDraftBubbles({
+          apiConfig,
+          transcript,
+          peerDisplayName: peerNotifyTitle.trim() || '对方',
+          playerDisplayName: playerDisplayName.trim() || state.profile.displayName.trim() || '我',
+          bubbleCount,
+          tone: opts.tone.trim() || undefined,
+          bias: opts.bias.trim() || undefined,
+          minChars: Number.isFinite(minN) && minN > 0 ? minN : undefined,
+          maxChars: Number.isFinite(maxN) && maxN > 0 ? maxN : undefined,
+          isGroup: roomType === 'group',
+          playerIdentityBlock: playerIdentityBlock || undefined,
+          characterPersonaBlock: characterPersonaBlock || undefined,
+          onlineContextNotes: onlineContextNotes || undefined,
+        })
+        const bubbles = splitWeChatComposerIntoBubbles(draftText)
+        if (!bubbles.length) {
+          showComposerToast('未生成有效气泡，请重试')
+          return false
+        }
+        setGenerateReplyPreviewBubbles(bubbles)
+        showComposerToast(`已生成 ${bubbles.length} 条气泡，可在预览中修改后发送`)
+        return true
+      } catch (err) {
+        const msg = err instanceof Error && err.message.trim() ? err.message.trim() : '生成失败，请重试'
+        showComposerToast(msg)
+        return false
+      } finally {
+        setGenerateReplyGenerating(false)
       }
-      retryReplyBiasRef.current = [
-        '[系统提示] 用户点了「生成回复」：本回合用户没有新发消息，请以**角色本人**身份再发一轮微信气泡。',
-        '须承接上文语境自然推进；禁止替用户发言、禁止模拟用户发消息；禁止复读上一轮同义句。',
-        lengthLine,
-        tone ? `【语气风格】${tone}` : '',
-        bias ? `【内容偏向】${bias}` : '',
-      ]
-        .filter((x) => x.trim())
-        .join('\n\n')
-      triggerManualCharacterReply()
-      const tuned = Boolean(bias || tone || lengthLine)
-      showComposerToast(tuned ? '已按设定生成回复' : '已生成回复')
     },
     [
-      conversationKey,
-      isConversationAiPipelineBusy,
-      setScreenSharePaused,
-      triggerManualCharacterReply,
+      apiConfig,
+      buildChatItemsForAiTranscript,
+      buildPrivateMemoryInjectionForAi,
+      conversationCharacterId,
+      groupLive?.members,
+      peerNotifyTitle,
+      personaCharacterId,
+      playerDisplayName,
+      playerIdentityId,
+      roomType,
       showComposerToast,
+      state.profile.displayName,
+      useLumiProjectAssistantPrompt,
     ],
   )
 
@@ -13329,6 +13424,38 @@ export function ChatRoomInner({
   )
 
   commitSendRef.current = commitSend
+
+  /** 输入框多行：每行一条气泡发送；仅最后一条可触发对方回复 */
+  const commitSendSplitBubbles = useCallback(
+    (raw: string, triggerAiOnLast: boolean) => {
+      const bubbles = splitWeChatComposerIntoBubbles(raw)
+      if (!bubbles.length) return
+      if (bubbles.length === 1) {
+        commitSend(bubbles[0]!, triggerAiOnLast)
+        return
+      }
+      for (let i = 0; i < bubbles.length; i += 1) {
+        commitSend(bubbles[i]!, triggerAiOnLast && i === bubbles.length - 1)
+      }
+    },
+    [commitSend],
+  )
+
+  /** 生成回复预览：逐条进聊天室，不触发角色回复 */
+  const sendGenerateReplyPreview = useCallback(() => {
+    const bubbles = (generateReplyPreviewBubbles ?? [])
+      .map((b) => b.trim())
+      .filter(Boolean)
+    if (!bubbles.length) {
+      showComposerToast('没有可发送的气泡')
+      return
+    }
+    for (const text of bubbles) {
+      commitSend(text, false)
+    }
+    setGenerateReplyPreviewBubbles(null)
+    showComposerToast(`已发送 ${bubbles.length} 条（未触发角色回复）`)
+  }, [commitSend, generateReplyPreviewBubbles, showComposerToast])
 
   const commitSendFavoriteSharedRecord = useCallback(
     async (item: FavoriteItem) => {
@@ -13944,13 +14071,20 @@ export function ChatRoomInner({
     }
     lastEnterDownRef.current = 0
     if (draft.trim()) {
-      commitSend(normalizedDraft, true)
+      commitSendSplitBubbles(normalizedDraft, true)
       return
     }
     if (canNudgeAiReply) {
       triggerManualCharacterReply()
     }
-  }, [aiPipelineBlocksSend, canNudgeAiReply, commitSend, normalizedDraft, triggerManualCharacterReply, sendBusy])
+  }, [
+    aiPipelineBlocksSend,
+    canNudgeAiReply,
+    commitSendSplitBubbles,
+    normalizedDraft,
+    triggerManualCharacterReply,
+    sendBusy,
+  ])
 
   const openApiSettings = useCallback(() => {
     window.dispatchEvent(new CustomEvent('phone:open-app', { detail: { id: 'api' } }))
@@ -14448,6 +14582,7 @@ export function ChatRoomInner({
           setGenerateReplyToneDraft('')
           setGenerateReplyMinCharsDraft('')
           setGenerateReplyMaxCharsDraft('')
+          setGenerateReplyBubbleCountDraft('3')
           setGenerateReplyPromptOpen(true)
           break
         case 'retry_reply':
@@ -14558,7 +14693,7 @@ export function ChatRoomInner({
           enterDebounceTimerRef.current = null
         }
         lastEnterDownRef.current = 0
-        commitSend(text, true)
+        commitSendSplitBubbles(text, true)
         refocusComposer()
         return
       }
@@ -14570,14 +14705,14 @@ export function ChatRoomInner({
         const t =
           readWeChatComposerDraftText(textareaRef.current) || normalizeWeChatComposerDraftText(draftRef.current)
         if (t) {
-          commitSend(t, false)
+          commitSendSplitBubbles(t, false)
           refocusComposer()
         }
       }, ENTER_SINGLE_COMMIT_DELAY_MS)
     },
     [
       canNudgeAiReply,
-      commitSend,
+      commitSendSplitBubbles,
       triggerManualCharacterReply,
       groupAtHighlightIdx,
       groupAtOpen,
@@ -15617,8 +15752,19 @@ export function ChatRoomInner({
         const voiceShowAvatarColumn = isSelf ? showAvatarColumnSelf : showAvatarColumnOther
         const wrapVoiceRankOnAvatar = (node: ReactNode) => {
           if (msAvatar) return composeMultiSelectLeading(msAvatar, node, voiceShowAvatarColumn)
-          if (rankBesideNick || !voiceRankBadge) return node
-          return <ChatGroupSpeakerRankOnAvatar rankBadge={voiceRankBadge}>{node}</ChatGroupSpeakerRankOnAvatar>
+          const chromeSide = isSelf ? 'self' : 'other'
+          if (rankBesideNick || !voiceRankBadge) {
+            return (
+              <ChatGroupSpeakerRankOnAvatar chromeSide={chromeSide} rankBadge={null}>
+                {node}
+              </ChatGroupSpeakerRankOnAvatar>
+            )
+          }
+          return (
+            <ChatGroupSpeakerRankOnAvatar chromeSide={chromeSide} rankBadge={voiceRankBadge}>
+              {node}
+            </ChatGroupSpeakerRankOnAvatar>
+          )
         }
         const avatarPlaceholder = composeMultiSelectLeading(
           msAvatar,
@@ -16498,23 +16644,33 @@ export function ChatRoomInner({
     scrollToBottomSmooth()
   }, [pendingQueue.length, scrollToBottomSmooth])
 
-  const effectiveInputBar = useMemo(
-    () => resolveEffectiveChatInputBarForBubble(chatTheme.inputBar, bubble),
-    [bubble, chatTheme.inputBar],
-  )
+  const effectiveInputBar = useMemo(() => {
+    const bar = resolveEffectiveChatInputBarForBubble(chatTheme.inputBar, bubble)
+    // css 空白画布：不要跟尾巴切到 iMessage/Telegram 输入栏主题皮
+    if (wechatTheme.chatSkinEngine === 'css') {
+      return { ...bar, layout: 'lumi' as const }
+    }
+    return bar
+  }, [bubble, chatTheme.inputBar, wechatTheme.chatSkinEngine])
   const btnPx = effectiveInputBar.buttonSize
   const btnColor = effectiveInputBar.buttonColor
   const inputBarLayout = effectiveInputBar.layout ?? 'lumi'
   const chatSkinScopeStyle = useMemo(
     () => ({
       ...chatDisplayFontCssVars(resolveChatDisplayFontFamily(bubble)),
+      ...chatBubbleSideFontCssVars(bubble),
       ...weChatChatSkinCssProperties(wechatTheme, { ...chatTheme, inputBar: effectiveInputBar }),
     }),
     [bubble, chatTheme, effectiveInputBar, wechatTheme],
   )
+  const chatSkinScopedCss = wechatTheme.chatSkinScopedCss?.trim() || ''
   const imessageComposer = inputBarLayout === 'imessage'
   const telegramComposer = inputBarLayout === 'telegram'
   const talkmakerComposer = inputBarLayout === 'talkmaker'
+
+  useEffect(() => {
+    void ensureWeChatBubbleSideFontsLoaded(bubble)
+  }, [bubble.selfFont?.id, bubble.selfFont?.family, bubble.otherFont?.id, bubble.otherFont?.family])
 
   useEffect(() => {
     return () => {
@@ -16566,6 +16722,8 @@ export function ChatRoomInner({
   probeChatRender('ChatRoom')
 
   return (
+    <WeChatChatSkinEngineProvider engine={wechatTheme.chatSkinEngine}>
+    <WeChatAvatarChromeProvider chrome={wechatTheme.avatarChrome}>
     <div
       className="relative flex h-full min-h-0 flex-1 flex-col"
       data-wx-chat-motion-scope
@@ -16573,6 +16731,9 @@ export function ChatRoomInner({
       style={chatSkinScopeStyle}
     >
       <style>{`@keyframes wxRecallShake { 0% { transform: translateX(0); opacity: 1; } 25% { transform: translateX(-2px); } 50% { transform: translateX(2px); } 75% { transform: translateX(-1px); } 100% { transform: translateX(0); opacity: 0.75; } }`}</style>
+      {chatSkinScopedCss ? (
+        <style dangerouslySetInnerHTML={{ __html: wrapWeChatChatSkinScopedCss(chatSkinScopedCss) }} />
+      ) : null}
       <div
         className="pointer-events-none absolute inset-0 z-0"
         style={roomBgStyle}
@@ -17578,10 +17739,43 @@ export function ChatRoomInner({
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 pb-4 pt-5">
               <h2 className="text-center text-[16px] font-semibold text-[#111]">生成回复</h2>
               <p className="mt-2 text-center text-[13px] leading-relaxed text-[#666]">
-                可设定本轮字数、内容偏向与语气；全部选填，不填也可直接生成。不会撤销已有气泡。
+                按你的口吻拟草稿并弹出预览（不是催角色说话）。预览里可改每条气泡，点发送后逐条进聊天室，不会触发角色回复。
               </p>
 
-              <p className="mt-4 text-[12px] font-medium text-[#333]">字数范围（选填）</p>
+              <p className="mt-4 text-[12px] font-medium text-[#333]">气泡条数</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(['1', '2', '3', '4', '5', '6'] as const).map((n) => {
+                  const active = generateReplyBubbleCountDraft === n
+                  return (
+                    <Pressable
+                      key={n}
+                      type="button"
+                      disabled={generateReplyGenerating}
+                      className={`rounded-full px-3 py-1.5 text-[12px] ${
+                        active ? 'bg-[#111] text-white' : 'bg-[#f3f3f3] text-[#333] active:bg-[#e8e8e8]'
+                      }`}
+                      onClick={() => setGenerateReplyBubbleCountDraft(n)}
+                    >
+                      {n} 条
+                    </Pressable>
+                  )
+                })}
+              </div>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={12}
+                disabled={generateReplyGenerating}
+                value={generateReplyBubbleCountDraft}
+                onChange={(e) =>
+                  setGenerateReplyBubbleCountDraft(e.target.value.replace(/[^\d]/g, '').slice(0, 2) || '3')
+                }
+                placeholder="1～12"
+                className="mt-2 h-10 w-full rounded-[10px] border border-[#e5e5e5] px-3 text-[14px] text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf] disabled:opacity-50"
+              />
+
+              <p className="mt-4 text-[12px] font-medium text-[#333]">单条字数（选填）</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {(
                   [
@@ -17598,6 +17792,7 @@ export function ChatRoomInner({
                     <Pressable
                       key={p.label}
                       type="button"
+                      disabled={generateReplyGenerating}
                       className={`rounded-full px-3 py-1.5 text-[12px] ${
                         active ? 'bg-[#111] text-white' : 'bg-[#f3f3f3] text-[#333] active:bg-[#e8e8e8]'
                       }`}
@@ -17617,10 +17812,11 @@ export function ChatRoomInner({
                   inputMode="numeric"
                   min={1}
                   max={500}
+                  disabled={generateReplyGenerating}
                   value={generateReplyMinCharsDraft}
                   onChange={(e) => setGenerateReplyMinCharsDraft(e.target.value.replace(/[^\d]/g, '').slice(0, 3))}
                   placeholder="最少"
-                  className="h-10 w-full rounded-[10px] border border-[#e5e5e5] px-3 text-[14px] text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf]"
+                  className="h-10 w-full rounded-[10px] border border-[#e5e5e5] px-3 text-[14px] text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf] disabled:opacity-50"
                 />
                 <span className="text-[13px] text-[#999]">～</span>
                 <input
@@ -17628,10 +17824,11 @@ export function ChatRoomInner({
                   inputMode="numeric"
                   min={1}
                   max={500}
+                  disabled={generateReplyGenerating}
                   value={generateReplyMaxCharsDraft}
                   onChange={(e) => setGenerateReplyMaxCharsDraft(e.target.value.replace(/[^\d]/g, '').slice(0, 3))}
                   placeholder="最多"
-                  className="h-10 w-full rounded-[10px] border border-[#e5e5e5] px-3 text-[14px] text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf]"
+                  className="h-10 w-full rounded-[10px] border border-[#e5e5e5] px-3 text-[14px] text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf] disabled:opacity-50"
                 />
               </div>
 
@@ -17643,6 +17840,7 @@ export function ChatRoomInner({
                     <Pressable
                       key={t}
                       type="button"
+                      disabled={generateReplyGenerating}
                       className={`rounded-full px-3 py-1.5 text-[12px] ${
                         active ? 'bg-[#111] text-white' : 'bg-[#f3f3f3] text-[#333] active:bg-[#e8e8e8]'
                       }`}
@@ -17655,53 +17853,144 @@ export function ChatRoomInner({
               </div>
               <input
                 type="text"
+                disabled={generateReplyGenerating}
                 value={generateReplyToneDraft}
                 onChange={(e) => setGenerateReplyToneDraft(e.target.value.slice(0, 40))}
                 placeholder="或自定义，例如：克制一点、半开玩笑"
-                className="mt-2 h-10 w-full rounded-[10px] border border-[#e5e5e5] px-3 text-[14px] text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf]"
+                className="mt-2 h-10 w-full rounded-[10px] border border-[#e5e5e5] px-3 text-[14px] text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf] disabled:opacity-50"
               />
 
               <p className="mt-4 text-[12px] font-medium text-[#333]">内容偏向（选填）</p>
               <textarea
+                disabled={generateReplyGenerating}
                 value={generateReplyBiasDraft}
                 onChange={(e) => setGenerateReplyBiasDraft(e.target.value.slice(0, 240))}
-                placeholder="例如：先问我到了没，再吐槽今天的事；别提刚才吵架"
-                className="mt-2 h-[88px] w-full resize-none rounded-[12px] border border-[#e5e5e5] px-3 py-2 text-[14px] leading-relaxed text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf]"
+                placeholder="例如：先说我刚到，再吐槽今天的事；别提刚才吵架"
+                className="mt-2 h-[88px] w-full resize-none rounded-[12px] border border-[#e5e5e5] px-3 py-2 text-[14px] leading-relaxed text-black outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf] disabled:opacity-50"
               />
             </div>
             <div className="grid shrink-0 grid-cols-2 border-t border-[#e5e5e5]">
               <Pressable
                 type="button"
-                className="h-[48px] text-[15px] text-[#111] active:bg-[#f5f5f5]"
+                disabled={generateReplyGenerating}
+                className="h-[48px] text-[15px] text-[#111] active:bg-[#f5f5f5] disabled:opacity-50"
                 onClick={() => {
                   setGenerateReplyPromptOpen(false)
                   setGenerateReplyBiasDraft('')
                   setGenerateReplyToneDraft('')
                   setGenerateReplyMinCharsDraft('')
                   setGenerateReplyMaxCharsDraft('')
+                  setGenerateReplyBubbleCountDraft('3')
                 }}
               >
                 取消
               </Pressable>
               <Pressable
                 type="button"
-                className="h-[48px] border-l border-[#e5e5e5] text-[15px] text-[#111] active:bg-[#f5f5f5]"
+                disabled={generateReplyGenerating}
+                className="h-[48px] border-l border-[#e5e5e5] text-[15px] text-[#111] active:bg-[#f5f5f5] disabled:opacity-50"
                 onClick={() => {
                   const payload = {
                     bias: generateReplyBiasDraft,
                     tone: generateReplyToneDraft,
                     minChars: generateReplyMinCharsDraft,
                     maxChars: generateReplyMaxCharsDraft,
+                    bubbleCount: generateReplyBubbleCountDraft,
                   }
-                  setGenerateReplyPromptOpen(false)
-                  setGenerateReplyBiasDraft('')
-                  setGenerateReplyToneDraft('')
-                  setGenerateReplyMinCharsDraft('')
-                  setGenerateReplyMaxCharsDraft('')
-                  runGenerateReply(payload)
+                  void (async () => {
+                    const ok = await runGenerateReply(payload)
+                    if (!ok) return
+                    setGenerateReplyPromptOpen(false)
+                    setGenerateReplyBiasDraft('')
+                    setGenerateReplyToneDraft('')
+                    setGenerateReplyMinCharsDraft('')
+                    setGenerateReplyMaxCharsDraft('')
+                    setGenerateReplyBubbleCountDraft('3')
+                  })()
                 }}
               >
-                确认生成
+                {generateReplyGenerating ? '生成中…' : '确认生成'}
+              </Pressable>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {generateReplyPreviewBubbles ? (
+        <div
+          className="fixed inset-0 z-[1210] flex items-center justify-center bg-black/35 px-4 backdrop-blur-[3px]"
+          role="presentation"
+        >
+          <div className="flex max-h-[min(88vh,640px)] w-full max-w-[360px] flex-col overflow-hidden rounded-[18px] border border-[#e4e4e4] bg-[#f4f4f4] shadow-[0_20px_50px_rgba(0,0,0,0.16)]">
+            <div className="shrink-0 border-b border-[#e0e0e0] px-5 pb-3 pt-5">
+              <h2 className="text-center text-[16px] font-semibold tracking-wide text-[#1a1a1a]">回复预览</h2>
+              <p className="mt-2 text-center text-[12px] leading-relaxed text-[#737373]">
+                可改每条气泡后再发送；发送后逐条进聊天室，不会触发角色回复。
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-4 py-3">
+              {generateReplyPreviewBubbles.map((bubble, idx) => (
+                <div
+                  key={`gen-reply-preview-${idx}`}
+                  className="rounded-[14px] border border-[#e8e8e8] bg-[#fafafa] p-3 shadow-[0_1px_0_rgba(255,255,255,0.8)]"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-medium tracking-wide text-[#8a8a8a]">气泡 {idx + 1}</p>
+                    <Pressable
+                      type="button"
+                      className="flex h-7 w-7 items-center justify-center rounded-full text-[#a3a3a3] active:bg-[#ececec] active:text-[#555]"
+                      aria-label={`删除气泡 ${idx + 1}`}
+                      onClick={() => {
+                        setGenerateReplyPreviewBubbles((prev) => {
+                          if (!prev) return prev
+                          if (prev.length <= 1) return ['']
+                          return prev.filter((_, i) => i !== idx)
+                        })
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Pressable>
+                  </div>
+                  <textarea
+                    value={bubble}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      setGenerateReplyPreviewBubbles((prev) => {
+                        if (!prev) return prev
+                        return prev.map((b, i) => (i === idx ? next : b))
+                      })
+                    }}
+                    rows={Math.min(8, Math.max(2, Math.ceil(bubble.length / 18) + bubble.split('\n').length))}
+                    className="w-full resize-none rounded-[10px] border border-[#e6e6e6] bg-white px-3 py-2.5 text-[14px] leading-relaxed text-[#1f1f1f] outline-none placeholder:text-[#b0b0b0] focus:border-[#cfcfcf]"
+                    placeholder="气泡内容"
+                  />
+                </div>
+              ))}
+              {generateReplyPreviewBubbles.length < 12 ? (
+                <Pressable
+                  type="button"
+                  className="flex h-10 w-full items-center justify-center rounded-[12px] border border-dashed border-[#cfcfcf] bg-transparent text-[13px] text-[#6e6e6e] active:bg-[#ececec]"
+                  onClick={() => {
+                    setGenerateReplyPreviewBubbles((prev) => (prev ? [...prev, ''] : ['']))
+                  }}
+                >
+                  添加气泡
+                </Pressable>
+              ) : null}
+            </div>
+            <div className="grid shrink-0 grid-cols-2 border-t border-[#e0e0e0] bg-[#f0f0f0]">
+              <Pressable
+                type="button"
+                className="h-[48px] text-[15px] text-[#6a6a6a] active:bg-[#e8e8e8]"
+                onClick={() => setGenerateReplyPreviewBubbles(null)}
+              >
+                取消
+              </Pressable>
+              <Pressable
+                type="button"
+                className="h-[48px] border-l border-[#e0e0e0] bg-[#2a2a2a] text-[15px] font-medium text-[#f5f5f5] active:bg-[#1f1f1f]"
+                onClick={sendGenerateReplyPreview}
+              >
+                发送
               </Pressable>
             </div>
           </div>
@@ -18002,6 +18291,8 @@ export function ChatRoomInner({
       />
 
     </div>
+    </WeChatAvatarChromeProvider>
+    </WeChatChatSkinEngineProvider>
   )
 }
 

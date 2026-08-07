@@ -10,6 +10,7 @@ export const PERSONA_AI_COMPACT_BOOK_KEY = 'main'
  * 单本世界书固定 9 条（顺序即 item01–…）。
  * 前 8 条默认序言介入；「对你现在」为尾声延展（可随剧情更新）。
  * 取向「可变」时另增「取向认同的当前快照」为尾声延展（插在「性格内核」后）。
+ * 职业「可变」时另增「职业身份的当前快照」为尾声延展（插在「名片基础」后）。
  * 填写过往感情史时另增「过往感情史」为序言介入（插在「亲密与恋爱观」后）。
  */
 export const PERSONA_AI_COMPACT_ENTRY_NAMES = [
@@ -61,11 +62,24 @@ export const PERSONA_AI_AFFECTION_GUIDE_EPILOGUE_NAME = PERSONA_AI_TOWARD_USER_E
  */
 export const PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME = '取向认同的当前快照'
 
+/**
+ * 职业「可变」时单独抽出的尾声延展条目（不把整条「名片基础」改成尾声）。
+ * 正文仍写当下稳定职业/社会身份；「可变」仅指本条 priority=after、可随剧情更新快照。
+ */
+export const PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME = '职业身份的当前快照'
+
 /** 取向正文所在条目名：固定→性格内核；可变→独立尾声快照 */
 export function personaAiOrientationHostEntryName(orientationMutable?: boolean): string {
   return orientationMutable
     ? PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME
     : '性格内核'
+}
+
+/** 职业正文所在条目名：固定→名片基础；可变→独立尾声快照 */
+export function personaAiOccupationHostEntryName(occupationMutable?: boolean): string {
+  return occupationMutable
+    ? PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME
+    : '名片基础'
 }
 
 /** @deprecated 请用 personaAiOrientationHostEntryName；默认指向可变时的独立尾声名 */
@@ -84,6 +98,13 @@ export function isPersonaAiOrientationEpilogueName(raw: string): boolean {
   return /取向认同|取向.*当前快照|性取向由来|取向与自我认同/.test(name)
 }
 
+export function isPersonaAiOccupationEpilogueName(raw: string): boolean {
+  const name = String(raw ?? '').trim()
+  if (!name) return false
+  if (name === PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME) return true
+  return /职业身份.*当前快照|职业.*当前快照|社会身份.*当前快照|当前职业/.test(name)
+}
+
 export function isPersonaAiRelationshipHistoryEntryName(raw: string): boolean {
   const name = String(raw ?? '').trim()
   if (!name) return false
@@ -91,12 +112,16 @@ export function isPersonaAiRelationshipHistoryEntryName(raw: string): boolean {
   return /过往感情|感情史|恋爱史|情史/.test(name) && !/亲密与恋爱观/.test(name)
 }
 
-/** 尾声模板：恒有「对你现在」；取向可变时另含取向快照 */
-export function getPersonaAiEpilogueEntryTemplates(orientationMutable?: boolean): readonly string[] {
-  if (orientationMutable) {
-    return [PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME, PERSONA_AI_TOWARD_USER_ENTRY_NAME]
-  }
-  return [PERSONA_AI_TOWARD_USER_ENTRY_NAME]
+/** 尾声模板：恒有「对你现在」；取向/职业可变时另含对应快照 */
+export function getPersonaAiEpilogueEntryTemplates(
+  orientationMutable?: boolean,
+  occupationMutable?: boolean,
+): readonly string[] {
+  const list: string[] = []
+  if (occupationMutable) list.push(PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME)
+  if (orientationMutable) list.push(PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME)
+  list.push(PERSONA_AI_TOWARD_USER_ENTRY_NAME)
+  return list
 }
 
 export function isPersonaAiPlatonicRelation(relationToUser: string): boolean {
@@ -148,12 +173,15 @@ function mkItem(
 
 function buildTowardUserDefault(relationToUser: string): string {
   const rel = relationToUser.trim() || '普通熟人'
-  return `{{char}}对{{user}}的**当前**态度：称呼、回消息节奏、相处边界与内心真实分量，须严格按开局关系「${rel}」的投入程度来写：原文偏淡就写不咋在意/低投入，原文已是暧昧或恋爱再写对应亲近。禁止默认往好感、暗恋、嘴硬心软或「其实有点在意」抬；也禁止写成与原文矛盾的陌生人话术。相识过程与看法成因见「相遇羁绊」，本条勿整段复述相识故事。`
+  const crushLike = /暗恋|单相思|单方面/.test(rel)
+  const crushRule = crushLike
+    ? `关系原文含暗恋/单相思时：「对你现在」须写清**心里喜欢** + **可见破绽**（在意、暗戳戳吃醋、别扭多留意等）；口头可说破也可嘴硬不说——跟人设走，但禁止写成「完全不在意的路人腔」。禁止越级写成已确认恋人的官宣口吻。`
+    : `禁止默认往好感、暗恋、嘴硬心软或「其实有点在意」抬。`
+  return `{{char}}对{{user}}的**当前**态度：称呼、回消息节奏、相处边界与内心真实分量，须严格按开局关系「${rel}」的投入程度来写：原文偏淡就写不咋在意/低投入，原文已是暧昧或恋爱再写对应亲近。${crushRule}也禁止写成与原文矛盾的陌生人话术。相识过程见「相遇羁绊」，本条勿整段复述相识故事；**当前关系与态度只写在本条**。`
 }
 
-function buildMeetingBondDefault(relationToUser: string): string {
-  const rel = relationToUser.trim() || '普通熟人'
-  return `写清{{char}}与{{user}}如何相识（场合、契机、早期互动），以及这些经历如何导向「对你现在」里的当前看法；开局关系标签为「${rel}」。本条写过程与成因，当前态度细节留给「对你现在」，勿两处整段重复。`
+function buildMeetingBondDefault(_relationToUser: string): string {
+  return `写清{{char}}与{{user}}如何相识（场合、契机、早期互动与过程节点）。本条是**序言固定层**：只写相识过程与经历，**禁止**写当前关系标签、当前态度、称呼分寸、心里分量或「如今是…/开局关系为…」类总结——那些只属于尾声「对你现在」，禁止与尾声冲突或抢写。`
 }
 
 const SECTION_DEFAULTS: Record<PersonaAiCompactEntryName, (rel: string) => string> = {
@@ -181,6 +209,7 @@ export function canonicalizePersonaAiCompactEntryName(raw: string): PersonaAiCom
   if (!name) return null
   // 独立附加条：勿并入九条模板
   if (isPersonaAiOrientationEpilogueName(name)) return null
+  if (isPersonaAiOccupationEpilogueName(name)) return null
   if (isPersonaAiRelationshipHistoryEntryName(name)) return null
   if ((PERSONA_AI_COMPACT_ENTRY_NAMES as readonly string[]).includes(name)) {
     return name as PersonaAiCompactEntryName
@@ -231,6 +260,7 @@ export function normalizePersonaAiCompactSections(
     if (!content) continue
     const rawName = String(e?.name ?? '')
     if (isPersonaAiOrientationEpilogueName(rawName)) continue
+    if (isPersonaAiOccupationEpilogueName(rawName)) continue
     if (isPersonaAiRelationshipHistoryEntryName(rawName)) continue
     const canonical = canonicalizePersonaAiCompactEntryName(rawName)
     if (!canonical) continue
@@ -251,6 +281,20 @@ export function pickPersonaAiOrientationEpilogueContent(
   for (const e of entries ?? []) {
     const name = String(e?.name ?? '')
     if (!isPersonaAiOrientationEpilogueName(name)) continue
+    const content = sanitizeEpilogueExtensionNewContent(String(e?.content ?? '').trim())
+    if (content.length > best.length) best = content
+  }
+  return best
+}
+
+/** 从条目列表取出职业尾声正文（最长者胜） */
+export function pickPersonaAiOccupationEpilogueContent(
+  entries: PersonaAiEpilogueEntry[] | null | undefined,
+): string {
+  let best = ''
+  for (const e of entries ?? []) {
+    const name = String(e?.name ?? '')
+    if (!isPersonaAiOccupationEpilogueName(name)) continue
     const content = sanitizeEpilogueExtensionNewContent(String(e?.content ?? '').trim())
     if (content.length > best.length) best = content
   }
@@ -309,6 +353,46 @@ function buildOrientationEpilogueDefault(orientationLabel?: string): string {
   return `{{char}}对自我性取向有清晰、当下稳定的认同表述（含由来与边界感）。禁止因勾选「可变」或欣赏{{user}}外貌写成取向动摇；本条为尾声延展快照，可随剧情更新。`
 }
 
+/**
+ * 若模型仍把职业详述写进「名片基础」，尽量剥出独立段，避免与尾声条重复。
+ */
+export function peelOccupationParagraphFromCard(cardRaw: string): {
+  card: string
+  peeled: string
+} {
+  const card = String(cardRaw ?? '').trim()
+  if (!card) return { card: '', peeled: '' }
+
+  const parts = card.split(/\n{2,}/)
+  const kept: string[] = []
+  const peeledParts: string[] = []
+  for (const p of parts) {
+    const t = p.trim()
+    if (!t) continue
+    if (
+      /^(?:职业|社会身份|当前职业|工作身份|职场身份)/.test(t) ||
+      /职业[/／与]*社会身份|社会身份[/／与]*职业/.test(t.slice(0, 40))
+    ) {
+      peeledParts.push(t)
+      continue
+    }
+    kept.push(t)
+  }
+  if (!peeledParts.length) return { card, peeled: '' }
+  return {
+    card: kept.join('\n\n').trim() || card,
+    peeled: peeledParts.join('\n\n').trim(),
+  }
+}
+
+function buildOccupationEpilogueDefault(occupationLabel?: string): string {
+  const label = String(occupationLabel ?? '').trim()
+  if (label) {
+    return `{{char}}当前职业/社会身份可概括为「${label}」。正文只写当下稳定的工作内容、对外身份与日常节奏；本条为尾声延展快照，可随剧情更新表述，但不等于开局即写「职业悬空/待定」。`
+  }
+  return `{{char}}有清晰、当下稳定的职业/社会身份表述（含工作内容与对外标签）。禁止因勾选「可变」写成开局职业悬空；本条为尾声延展快照，可随剧情更新。`
+}
+
 function buildRelationshipHistoryDefault(hint?: string): string {
   const seed = String(hint ?? '').trim()
   if (seed) {
@@ -319,7 +403,7 @@ function buildRelationshipHistoryDefault(hint?: string): string {
 
 /**
  * 将 AI 人设写成**一本**世界书、固定条目。
- * 「对你现在」恒为尾声延展；「相遇羁绊」为序言；取向「可变」时另增取向快照尾声；有感情史种子时另增「过往感情史」序言。
+ * 「对你现在」恒为尾声延展；「相遇羁绊」为序言；取向/职业「可变」时另增对应快照尾声；有感情史种子时另增「过往感情史」序言。
  */
 export function buildPersonaAiWorldBooks(
   characterId: string,
@@ -331,15 +415,19 @@ export function buildPersonaAiWorldBooks(
   userDisplayName?: string,
   opts?: {
     orientationMutable?: boolean
+    occupationMutable?: boolean
     relationToUser?: string
     /** 顶层「性取向」短标签，作取向尾声缺省正文参考 */
     orientationLabel?: string
+    /** 顶层「职业」短标签，作职业尾声缺省正文参考 */
+    occupationLabel?: string
     /** 用户填写了感情史种子时另增「过往感情史」条目 */
     includeRelationshipHistory?: boolean
     relationshipHistoryHint?: string
   },
 ): WorldBook[] {
   const orientationMutable = opts?.orientationMutable ?? false
+  const occupationMutable = opts?.occupationMutable ?? false
   const includeHistory = opts?.includeRelationshipHistory === true
   const relationToUser = String(opts?.relationToUser ?? '').trim()
   const sections = normalizePersonaAiCompactSections(sectionsOrEpilogue, { relationToUser })
@@ -349,6 +437,20 @@ export function buildPersonaAiWorldBooks(
       ? realNameOrUnused.trim()
       : nickname
   const itemOpts = userDisplayName?.trim() ? { userDisplayName: userDisplayName.trim() } : undefined
+
+  let occupationExtra: string | null = null
+  if (occupationMutable) {
+    let occ = pickPersonaAiOccupationEpilogueContent(sectionsOrEpilogue) || ''
+    const cardIdx = sections.findIndex((s) => s.name === '名片基础')
+    if (cardIdx >= 0) {
+      const peeled = peelOccupationParagraphFromCard(sections[cardIdx]!.content)
+      if (peeled.peeled) {
+        if (!occ || peeled.peeled.length > occ.length) occ = peeled.peeled
+        sections[cardIdx] = { name: '名片基础', content: peeled.card }
+      }
+    }
+    occupationExtra = occ.trim() || buildOccupationEpilogueDefault(opts?.occupationLabel)
+  }
 
   let orientationExtra: string | null = null
   if (orientationMutable) {
@@ -384,6 +486,22 @@ export function buildPersonaAiWorldBooks(
         priority,
       }),
     )
+    // 插在「名片基础」后：独立职业尾声
+    if (occupationMutable && name === '名片基础' && occupationExtra) {
+      itemIndex += 1
+      items.push(
+        mkItem(
+          characterId,
+          itemIndex,
+          PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME,
+          occupationExtra,
+          nickname,
+          rn,
+          now,
+          { ...itemOpts, priority: 'after' },
+        ),
+      )
+    }
     // 插在「性格内核」后：独立取向尾声
     if (orientationMutable && name === '性格内核' && orientationExtra) {
       itemIndex += 1

@@ -156,6 +156,8 @@ import {
 import {
   buildDatingPlotPaceAppendix,
   createDefaultDatingPlotPaceSettings,
+  datingPlotPaceLabel,
+  isDatingPlotPaceLocked,
   normalizeDatingPlotPaceSettings,
   type DatingPlotPaceSettings,
 } from './datingPlotPace'
@@ -163,6 +165,10 @@ import {
   normalizeDatingLanguageSettings,
   type DatingLanguageSettingsPatch,
 } from './DatingLanguageSettingsPanel'
+import {
+  normalizeDatingPlotFontSettings,
+  type DatingPlotFontSettings,
+} from './datingPlotFontSettings'
 import { generateDatingBranchesAi } from './datingBranchesAi'
 import { generateDatingPlotDimensionAi, buildDimensionLanguageSettingsFromArchive, finalizeDatingDimensionTranslations } from './datingPlotDimensionAi'
 import { buildVnBackgroundPromptBlock } from './vnBackgroundCatalog'
@@ -416,6 +422,8 @@ type Ctx = {
   }) => void
   /** 旁白/对白/内心 OS 语言与同步翻译 */
   patchDatingLanguageSettings: (patch: DatingLanguageSettingsPatch) => void
+  /** 剧情自定义字体（元数据落存档；文件侧存） */
+  patchDatingPlotFontSettings: (next: DatingPlotFontSettings) => void
   /** @returns 是否已成功写入 AI 剧情（失败时为 false，便于界面保留输入并重试） */
   sendPlayerInput: (text: string, perspective?: NarrativePerspective, genOptions?: NarrativeGenOptions) => Promise<boolean>
   /** 选中分支卡片：写入续写执导，由页面把 card 注入输入框 */
@@ -1839,13 +1847,14 @@ ${body}`
       `用户目标 ${targetChars} 字 → **请把正文控制在约 ${minBodyChars}～${maxBodyChars} 字区间内**。**若你预估会低于 ${minBodyChars}，必须增写 1～4 句带新信息的对白或可见动作后再收束**；若明显超过 ${maxBodyChars} 可删无效氛围句。补足字数禁止靠堆砌感官或重复同义句。\n` +
       vnLengthConflictRule
   const antiFluffRule =
-    `【当轮最高优先级·去废话硬约束】` +
-    `正文必须“事件推进优先”，禁止把篇幅花在无功能的环境铺陈。` +
+    `【当轮最高优先级·去废话硬约束｜白描】` +
+    `正文必须“事件推进优先”，禁止把篇幅花在无功能的环境铺陈与文学八股。` +
     `每一自然段至少包含以下其一：` +
     `1) 新动作（含**可见神态/微表情/肢体反应**，须带关系或情绪信息；**禁止**「他怎么样了」式空标签，须写具体脸红、视线、唇角、手部小动作等可拍细节）；2) 新对白；3) 新决定/新信息。` +
     `若某段三者都没有，整段删除重写。` +
     `环境与氛围句最多 1 句，且必须服务当下动作（例如遮挡视线、制造打断、影响距离）；` +
     `禁止连续两句纯景物、纯心理、纯感受堆叠。` +
+    `**八股反例（出现即删）**：坏掉的路灯/潮湿柏油/细长光线/冷白荧光开场；「心口因为某种即将溢出的……而跳得急」；大段楼道感应灯文学描写后再进门。` +
     `同义改写视为重复，出现一次即删。` +
     `结尾必须落在可互动的动作或对白，不得抽象总结。`
   const dialogueDrivenPlotRule =
@@ -2264,11 +2273,31 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   })
   /**
    * 线下 prompt 效力层级（高→低）：
-   * 续写：格式硬约束 > 玩家身份 > 人设档案/世界书 = 全局档案室 > NPC/尾声·关系 >
+   * 续写：界面生成设置（人称/上帝/侧幕/导演/字数/时间推进）> 格式硬约束 > 玩家身份 >
+   *       人设档案/世界书 = 全局档案室 > NPC/尾声·关系 >
    *       文风禁词与内置恋爱参考（同级硬底线）> 时间轴·当前状态 > 尚未总结=最近剧情 >
    *       语义召回/近端 > 向量长期记忆；人设与全局冲突取更具体硬约束。
-   * 重新生成：本次生成偏向为内容最高优先（场面如何重写），格式与已定事实底线仍守。
+   * 重新生成：本次生成偏向为内容最高优先（场面如何重写），界面生成设置与格式仍守。
    */
+  const perspectiveLabelZh =
+    perspective === 'first' ? '第一人称' : perspective === 'third' ? '第三人称' : '第二人称'
+  const viewModeLabelZh = godPerspective
+    ? '上帝视角（全篇屏外）'
+    : mainCharacterOffstage
+      ? '侧幕叙写（主角色缺席）'
+      : '混合/当面（未锁定上帝或侧幕）'
+  const paceNorm = normalizeDatingPlotPaceSettings(genOptions?.plotPace)
+  const paceLocked = isDatingPlotPaceLocked(paceNorm)
+  const uiGenSettingsPriorityBlock =
+    `【界面生成设置·当轮最高优先级硬约束】` +
+    `下列来自玩家推进剧情前的生成面板，**效力高于**「最近剧情」旧稿口吻、笼统「少跳时/禁跳跃」软禁令、以及向量记忆的软建议` +
+    `（**不得**覆盖线上已定事实、档案室/人设硬底线、输出格式）：\n` +
+    `- 人称：${perspectiveLabelZh}\n` +
+    `- 视角：${viewModeLabelZh}\n` +
+    `- 导演模式：${directorModeActive ? '开（输入为尚未发生的导演指令）' : '关（玩家输入为当轮既成/行动）'}\n` +
+    `- 目标字数：约 ${targetChars} 字（正文约 ${minBodyChars}～${maxBodyChars} 汉字）\n` +
+    `- 剧情时间推进：${datingPlotPaceLabel(paceNorm)}${paceLocked ? '（**必须遵守跨度**；先间隔带过，再主事件落点）' : '（模型自定跨度；若主动跳时仍须带过间隔）'}\n` +
+    `冲突时：先服从本块与下方【输出格式硬约束】中的同名规则，再承接近端事实与玩家/导演意图。\n\n`
   const systemPromptRaw =
     `${charUserDirective}\n${MBTI_OUTPUT_BAN_RULE}\n\n` +
     `${buildDatingStyleSystemPrompt(getLoreArchiveBuiltinPresetTogglesSnapshot(), {
@@ -2295,12 +2324,15 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   const priorityLadderBlock = isRegenerateTurn
     ? `【效力层级·重新生成】本轮用户对旧稿不满意。` +
       `「本次生成偏向」为**内容最高优先级**：场面如何改写、情绪与桥段如何重排须优先满足偏向；` +
-      `输出格式硬约束仍须遵守；不得捏造与「尚未总结·私聊/群聊」「剧情时间轴·当前状态」「尾声延展」**明文冲突**的已定事实。\n\n`
+      `【界面生成设置】（人称/视角/导演/字数/时间推进）与输出格式硬约束仍须遵守；` +
+      `不得捏造与「尚未总结·私聊/群聊」「剧情时间轴·当前状态」「尾声延展」**明文冲突**的已定事实。\n\n`
     : `【效力层级·续写】本轮在已定事实之上推进剧情：` +
-      `玩家身份铁律 > **约会对象·档案与人设世界书 = 全局档案室世界书**（同级最高设定）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
+      `**【界面生成设置】**（人称、上帝/侧幕、导演模式、目标字数、剧情时间推进）为当轮**最高优先级硬约束** > ` +
+      `输出格式硬约束 > 玩家身份铁律 > **约会对象·档案与人设世界书 = 全局档案室世界书**（同级最高设定）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
       `文风禁词与内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
       `剧情时间轴·当前状态 > 尚未总结·私聊/群聊（末尾最新）=最近剧情（末尾最新） > 时间轴语义召回/近端摘要 > 向量长期记忆。` +
-      `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；玩家输入决定当轮方向，**不得**改写已定事实；角色在边界内可自主行动。\n\n`
+      `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；玩家输入决定当轮方向，**不得**改写已定事实；角色在边界内可自主行动。` +
+      `若时间推进已锁定：不得因旧稿节奏或笼统「禁跳时」而缩小/取消跨度；须「间隔带过→主事件落点」。\n\n`
   const biasBlock = initialBias
     ? isRegenerateTurn
       ? `本次生成偏向（**内容最高优先级**）：${initialBias}\n\n`
@@ -2407,6 +2439,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
         : '\n')
     : ''
   const userPromptRaw =
+    `${uiGenSettingsPriorityBlock}` +
     `${priorityLadderBlock}` +
     `${biasBlock}` +
     `${playerInputNoRecapReminder}` +
@@ -3257,6 +3290,19 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           dialogueTranslationLanguage: next.dialogueTranslationLanguage,
         }
       })
+    },
+    [currentCharacter.id, patchArchive],
+  )
+
+  const patchDatingPlotFontSettings = useCallback(
+    (next: DatingPlotFontSettings) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      const normalized = normalizeDatingPlotFontSettings(next)
+      patchArchive(charId, (p) => ({
+        ...p,
+        plotFonts: normalized,
+      }))
     },
     [currentCharacter.id, patchArchive],
   )
@@ -4340,6 +4386,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     setDatingLengthTargetChars,
     patchPlotImageSettings,
     patchDatingLanguageSettings,
+    patchDatingPlotFontSettings,
     sendPlayerInput,
     stageBranchChoice,
     branchesLoading,

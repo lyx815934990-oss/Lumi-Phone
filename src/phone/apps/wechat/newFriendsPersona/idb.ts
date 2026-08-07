@@ -510,6 +510,14 @@ function normalizeCharacterTimeSettingsRow(input: unknown): CharacterTimeSetting
     ...(typeof (r as { timePerceptionEnabled?: unknown }).timePerceptionEnabled === 'boolean'
       ? { timePerceptionEnabled: !!(r as { timePerceptionEnabled?: boolean }).timePerceptionEnabled }
       : {}),
+    ...(typeof (r as { preferSystemClockDespiteStoryFloor?: unknown }).preferSystemClockDespiteStoryFloor ===
+    'boolean'
+      ? {
+          preferSystemClockDespiteStoryFloor: !!(
+            r as { preferSystemClockDespiteStoryFloor?: boolean }
+          ).preferSystemClockDespiteStoryFloor,
+        }
+      : {}),
     updatedAt: typeof r.updatedAt === 'number' ? r.updatedAt : now,
   }
 }
@@ -9380,6 +9388,11 @@ export class PersonaDb {
         ? { timePerceptionEnabled: partial.timePerceptionEnabled }
         : base.timePerceptionEnabled !== undefined
           ? { timePerceptionEnabled: base.timePerceptionEnabled }
+          : {}),
+      ...(typeof partial.preferSystemClockDespiteStoryFloor === 'boolean'
+        ? { preferSystemClockDespiteStoryFloor: partial.preferSystemClockDespiteStoryFloor }
+        : base.preferSystemClockDespiteStoryFloor !== undefined
+          ? { preferSystemClockDespiteStoryFloor: base.preferSystemClockDespiteStoryFloor }
           : {}),
       updatedAt: Date.now(),
     }

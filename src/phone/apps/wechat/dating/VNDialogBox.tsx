@@ -116,7 +116,14 @@ export function VNDialogBox({
             <div
               ref={textRef}
               className="min-h-[58px] cursor-pointer whitespace-pre-wrap break-words text-[17px] leading-[1.7]"
-              style={{ color: innerVoice ? '#E8D7AA' : '#1F2937' }}
+              style={{
+                color: innerVoice ? '#E8D7AA' : '#1F2937',
+                fontFamily: innerVoice
+                  ? 'var(--dating-font-inner-os)'
+                  : showNameTag
+                    ? 'var(--dating-font-dialogue)'
+                    : 'var(--dating-font-narrative)',
+              }}
             >
               {loading ? '剧情准备中...' : children}
             </div>
@@ -125,7 +132,14 @@ export function VNDialogBox({
           <button type="button" onClick={onContinue} className="w-full text-left">
             <div
               className="min-h-[58px] whitespace-pre-wrap break-words text-[17px] leading-[1.7]"
-              style={{ color: innerVoice ? '#E8D7AA' : '#1F2937' }}
+              style={{
+                color: innerVoice ? '#E8D7AA' : '#1F2937',
+                fontFamily: innerVoice
+                  ? 'var(--dating-font-inner-os)'
+                  : showNameTag
+                    ? 'var(--dating-font-dialogue)'
+                    : 'var(--dating-font-narrative)',
+              }}
             >
               {loading ? '剧情准备中...' : children}
             </div>

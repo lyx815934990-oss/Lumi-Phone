@@ -1,22 +1,34 @@
 import { DEFAULT_PUBLIC_AVATAR_PATH, DEFAULT_PUBLIC_AVATAR_URL } from '../../types'
-import { resolvePublicImageUrl } from '../../../publicAssetUrl'
+import { publicAssetUrl, resolvePublicImageUrl } from '../../../publicAssetUrl'
 
-const globModules = import.meta.glob('../../../../image/随机网友头像/*.{png,jpg,jpeg,webp}', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>
+/**
+ * 只用来发现文件名，不把图打进 /assets 哈希包。
+ * 展示与落库统一用 `/image/随机网友头像/…`（Vite 中间件 / dist 同步）。
+ */
+const AVATAR_GLOB = import.meta.glob('../../../../image/随机网友头像/*.{png,jpg,jpeg,webp}')
 
-const GLOB_POOL = Object.values(globModules).filter(Boolean)
+function listNetizenAvatarCanonicalPaths(): string[] {
+  const paths = Object.keys(AVATAR_GLOB)
+    .map((key) => {
+      const file = key.replace(/\\/g, '/').split('/').pop()?.split('?')[0]?.trim()
+      if (!file) return ''
+      return `/image/随机网友头像/${file}`
+    })
+    .filter(Boolean)
+  paths.sort()
+  return paths
+}
 
-const STATIC_POOL = [
-  resolvePublicImageUrl(DEFAULT_PUBLIC_AVATAR_PATH),
-  DEFAULT_PUBLIC_AVATAR_URL,
-]
+const CANONICAL_POOL = listNetizenAvatarCanonicalPaths()
 
+/** 规范路径池（写入 IndexedDB / 稳定哈希用） */
+export function listWechatDefaultAvatarPaths(): string[] {
+  return CANONICAL_POOL.length > 0 ? CANONICAL_POOL : [DEFAULT_PUBLIC_AVATAR_PATH]
+}
+
+/** 当前环境下的可请求 URL（img src） */
 export function listWechatDefaultAvatarUrls(): string[] {
-  if (GLOB_POOL.length > 0) return GLOB_POOL
-  return STATIC_POOL
+  return listWechatDefaultAvatarPaths().map((p) => resolvePublicImageUrl(p) || publicAssetUrl(p))
 }
 
 export function pickRandomWechatDefaultAvatar(): string {

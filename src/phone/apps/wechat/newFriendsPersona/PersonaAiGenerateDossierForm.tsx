@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown, Dices, Plus, User, X } from 'lucide-react'
+import { ArrowLeftRight, ChevronDown, Dices, Plus, User, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { MEET_MBTI_SIXTEEN } from '../../lumiMeet/meetPersonaPrompt'
 import { PlatinumSwitch } from './PlatinumSwitch'
@@ -22,10 +22,14 @@ import {
   PERSONA_AI_ORIENTATION_PRESETS,
   PERSONA_AI_OUTFIT_PRESETS,
   PERSONA_AI_PAIN_POINTS_PRESETS,
-  PERSONA_AI_RELATION_PRESETS,
   PERSONA_AI_RELATIONSHIP_HISTORY_PRESETS,
   PERSONA_AI_SOCIAL_MASK_PRESETS,
   PERSONA_AI_SPEECH_STYLE_PRESETS,
+  PERSONA_AI_IDENTITY_ARC_PRESETS,
+  PERSONA_AI_MEETING_PROCESS_PRESETS,
+  applyPersonaAiIdentityArcPreset,
+  applyPersonaAiMeetingProcessPreset,
+  composePersonaAiIdentityArcSeed,
   type PersonaAiGenerateForm,
 } from './personaAiGenerateTypes'
 import type { Gender } from './types'
@@ -543,19 +547,45 @@ export function PersonaAiGenerateDossierForm({
                   </PillRow>
                 }
                 footer={
-                  <input
-                    value={
-                      PERSONA_AI_OCCUPATION_PRESETS.includes(
-                        form.occupationHint as (typeof PERSONA_AI_OCCUPATION_PRESETS)[number],
-                      )
-                        ? ''
-                        : form.occupationHint
-                    }
-                    onChange={(e) => patch({ occupationHint: e.target.value })}
-                    placeholder="或直接输入职业"
-                    maxLength={64}
-                    className="w-full rounded-xl border-0 bg-neutral-50 px-4 py-3 text-[14px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:bg-white focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
-                  />
+                  <div className="space-y-2">
+                    <input
+                      value={
+                        PERSONA_AI_OCCUPATION_PRESETS.includes(
+                          form.occupationHint as (typeof PERSONA_AI_OCCUPATION_PRESETS)[number],
+                        )
+                          ? ''
+                          : form.occupationHint
+                      }
+                      onChange={(e) => patch({ occupationHint: e.target.value })}
+                      placeholder="或直接输入职业"
+                      maxLength={64}
+                      className="w-full rounded-xl border-0 bg-neutral-50 px-4 py-3 text-[14px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:bg-white focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
+                    />
+                    <div className="flex items-center justify-between gap-3 rounded-xl bg-neutral-50 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[12px] font-medium text-neutral-800">职业可变</p>
+                        <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-400">
+                          {form.occupationMutable
+                            ? '已打开：写入尾声「职业身份的当前快照」，可随剧情更新'
+                            : '打开 = 可变（进尾声）；关闭 = 固定（写在「名片基础」序言）'}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span
+                          className={`text-[10px] font-medium tracking-wide ${
+                            form.occupationMutable ? 'text-neutral-800' : 'text-neutral-400'
+                          }`}
+                        >
+                          {form.occupationMutable ? '可变' : '固定'}
+                        </span>
+                        <PlatinumSwitch
+                          checked={form.occupationMutable}
+                          onChange={(next) => patch({ occupationMutable: next })}
+                          aria-label="职业可变：打开为可变，关闭为固定"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 }
               />
 
@@ -1113,33 +1143,245 @@ export function PersonaAiGenerateDossierForm({
             ) : (
             <div className="space-y-3">
               <CollapsiblePresetZone
-                en="The Connection"
-                zh="与你的羁绊"
-                summary={form.relationToUser.trim() || undefined}
-                hint="初始关系 · 单选"
+                en="Opening Process"
+                zh="初始过程"
+                summary={
+                  form.relationDetailHint.trim()
+                    ? form.relationDetailHint.trim()
+                    : form.relationToUser.trim() || undefined
+                }
+                hint="预设一键填入相识过程，也可自定义"
                 presets={
                   <PillRow>
-                    {PERSONA_AI_RELATION_PRESETS.map((rel) => (
-                      <Pill
-                        key={rel}
-                        label={rel}
-                        active={form.relationToUser === rel}
-                        onClick={() => setSingle('relationToUser', rel)}
-                      />
-                    ))}
-                    <CustomPillInput onCommit={(v) => patch({ relationToUser: v })} />
+                    {PERSONA_AI_MEETING_PROCESS_PRESETS.map((p) => {
+                      const active = form.meetingProcessPresetId === p.id
+                      return (
+                        <Pill
+                          key={p.id}
+                          label={p.label}
+                          active={active}
+                          onClick={() => {
+                            if (active) {
+                              patch({
+                                meetingProcessPresetId: '',
+                                relationDetailHint: '',
+                                relationToUser: '',
+                              })
+                            } else {
+                              patch(applyPersonaAiMeetingProcessPreset(p))
+                            }
+                          }}
+                        />
+                      )
+                    })}
+                    <CustomPillInput
+                      placeholder="自定义关系标签"
+                      onCommit={(v) =>
+                        patch({
+                          relationToUser: v,
+                          meetingProcessPresetId: '',
+                        })
+                      }
+                    />
                   </PillRow>
                 }
                 footer={
                   <div className="space-y-2">
-                    <p className="text-[11px] text-neutral-400">相识过程（写入世界书「相遇羁绊」）</p>
+                    <p className="text-[11px] text-neutral-400">
+                      相识过程（写入世界书「相遇羁绊」）
+                      {form.relationToUser.trim()
+                        ? ` · 关系标签：${form.relationToUser.trim()}`
+                        : ''}
+                    </p>
                     <SoftArea
                       value={form.relationDetailHint}
-                      onChange={(v) => patch({ relationDetailHint: v })}
-                      placeholder="如何认识、早期互动；将解释「对你现在」里看法的成因…"
+                      onChange={(v) =>
+                        patch({
+                          relationDetailHint: v,
+                          meetingProcessPresetId: '',
+                        })
+                      }
+                      placeholder="如何认识、早期互动、过程节点…（勿写当前关系/态度，那些留给「对你现在」）"
                       maxLength={240}
-                      rows={2}
+                      rows={3}
                     />
+                  </div>
+                }
+              />
+
+              <CollapsiblePresetZone
+                en="Identity Arc"
+                zh="历史 / 现在身份"
+                defaultOpen={Boolean(composePersonaAiIdentityArcSeed(form))}
+                summary={
+                  composePersonaAiIdentityArcSeed(form)
+                    ? composePersonaAiIdentityArcSeed(form)
+                    : undefined
+                }
+                hint="可点预设一键填满四格，也可分别手改"
+                presets={
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-neutral-400">抓马开局预设 · 点选填入四格身份</p>
+                    <PillRow>
+                      {PERSONA_AI_IDENTITY_ARC_PRESETS.map((p) => {
+                        const active = form.identityArcPresetId === p.id
+                        return (
+                          <Pill
+                            key={p.id}
+                            label={p.label}
+                            active={active}
+                            onClick={() => {
+                              if (active) {
+                                patch({
+                                  historyCharIdentity: '',
+                                  historyUserIdentity: '',
+                                  presentCharIdentity: '',
+                                  presentUserIdentity: '',
+                                  identityArcPresetId: '',
+                                })
+                              } else {
+                                patch(applyPersonaAiIdentityArcPreset(p))
+                              }
+                            }}
+                          />
+                        )
+                      })}
+                    </PillRow>
+                  </div>
+                }
+                footer={
+                  <div className="space-y-4">
+                    <button
+                      type="button"
+                      disabled={!composePersonaAiIdentityArcSeed(form)}
+                      onClick={() => {
+                        patch({
+                          historyCharIdentity: form.historyUserIdentity,
+                          historyUserIdentity: form.historyCharIdentity,
+                          presentCharIdentity: form.presentUserIdentity,
+                          presentUserIdentity: form.presentCharIdentity,
+                          identityArcPresetId: '',
+                        })
+                      }}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-[13px] font-medium text-neutral-800 transition-colors hover:bg-neutral-50 active:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ArrowLeftRight className="size-3.5 shrink-0 text-neutral-500" strokeWidth={2} />
+                      对换角色 / 用户身份
+                    </button>
+                    <div className="rounded-xl bg-neutral-50 px-3 py-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-neutral-400">
+                            Then · 历史身份
+                          </p>
+                          <p className="mt-0.5 text-[12px] text-neutral-500">相识 / 过往阶段时双方是谁</p>
+                        </div>
+                        <button
+                          type="button"
+                          title="对换本行角色与用户"
+                          disabled={!form.historyCharIdentity.trim() && !form.historyUserIdentity.trim()}
+                          onClick={() => {
+                            patch({
+                              historyCharIdentity: form.historyUserIdentity,
+                              historyUserIdentity: form.historyCharIdentity,
+                              identityArcPresetId: '',
+                            })
+                          }}
+                          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-neutral-500 shadow-sm transition-colors hover:text-neutral-800 disabled:opacity-30"
+                        >
+                          <ArrowLeftRight className="size-3.5" strokeWidth={2} />
+                        </button>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <p className="mb-1.5 text-[11px] text-neutral-500">角色 · {'{{char}}'}</p>
+                          <input
+                            value={form.historyCharIdentity}
+                            onChange={(e) =>
+                              patch({
+                                historyCharIdentity: e.target.value,
+                                identityArcPresetId: '',
+                              })
+                            }
+                            placeholder="例：恋人、青梅、匿名网友"
+                            maxLength={64}
+                            className="w-full rounded-xl border-0 bg-white px-3 py-2.5 text-[13px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
+                          />
+                        </div>
+                        <div>
+                          <p className="mb-1.5 text-[11px] text-neutral-500">用户 · {'{{user}}'}</p>
+                          <input
+                            value={form.historyUserIdentity}
+                            onChange={(e) =>
+                              patch({
+                                historyUserIdentity: e.target.value,
+                                identityArcPresetId: '',
+                              })
+                            }
+                            placeholder="例：恋人、被救下的人"
+                            maxLength={64}
+                            className="w-full rounded-xl border-0 bg-white px-3 py-2.5 text-[13px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-neutral-50 px-3 py-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-neutral-400">
+                            Now · 现在身份
+                          </p>
+                          <p className="mt-0.5 text-[12px] text-neutral-500">开局当下双方的社会身份</p>
+                        </div>
+                        <button
+                          type="button"
+                          title="对换本行角色与用户"
+                          disabled={!form.presentCharIdentity.trim() && !form.presentUserIdentity.trim()}
+                          onClick={() => {
+                            patch({
+                              presentCharIdentity: form.presentUserIdentity,
+                              presentUserIdentity: form.presentCharIdentity,
+                              identityArcPresetId: '',
+                            })
+                          }}
+                          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-neutral-500 shadow-sm transition-colors hover:text-neutral-800 disabled:opacity-30"
+                        >
+                          <ArrowLeftRight className="size-3.5" strokeWidth={2} />
+                        </button>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <p className="mb-1.5 text-[11px] text-neutral-500">角色 · {'{{char}}'}</p>
+                          <input
+                            value={form.presentCharIdentity}
+                            onChange={(e) =>
+                              patch({
+                                presentCharIdentity: e.target.value,
+                                identityArcPresetId: '',
+                              })
+                            }
+                            placeholder="例：直属上司、合租室友"
+                            maxLength={64}
+                            className="w-full rounded-xl border-0 bg-white px-3 py-2.5 text-[13px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
+                          />
+                        </div>
+                        <div>
+                          <p className="mb-1.5 text-[11px] text-neutral-500">用户 · {'{{user}}'}</p>
+                          <input
+                            value={form.presentUserIdentity}
+                            onChange={(e) =>
+                              patch({
+                                presentUserIdentity: e.target.value,
+                                identityArcPresetId: '',
+                              })
+                            }
+                            placeholder="例：下属员工、租客"
+                            maxLength={64}
+                            className="w-full rounded-xl border-0 bg-white px-3 py-2.5 text-[13px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 }
               />

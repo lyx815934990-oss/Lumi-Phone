@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 import type { WeChatBubbleTheme, WeChatTheme } from '../../types'
 import type { ChatTheme } from './chatTheme/types'
@@ -14,8 +14,15 @@ import {
   resolveEffectiveChatInputBarForBubble,
 } from './wechatBubblePresets'
 import { chatDisplayFontCssVars, resolveChatDisplayFontFamily } from './wechatBubbleTemplateFonts'
+import {
+  chatBubbleSideFontCssVars,
+  ensureWeChatBubbleSideFontsLoaded,
+} from './wechatBubbleSideFonts'
 import { resolveMessengerBubbleStyle } from './wechatMessengerSpecialBubbles'
 import { weChatChatSkinCssProperties } from './wechatChatSkinVars'
+import { wrapWeChatChatSkinScopedCss } from './bubblePack/scopedCss'
+import { WeChatAvatarChromeProvider, WeChatAvatarChromeWrap } from './WeChatAvatarChromeWrap'
+import { WeChatChatSkinEngineProvider } from './WeChatChatSkinEngineContext'
 import './wechatChatSkinScope.css'
 
 const SAMPLE_LOCATION = {
@@ -64,14 +71,16 @@ function PreviewChatMessageRow({
   const showAvatarVisual = bubble.showAvatar && showAvatarColumn
   const reserveAvatarGutter = bubble.showAvatar
   const avatarPlaceholder = (
-    <div
-      className="h-10 w-10 shrink-0"
-      style={{
-        borderRadius: `${bubble.avatarRadiusPx}px`,
-        background: isSelf ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.06)',
-      }}
-      aria-hidden
-    />
+    <WeChatAvatarChromeWrap side={isSelf ? 'self' : 'other'}>
+      <div
+        className="h-10 w-10 shrink-0"
+        style={{
+          borderRadius: `${bubble.avatarRadiusPx}px`,
+          background: isSelf ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.06)',
+        }}
+        aria-hidden
+      />
+    </WeChatAvatarChromeWrap>
   )
 
   if (!isSelf) {
@@ -135,7 +144,7 @@ export function WeChatChatSkinPreviewPanel({
     () => ({ ...chatTheme, inputBar }),
     [chatTheme, inputBar],
   )
-  const messengerStyle = resolveMessengerBubbleStyle(effectiveBubble)
+  const messengerStyle = resolveMessengerBubbleStyle(effectiveBubble, wechatTheme.chatSkinEngine)
   const inputLayout = inputBar.layout ?? 'lumi'
   const mergeAvatarGroup =
     effectiveBubble.bubbleTailStyle === 'wechat' ? false : effectiveBubble.mergeConsecutiveAvatarGroup
@@ -148,6 +157,7 @@ export function WeChatChatSkinPreviewPanel({
   const scopeStyle: CSSProperties = {
     ...roomBgStyle,
     ...chatDisplayFontCssVars(resolveChatDisplayFontFamily(effectiveBubble)),
+    ...chatBubbleSideFontCssVars(effectiveBubble),
     ...weChatChatSkinCssProperties(wechatTheme, previewChatTheme),
     '--wx-self-bubble-bg': effectiveBubble.selfBubbleBg,
     '--wx-self-bubble-text': wechatTheme.selfBubbleText,
@@ -159,12 +169,30 @@ export function WeChatChatSkinPreviewPanel({
     '--wx-timestamp-text': wechatTheme.timestampText,
   } as CSSProperties
 
+  useEffect(() => {
+    void ensureWeChatBubbleSideFontsLoaded(effectiveBubble)
+  }, [
+    effectiveBubble.selfFont?.id,
+    effectiveBubble.selfFont?.family,
+    effectiveBubble.otherFont?.id,
+    effectiveBubble.otherFont?.family,
+  ])
+
   return (
+    <WeChatChatSkinEngineProvider engine={wechatTheme.chatSkinEngine}>
+    <WeChatAvatarChromeProvider chrome={wechatTheme.avatarChrome}>
     <div
       data-wx-chat-skin-scope
       className="mt-3 overflow-hidden rounded-[14px] border border-black/5 shadow-sm"
       style={scopeStyle}
     >
+      {wechatTheme.chatSkinScopedCss?.trim() ? (
+        <style
+          dangerouslySetInnerHTML={{
+            __html: wrapWeChatChatSkinScopedCss(wechatTheme.chatSkinScopedCss),
+          }}
+        />
+      ) : null}
       <header
         data-wx-chat-header
         className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2"
@@ -392,5 +420,7 @@ export function WeChatChatSkinPreviewPanel({
         />
       </div>
     </div>
+    </WeChatAvatarChromeProvider>
+    </WeChatChatSkinEngineProvider>
   )
 }

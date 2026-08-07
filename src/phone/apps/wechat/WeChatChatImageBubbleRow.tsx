@@ -280,8 +280,8 @@ export function WeChatChatImageBubbleRow({
           <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">
             {composeMultiSelectLeading(
               multiSelectAvatar,
-              rankBeside || !chatOtherAvatarRankBadge ? (
-              otherChatAvatarSrc ? (
+              <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge}>
+                {otherChatAvatarSrc ? (
                 <img
                   src={otherChatAvatarSrc}
                   alt=""
@@ -306,37 +306,8 @@ export function WeChatChatImageBubbleRow({
                   onClick={onOtherAvatarClick}
                   aria-hidden
                 />
-              )
-            ) : (
-              <ChatGroupSpeakerRankOnAvatar rankBadge={chatOtherAvatarRankBadge}>
-                {otherChatAvatarSrc ? (
-                  <img
-                    src={otherChatAvatarSrc}
-                    alt=""
-                    width={avatarPx}
-                    height={avatarPx}
-                    className="h-10 w-10 shrink-0 object-cover"
-                    style={{
-                      borderRadius: `${bubble.avatarRadiusPx}px`,
-                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                    }}
-                    onClick={onOtherAvatarClick}
-                    aria-hidden
-                  />
-                ) : (
-                  <div
-                    className="h-10 w-10 shrink-0"
-                    style={{
-                      borderRadius: `${bubble.avatarRadiusPx}px`,
-                      background: 'rgba(0,0,0,0.06)',
-                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                    }}
-                    onClick={onOtherAvatarClick}
-                    aria-hidden
-                  />
-                )}
-              </ChatGroupSpeakerRankOnAvatar>
-              ),
+              )}
+              </ChatGroupSpeakerRankOnAvatar>,
               showAvatarColumn,
             )}
             <div className="flex min-w-0 flex-1 flex-col items-start gap-[3px]">
@@ -357,13 +328,9 @@ export function WeChatChatImageBubbleRow({
           <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">
             {composeMultiSelectLeading(
               multiSelectAvatar,
-              rankBeside || !chatOtherAvatarRankBadge ? (
+              <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge}>
                 <div className="h-10 w-10 shrink-0" aria-hidden />
-              ) : (
-                <ChatGroupSpeakerRankOnAvatar rankBadge={chatOtherAvatarRankBadge}>
-                  <div className="h-10 w-10 shrink-0" aria-hidden />
-                </ChatGroupSpeakerRankOnAvatar>
-              ),
+              </ChatGroupSpeakerRankOnAvatar>,
               showAvatarColumn,
             )}
             <div className="flex min-w-0 flex-1 flex-col items-start gap-[3px]">
@@ -414,8 +381,8 @@ export function WeChatChatImageBubbleRow({
           {imageBlock}
           {composeMultiSelectLeading(
             multiSelectAvatar,
-            rankBeside || !chatSelfAvatarRankBadge ? (
-            selfChatAvatarSrc ? (
+            <ChatGroupSpeakerRankOnAvatar chromeSide="self" rankBadge={rankBeside ? null : chatSelfAvatarRankBadge}>
+                {selfChatAvatarSrc ? (
               <img
                 src={selfChatAvatarSrc}
                 alt=""
@@ -437,34 +404,8 @@ export function WeChatChatImageBubbleRow({
                 }}
                 aria-hidden
               />
-            )
-          ) : (
-            <ChatGroupSpeakerRankOnAvatar rankBadge={chatSelfAvatarRankBadge}>
-              {selfChatAvatarSrc ? (
-                <img
-                  src={selfChatAvatarSrc}
-                  alt=""
-                  width={avatarPx}
-                  height={avatarPx}
-                  className="h-10 w-10 shrink-0 object-cover"
-                  style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
-                    border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                  }}
-                  aria-hidden
-                />
-              ) : (
-                <div
-                  className="h-10 w-10 shrink-0"
-                  style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
-                    background: 'rgba(0,0,0,0.04)',
-                  }}
-                  aria-hidden
-                />
-              )}
-            </ChatGroupSpeakerRankOnAvatar>
-          ),
+            )}
+              </ChatGroupSpeakerRankOnAvatar>,
           showAvatarColumn,
           )}
         </div>
@@ -473,13 +414,9 @@ export function WeChatChatImageBubbleRow({
           {imageBlock}
           {composeMultiSelectLeading(
             multiSelectAvatar,
-            rankBeside || !chatSelfAvatarRankBadge ? (
-              <div className="h-10 w-10 shrink-0" aria-hidden />
-            ) : (
-              <ChatGroupSpeakerRankOnAvatar rankBadge={chatSelfAvatarRankBadge}>
+            <ChatGroupSpeakerRankOnAvatar chromeSide="self" rankBadge={rankBeside ? null : chatSelfAvatarRankBadge}>
                 <div className="h-10 w-10 shrink-0" aria-hidden />
-              </ChatGroupSpeakerRankOnAvatar>
-            ),
+              </ChatGroupSpeakerRankOnAvatar>,
             showAvatarColumn,
           )}
         </div>

@@ -99,16 +99,21 @@ export async function syncNetworkStoryNowFromPrimary(params: {
           settings?.timePerceptionEnabled === false ||
           peerLive == null ||
           peerLive < sourceNowMs
-        if (needsClock) {
+        const clearDetach = settings?.preferSystemClockDespiteStoryFloor === true
+        if (needsClock || clearDetach) {
           await personaDb.putCharacterTimeSettings({
             characterId: pid,
-            config: normalizeWeChatTimeConfig({
-              mode: 'custom',
-              customBaseTime: sourceNowMs,
-              customAnchorRealTime: wallNow,
-              timeMultiplier: settings?.config?.timeMultiplier ?? 1,
-            }),
-            timePerceptionEnabled: true,
+            config: needsClock
+              ? normalizeWeChatTimeConfig({
+                  mode: 'custom',
+                  customBaseTime: sourceNowMs,
+                  customAnchorRealTime: wallNow,
+                  timeMultiplier: settings?.config?.timeMultiplier ?? 1,
+                })
+              : normalizeWeChatTimeConfig(settings?.config),
+            timePerceptionEnabled: needsClock ? true : settings?.timePerceptionEnabled !== false,
+            // 线下/人脉推进重新锁定线上时钟
+            preferSystemClockDespiteStoryFloor: false,
           })
           wrote = true
         }

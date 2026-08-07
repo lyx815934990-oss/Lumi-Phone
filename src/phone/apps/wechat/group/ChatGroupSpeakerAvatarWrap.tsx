@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { WeChatAvatarChromeWrap, type WeChatAvatarChromeSide } from '../WeChatAvatarChromeWrap'
 
 const GOLD = '#E8C87C'
 const GOLD_BORDER = 'rgba(201, 162, 39, 0.95)'
@@ -53,18 +54,22 @@ export function ChatGroupSenderNicknameWithRank({
   )
 }
 
-/** 关闭「显示成员昵称」时：头衔叠在头像内侧左上角 */
+/** 关闭「显示成员昵称」时：头衔叠在头像内侧左上角；可选叠加主题头像框/角标 */
 export function ChatGroupSpeakerRankOnAvatar({
   rankBadge,
   children,
+  chromeSide,
 }: {
   rankBadge: ChatGroupSpeakerRankBadge | null | undefined
   children: ReactNode
+  /** 传入则叠加气泡主题的头像框 / 角标 */
+  chromeSide?: WeChatAvatarChromeSide
 }) {
   const badgeLabel = rankBadge === 'owner' ? '群主' : rankBadge === 'admin' ? '管理员' : null
   const badgeFontPx = rankBadge === 'admin' ? 6 : 8
-  if (!badgeLabel) return <>{children}</>
-  return (
+  const withRank = !badgeLabel ? (
+    <>{children}</>
+  ) : (
     <div className="relative inline-flex h-10 w-10 shrink-0 overflow-visible">
       {children}
       <span
@@ -82,9 +87,6 @@ export function ChatGroupSpeakerRankOnAvatar({
       </span>
     </div>
   )
-}
-
-/** 头像不再叠头衔时仅用子节点，保留别名以免大范围改名 */
-export function ChatGroupSpeakerAvatarWrap({ children }: { children: ReactNode }) {
-  return <>{children}</>
+  if (!chromeSide) return withRank
+  return <WeChatAvatarChromeWrap side={chromeSide}>{withRank}</WeChatAvatarChromeWrap>
 }

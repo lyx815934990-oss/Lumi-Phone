@@ -159,6 +159,85 @@ async function resolvePlotDerivedStoryFloor(characterId: string): Promise<StoryT
   return null
 }
 
+/** 线上时钟是否已主动脱离剧情 floor（重置为系统时间后） */
+export function isPreferSystemClockDespiteStoryFloor(
+  row: { preferSystemClockDespiteStoryFloor?: boolean } | null | undefined,
+): boolean {
+  return row?.preferSystemClockDespiteStoryFloor === true
+}
+
+/**
+ * 将本角色线上时钟重置为设备本地时间，并解除剧情锚点对线上时钟的锁定。
+ * 不改写线下摘要 / 约会剧情正文；下次线下推进 syncOnlineClock 时会重新锁定。
+ */
+export async function resetOnlineClockToSystemTime(characterId: string): Promise<void> {
+  const cid = characterId.trim()
+  if (!cid) throw new Error('missing_character_id')
+
+  const now = Date.now()
+  const prev = (await personaDb.getStoryTimelineState(cid)) ?? createEmptyStoryTimelineState(cid)
+  const next: StoryTimelineState = {
+    ...prev,
+    characterId: cid,
+    updatedAt: now,
+    todos: [],
+  }
+  delete (next as { currentStoryDay?: string }).currentStoryDay
+  delete (next as { currentStoryTime?: string }).currentStoryTime
+  await personaDb.putStoryTimelineState(next)
+
+  const settings = await personaDb.getCharacterTimeSettings(cid)
+  await personaDb.putCharacterTimeSettings({
+    characterId: cid,
+    config: normalizeWeChatTimeConfig({
+      mode: 'system',
+      customBaseTime: now,
+      customAnchorRealTime: now,
+      timeMultiplier: settings?.config?.timeMultiplier ?? 1,
+    }),
+    timePerceptionEnabled: settings?.timePerceptionEnabled !== false,
+    preferSystemClockDespiteStoryFloor: true,
+  })
+}
+
+/**
+ * 将线上时钟重新对齐到当前剧情时间点（线下摘要 / plot / 人脉锚点），并恢复剧情锁定。
+ * 用于手误「重置为系统时间」后的撤销。
+ */
+export async function restoreOnlineClockToStoryTime(
+  characterId: string,
+): Promise<{ storyLabel: string; chosenTimeMs: number }> {
+  const cid = characterId.trim()
+  if (!cid) throw new Error('missing_character_id')
+
+  const settings = await personaDb.getCharacterTimeSettings(cid)
+  // 先清脱离标记，否则 fusion 仍会把 floor 当成无效
+  await personaDb.putCharacterTimeSettings({
+    characterId: cid,
+    config: normalizeWeChatTimeConfig(settings?.config),
+    timePerceptionEnabled: true,
+    preferSystemClockDespiteStoryFloor: false,
+  })
+
+  const floor = await resolveCharacterStoryTimeFloor(cid)
+  if (!floor.hasFloor || floor.floorMs == null) {
+    throw new Error('no_story_floor')
+  }
+
+  const result = await applyOnlineChatTimeFusion({
+    characterId: cid,
+    chosenTimeMs: floor.floorMs,
+    timeMultiplier: settings?.config?.timeMultiplier ?? 1,
+    timePerceptionEnabled: true,
+    mode: 'custom',
+  })
+
+  return {
+    storyLabel: result.storyLabel || floor.label,
+    chosenTimeMs: result.chosenTimeMs,
+  }
+}
+
 /** 解析角色当前剧情时间下限（state 优先，否则线下 plot / 时间轴行锚点） */
 export async function resolveCharacterStoryTimeFloor(characterId: string): Promise<StoryTimeFloorInfo> {
   const cid = characterId.trim()
@@ -237,16 +316,19 @@ export async function applyOnlineChatTimeFusion(
   const cid = params.characterId.trim()
   if (!cid) throw new Error('missing_character_id')
 
+  const settings = await personaDb.getCharacterTimeSettings(cid)
+  const preferSystem = isPreferSystemClockDespiteStoryFloor(settings)
   const floor = await resolveCharacterStoryTimeFloor(cid)
   let chosen = Math.round(params.chosenTimeMs)
   if (!Number.isFinite(chosen) || chosen <= 0) chosen = Date.now()
   let clamped = false
-  if (floor.floorMs != null && chosen < floor.floorMs) {
+  // 已主动脱离剧情锁定时：线上时钟不受 floor 钳制 / 强制 custom
+  const hasFloor = !preferSystem && floor.hasFloor && floor.floorMs != null
+  if (hasFloor && floor.floorMs != null && chosen < floor.floorMs) {
     chosen = floor.floorMs
     clamped = true
   }
 
-  const hasFloor = floor.hasFloor && floor.floorMs != null
   const mode: WeChatTimeConfig['mode'] = hasFloor ? 'custom' : params.mode === 'system' ? 'system' : 'custom'
   const perception = hasFloor ? true : params.timePerceptionEnabled !== false
   const now = Date.now()
@@ -261,6 +343,7 @@ export async function applyOnlineChatTimeFusion(
     characterId: cid,
     config,
     timePerceptionEnabled: perception,
+    preferSystemClockDespiteStoryFloor: hasFloor ? false : preferSystem,
   })
 
   if (!hasFloor) {
@@ -320,6 +403,9 @@ export async function syncStoryTimelineNowFromOnlineClock(params: {
   }
 
   const settings = await personaDb.getCharacterTimeSettings(cid)
+  if (isPreferSystemClockDespiteStoryFloor(settings)) {
+    return { storyLabel: floor.label, synced: false }
+  }
   const mode = settings?.config?.mode ?? 'system'
   if (mode !== 'custom' || settings?.timePerceptionEnabled === false) {
     return { storyLabel: floor.label, synced: false }

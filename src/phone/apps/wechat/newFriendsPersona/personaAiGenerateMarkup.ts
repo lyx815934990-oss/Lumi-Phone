@@ -1,9 +1,11 @@
 import {
   PERSONA_AI_COMPACT_ENTRY_NAMES,
   PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME,
+  PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME,
   PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
   canonicalizePersonaAiCompactEntryName,
   isPersonaAiOrientationEpilogueName,
+  isPersonaAiOccupationEpilogueName,
   isPersonaAiRelationshipHistoryEntryName,
   type PersonaAiEpilogueEntry,
 } from './personaAiWorldBooks'
@@ -79,6 +81,9 @@ function resolveBlockTitle(
   if (isPersonaAiOrientationEpilogueName(t)) {
     return { kind: 'wb', name: PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME }
   }
+  if (isPersonaAiOccupationEpilogueName(t)) {
+    return { kind: 'wb', name: PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME }
+  }
   if (isPersonaAiRelationshipHistoryEntryName(t)) {
     return { kind: 'wb', name: PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME }
   }
@@ -101,13 +106,18 @@ function resolveBlockTitle(
  */
 export function buildPersonaAiMarkupFormatSpec(opts?: {
   orientationMutable?: boolean
+  occupationMutable?: boolean
   includeRelationshipHistory?: boolean
 }): string {
   const orientationMutable = opts?.orientationMutable ?? false
+  const occupationMutable = opts?.occupationMutable ?? false
   const includeHistory = opts?.includeRelationshipHistory ?? false
   const wbNames: string[] = []
   for (const n of PERSONA_AI_COMPACT_ENTRY_NAMES) {
     wbNames.push(n)
+    if (occupationMutable && n === '名片基础') {
+      wbNames.push(PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME)
+    }
     if (orientationMutable && n === '性格内核') {
       wbNames.push(PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME)
     }
@@ -116,6 +126,7 @@ export function buildPersonaAiMarkupFormatSpec(opts?: {
     }
   }
   const extraNote = [
+    occupationMutable ? '职业可变尾声 1 条' : '',
     orientationMutable ? '取向可变尾声 1 条' : '',
     includeHistory ? '过往感情史 1 条' : '',
   ]
@@ -123,11 +134,17 @@ export function buildPersonaAiMarkupFormatSpec(opts?: {
     .join(' + ')
   const wbBlocks = wbNames
     .map((n) => {
+      if (n === PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME) {
+        return `【${n}】\n（职业「可变」专用尾声：约 ${Math.floor(ENTRY_TARGET_CHARS * 0.55)}–${ENTRY_TARGET_CHARS} 字；只写当下稳定职业/社会身份，禁止长段写进「名片基础」）`
+      }
       if (n === PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME) {
         return `【${n}】\n（取向「可变」专用尾声：约 ${Math.floor(ENTRY_TARGET_CHARS * 0.55)}–${ENTRY_TARGET_CHARS} 字；只写当下稳定自我认同，禁止写进「性格内核」）`
       }
       if (n === PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME) {
         return `【${n}】\n（约 ${Math.floor(ENTRY_TARGET_CHARS * 0.7)}–${ENTRY_TARGET_CHARS} 字；角色过往感情/前任余波；禁止写成与 {{user}} 的当前关系；勿并入「亲密与恋爱观」）`
+      }
+      if (n === '名片基础' && occupationMutable) {
+        return `【${n}】\n（约 ${ENTRY_TARGET_CHARS} 字；姓名气质摘要/年龄层/标签与雷点；**职业详述只写「${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}」**）`
       }
       if (n === '性格内核' && orientationMutable) {
         return `【${n}】\n（约 ${ENTRY_TARGET_CHARS} 字；面具/三观/身世/反差萌；**勿写性取向**，取向只写在「${PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME}」）`

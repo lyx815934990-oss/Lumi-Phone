@@ -1,12 +1,19 @@
 import { DEFAULT_PUBLIC_AVATAR_PATH } from '../../types'
 import { canonicalPublicImagePath, resolvePublicImageUrl } from '../../../publicAssetUrl'
-import { listWechatDefaultAvatarUrls } from '../wechat/wechatDefaultAvatars'
+import { listWechatDefaultAvatarPaths } from '../wechat/wechatDefaultAvatars'
+
+/** 历史 bug：池被打成 /assets 后全部丢弃，网友头像回退成个人名片默认图 */
+function isBrokenNetizenAvatarFallback(url: string): boolean {
+  const c = canonicalPublicImagePath(url)
+  if (!c) return true
+  if (c === DEFAULT_PUBLIC_AVATAR_PATH) return true
+  if (c.endsWith('/个人名片默认头像1.png')) return true
+  return false
+}
 
 /** 从 image/随机网友头像 构建可落库的规范路径池 */
 function listPulseNetizenAvatarPaths(): string[] {
-  const paths = listWechatDefaultAvatarUrls()
-    .map((url) => canonicalPublicImagePath(url))
-    .filter((p) => p.startsWith('/image/'))
+  const paths = listWechatDefaultAvatarPaths().filter((p) => p.includes('/随机网友头像/'))
   return paths.length ? paths : [DEFAULT_PUBLIC_AVATAR_PATH]
 }
 
@@ -39,7 +46,7 @@ export function resolvePulseAuthorAvatarUrl(stored?: string): string | undefined
   return resolved || undefined
 }
 
-/** 落库前补全网友头像（已有自定义头像则保留） */
+/** 落库前补全网友头像（已有自定义头像则保留；历史错误回退图会重抽） */
 export function resolvePulseAuthorAvatarForPersist(
   authorPovId: string,
   authorName: string,
@@ -47,7 +54,9 @@ export function resolvePulseAuthorAvatarForPersist(
   isAiGenerated?: boolean,
 ): string | undefined {
   const existing = authorAvatarUrl?.trim()
-  if (existing) return existing
-  if (!isPulseNetizenAuthor(authorPovId, isAiGenerated)) return undefined
+  if (existing && !isBrokenNetizenAvatarFallback(existing)) return existing
+  if (!isPulseNetizenAuthor(authorPovId, isAiGenerated)) {
+    return existing || undefined
+  }
   return pickStablePulseNetizenAvatarPath(authorPovId.trim() || authorName.trim())
 }

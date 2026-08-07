@@ -1,4 +1,5 @@
 import { publicAssetUrl } from '../publicAssetUrl'
+import type { WeChatAvatarChrome } from './apps/wechat/wechatAvatarChrome'
 
 /** 全局数字字体栈（与朋友圈相册日期戳一致：宋体衬线数字） */
 export const PHONE_NUM_FONT_FAMILY =
@@ -34,6 +35,18 @@ export type PhoneTheme = {
   radiusSm: string
   /** 全局字体栈（会映射到 CSS 变量 --phone-font） */
   fontFamily: string
+  /**
+   * 自定义上传全局字体元数据；文件 dataUrl 侧存 IndexedDB，不进 customization JSON 大字段。
+   * null/缺省 = 未使用上传字体（仅用 fontFamily 预设或手写栈）
+   */
+  customFont?: PhoneCustomGlobalFont | null
+}
+
+/** 小手机外观 · 全局自定义字体（文件本体另存） */
+export type PhoneCustomGlobalFont = {
+  id: string
+  family: string
+  fileName: string
 }
 
 export type Profile = {
@@ -166,10 +179,30 @@ export type WxFillStyle = {
   blurPx: number
 }
 
-/** 聊天室背景：纯色或图片（仅作用于聊天页消息区，不含 Tab 底图） */
+/** 聊天室背景：纯色 / 图片 / 渐变（仅作用于聊天页消息区，不含 Tab 底图） */
+export type WeChatChatRoomGradientType = 'linear' | 'radial'
+
 export type WeChatChatRoomBg =
   | { mode: 'solid'; color: string }
   | { mode: 'image'; imageUrl: string; fallbackColor: string }
+  | {
+      mode: 'gradient'
+      /** linear（默认）| radial */
+      gradientType?: WeChatChatRoomGradientType
+      /** 线性角度，单位 deg，默认 180 */
+      angle?: number
+      /** 色标（≥2）；也可用 colorStart/colorEnd */
+      stops?: string[]
+      colorStart?: string
+      colorEnd?: string
+      /**
+       * 完全自定义 CSS background 值（如 `linear-gradient(...)` / `radial-gradient(...)`）。
+       * 有值时优先于 stops / angle。
+       */
+      css?: string
+      /** 气泡尾巴遮罩等用的实底回退色 */
+      fallbackColor?: string
+    }
 
 /** 微信聊天室默认壁纸（仓库根 `image/`，开发期由 Vite 中间件提供） */
 export const DEFAULT_WECHAT_CHAT_WALLPAPER_PATH = '/image/聊天壁纸默认1.jpg'
@@ -197,6 +230,37 @@ export type WeChatBubbleTheme = {
    * 需 `showAvatar` 为 true 时才有视觉效果。
    */
   mergeConsecutiveAvatarGroup: boolean
+  /**
+   * 用户侧（自己）气泡自定义字体元数据；文件 dataUrl 侧存 IndexedDB，不进 customization JSON。
+   * null/缺省 = 跟随 --wx-chat-font / --wx-font
+   */
+  selfFont?: WeChatBubbleSideFont | null
+  /**
+   * 角色侧（对方）气泡自定义字体元数据
+   */
+  otherFont?: WeChatBubbleSideFont | null
+}
+
+/** 聊天气泡单侧自定义字体（文件本体另存） */
+export type WeChatBubbleSideFont = {
+  id: string
+  family: string
+  fileName: string
+}
+
+export function wechatBubbleSideFontsEqual(
+  a: WeChatBubbleSideFont | null | undefined,
+  b: WeChatBubbleSideFont | null | undefined,
+): boolean {
+  const aa = a?.id?.trim() || ''
+  const bb = b?.id?.trim() || ''
+  if (!aa && !bb) return true
+  if (!aa || !bb) return false
+  return (
+    aa === bb &&
+    (a?.family ?? '') === (b?.family ?? '') &&
+    (a?.fileName ?? '') === (b?.fileName ?? '')
+  )
 }
 
 export function wechatBubbleThemesEqual(a: WeChatBubbleTheme, b: WeChatBubbleTheme): boolean {
@@ -209,7 +273,9 @@ export function wechatBubbleThemesEqual(a: WeChatBubbleTheme, b: WeChatBubbleThe
     a.avatarRadiusPx === b.avatarRadiusPx &&
     a.showBubbleTail === b.showBubbleTail &&
     a.bubbleTailStyle === b.bubbleTailStyle &&
-    a.mergeConsecutiveAvatarGroup === b.mergeConsecutiveAvatarGroup
+    a.mergeConsecutiveAvatarGroup === b.mergeConsecutiveAvatarGroup &&
+    wechatBubbleSideFontsEqual(a.selfFont, b.selfFont) &&
+    wechatBubbleSideFontsEqual(a.otherFont, b.otherFont)
   )
 }
 
@@ -225,6 +291,8 @@ export function wechatBubbleSkinKey(bubble: WeChatBubbleTheme): string {
     bubble.avatarRadiusPx,
     bubble.selfBubbleBg,
     bubble.otherBubbleBg,
+    bubble.selfFont?.id ?? '',
+    bubble.otherFont?.id ?? '',
   ].join('|')
 }
 
@@ -302,6 +370,22 @@ export type WeChatTheme = {
 
   /** 会话卡片样式（信息页列表项背景） */
   conversationCard: WxFillStyle
+
+  /**
+   * 气泡包 / 高级美化：聊天页皮肤 CSS 变量覆盖
+   * 键为 `--wx-chat-*` / `--wx-special-*`
+   */
+  chatSkinOverrides?: Record<string, string>
+  /** 气泡包可选：仅作用于 `[data-wx-chat-skin-scope]` 的 CSS */
+  chatSkinScopedCss?: string
+  /**
+   * 皮肤引擎：structured=内置特殊消息皮；css=纯 CSS（结构壳 + scopedCss）
+   */
+  chatSkinEngine?: 'structured' | 'css'
+  /**
+   * 头像框 / 角标（assetId 指向 phoneKv 侧存，不把 dataUrl 写入 customization JSON）
+   */
+  avatarChrome?: WeChatAvatarChrome
 }
 
 /** 布局与系统 UI（持久化到 IndexedDB `phoneKv`，玩家可切换） */
@@ -448,7 +532,7 @@ export const DEFAULT_APP_PAGE_STYLE: AppPageStyle = {
   cardBg: '#ffffff',
   cardBgImageUrl: '',
   fontFamily:
-    '"Cormorant Garamond", "Noto Serif SC", "STKaiti", "KaiTi", "Times New Roman", serif',
+    '"Cormorant Garamond", "Noto Serif SC", "STKaiti", "KaiTi", "Songti SC", "STSong", "Times New Roman", serif',
 }
 
 /** 主屏桌面个人名片默认资料 */
@@ -483,9 +567,9 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
     radiusLg: '28px',
     radiusMd: '18px',
     radiusSm: '14px',
-    // 默认：艺术衬线
+    // 默认：艺术衬线（中文优先宋楷系统字体，避免外链未就绪时掉进黑体）
     fontFamily:
-      '"Cormorant Garamond", "Noto Serif SC", "STKaiti", "KaiTi", "Times New Roman", serif',
+      '"Cormorant Garamond", "Noto Serif SC", "STKaiti", "KaiTi", "Songti SC", "STSong", "Times New Roman", serif',
   },
   profile: { ...DEFAULT_WECHAT_MIRROR_PROFILE },
   personalCardProfile: { ...DEFAULT_PERSONAL_CARD_PROFILE },
@@ -678,6 +762,15 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
       glassEnabled: false,
       glassOpacity: 0,
       blurPx: 0,
+    },
+    chatSkinOverrides: {},
+    chatSkinScopedCss: '',
+    chatSkinEngine: 'structured',
+    avatarChrome: {
+      selfFrameAssetId: null,
+      otherFrameAssetId: null,
+      selfBadge: null,
+      otherBadge: null,
     },
   },
   wechatPersonaContacts: [],

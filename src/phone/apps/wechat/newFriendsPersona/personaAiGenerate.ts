@@ -144,8 +144,10 @@ function assemblePersonaCharacter(parsed: Record<string, unknown>, params: Assem
     params.playerDisplayName,
     {
       orientationMutable: params.form.orientationMutable,
+      occupationMutable: params.form.occupationMutable,
       relationToUser: params.form.relationToUser,
       orientationLabel: pickStr(parsed.orientation, 48) || params.form.orientationHint.trim() || undefined,
+      occupationLabel: pickStr(parsed.occupation, 48) || params.form.occupationHint.trim() || undefined,
       includeRelationshipHistory: Boolean(historyHint),
       relationshipHistoryHint: historyHint || undefined,
     },
@@ -269,6 +271,7 @@ export async function generatePersonaWithAi(params: {
 
   const system = buildPersonaAiGenerateSystemPrompt({
     orientationMutable: params.form.orientationMutable,
+    occupationMutable: params.form.occupationMutable,
     nsfwEnabled: params.form.nsfwEnabled,
     relationToUser: params.form.relationToUser,
     nsfwHint: params.form.nsfwHint,
@@ -324,6 +327,7 @@ export async function repairPersonaAiWithAi(params: {
 
   const system = buildPersonaAiRepairSystemPrompt({
     orientationMutable: params.form.orientationMutable,
+    occupationMutable: params.form.occupationMutable,
     nsfwEnabled: params.form.nsfwEnabled,
     relationToUser: params.form.relationToUser,
     mode: params.mode,

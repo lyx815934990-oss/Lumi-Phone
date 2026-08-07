@@ -403,6 +403,11 @@ export type CharacterTimeSettingsRow = {
    * 关闭时模型仅根据聊天记录与对话语境推断时段；缺省 true。
    */
   timePerceptionEnabled?: boolean
+  /**
+   * true：即使用户侧仍有剧情锚点 / 线下摘要，线上时钟也允许回到系统时间，不被剧情 floor 锁定。
+   * 下次该角色线下剧情推进并 syncOnlineClock 时会清掉。
+   */
+  preferSystemClockDespiteStoryFloor?: boolean
   updatedAt: number
 }
 

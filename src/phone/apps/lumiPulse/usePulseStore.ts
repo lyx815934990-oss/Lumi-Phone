@@ -2839,14 +2839,14 @@ export const usePulseStore = create<PulseStore>((set, get) => ({
       const world = getWorldSlice(nextRoot.byAccount[ctx.accountId]!, wid)
       let postsChanged = false
       const posts = world.posts.map((p) => {
-        if (p.id !== pid || p.authorAvatarUrl?.trim()) return p
+        if (p.id !== pid) return p
         const nextUrl = resolvePulseAuthorAvatarForPersist(
           p.authorPovId,
           p.authorName,
           p.authorAvatarUrl,
           p.isAiGenerated,
         )
-        if (!nextUrl) return p
+        if (!nextUrl || nextUrl === p.authorAvatarUrl?.trim()) return p
         postsChanged = true
         return { ...p, authorAvatarUrl: nextUrl }
       })
@@ -2854,14 +2854,13 @@ export const usePulseStore = create<PulseStore>((set, get) => ({
       const commentList = world.commentsByPostId[pid] ?? []
       let commentsChanged = false
       const nextComments = commentList.map((c) => {
-        if (c.authorAvatarUrl?.trim()) return c
         const nextUrl = resolvePulseAuthorAvatarForPersist(
           c.authorPovId,
           c.authorName,
           c.authorAvatarUrl,
           c.isAiGenerated,
         )
-        if (!nextUrl) return c
+        if (!nextUrl || nextUrl === c.authorAvatarUrl?.trim()) return c
         commentsChanged = true
         return { ...c, authorAvatarUrl: nextUrl }
       })

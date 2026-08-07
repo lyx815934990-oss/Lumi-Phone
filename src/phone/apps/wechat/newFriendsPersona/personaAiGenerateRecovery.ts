@@ -3,6 +3,7 @@ import {
   buildPersonaAiIntimatePartnerWordingRules,
   buildPersonaAiNsfwHintToneRules,
   buildPersonaAiOrientationMutableSemanticsRule,
+  buildPersonaAiOccupationMutableSemanticsRule,
   buildPersonaAiPlayerIdentityContextBlock,
   buildPersonaAiPlayerUserGenderRules,
   buildPersonaAiReferencePersonaRules,
@@ -10,17 +11,23 @@ import {
   PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS,
   buildPersonaAiCompactEntryLengthRules,
 } from './personaAiGeneratePrompt'
-import type { PersonaAiGenerateForm } from './personaAiGenerateTypes'
+import {
+  composePersonaAiIdentityArcSeed,
+  type PersonaAiGenerateForm,
+} from './personaAiGenerateTypes'
 import type { Character, Gender, PlayerIdentity } from './types'
 import {
   PERSONA_AI_COMPACT_BOOK_TITLE,
   PERSONA_AI_COMPACT_ENTRY_NAMES,
   PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME,
+  PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME,
   PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
   canonicalizePersonaAiCompactEntryName,
   isPersonaAiOrientationEpilogueName,
+  isPersonaAiOccupationEpilogueName,
   isPersonaAiRelationshipHistoryEntryName,
   pickPersonaAiOrientationEpilogueContent,
+  pickPersonaAiOccupationEpilogueContent,
   pickPersonaAiRelationshipHistoryContent,
   type PersonaAiCompactEntryName,
   type PersonaAiEpilogueEntry,
@@ -638,6 +645,39 @@ export function auditPersonaAiGenerateResult(
     }
   }
 
+  if (form.occupationMutable) {
+    const occContent =
+      pickPersonaAiOccupationEpilogueContent(
+        Array.isArray(meta.parsed.worldBookEntries)
+          ? (meta.parsed.worldBookEntries as PersonaAiEpilogueEntry[])
+          : [],
+      ) ||
+      (() => {
+        const book = findCompactPersonaBook(character)
+        for (const it of book?.items ?? []) {
+          if (isPersonaAiOccupationEpilogueName(String(it.name ?? ''))) {
+            return String(it.content ?? '').trim()
+          }
+        }
+        return ''
+      })()
+    if (!occContent) {
+      issues.push({
+        id: `wb-${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}`,
+        kind: 'missing_epilogue',
+        label: `世界书 · ${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}`,
+        detail: '职业可变时须单独输出该尾声条目',
+      })
+    } else if (isWeakFieldValue(occContent, Math.floor(PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS * 0.35))) {
+      issues.push({
+        id: `wb-${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}`,
+        kind: 'placeholder_field',
+        label: `世界书 · ${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}`,
+        detail: '内容过短或为占位稿',
+      })
+    }
+  }
+
   if (form.relationshipHistoryHint.trim()) {
     const historyContent =
       pickPersonaAiRelationshipHistoryContent(
@@ -676,6 +716,7 @@ export function auditPersonaAiGenerateResult(
   for (const it of book?.items ?? []) {
     const rawName = String(it.name ?? '')
     if (isPersonaAiOrientationEpilogueName(rawName)) continue
+    if (isPersonaAiOccupationEpilogueName(rawName)) continue
     if (isPersonaAiRelationshipHistoryEntryName(rawName)) continue
     if (!canonicalizePersonaAiCompactEntryName(rawName)) extras += 1
   }
@@ -748,6 +789,7 @@ export function mergePersonaAiParsedSnapshot(
 
 export function buildPersonaAiRepairSystemPrompt(opts: {
   orientationMutable: boolean
+  occupationMutable?: boolean
   nsfwEnabled: boolean
   relationToUser?: string
   mode?: 'complete' | 'fix'
@@ -757,11 +799,13 @@ export function buildPersonaAiRepairSystemPrompt(opts: {
 }): string {
   const rel = opts.relationToUser?.trim() || '普通熟人'
   const includeHistory = opts.includeRelationshipHistory === true
+  const occupationMutable = opts.occupationMutable === true
   const refDirect =
     Boolean(opts.referencePersonaDirectGenerate) && Boolean((opts.referencePersonaHint ?? '').trim())
   const refSeed = (opts.referencePersonaHint ?? '').trim()
   const entryList = [
     ...PERSONA_AI_COMPACT_ENTRY_NAMES.map((n) => `- ${n}`),
+    ...(occupationMutable ? [`- ${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}（职业可变 · 尾声）`] : []),
     ...(opts.orientationMutable ? [`- ${PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME}（取向可变 · 尾声）`] : []),
     ...(includeHistory ? [`- ${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}（感情史 · 序言）`] : []),
   ].join('\n')
@@ -772,6 +816,9 @@ export function buildPersonaAiRepairSystemPrompt(opts: {
   const orientHostLine = opts.orientationMutable
     ? `取向写在尾声「${PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME}」，「性格内核」勿写取向；禁止因 {{user}} 颜值写自我怀疑。`
     : '取向写在「性格内核」，禁止因 {{user}} 颜值写自我怀疑。'
+  const occupationHostLine = occupationMutable
+    ? `职业详述写在尾声「${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}」，「名片基础」勿展开职业长段；禁止因勾选可变写成开局职业悬空。`
+    : '职业详述写在「名片基础」。'
   const historyHostLine = includeHistory
     ? `过往感情史写在序言「${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}」；禁止写成与 {{user}} 当前关系。`
     : ''
@@ -789,11 +836,12 @@ ${refNpcLine}
 世界书若输出：【标题】须与下列**完全一致**：
 ${entryList}
 角色用 {{char}}、绑定玩家用 {{user}}，禁止写汉字真名。
-与 {{user}} 的关系为「${rel}」；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」勿把 {{user}} 写成暗恋/性幻想对象；${orientHostLine}${historyHostLine ? ` ${historyHostLine}` : ''}
-「相遇羁绊」写如何相识及看法成因；「对你现在」写当前态度，须先读懂关系原文「${rel}」的投入程度并对齐；原文未表达好感时禁止补写成潜在心动、嘴硬心软或暗中关注；两处禁止整段互相复述。
+与 {{user}} 的关系为「${rel}」；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」勿把 {{user}} 写成暗恋/性幻想对象；${orientHostLine} ${occupationHostLine}${historyHostLine ? ` ${historyHostLine}` : ''}
+「相遇羁绊」只写如何相识的过程，禁止写当前关系标签/态度总结；「对你现在」独占当前关系与态度，须先读懂关系原文「${rel}」的投入程度并对齐；原文未表达好感时禁止补写成潜在心动、嘴硬心软或暗中关注；两处禁止整段互相复述。
 ${buildPersonaAiIntimatePartnerWordingRules()}
 ${opts.nsfwEnabled ? 'NSFW 已开启：补写「亲密与恋爱观」须直白描绘；指恋人写「对方」；禁止超雄 caricature。' : 'NSFW 未开启：补写「亲密与恋爱观」须清水恋爱观，禁止露骨；指恋人写「对方」。'}
 ${opts.orientationMutable ? `${buildPersonaAiOrientationMutableSemanticsRule(true)}` : ''}
+${occupationMutable ? `${buildPersonaAiOccupationMutableSemanticsRule(true)}` : ''}
 ${buildPersonaAiCompactEntryLengthRules({
   referencePersonaDirectGenerate: Boolean(opts.referencePersonaDirectGenerate),
 })}
@@ -861,6 +909,9 @@ export function buildPersonaAiRepairUserPrompt(params: {
     form.relationDetailHint.trim()
       ? `【开局关系细节】${form.relationDetailHint.trim()}`
       : '',
+    composePersonaAiIdentityArcSeed(form)
+      ? `【历史/现在身份弧】${composePersonaAiIdentityArcSeed(form)}`
+      : '',
     buildPersonaAiRelationContextRules(form),
     buildPersonaAiNsfwHintToneRules(form),
     '',
@@ -892,7 +943,7 @@ export function buildPersonaAiRepairUserPrompt(params: {
   }
   lines.push(
     '',
-    '纠正/补全须遵守：完整参考上方【绑定玩家身份】与世界书；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」指恋人写「对方」；「相遇羁绊」写相识过程与看法成因；「对你现在」明确指 {{user}} 当前态度；{{user}} 身体描写须与绑定玩家性别一致。',
+    '纠正/补全须遵守：完整参考上方【绑定玩家身份】与世界书；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」指恋人写「对方」；「相遇羁绊」只写相识过程，禁止写当前关系/态度；「对你现在」明确指 {{user}} 当前态度；{{user}} 身体描写须与绑定玩家性别一致。',
     `补写世界书条目约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字；描述用中性词，禁止超雄/极端用语与八股油腻形容词。`,
     '**全局禁止**：不得出现超雄、极端、病态 caricature，也不得堆砌花里胡哨网文标签。',
     '**只输出白名单内的键值行与【段落】**；禁止 JSON；禁止重复「已完整·勿改」内容。',

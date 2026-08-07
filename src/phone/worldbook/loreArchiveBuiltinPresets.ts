@@ -37,7 +37,7 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
     id: 'pureRestrainLove',
     title: '纯爱克制',
     description:
-      '系统内置：好感生效后约束克制纯爱——直球不压迫、暗戳戳心动、尊重边界、禁止强制爱；情侣亲密默认生涩害羞；越界或上头稍用力后会内耗自责。开启后注入线上/线下 AI，正文不可查看或编辑。',
+      '系统内置：纯爱番式相处——纯情害羞、成全型喜欢（希望对方更好/1+1＞2）、循序渐进；禁速通攻略、自恋追问、刚在一起就深亲密或同居；情侣亲密须生涩征得同意。开启后注入线上/线下 AI，正文不可查看或编辑。',
   },
   {
     id: 'offlineRichInnerOs',
@@ -95,7 +95,7 @@ export function buildWechatThinkingChainRomanceSteps(
   }
   if (resolved.pureRestrainLove) {
     steps.push(
-      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「纯爱克制」（与人设/全局档案同级；先判关系阶段；直球不压迫；禁止强制爱与非情侣越级；条文已在输出协议；禁止复述）`,
+      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「纯爱克制」（先判阶段；循序渐进禁速通；成全型喜欢；禁强制爱/刚确立深亲密；条文在输出协议；禁复述）`,
     )
     stepNo += 1
   }
@@ -119,7 +119,7 @@ ${CHARACTER_EMOTION_CONFESSION_ENGINE_APPENDIX}`)
   }
   if (resolved.pureRestrainLove) {
     parts.push(`【纯爱克制】
-以下为纯爱相处最高设定之一（与人设/全局档案同级；线上线下均生效）。须在思维链中对照自检（**先判好感/暧昧/已确立情侣**、直球不压迫、萌而不自知、害羞外显、非情侣禁止吻与吻手等越级亲密、情侣须先忍再问、禁止强制爱）；气质用人设表达，「尊重边界」为硬底线：
+纯爱最高设定之一（与人设/全局档案同级）。自检：先判阶段；循序渐进禁速通攻略；成全型喜欢（希望对方更好/1+1＞2）；纯情害羞生涩；直球不压迫、禁自恋追问；非情侣禁越级亲密；刚确立禁深亲密/同居；情侣先忍再问；禁强制爱。气质跟人设，硬底线不可破：
 ${PURE_RESTRAIN_LOVE_APPENDIX}`)
   }
   if (resolved.offlineRichInnerOs) {

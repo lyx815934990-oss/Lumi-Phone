@@ -7,6 +7,7 @@ import {
 } from '../group/ChatGroupSpeakerAvatarWrap'
 import { useLongPress } from '../hooks/useWeChatLongPress'
 import { TransferBubble, type TransferBubblePerspective } from './TransferBubble'
+import { useChatSkinEngine } from '../WeChatChatSkinEngineContext'
 import { resolveMessengerBubbleStyle } from '../wechatMessengerSpecialBubbles'
 
 type Props = {
@@ -71,7 +72,8 @@ export function TransferChatRow({
     onLongPress: () => handleLongPress(),
   })
 
-  const messengerStyle = resolveMessengerBubbleStyle(bubble)
+  const chatSkinEngine = useChatSkinEngine()
+  const messengerStyle = resolveMessengerBubbleStyle(bubble, chatSkinEngine)
 
   const block = useMemo(
     () => (
@@ -132,8 +134,8 @@ export function TransferChatRow({
           <div className="ml-[24px] mr-auto min-w-0">{block}</div>
         ) : showAvatarVisual ? (
           <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">
-            {rankBeside || !chatOtherAvatarRankBadge ? (
-              otherChatAvatarSrc ? (
+            {<ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge}>
+                {otherChatAvatarSrc ? (
                 <img
                   src={otherChatAvatarSrc}
                   alt=""
@@ -156,35 +158,8 @@ export function TransferChatRow({
                   }}
                   aria-hidden
                 />
-              )
-            ) : (
-              <ChatGroupSpeakerRankOnAvatar rankBadge={chatOtherAvatarRankBadge}>
-                {otherChatAvatarSrc ? (
-                  <img
-                    src={otherChatAvatarSrc}
-                    alt=""
-                    width={avatarPx}
-                    height={avatarPx}
-                    className="h-10 w-10 shrink-0 object-cover"
-                    style={{
-                      borderRadius: `${bubble.avatarRadiusPx}px`,
-                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                    }}
-                    aria-hidden
-                  />
-                ) : (
-                  <div
-                    className="h-10 w-10 shrink-0"
-                    style={{
-                      borderRadius: `${bubble.avatarRadiusPx}px`,
-                      background: 'rgba(0,0,0,0.06)',
-                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                    }}
-                    aria-hidden
-                  />
-                )}
-              </ChatGroupSpeakerRankOnAvatar>
-            )}
+              )}
+              </ChatGroupSpeakerRankOnAvatar>}
             <div className="flex min-w-0 flex-1 flex-col items-start gap-[3px]">
               {rankBeside ? (
                 <ChatGroupSenderNicknameWithRank nickname={chatOtherSenderNickname} rankBadge={chatOtherAvatarRankBadge ?? null} />
@@ -201,13 +176,9 @@ export function TransferChatRow({
           </div>
         ) : reserveAvatarGutter ? (
           <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">
-            {rankBeside || !chatOtherAvatarRankBadge ? (
-              <div className="h-10 w-10 shrink-0" aria-hidden />
-            ) : (
-              <ChatGroupSpeakerRankOnAvatar rankBadge={chatOtherAvatarRankBadge}>
+            {<ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge}>
                 <div className="h-10 w-10 shrink-0" aria-hidden />
-              </ChatGroupSpeakerRankOnAvatar>
-            )}
+              </ChatGroupSpeakerRankOnAvatar>}
             <div className="flex min-w-0 flex-1 flex-col items-start gap-[3px]">
               {rankBeside ? (
                 <ChatGroupSenderNicknameWithRank nickname={chatOtherSenderNickname} rankBadge={chatOtherAvatarRankBadge ?? null} />
@@ -229,8 +200,8 @@ export function TransferChatRow({
       ) : showAvatarVisual ? (
         <div className="mr-[24px] ml-auto flex max-w-full flex-row items-start gap-[12px]">
           {block}
-          {rankBeside || !chatSelfAvatarRankBadge ? (
-            selfChatAvatarSrc ? (
+          {<ChatGroupSpeakerRankOnAvatar chromeSide="self" rankBadge={rankBeside ? null : chatSelfAvatarRankBadge}>
+                {selfChatAvatarSrc ? (
               <img
                 src={selfChatAvatarSrc}
                 alt=""
@@ -252,45 +223,15 @@ export function TransferChatRow({
                 }}
                 aria-hidden
               />
-            )
-          ) : (
-            <ChatGroupSpeakerRankOnAvatar rankBadge={chatSelfAvatarRankBadge}>
-              {selfChatAvatarSrc ? (
-                <img
-                  src={selfChatAvatarSrc}
-                  alt=""
-                  width={avatarPx}
-                  height={avatarPx}
-                  className="h-10 w-10 shrink-0 object-cover"
-                  style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
-                    border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                  }}
-                  aria-hidden
-                />
-              ) : (
-                <div
-                  className="h-10 w-10 shrink-0"
-                  style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
-                    background: 'rgba(0,0,0,0.04)',
-                  }}
-                  aria-hidden
-                />
-              )}
-            </ChatGroupSpeakerRankOnAvatar>
-          )}
+            )}
+              </ChatGroupSpeakerRankOnAvatar>}
         </div>
       ) : reserveAvatarGutter ? (
         <div className="mr-[24px] ml-auto flex max-w-full flex-row items-start gap-[12px]">
           {block}
-          {rankBeside || !chatSelfAvatarRankBadge ? (
-            <div className="h-10 w-10 shrink-0" aria-hidden />
-          ) : (
-            <ChatGroupSpeakerRankOnAvatar rankBadge={chatSelfAvatarRankBadge}>
-              <div className="h-10 w-10 shrink-0" aria-hidden />
-            </ChatGroupSpeakerRankOnAvatar>
-          )}
+          {<ChatGroupSpeakerRankOnAvatar chromeSide="self" rankBadge={rankBeside ? null : chatSelfAvatarRankBadge}>
+                <div className="h-10 w-10 shrink-0" aria-hidden />
+              </ChatGroupSpeakerRankOnAvatar>}
         </div>
       ) : (
         <div className="mr-[24px] ml-auto min-w-0">{block}</div>

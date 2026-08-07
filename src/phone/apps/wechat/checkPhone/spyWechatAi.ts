@@ -5,6 +5,16 @@ import type { Character, PlayerIdentity } from '../newFriendsPersona/types'
 import { loadOfflineDatingPlotsPromptBlock } from '../dating/loadOfflineDatingPlotsForWechatPrompt'
 import { formatWorldBackgroundForPrompt } from '../newFriendsPersona/worldBackgroundFormat'
 import { buildSystemContent } from '../wechatChatAi'
+import {
+  parseSpyChatMarkup,
+  parseSpyFinancialMarkup,
+  parseSpyMomentsMarkup,
+  parseSpyProfileContactsMarkup,
+  SPY_CHAT_FORMAT,
+  SPY_FINANCIAL_FORMAT,
+  SPY_MOMENTS_FORMAT,
+  SPY_PROFILE_CONTACTS_FORMAT,
+} from './spyWechatMarkup'
 
 type GlobMod = { default: string }
 
@@ -172,36 +182,11 @@ export type SpyWechatGeneratedData = {
   affectionCards: Array<{ id: string; holder: string; limit: number; spent: number }>
 }
 
-function stripFence(s: string): string {
-  return s
-    .trim()
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim()
-}
-
-function tryParseJsonObject<T>(raw: string): T | null {
-  const cleaned = stripFence(raw)
-  try {
-    return JSON.parse(cleaned) as T
-  } catch {
-    const start = cleaned.indexOf('{')
-    const end = cleaned.lastIndexOf('}')
-    if (start >= 0 && end > start) {
-      try {
-        return JSON.parse(cleaned.slice(start, end + 1)) as T
-      } catch {
-        return null
-      }
-    }
-    return null
-  }
-}
-
-async function askModelJsonWithRetry<T>(
+async function askModelMarkupWithRetry<T>(
   cfg: ApiConfig,
   baseSystem: string,
   userTask: string,
+  parse: (raw: string) => T | null,
   maxTokens: number,
   maxRetry = 3,
 ): Promise<T> {
@@ -216,7 +201,7 @@ async function askModelJsonWithRetry<T>(
       { temperature: 0.72, max_tokens: maxTokens },
     )
     lastRaw = raw
-    const parsed = tryParseJsonObject<T>(raw)
+    const parsed = parse(raw)
     if (parsed) return parsed
   }
   throw new Error(`模型输出格式不稳定（多次重试失败）：${lastRaw.slice(0, 220)}`)
@@ -282,35 +267,33 @@ export async function generateSpyWechatData(params: {
 输出硬性规则：
 - 所有内容必须贴合角色人设、最近对话、长期记忆，不得 OOC。
 - “谁给谁红包/转账/礼物”方向绝对不能写反。
-- 只输出 JSON 对象，不要 markdown，不要解释。
+- 禁止 JSON；禁止 markdown 代码围栏；禁止前后解释；只输出规定标记块。
 【重要】下文「最近对话摘录」是**角色与现实用户**在主微信单聊里的片段，仅供把握语气与剧情线索；后续若要求生成「某联系人的聊天记录」，对话双方是**角色 ↔ 该联系人本人**，**不是**角色在对现实用户说话，也**禁止**把联系人当成第三人背后议论（例如聊天对象叫「林悦」时，禁止写成「林悦她怎样」像在跟外人聊林悦；应写成对「你/林悦」直接说话）。
 最近对话摘录：
 ${recentMsgText || '（暂无）'}
 `.trim()
 
-  const profileAndContacts = await askModelJsonWithRetry<{
-    profile: SpyWechatGeneratedData['profile']
-    contacts: Array<{
-      id: string
-      nickname?: string
-      remarkName: string
-      avatarBucket?: ExtraAvatarBucket
-      isStarred?: boolean
-      blocked?: boolean
-      characterId?: string
-    }>
-  }>(
+  const boundNpcSeedText = boundNpcSeedList.length
+    ? boundNpcSeedList
+        .map(
+          (n, i) =>
+            `${i + 1}. characterId=${n.characterId}｜昵称=${n.nickname || '（无）'}｜头像参考=${n.avatarUrl ? '有' : '无'}`,
+        )
+        .join('\n')
+    : '（暂无绑定人脉 NPC）'
+
+  const profileAndContacts = await askModelMarkupWithRetry(
     cfg,
     `${baseSystem}\n\n${strictGuard}`,
     `
-先只生成「profile + contacts 基础信息（不含 messages）」。
+先只生成「资料 + 联系人基础信息（不含聊天记录）」。
 要求：
 1) 必须包含我绑定的人脉 NPC（见下方固定列表），这些 NPC 的 characterId 不得修改。
 2) 联系人总量约 ${o.contactCount}（在固定 NPC 之外可补充少量“额外联系人”）。
-2) 有聊天记录的联系人至少准备 ${o.chatContactsCount} 个（后续会补 messages）。
-3) 联系人偏向：${o.contactBias || '与近期剧情最相关的人群'}。
-4) 是否包含拉黑联系人：${o.includeBlocked ? '是' : '否'}。
-5) 若为“额外联系人”（characterId 为空），必须给出 avatarBucket（用于从本地头像文件夹挑头像），avatarBucket 只能取：
+3) 有聊天记录的联系人至少准备 ${o.chatContactsCount} 个（后续会补消息行）。
+4) 联系人偏向：${o.contactBias || '与近期剧情最相关的人群'}。
+5) 是否包含拉黑联系人：${o.includeBlocked ? '是' : '否'}。
+6) 若为“额外联系人”（characterId 为空），必须给出头像桶，只能取：
    abstract | maleE | elderFemale | elderMale | maleI | femaleCute | femaleCool
    桶含义：
    - elderFemale：妈妈/阿姨/姑/婶/奶奶/外婆/女长辈/女老师风格
@@ -320,15 +303,13 @@ ${recentMsgText || '（暂无）'}
    - maleE：阳光外向/热情直球/运动少年感
    - maleI：清冷内向/克制疏离/冷淡感
    - abstract：抽象搞笑/表情包头像/整活号
-6) 备注名 remarkName 必须是我（角色）视角会给对方取的称呼（可含关系/外号/情绪），且要贴合该 NPC 或该联系人人设。
-固定 NPC 列表（必须全部包含；nickname/avatarUrl 仅作参考，最终以前端数据库为准）：
-${JSON.stringify(boundNpcSeedList, null, 2)}
-返回格式：
-{
-  "profile": {"nickname":"","avatarUrl":"","signature":""},
-  "contacts":[{"id":"","nickname":"","remarkName":"","avatarBucket":"femaleCool","isStarred":true,"blocked":false,"characterId":""}]
-}
+7) 备注必须是我（角色）视角会给对方取的称呼（可含关系/外号/情绪），且要贴合该 NPC 或该联系人人设。
+固定 NPC 列表（必须全部包含；昵称/头像仅作参考，最终以前端数据库为准）：
+${boundNpcSeedText}
+
+${SPY_PROFILE_CONTACTS_FORMAT}
 `.trim(),
+    parseSpyProfileContactsMarkup,
     2200,
   )
 
@@ -353,62 +334,57 @@ ${JSON.stringify(boundNpcSeedList, null, 2)}
     const npcMeta = rowCharacterId ? boundNpcs.find((n) => n.id === rowCharacterId) : undefined
     const peerCallName =
       (npcMeta?.name || npcMeta?.wechatNickname || row?.remarkName || row?.nickname || '该联系人').trim() || '该联系人'
-    const payload = await askModelJsonWithRetry<{ messages: Array<{ from: 'player' | 'character'; content: string; timestamp: number }> }>(
+    const payload = await askModelMarkupWithRetry(
       cfg,
       `${baseSystem}\n\n${strictGuard}`,
       `
 只为「联系人 id = ${cidOne}」生成**其与角色本人之间的私聊记录**（模拟该联系人手机/角色手机上与「${peerCallName}」这一行的会话）。
 【对话身份（必须遵守，禁止串台）】
 - 这是**角色 ↔ ${peerCallName}（当前联系人）**两人的双向聊天，**不是**角色与现实 App 用户的主微信私聊。
-- JSON 里 from 仅为技术标签：**character** = 被查看的手机主人（角色本人发的气泡）；**player** = 当前联系人「${peerCallName}」一侧发的气泡（**≠** 现实用户；不得按「哄用户 / 跟用户谈恋爱」来写）。
+- 消息行前缀：**C** = 被查看的手机主人（角色本人发的气泡）；**P** = 当前联系人「${peerCallName}」一侧发的气泡（**≠** 现实用户；不得按「哄用户 / 跟用户谈恋爱」来写）。
 - 双方都在会话里：对对方说话用「你」或对方昵称/外号；**禁止**用第三人称指称本会话对象（错误示例：会话对象是林悦却写「她林悦估计静音了」「悦子她……」像在跟第三人八卦；正确：直接「你手机又静音了吧」「悦子你还在琴房吗」）。
 - 称呼与亲密程度须符合**角色与该联系人**在世界观里的关系；默认同学/朋友/同事口吻。**禁止**对非恋人关系使用「宝宝」「宝贝」「乖乖」等恋人昵称；除非世界书明确该二人已是情侣且对彼此如此称呼，否则改用名字、外号或「你」。
 - 可化用「最近对话摘录」里的剧情线索，但要把张力落在**角色与 ${peerCallName}** 之间，不要写成用户在旁听。
 要求：
 1) 消息气泡不少于 ${o.minMessagesPerContact} 条。
-2) from 仅允许 "player" 或 "character"，含义同上，不得写反。
+2) 每行仅允许 C|时间戳|正文 或 P|时间戳|正文，含义同上，不得写反。
 3) 内容贴合角色人设与关系边界，有具体生活细节（时间、地点、小事），避免空泛撩拨。
-返回格式：
-{"messages":[{"from":"character","content":"...","timestamp":1710000000000}]}
+
+${SPY_CHAT_FORMAT}
 `.trim(),
+      parseSpyChatMarkup,
       1800,
     )
     messagesByContact.set(cidOne, payload.messages || [])
   }
 
-  const momentsPayload = await askModelJsonWithRetry<{
-    moments: SpyWechatGeneratedData['moments']
-  }>(
+  const momentsPayload = await askModelMarkupWithRetry(
     cfg,
     `${baseSystem}\n\n${strictGuard}`,
     `
-只生成朋友圈 moments。
+只生成朋友圈。
 要求：
-1) 包含点赞 likes 与评论 comments 互动。
+1) 包含点赞与评论互动。
 2) 含“屏蔽用户可见”内容：${o.includeMomentsHideFromUser ? '是' : '否'}。
 3) 含“非用户仅TA可见”内容：${o.includeMomentsOnlyTaVisibleWithoutUser ? '是' : '否'}。
-返回格式：
-{"moments":[{"id":"","content":"","visibility":"","likes":[],"comments":[{"from":"","content":""}]}]}
+
+${SPY_MOMENTS_FORMAT}
 `.trim(),
+    parseSpyMomentsMarkup,
     1800,
   )
 
-  const financialPayload = await askModelJsonWithRetry<{
-    bills: SpyWechatGeneratedData['bills']
-    affectionCards: SpyWechatGeneratedData['affectionCards']
-  }>(
+  const financialPayload = await askModelMarkupWithRetry(
     cfg,
     `${baseSystem}\n\n${strictGuard}`,
     `
 只生成财务数据：
-1) 微信账单流水 bills（含日期/对象/金额/备注）
-2) 亲情卡 affectionCards（给谁开通、限额与已用）
-返回格式：
-{
-  "bills":[{"id":"","date":"","target":"","amount":-66,"remark":""}],
-  "affectionCards":[{"id":"","holder":"","limit":3000,"spent":800}]
-}
+1) 微信账单流水（日期/对象/金额/备注）
+2) 亲情卡（给谁开通、限额与已用）
+
+${SPY_FINANCIAL_FORMAT}
 `.trim(),
+    parseSpyFinancialMarkup,
     1600,
   )
 

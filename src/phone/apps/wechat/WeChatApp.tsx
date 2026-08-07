@@ -155,6 +155,15 @@ import {
 } from './wechatBubblePresets'
 import { buildWeChatChatSkinExport, buildWeChatChatSkinAiPrompt, WECHAT_CHAT_SKIN_EXPORT_UI_ENABLED } from './wechatChatSkinExport'
 import { WeChatChatSkinPreviewPanel } from './WeChatChatSkinPreviewPanel'
+import { WeChatBubbleSideFontField } from './WeChatBubbleSideFontField'
+import {
+  applyBubblePack,
+  bubblePackDownloadFilename,
+  buildBubblePackFromCurrent,
+  parseLumiBubblePack,
+  parseLumiBubblePackFile,
+  serializeLumiBubblePack,
+} from './bubblePack'
 import {
   resolveChatDisplayFontFamily,
 } from './wechatBubbleTemplateFonts'
@@ -1780,6 +1789,7 @@ function ThemePanel({
   const { chatTheme, updateChatTheme } = useChatTheme()
   const { wechatTheme, theme } = state
   const fileRef = useRef<HTMLInputElement | null>(null)
+  const bubblePackFileRef = useRef<HTMLInputElement | null>(null)
   const imageRef = useRef<HTMLInputElement | null>(null)
   const [section, setSection] = useState<
     'home' | 'backgrounds' | 'bubbles' | 'headers' | 'tabbar' | 'cards' | 'chat-theme'
@@ -1851,22 +1861,57 @@ function ThemePanel({
           updateChatTheme(preset.chatThemePatch)
         }
       }
+      // 套用模版时保留用户已导入的单侧字体；清空气泡包覆盖以免残留
+      const nextBubble: WeChatBubbleTheme = {
+        ...preset.bubble,
+        selfFont: activeBubble.selfFont ?? null,
+        otherFont: activeBubble.otherFont ?? null,
+      }
       if (bubbleScope === 'global') {
         setWeChatTheme({
-          bubbleGlobal: preset.bubble,
+          bubbleGlobal: nextBubble,
           selfBubbleText: preset.selfBubbleText,
           otherBubbleText: preset.otherBubbleText,
           ...(preset.wechatThemePatch ?? {}),
+          chatSkinOverrides: {},
+          chatSkinScopedCss: '',
+          chatSkinEngine: 'structured',
         })
         return
       }
       setWeChatTheme({
-        bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: preset.bubble },
+        bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: nextBubble },
         selfBubbleText: preset.selfBubbleText,
         otherBubbleText: preset.otherBubbleText,
+        chatSkinOverrides: {},
+        chatSkinScopedCss: '',
+        chatSkinEngine: 'structured',
       })
     },
-    [bubbleRole, bubbleScope, setWeChatTheme, updateChatTheme, wechatTheme.bubbleByRole],
+    [activeBubble.otherFont, activeBubble.selfFont, bubbleRole, bubbleScope, setWeChatTheme, updateChatTheme, wechatTheme.bubbleByRole],
+  )
+
+  /** 真机聊天室：仅由此路径套用气泡包（主题制作机预览不走这里） */
+  const applyImportedBubblePack = useCallback(
+    async (pack: Parameters<typeof applyBubblePack>[0]['pack']) => {
+      await applyBubblePack({
+        pack,
+        activeBubble,
+        bubbleScope,
+        bubbleRole,
+        wechatBubbleByRole: wechatTheme.bubbleByRole,
+        setWeChatTheme,
+        updateChatTheme,
+      })
+    },
+    [
+      activeBubble,
+      bubbleRole,
+      bubbleScope,
+      setWeChatTheme,
+      updateChatTheme,
+      wechatTheme.bubbleByRole,
+    ],
   )
 
   const bubblePreviewBgStyle = useMemo(
@@ -3061,6 +3106,104 @@ function ThemePanel({
 
                   <div className="rounded-[18px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
                     <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
+                      上传气泡文件
+                    </p>
+                    <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
+                      将主题制作机导出的 `.lumiBubblePack` / JSON，或纯 `.css` / scopedCss 应用到当前配置范围。只有这里上传才会改聊天室；制作机预览不会同步。纯 CSS 会按 `skinEngine:css` 导入。
+                    </p>
+                    <input
+                      ref={bubblePackFileRef}
+                      type="file"
+                      accept=".lumiBubblePack,.json,.css,text/css,application/json,text/plain"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null
+                        e.target.value = ''
+                        if (!f) return
+                        void (async () => {
+                          try {
+                            const pack = await parseLumiBubblePackFile(f)
+                            await applyImportedBubblePack(pack)
+                          } catch (err) {
+                            window.alert(err instanceof Error ? err.message : '导入失败')
+                          }
+                        })()
+                      }}
+                    />
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Pressable
+                        onClick={() => bubblePackFileRef.current?.click()}
+                        className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
+                        style={{
+                          borderColor: 'var(--wx-border)',
+                          background: 'rgba(0,0,0,0.06)',
+                          color: 'var(--wx-text)',
+                        }}
+                      >
+                        上传气泡文件
+                      </Pressable>
+                      <Pressable
+                        onClick={() => {
+                          void (async () => {
+                            const raw = window.prompt(
+                              '粘贴气泡包 JSON，或纯 scopedCss / ```css（纯 CSS 会按 skinEngine:css 应用到聊天室）',
+                            )
+                            if (raw == null) return
+                            try {
+                              const pack = parseLumiBubblePack(raw)
+                              await applyImportedBubblePack(pack)
+                            } catch (err) {
+                              window.alert(err instanceof Error ? err.message : '解析失败')
+                            }
+                          })()
+                        }}
+                        className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
+                        style={{
+                          borderColor: 'var(--wx-border)',
+                          background: 'transparent',
+                          color: 'var(--wx-text)',
+                        }}
+                      >
+                        粘贴 JSON
+                      </Pressable>
+                      <Pressable
+                        onClick={() => {
+                          void (async () => {
+                            try {
+                              const pack = await buildBubblePackFromCurrent({
+                                meta: {
+                                  id: `wechat-${Date.now().toString(36)}`,
+                                  name: '当前聊天气泡',
+                                  description: '从微信外观导出',
+                                },
+                                activeBubble,
+                                wechatTheme,
+                                chatThemePatch: { inputBar: { ...chatTheme.inputBar } },
+                                embedAssets: true,
+                              })
+                              downloadTextFile(
+                                bubblePackDownloadFilename(pack.meta.name),
+                                serializeLumiBubblePack(pack),
+                              )
+                            } catch (err) {
+                              window.alert(err instanceof Error ? err.message : '导出失败')
+                            }
+                          })()
+                        }}
+                        className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
+                        style={{
+                          borderColor: 'var(--wx-border)',
+                          background: 'transparent',
+                          color: 'var(--wx-text)',
+                        }}
+                      >
+                        导出当前
+                      </Pressable>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[18px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
+                    <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
                       气泡模版
                     </p>
                     <div className="mt-3">
@@ -3076,12 +3219,16 @@ function ThemePanel({
                     </div>
                   </div>
 
-                  <div className="rounded-[18px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
+                  <div
+                    className="rounded-[18px] border p-3"
+                    style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}
+                  >
                     <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
                       预览
                     </p>
                     <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
-                      对照文字气泡、顶栏、输入栏、红包、转账、语音与位置卡片；切换上方模版或调整颜色后可即时查看。
+                      对照本页已应用的聊天气泡（含上传的气泡包）。主题制作机舞台预览与此处分开；AI
+                      写气泡请到桌面「主题制作机 → 气泡助手」，导出后再在上方上传。
                     </p>
                     <WeChatChatSkinPreviewPanel
                       wechatTheme={previewWechatTheme}
@@ -3095,7 +3242,7 @@ function ThemePanel({
                   {WECHAT_CHAT_SKIN_EXPORT_UI_ENABLED ? (
                   <div className="rounded-[18px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
                     <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
-                      导出聊天美化模版
+                      导出聊天美化模版（旧）
                     </p>
                     <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
                       复制 AI 提示词后，在文末「需求填写模版」里按区块填空（留空表示不改），整段发给 AI；把返回的 CSS 贴到「外观 → 自定义 CSS」。
@@ -3185,6 +3332,35 @@ function ThemePanel({
                         className="mt-2 h-10 w-full cursor-pointer rounded-[12px] border border-black/10 bg-transparent p-1"
                       />
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <WeChatBubbleSideFontField
+                      label="角色侧字体"
+                      hint="对方气泡正文；不设则跟随模版/全局字体。"
+                      value={activeBubble.otherFont}
+                      onChange={(otherFont) => {
+                        const next = { ...activeBubble, otherFont }
+                        if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
+                        else
+                          setWeChatTheme({
+                            bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
+                          })
+                      }}
+                    />
+                    <WeChatBubbleSideFontField
+                      label="用户侧字体"
+                      hint="自己气泡正文；不设则跟随模版/全局字体。"
+                      value={activeBubble.selfFont}
+                      onChange={(selfFont) => {
+                        const next = { ...activeBubble, selfFont }
+                        if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
+                        else
+                          setWeChatTheme({
+                            bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
+                          })
+                      }}
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">

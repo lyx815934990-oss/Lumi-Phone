@@ -252,7 +252,12 @@ export function migrateMislabeledLumiDefaultBubble(bubble: WeChatBubbleTheme): W
     bubble.selfBubbleRadiusPx === lumi.selfBubbleRadiusPx &&
     bubble.otherBubbleRadiusPx === lumi.otherBubbleRadiusPx
   if (!colorsMatchLumi) return bubble
-  return { ...lumi }
+  // 保留用户已导入的单侧字体
+  return {
+    ...lumi,
+    selfFont: bubble.selfFont ?? null,
+    otherFont: bubble.otherFont ?? null,
+  }
 }
 
 export function lumiDefaultChatInputBar(): ChatTheme['inputBar'] {

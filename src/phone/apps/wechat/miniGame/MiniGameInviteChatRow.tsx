@@ -5,6 +5,7 @@ import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
 } from '../group/ChatGroupSpeakerAvatarWrap'
+import { WeChatAvatarChromeWrap } from '../WeChatAvatarChromeWrap'
 import { useLongPress } from '../hooks/useWeChatLongPress'
 import { MiniGameAcceptResponseCard, MiniGameDeclineResponseCard } from './MiniGameAcceptResponseCard'
 import { MiniGameCharacterInviteReceivedCard } from './MiniGameCharacterInviteReceivedCard'
@@ -222,24 +223,26 @@ export function MiniGameInviteChatRow({
       ) : showAvatarVisual ? (
         <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">
           {groupRankShowBesideNickname !== false || !chatOtherAvatarRankBadge ? (
-            chatOtherAvatarUrl?.trim() ? (
-              <img
-                src={chatOtherAvatarUrl.trim()}
-                alt=""
-                width={avatarPx}
-                height={avatarPx}
-                className="h-10 w-10 shrink-0 object-cover"
-                style={{
-                  borderRadius: `${bubble.avatarRadiusPx}px`,
-                  border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                }}
-                aria-hidden
-              />
-            ) : (
-              otherAvatarFallback
-            )
+            <WeChatAvatarChromeWrap side="other">
+              {chatOtherAvatarUrl?.trim() ? (
+                <img
+                  src={chatOtherAvatarUrl.trim()}
+                  alt=""
+                  width={avatarPx}
+                  height={avatarPx}
+                  className="h-10 w-10 shrink-0 object-cover"
+                  style={{
+                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                  }}
+                  aria-hidden
+                />
+              ) : (
+                otherAvatarFallback
+              )}
+            </WeChatAvatarChromeWrap>
           ) : (
-            <ChatGroupSpeakerRankOnAvatar rankBadge={chatOtherAvatarRankBadge}>
+            <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge}>
               {chatOtherAvatarUrl?.trim() ? (
                 <img
                   src={chatOtherAvatarUrl.trim()}

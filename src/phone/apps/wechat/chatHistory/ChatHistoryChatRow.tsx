@@ -123,8 +123,8 @@ export function ChatHistoryChatRow({
       ) : showAvatarVisual || multiSelectAvatar ? (
         <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">
           {multiSelectAvatar ??
-            (rankBeside || !chatOtherAvatarRankBadge ? (
-              chatOtherAvatarUrl?.trim() ? (
+            (<ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge}>
+                {chatOtherAvatarUrl?.trim() ? (
                 <img
                   src={chatOtherAvatarUrl.trim()}
                   alt=""
@@ -139,27 +139,8 @@ export function ChatHistoryChatRow({
                 />
               ) : (
                 otherAvatarFallback
-              )
-            ) : (
-              <ChatGroupSpeakerRankOnAvatar rankBadge={chatOtherAvatarRankBadge}>
-                {chatOtherAvatarUrl?.trim() ? (
-                  <img
-                    src={chatOtherAvatarUrl.trim()}
-                    alt=""
-                    width={avatarPx}
-                    height={avatarPx}
-                    className="h-10 w-10 shrink-0 object-cover"
-                    style={{
-                      borderRadius: `${bubble.avatarRadiusPx}px`,
-                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                    }}
-                    aria-hidden
-                  />
-                ) : (
-                  otherAvatarFallback
-                )}
-              </ChatGroupSpeakerRankOnAvatar>
-            ))}
+              )}
+              </ChatGroupSpeakerRankOnAvatar>)}
           <div className="flex min-w-0 flex-1 flex-col items-start gap-[3px]">
             {!multiSelectAvatar && rankBeside ? (
               <ChatGroupSenderNicknameWithRank

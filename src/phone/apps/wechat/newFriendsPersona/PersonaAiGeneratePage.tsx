@@ -65,6 +65,10 @@ function countFilledHints(form: PersonaAiGenerateForm): number {
     'gapMoeHint',
     'relationToUser',
     'relationDetailHint',
+    'historyCharIdentity',
+    'historyUserIdentity',
+    'presentCharIdentity',
+    'presentUserIdentity',
     'relationshipHistoryHint',
     'loveAttitudeHint',
     'loveBeforeHint',
@@ -94,7 +98,7 @@ function countFilledHints(form: PersonaAiGenerateForm): number {
   }).length
 }
 
-const TOTAL_HINT_SLOTS = 28
+const TOTAL_HINT_SLOTS = 32
 
 function formatSavedAt(ms: number): string {
   const d = new Date(ms)

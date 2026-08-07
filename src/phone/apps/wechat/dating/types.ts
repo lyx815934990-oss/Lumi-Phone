@@ -342,6 +342,11 @@ export type CharacterArchive = {
   innerOsTranslationSyncEnabled?: boolean
   /** 对白 / 内心 OS 同步翻译的目标语言 */
   dialogueTranslationLanguage?: string
+  /**
+   * 自定义剧情字体（元数据 + 作用区域勾选）。
+   * 字体文件 dataUrl 存侧 KV，不塞进存档大 JSON。
+   */
+  plotFonts?: import('./datingPlotFontSettings').DatingPlotFontSettings
 }
 
 export type ArchivesStore = Record<string, CharacterArchive>

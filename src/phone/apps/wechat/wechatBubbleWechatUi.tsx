@@ -19,13 +19,34 @@ export const WECHAT_CHAT_BUBBLE_MAX_CLASS = 'max-w-[calc(100vw-24px-24px-80px)]'
 const SELF_TAIL_PATH = 'M0,0 L6,5 L0,10 Z'
 const OTHER_TAIL_PATH = 'M6,0 L0,5 L6,10 Z'
 
+/**
+ * 毛玻璃气泡底常是低透明 rgba，尾巴用 fill-current 几乎看不见。
+ * 尾巴改用同色相的高不透明实色（对齐糯叽机预览观感）。
+ */
+export function opaqueCssColorForTail(color: string, alpha = 0.92): string {
+  const c = String(color ?? '').trim()
+  if (!c) return `rgba(255,255,255,${alpha})`
+  const rgba = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i.exec(c)
+  if (rgba) return `rgba(${rgba[1]}, ${rgba[2]}, ${rgba[3]}, ${alpha})`
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(c)
+  if (hex) {
+    let h = hex[1]!
+    if (h.length === 3) h = h.split('').map((ch) => ch + ch).join('')
+    const r = parseInt(h.slice(0, 2), 16)
+    const g = parseInt(h.slice(2, 4), 16)
+    const b = parseInt(h.slice(4, 6), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  return c
+}
+
 export function WechatBubbleTail({ isSelf, bubbleColor }: { isSelf: boolean; bubbleColor: string }) {
   return (
     <svg
       aria-hidden
       className="pointer-events-none absolute z-[3] h-[10px] w-[6px] fill-current"
       style={{
-        color: bubbleColor,
+        color: opaqueCssColorForTail(bubbleColor),
         top: WECHAT_CLASSIC.tailTopPx,
         ...(isSelf ? { right: -6 } : { left: -6 }),
       }}
@@ -138,41 +159,53 @@ export function WechatRedPacketBubbleFace({
 
   return (
     <div
+      data-wx-msg-kind="red-packet"
+      data-wx-special-card
+      data-wx-special-status={kind}
       className="relative w-[min(240px,72vw)] max-w-full shrink-0 select-none overflow-hidden rounded-lg text-white shadow-sm"
       style={{ backgroundColor: bg }}
     >
       <WechatBubbleTail isSelf={isSelf} bubbleColor={bg} />
       <div className="flex items-center gap-3 px-3 pt-3 pb-2.5">
-        {kind === 'unclaimed' ? <WechatRedPacketIconClosed /> : <WechatRedPacketIconOpened />}
+        <span data-wx-special-part="icon">
+          {kind === 'unclaimed' ? <WechatRedPacketIconClosed /> : <WechatRedPacketIconOpened />}
+        </span>
         <div className="min-w-0 flex-1">
           <p
+            data-wx-special-part="label"
             className={`truncate text-[16px] font-normal leading-snug ${kind === 'expired' ? 'line-through opacity-90' : ''}`}
           >
             {remark}
           </p>
-          {statusLabel ? <p className="mt-0.5 text-[12px] leading-snug text-white/90">{statusLabel}</p> : null}
+          {statusLabel ? (
+            <p data-wx-special-part="status" className="mt-0.5 text-[12px] leading-snug text-white/90">
+              {statusLabel}
+            </p>
+          ) : null}
         </div>
       </div>
-      <div className={`border-t px-3 py-1.5 ${dividerCls}`}>
+      <div data-wx-special-part="footer" className={`border-t px-3 py-1.5 ${dividerCls}`}>
         <p className="text-[11px] leading-none text-white/70">微信红包</p>
       </div>
     </div>
   )
 }
 
-function WechatTransferIcon({ kind }: { kind: 'pending' | 'done' | 'returned' }) {
+function WechatTransferIcon({ kind, muted = false }: { kind: 'pending' | 'done' | 'returned'; muted?: boolean }) {
+  const ring = muted ? 'border-white/80' : 'border-white'
+  const ink = muted ? 'text-white/90' : 'text-white'
   return (
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-white">
+    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 ${ring}`}>
       {kind === 'pending' ? (
-        <svg className="h-[18px] w-[18px] text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden>
+        <svg className={`h-[18px] w-[18px] ${ink}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M7 16l-4-4 4-4M17 8l4 4-4 4M3 12h18" />
         </svg>
       ) : kind === 'done' ? (
-        <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5} aria-hidden>
+        <svg className={`h-5 w-5 ${ink}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5} aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
         </svg>
       ) : (
-        <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden>
+        <svg className={`h-5 w-5 ${ink}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 14L4 9l5-5M15 10h7" />
         </svg>
       )}
@@ -192,7 +225,8 @@ export function WechatTransferBubbleFace({
   const pending = status === 'pending'
   const accepted = status === 'accepted'
   const outgoing = perspective === 'outgoing'
-  const bg = pending ? '#FA9D3B' : '#FBD1A2'
+  // 对齐糯叽机「古早微信」写实转账：待收亮橙 / 已收浅橙 / 退还灰
+  const bg = pending ? '#FF9709' : accepted ? '#F7D0A2' : '#D4D4D4'
 
   const amount =
     amountYuan != null && Number.isFinite(amountYuan)
@@ -209,21 +243,46 @@ export function WechatTransferBubbleFace({
   }
 
   const iconKind = pending ? 'pending' : accepted ? 'done' : 'returned'
+  const onOrange = pending
 
   return (
     <div
-      className="relative w-[min(250px,72vw)] max-w-full shrink-0 select-none rounded-lg p-3 text-white shadow-sm"
-      style={{ backgroundColor: bg }}
+      data-wx-msg-kind="transfer"
+      data-wx-special-card
+      data-wx-special-status={status}
+      className="relative w-[min(230px,72vw)] max-w-full shrink-0 select-none overflow-hidden rounded-[4px] shadow-sm"
+      style={{ backgroundColor: bg, height: 90 }}
     >
       <WechatBubbleTail isSelf={outgoing} bubbleColor={bg} />
-      <div className="flex items-center gap-3">
-        <WechatTransferIcon kind={iconKind} />
+      {/* 底部白条：糯叽机 ::before 同款 */}
+      <div
+        data-wx-special-part="footer"
+        className="absolute inset-x-0 bottom-0 z-[1] flex h-[22px] items-center px-3"
+        style={{ backgroundColor: '#ffffff' }}
+      >
+        <span className="text-[11px] leading-none text-[#7f7f7f]">微信转账</span>
+      </div>
+      <div className="relative z-[2] flex items-center gap-3 px-3.5 pt-3.5 pb-7">
+        <span data-wx-special-part="icon">
+          <WechatTransferIcon kind={iconKind} muted={!onOrange} />
+        </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[18px] font-normal tabular-nums leading-tight">{amount}</p>
-          <p className="mt-0.5 truncate text-[13px] leading-snug opacity-95">{statusLabel}</p>
+          <p
+            data-wx-special-part="amount"
+            className={`truncate text-[16px] font-medium tabular-nums leading-tight ${
+              onOrange ? 'text-white' : 'text-white'
+            }`}
+          >
+            {amount}
+          </p>
+          <p
+            data-wx-special-part="label"
+            className="mt-0.5 line-clamp-2 text-[12px] font-light leading-snug text-white/95"
+          >
+            {statusLabel}
+          </p>
         </div>
       </div>
-      <p className="mt-2 text-[10px] leading-none text-white/80">转账</p>
     </div>
   )
 }

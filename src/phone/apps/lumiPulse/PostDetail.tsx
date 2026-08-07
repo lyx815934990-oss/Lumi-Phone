@@ -100,15 +100,13 @@ function CommentAvatar({
       )
       return resolvePulseAuthorAvatarUrl(path)
     }
-    const stored = resolvePulseAuthorAvatarUrl(comment.authorAvatarUrl)
-    if (stored) return stored
     const path = resolvePulseAuthorAvatarForPersist(
       comment.authorPovId,
       comment.authorName,
       comment.authorAvatarUrl,
       comment.isAiGenerated,
     )
-    return resolvePulseAuthorAvatarUrl(path)
+    return resolvePulseAuthorAvatarUrl(path || comment.authorAvatarUrl)
   }, [
     comment.anonymousByPlayerId,
     comment.authorAvatarUrl,

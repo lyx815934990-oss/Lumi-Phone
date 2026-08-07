@@ -10,6 +10,7 @@ import { PulseNum, PulseNumericText } from './PulseNum'
 import {
   isPulseNetizenAuthor,
   pickStablePulseNetizenAvatarPath,
+  resolvePulseAuthorAvatarForPersist,
   resolvePulseAuthorAvatarUrl,
 } from '../pulseNetizenAvatar'
 import type { PulsePost, PulsePostImageSlot } from '../pulseTypes'
@@ -395,12 +396,17 @@ export function PostCard({
   )
 
   const authorAvatarSrc = useMemo(() => {
-    const stored = resolvePulseAuthorAvatarUrl(post.authorAvatarUrl)
-    if (stored) return stored
-    if (!isPulseNetizenAuthor(post.authorPovId, post.isAiGenerated)) return undefined
-    return resolvePulseAuthorAvatarUrl(
-      pickStablePulseNetizenAvatarPath(post.authorPovId.trim() || post.authorName),
-    )
+    if (isPulseNetizenAuthor(post.authorPovId, post.isAiGenerated)) {
+      const path =
+        resolvePulseAuthorAvatarForPersist(
+          post.authorPovId,
+          post.authorName,
+          post.authorAvatarUrl,
+          post.isAiGenerated,
+        ) || pickStablePulseNetizenAvatarPath(post.authorPovId.trim() || post.authorName)
+      return resolvePulseAuthorAvatarUrl(path)
+    }
+    return resolvePulseAuthorAvatarUrl(post.authorAvatarUrl)
   }, [post.authorAvatarUrl, post.authorName, post.authorPovId, post.isAiGenerated])
 
   const { preview, needsClamp } = useMemo(() => {

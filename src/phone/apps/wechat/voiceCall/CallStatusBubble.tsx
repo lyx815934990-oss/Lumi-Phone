@@ -1,6 +1,8 @@
 import { Phone } from 'lucide-react'
 
 import { Pressable } from '../../../components/Pressable'
+import { CssCallStatusShell } from '../cssSkinShells'
+import { useChatSkinEngine } from '../WeChatChatSkinEngineContext'
 
 function pad2(n: number) {
   return String(n).padStart(2, '0')
@@ -25,6 +27,7 @@ export function CallStatusBubble({
   data: CallStatusBubbleData
   onClickDuration?: () => void
 }) {
+  const chatSkinEngine = useChatSkinEngine()
   const text =
     data.status === 'rejected'
       ? '已拒接'
@@ -33,22 +36,32 @@ export function CallStatusBubble({
         : `通话时长 ${fmtDuration(data.durationSec)}`
   const clickable = data.status === 'duration' && !!onClickDuration
 
-  const content = (
-    <div
-      className="flex items-center gap-2 rounded-[14px] px-3 py-2"
-      style={{
-        // 通话状态气泡统一使用中性外观，避免在某些主题下出现突兀的纯绿色。
-        background: 'var(--wx-other-bubble-bg, #f2f2f7)',
-        color: 'var(--wx-other-bubble-text, rgba(28,28,30,0.75))',
-      }}
-    >
-      <Phone
-        className="size-4 shrink-0"
-        style={{ color: 'color-mix(in oklab, currentColor 88%, transparent)' }}
-      />
-      <div className="text-[14px]">{text}</div>
-    </div>
-  )
+  const content =
+    chatSkinEngine === 'css' ? (
+      <CssCallStatusShell status={data.status} text={text}>
+        <Phone className="size-4 shrink-0" />
+      </CssCallStatusShell>
+    ) : (
+      <div
+        data-wx-msg-kind="voice-call"
+        data-wx-special-card
+        data-wx-special-status={data.status}
+        className="flex items-center gap-2 rounded-[14px] px-3 py-2"
+        style={{
+          background: 'var(--wx-special-call-bg, var(--wx-other-bubble-bg, #f2f2f7))',
+          color: 'var(--wx-special-call-text, var(--wx-other-bubble-text, rgba(28,28,30,0.75)))',
+        }}
+      >
+        <Phone
+          data-wx-special-part="icon"
+          className="size-4 shrink-0"
+          style={{ color: 'color-mix(in oklab, currentColor 88%, transparent)' }}
+        />
+        <div data-wx-special-part="label" className="text-[14px]">
+          {text}
+        </div>
+      </div>
+    )
 
   if (!clickable) return content
 

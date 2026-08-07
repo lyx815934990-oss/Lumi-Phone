@@ -3,6 +3,7 @@ import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
 } from '../group/ChatGroupSpeakerAvatarWrap'
+import { WeChatAvatarChromeWrap } from '../WeChatAvatarChromeWrap'
 import type { WeChatTakeoutOrderPayload } from '../newFriendsPersona/types'
 import { TakeoutOrderMessageCard } from './TakeoutOrderMessageCard'
 
@@ -99,7 +100,7 @@ export function TakeoutOrderChatRow({
         {showAvatarVisual ? (
           <div className="relative shrink-0">
             {!rankBeside ? (
-              <ChatGroupSpeakerRankOnAvatar rankBadge={chatOtherAvatarRankBadge}>
+              <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge}>
                 {chatOtherAvatarUrl?.trim() ? (
                   <img
                     src={chatOtherAvatarUrl.trim()}
@@ -117,21 +118,25 @@ export function TakeoutOrderChatRow({
                   otherAvatarFallback
                 )}
               </ChatGroupSpeakerRankOnAvatar>
-            ) : chatOtherAvatarUrl?.trim() ? (
-              <img
-                src={chatOtherAvatarUrl.trim()}
-                alt=""
-                width={avatarPx}
-                height={avatarPx}
-                className="h-10 w-10 shrink-0 object-cover"
-                style={{
-                  borderRadius: `${bubble.avatarRadiusPx}px`,
-                  border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                }}
-                aria-hidden
-              />
             ) : (
-              otherAvatarFallback
+              <WeChatAvatarChromeWrap side="other">
+                {chatOtherAvatarUrl?.trim() ? (
+                  <img
+                    src={chatOtherAvatarUrl.trim()}
+                    alt=""
+                    width={avatarPx}
+                    height={avatarPx}
+                    className="h-10 w-10 shrink-0 object-cover"
+                    style={{
+                      borderRadius: `${bubble.avatarRadiusPx}px`,
+                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                    }}
+                    aria-hidden
+                  />
+                ) : (
+                  otherAvatarFallback
+                )}
+              </WeChatAvatarChromeWrap>
             )}
           </div>
         ) : reserveAvatarGutter ? (

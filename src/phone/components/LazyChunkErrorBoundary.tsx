@@ -66,7 +66,8 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
             <button
               type="button"
               onClick={this.props.onClose}
-              className="absolute left-3 top-3 z-10 flex h-9 min-w-9 items-center justify-center rounded-full bg-black/6 px-3 text-[14px] font-medium text-black/70 active:bg-black/12"
+              className="absolute left-3 z-10 flex h-9 min-w-9 items-center justify-center rounded-full bg-black/6 px-3 text-[14px] font-medium text-black/70 active:bg-black/12"
+              style={{ top: 'max(12px, calc(env(safe-area-inset-top, 0px) + 8px))' }}
               aria-label="关闭"
             >
               关闭

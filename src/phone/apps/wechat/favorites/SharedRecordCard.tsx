@@ -13,6 +13,8 @@ import {
 import { formatFavoriteRelativeTime, formatVoiceDuration } from './mapFavoriteToItem'
 import { useSharedRecordOriginDisplayName } from './useSharedRecordOriginDisplayName'
 import { useSharedRecordVoiceAudioUrl } from './useSharedRecordVoiceAudioUrl'
+import { CssFavoriteShell } from '../cssSkinShells'
+import { useChatSkinEngine } from '../WeChatChatSkinEngineContext'
 
 const CARD_MOTION = {
   initial: { opacity: 0, y: 10 },
@@ -77,17 +79,33 @@ type Props = {
 /** 聊天室 · 收藏记忆切片转发卡（档案复印件质感） */
 export function SharedRecordCard({ data, personaContacts, playerDisplayName }: Props) {
   const origin = useSharedRecordOriginDisplayName(data, { personaContacts, playerDisplayName })
+  const chatSkinEngine = useChatSkinEngine()
+
+  if (chatSkinEngine === 'css') {
+    return (
+      <CssFavoriteShell
+        title="FORWARDED RECORD | 收藏切片"
+        body={`${origin} · ${data.contentSummary}`}
+      />
+    )
+  }
 
   return (
     <motion.div
-      className="w-[min(280px,calc(100vw-120px))] overflow-hidden rounded-[16px] border border-gray-100 bg-[#F9F9FA] text-left shadow-[0_4px_24px_rgba(0,0,0,0.04)]"
+      data-wx-msg-kind="favorite"
+      data-wx-special-card
+      className="w-[min(280px,calc(100vw-120px))] overflow-hidden rounded-[16px] border border-gray-100 bg-[var(--wx-special-fav-bg,#F9F9FA)] text-left shadow-[0_4px_24px_rgba(0,0,0,0.04)]"
+      style={{ borderColor: 'var(--wx-special-fav-border, rgba(0,0,0,0.06))' }}
       {...CARD_MOTION}
     >
       <div className="border-l-2 border-gray-300 px-4 py-3.5">
-        <p className="text-[9px] font-medium uppercase tracking-[0.22em] text-gray-400">
+        <p
+          data-wx-special-part="status"
+          className="text-[9px] font-medium uppercase tracking-[0.22em] text-gray-400"
+        >
           FORWARDED RECORD | 收藏切片
         </p>
-        <p className="mt-2 text-[13px] font-semibold italic text-gray-900">
+        <p data-wx-special-part="label" className="mt-2 text-[13px] font-semibold italic text-gray-900">
           Origin: {origin}
         </p>
 

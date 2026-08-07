@@ -20,6 +20,7 @@ import {
   wechatVoiceBubbleWidthPx,
 } from './wechatBubbleWechatUi'
 import { formatTalkmakerExternalTime, TalkmakerExternalTimestamp } from './wechatBubbleTalkmakerUi'
+import { CssVoiceShell } from './cssSkinShells'
 
 export type VoiceMessageBubbleProps = {
   isUser: boolean
@@ -395,6 +396,22 @@ export function VoiceMessageBubble({
   const wechatVoiceWidth = wechatVoiceBubbleWidthPx(duration)
   const wechatRadius = bubble?.selfBubbleRadiusPx ?? WECHAT_CLASSIC.bubbleRadiusPx
 
+  if (messengerStyle === 'css') {
+    return (
+      <button
+        type="button"
+        className="appearance-none border-0 bg-transparent p-0 text-left"
+        onClick={() => {
+          void togglePlay()
+        }}
+      >
+        <CssVoiceShell isUser={isUser} durationSec={duration}>
+          {isPlaying ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+        </CssVoiceShell>
+      </button>
+    )
+  }
+
   if (messengerStyle === 'wechat') {
     const showUnreadDot = !isUser && !played
     const hasTranscript =
@@ -405,7 +422,11 @@ export function VoiceMessageBubble({
     const voiceTopRadius = isTranscribing ? `${wechatRadius}px ${wechatRadius}px 0 0` : `${wechatRadius}px`
 
     const voiceShell = (
-      <div className={`inline-flex ${WECHAT_CHAT_BUBBLE_MAX_CLASS} ${isUser ? 'items-end' : 'items-start'}`}>
+      <div
+        data-wx-msg-kind="voice"
+        data-wx-special-card
+        className={`inline-flex ${WECHAT_CHAT_BUBBLE_MAX_CLASS} ${isUser ? 'items-end' : 'items-start'}`}
+      >
         <div className={`flex items-start gap-1.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
           <div className={`flex min-w-0 flex-col ${isUser ? 'items-end' : 'items-start'}`}>
             <motion.button
@@ -605,7 +626,11 @@ export function VoiceMessageBubble({
   }
 
   return (
-    <div data-wx-msg-kind="voice" className={`w-[206px] ${isUser ? 'ml-auto' : ''}`}>
+    <div
+      data-wx-msg-kind="voice"
+      data-wx-special-card
+      className={`w-[206px] ${isUser ? 'ml-auto' : ''}`}
+    >
       <motion.button
         type="button"
         onClick={() => {

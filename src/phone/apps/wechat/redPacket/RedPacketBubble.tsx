@@ -7,6 +7,7 @@ import {
   type MessengerBubbleStyle,
 } from '../wechatMessengerSpecialBubbles'
 import { WechatRedPacketBubbleFace } from '../wechatBubbleWechatUi'
+import { CssRedPacketShell } from '../cssSkinShells'
 import {
   isLumiRedPacketOpenedUi,
   LUMI_REDPACKET_OPENED_CHANGED_EVENT,
@@ -139,6 +140,10 @@ export function RedPacketBubble({
     return <WechatRedPacketBubbleFace remark={remark} kind={kind} isSelf={isSelf} />
   }
 
+  if (messengerStyle === 'css') {
+    return <CssRedPacketShell remark={remark} kind={kind} isSelf={isSelf} />
+  }
+
   const remarkLegacy = (liveData.remark || 'Best Wishes').trim() || 'Best Wishes'
   const tag = kind === 'unclaimed' ? 'RED PACKET' : kind === 'claimed' ? 'OPENED' : 'EXPIRED'
 
@@ -153,6 +158,7 @@ export function RedPacketBubble({
   return (
     <div
       data-wx-msg-kind="red-packet"
+      data-wx-special-status={kind}
       className={`select-none text-left transition-opacity duration-150 ease-out ${
         kind === 'unclaimed' ? 'w-[min(220px,72vw)] max-w-full shrink-0' : 'max-w-[min(280px,72vw)]'
       } ${isClaimed ? 'opacity-60' : 'opacity-100'}`}
@@ -173,11 +179,14 @@ export function RedPacketBubble({
         }}
       >
         <div className="flex min-w-0 items-center gap-3">
-          {kind === 'unclaimed' ? <IconClosedEnvelope /> : null}
-          {kind === 'claimed' ? <IconOpenedMark /> : null}
-          {kind === 'expired' ? <IconExpired /> : null}
+          <span data-wx-special-part="icon">
+            {kind === 'unclaimed' ? <IconClosedEnvelope /> : null}
+            {kind === 'claimed' ? <IconOpenedMark /> : null}
+            {kind === 'expired' ? <IconExpired /> : null}
+          </span>
           <div className="min-w-0 flex-1">
             <p
+              data-wx-special-part="label"
               className={`truncate text-[14px] font-medium leading-snug tracking-wide ${
                 isExpired ? 'text-gray-400 line-through decoration-gray-300' : ''
               }`}
@@ -186,6 +195,7 @@ export function RedPacketBubble({
               {remarkLegacy}
             </p>
             <p
+              data-wx-special-part="status"
               className={`mt-1 text-[9px] font-semibold tracking-[0.28em] transition-colors duration-300 ${
                 isExpired ? 'text-gray-400' : isClaimed ? 'text-gray-400' : ''
               }`}

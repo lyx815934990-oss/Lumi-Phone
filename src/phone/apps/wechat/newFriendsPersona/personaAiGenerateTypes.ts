@@ -11,6 +11,11 @@ export type PersonaAiGenerateForm = {
   ageHint: string
   /** 职业 / 社会身份方向 */
   occupationHint: string
+  /**
+   * true = 职业/社会身份单独写入尾声「职业身份的当前快照」，可随剧情更新；
+   * false = 固定写在「名片基础」序言
+   */
+  occupationMutable: boolean
   /** 外貌补充（眉眼配饰等；发色/发型/身形优先读分栏） */
   appearanceHint: string
   /** 发色 */
@@ -51,6 +56,18 @@ export type PersonaAiGenerateForm = {
   relationToUser: string
   /** 与 {{user}} 的相识过程 / 开局互动细节 */
   relationDetailHint: string
+  /** 当前选中的「初始过程」预设 id；手改/清空时置空 */
+  meetingProcessPresetId: string
+  /** 历史身份 · {{char}}（相识/过往阶段时的社会身份） */
+  historyCharIdentity: string
+  /** 历史身份 · {{user}} */
+  historyUserIdentity: string
+  /** 现在身份 · {{char}}（开局当下） */
+  presentCharIdentity: string
+  /** 现在身份 · {{user}} */
+  presentUserIdentity: string
+  /** 当前选中的身份弧预设 id；对换/手改后置空，避免按钮假选中 */
+  identityArcPresetId: string
   /** 过往感情史（有内容时单独写入世界书「过往感情史」序言条） */
   relationshipHistoryHint: string
   /** 恋爱 / 亲密态度方向 */
@@ -111,6 +128,273 @@ export const PERSONA_AI_RELATION_PRESETS = [
   '邻居',
   '家人 / 亲戚',
 ] as const
+
+/** 一键填入「历史×现在 × char/user」四格身份的抓马开局预设 */
+export type PersonaAiIdentityArcPreset = {
+  id: string
+  /** 预选按钮短标签 */
+  label: string
+  historyChar: string
+  historyUser: string
+  presentChar: string
+  presentUser: string
+}
+
+export const PERSONA_AI_IDENTITY_ARC_PRESETS: readonly PersonaAiIdentityArcPreset[] = [
+  {
+    id: 'ex-colleagues',
+    label: '前任·现同事',
+    historyChar: '恋人',
+    historyUser: '恋人',
+    presentChar: '同部门同事',
+    presentUser: '同部门同事',
+  },
+  {
+    id: 'ex-roommates',
+    label: '前任·合租',
+    historyChar: '恋人',
+    historyUser: '恋人',
+    presentChar: '合租室友',
+    presentUser: '合租室友',
+  },
+  {
+    id: 'childhood-boss',
+    label: '青梅·现上司',
+    historyChar: '青梅竹马',
+    historyUser: '青梅竹马',
+    presentChar: '直属上司',
+    presentUser: '下属员工',
+  },
+  {
+    id: 'rival-fake-couple',
+    label: '宿敌·假情侣',
+    historyChar: '竞争对手',
+    historyUser: '竞争对手',
+    presentChar: '假扮情侣的搭档',
+    presentUser: '假扮情侣的搭档',
+  },
+  {
+    id: 'crush-mentor',
+    label: '暗恋·新带教',
+    historyChar: '同校学长/暗恋对象',
+    historyUser: '学弟学妹',
+    presentChar: '职场带教',
+    presentUser: '新人下属',
+  },
+  {
+    id: 'online-neighbor',
+    label: '网友·现邻居',
+    historyChar: '匿名网友',
+    historyUser: '匿名网友',
+    presentChar: '对门邻居',
+    presentUser: '对门邻居',
+  },
+  {
+    id: 'savior-rival',
+    label: '恩人·现对手',
+    historyChar: '救命恩人',
+    historyUser: '被救下的人',
+    presentChar: '赛场/职场对手',
+    presentUser: '赛场/职场对手',
+  },
+  {
+    id: 'stand-in-fiance',
+    label: '名义未婚夫妻',
+    historyChar: '世交子女',
+    historyUser: '世交子女',
+    presentChar: '名义未婚夫/妻',
+    presentUser: '名义未婚夫/妻',
+  },
+  {
+    id: 'landlord-ex',
+    label: '放鸽子·现房东',
+    historyChar: '放鸽子的人',
+    historyUser: '被放鸽子的人',
+    presentChar: '房东',
+    presentUser: '租客',
+  },
+  {
+    id: 'interview-next-day',
+    label: '私密局·次日面试',
+    historyChar: '酒吧/局末认识的陌生人',
+    historyUser: '酒吧/局末认识的陌生人',
+    presentChar: '面试官',
+    presentUser: '应聘者',
+  },
+  {
+    id: 'step-family',
+    label: '重组家庭·继兄妹',
+    historyChar: '互不相识的陌生人',
+    historyUser: '互不相识的陌生人',
+    presentChar: '继兄/继姐',
+    presentUser: '继弟/继妹',
+  },
+  {
+    id: 'debt-colleagues',
+    label: '旧债·现搭档',
+    historyChar: '欠人情/欠钱的一方',
+    historyUser: '被欠人情/被欠钱的一方',
+    presentChar: '项目搭档',
+    presentUser: '项目搭档',
+  },
+  {
+    id: 'doctor-patient',
+    label: '旧同学·医患',
+    historyChar: '同班同学',
+    historyUser: '同班同学',
+    presentChar: '主治医生',
+    presentUser: '患者',
+  },
+  {
+    id: 'teacher-parent',
+    label: '旧识·家校',
+    historyChar: '大学同学',
+    historyUser: '大学同学',
+    presentChar: '班主任/任课老师',
+    presentUser: '学生家长',
+  },
+  {
+    id: 'countdown-transfer',
+    label: '恋人·即将异地',
+    historyChar: '同城恋人',
+    historyUser: '同城恋人',
+    presentChar: '即将外派/出国的一方',
+    presentUser: '留下的一方',
+  },
+] as const
+
+export function applyPersonaAiIdentityArcPreset(
+  preset: PersonaAiIdentityArcPreset,
+): Pick<
+  PersonaAiGenerateForm,
+  | 'historyCharIdentity'
+  | 'historyUserIdentity'
+  | 'presentCharIdentity'
+  | 'presentUserIdentity'
+  | 'identityArcPresetId'
+> {
+  return {
+    historyCharIdentity: preset.historyChar,
+    historyUserIdentity: preset.historyUser,
+    presentCharIdentity: preset.presentChar,
+    presentUserIdentity: preset.presentUser,
+    identityArcPresetId: preset.id,
+  }
+}
+
+/** 初始相识/开局过程预设（写入 relationDetailHint，可顺带带上关系标签） */
+export type PersonaAiMeetingProcessPreset = {
+  id: string
+  label: string
+  /** 写入「相遇羁绊」的过程种子 */
+  detail: string
+  /** 可选：同步写入初始关系 */
+  relation?: string
+}
+
+export const PERSONA_AI_MEETING_PROCESS_PRESETS: readonly PersonaAiMeetingProcessPreset[] = [
+  {
+    id: 'reunion-elevator',
+    label: '电梯重逢',
+    detail: '多年未见，同栋楼电梯里猝然重逢；双方都愣住，假装看手机却谁也没先出门。',
+    relation: '前任 · 仍有牵扯',
+  },
+  {
+    id: 'early-homecoming',
+    label: '提前一天回家',
+    detail: '本该明日才回，今晚却提前推门；屋里灯还亮着，对方完全没料到。',
+    relation: '恋人 / 稳定交往',
+  },
+  {
+    id: 'first-night-rent',
+    label: '合租首夜',
+    detail: '中介交钥匙当晚第一次同住；行李还没收完，公共区域怎么用已经开始别扭。',
+    relation: '合租室友',
+  },
+  {
+    id: 'fake-couple-banquet',
+    label: '假情侣出场',
+    detail: '家族/同学宴上临时约定假扮情侣入场；称呼与距离都要当场演给旁人看。',
+    relation: '朋友 · 常聊',
+  },
+  {
+    id: 'online-meetup',
+    label: '网友奔现',
+    detail: '线上聊很久后第一次见面；声音对得上脸，气氛却比聊天记录尴尬得多。',
+    relation: '网友见面',
+  },
+  {
+    id: 'missed-date-landlord',
+    label: '放鸽子后再见',
+    detail: '当年放鸽子/被放鸽子的人，如今以房东与租客身份重新见面谈合同。',
+    relation: '刚认识',
+  },
+  {
+    id: 'interview-after-night',
+    label: '次日面试撞脸',
+    detail: '前一晚局末认识，隔天面试/入职现场坐成对面；双方都在装作第一次见。',
+    relation: '上下级',
+  },
+  {
+    id: 'hospital-corridor',
+    label: '医院走廊',
+    detail: '探病/陪诊在走廊撞见；旧关系还没理清，当下又不得不说几句场面话。',
+    relation: '前任 · 仍有牵扯',
+  },
+  {
+    id: 'project-forced-pair',
+    label: '被迫搭档',
+    detail: '领导点名两人一组交活；截止日期近，私怨只能先压着开干。',
+    relation: '竞争对手',
+  },
+  {
+    id: 'countdown-last-night',
+    label: '分别前夜',
+    detail: '明天一早就异地/出国；今晚最后一顿或最后一面，话在嘴边说不圆。',
+    relation: '恋人 / 稳定交往',
+  },
+  {
+    id: 'neighbor-borrow',
+    label: '对门借东西',
+    detail: '停水停电或忘带钥匙，第一次敲对门；借完东西却站着多聊了两句。',
+    relation: '邻居',
+  },
+  {
+    id: 'rain-share-umbrella',
+    label: '暴雨同路',
+    detail: '骤雨只剩一把伞/一辆顺风车；湿漉漉挤在同一段路里，不得不开口。',
+    relation: '刚认识',
+  },
+] as const
+
+export function applyPersonaAiMeetingProcessPreset(
+  preset: PersonaAiMeetingProcessPreset,
+): Pick<PersonaAiGenerateForm, 'relationDetailHint' | 'relationToUser' | 'meetingProcessPresetId'> {
+  return {
+    relationDetailHint: preset.detail,
+    relationToUser: preset.relation?.trim() || '',
+    meetingProcessPresetId: preset.id,
+  }
+}
+
+/** 四格身份任一有内容时拼成生成种子 */
+export function composePersonaAiIdentityArcSeed(form: PersonaAiGenerateForm): string {
+  const parts = [
+    form.historyCharIdentity.trim()
+      ? `历史·{{char}}：${form.historyCharIdentity.trim()}`
+      : '',
+    form.historyUserIdentity.trim()
+      ? `历史·{{user}}：${form.historyUserIdentity.trim()}`
+      : '',
+    form.presentCharIdentity.trim()
+      ? `现在·{{char}}：${form.presentCharIdentity.trim()}`
+      : '',
+    form.presentUserIdentity.trim()
+      ? `现在·{{user}}：${form.presentUserIdentity.trim()}`
+      : '',
+  ].filter(Boolean)
+  return parts.join('；')
+}
 
 export const PERSONA_AI_PERSONALITY_PRESETS = [
   '温柔内敛',
@@ -562,6 +846,7 @@ export function emptyPersonaAiGenerateForm(): PersonaAiGenerateForm {
     gender: 'female',
     ageHint: '',
     occupationHint: '',
+    occupationMutable: false,
     appearanceHint: '',
     hairColorHint: '',
     hairStyleHint: '',
@@ -582,6 +867,12 @@ export function emptyPersonaAiGenerateForm(): PersonaAiGenerateForm {
     gapMoeHint: '',
     relationToUser: '',
     relationDetailHint: '',
+    meetingProcessPresetId: '',
+    historyCharIdentity: '',
+    historyUserIdentity: '',
+    presentCharIdentity: '',
+    presentUserIdentity: '',
+    identityArcPresetId: '',
     relationshipHistoryHint: '',
     loveAttitudeHint: '',
     loveContrastHint: '',

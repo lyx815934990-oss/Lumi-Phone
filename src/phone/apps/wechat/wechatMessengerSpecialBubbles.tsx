@@ -15,7 +15,14 @@ import {
   TALKMAKER_SELF_BUBBLE,
 } from './wechatBubbleTalkmakerUi'
 
-export type MessengerBubbleStyle = 'lumi' | 'wechat' | 'imessage' | 'telegram' | 'talkmaker'
+export type MessengerBubbleStyle =
+  | 'lumi'
+  | 'wechat'
+  | 'imessage'
+  | 'telegram'
+  | 'talkmaker'
+  /** 纯 CSS 皮肤：仅结构壳，视觉由 scopedCss 控制 */
+  | 'css'
 
 export function isAltMessengerBubbleStyle(
   style: MessengerBubbleStyle,
@@ -23,8 +30,15 @@ export function isAltMessengerBubbleStyle(
   return style === 'imessage' || style === 'telegram' || style === 'talkmaker'
 }
 
-/** 未套用 Messenger 预设时为 `lumi`（Lumi 默认特殊消息 + 全局字体） */
-export function resolveMessengerBubbleStyle(bubble: WeChatBubbleTheme): MessengerBubbleStyle {
+/**
+ * 解析特殊消息渲染风格。
+ * chatSkinEngine=css 时优先返回 css（不套 Lumi/微信默认皮）。
+ */
+export function resolveMessengerBubbleStyle(
+  bubble: WeChatBubbleTheme,
+  chatSkinEngine?: 'structured' | 'css' | null,
+): MessengerBubbleStyle {
+  if (chatSkinEngine === 'css') return 'css'
   const tail = bubble.bubbleTailStyle
   if (tail === 'imessage') return 'imessage'
   if (tail === 'telegram') return 'telegram'

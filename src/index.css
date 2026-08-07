@@ -33,9 +33,9 @@
   --phone-radius-lg: 28px;
   --phone-radius-md: 18px;
   --phone-radius-sm: 14px;
-  /* 默认：艺术衬线 */
-  --phone-font: 'Cormorant Garamond', 'Noto Serif SC', 'STKaiti', 'KaiTi',
-    'Times New Roman', serif;
+  /* 默认：艺术衬线（中文回退宋楷，勿把黑体排在前面） */
+  --phone-font: 'Cormorant Garamond', 'Noto Serif SC', 'STKaiti', 'KaiTi', 'Songti SC',
+    'STSong', 'Times New Roman', serif;
   /* 默认：数字衬线（与朋友圈日期戳一致） */
   --phone-num-font: 'Songti SC', 'STSong', 'Noto Serif SC', 'Georgia', 'Times New Roman',
     serif;

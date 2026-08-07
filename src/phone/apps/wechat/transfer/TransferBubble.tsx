@@ -10,6 +10,7 @@ import {
   type MessengerBubbleStyle,
 } from '../wechatMessengerSpecialBubbles'
 import { WechatTransferBubbleFace } from '../wechatBubbleWechatUi'
+import { CssTransferShell } from '../cssSkinShells'
 
 export type TransferBubbleVisualStatus = 'pending' | 'accepted' | 'returned'
 
@@ -96,6 +97,17 @@ export function TransferBubbleFace({
     return <WechatTransferBubbleFace status={status} amountYuan={amountYuan} perspective={perspective} />
   }
 
+  if (messengerStyle === 'css') {
+    return (
+      <CssTransferShell
+        status={status}
+        amountYuan={amountYuan}
+        remark={remark}
+        perspective={perspective}
+      />
+    )
+  }
+
   const pending = status === 'pending'
   const accepted = status === 'accepted'
   const returned = status === 'returned'
@@ -118,6 +130,7 @@ export function TransferBubbleFace({
   return (
     <div
       data-wx-msg-kind="transfer"
+      data-wx-special-status={status}
       className={`select-none text-left transition-opacity duration-150 ease-out ${
         pending ? 'w-[min(240px,72vw)] max-w-full shrink-0' : 'max-w-[min(280px,72vw)]'
       } ${accepted ? 'opacity-60' : 'opacity-100'}`}
@@ -133,6 +146,7 @@ export function TransferBubbleFace({
         }}
       >
         <p
+          data-wx-special-part="amount"
           className={`text-[17px] tabular-nums tracking-tight transition-colors duration-300 ${
             returned ? 'text-[#CBD5E1]' : ''
           }`}
@@ -142,6 +156,7 @@ export function TransferBubbleFace({
         </p>
         {r ? (
           <p
+            data-wx-special-part="label"
             className={`mt-1 truncate text-[11px] transition-colors duration-300 ${
               returned ? 'text-[#CBD5E1]' : accepted ? 'text-[#94a3b8]' : ''
             }`}
@@ -152,6 +167,7 @@ export function TransferBubbleFace({
         ) : null}
 
         <div
+          data-wx-special-part="status"
           className={`mt-1.5 flex items-center gap-1.5 text-[11px] ${returned ? 'w-full justify-between text-[#64748B]' : 'text-[#475569]'}`}
         >
           {pending ? (

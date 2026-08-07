@@ -112,7 +112,7 @@ export function parsePlotRichText(
     const idx = opts?.dialogueIndexRef ? opts.dialogueIndexRef.current++ : -1
     if (!canClick || idx < 0) {
       return (
-        <span key={k} className={dialogueCls}>
+        <span key={k} className={dialogueCls} style={{ fontFamily: 'var(--dating-font-dialogue)' }}>
           {children}
         </span>
       )
@@ -123,6 +123,7 @@ export function parsePlotRichText(
         role="button"
         tabIndex={0}
         className={dialogueClickableCls}
+        style={{ fontFamily: 'var(--dating-font-dialogue)' }}
         title="点击查看译文"
         onClick={(e) => {
           e.stopPropagation()
@@ -146,7 +147,7 @@ export function parsePlotRichText(
     const idx = opts?.innerOsIndexRef ? opts.innerOsIndexRef.current++ : -1
     if (!canClick || idx < 0) {
       return (
-        <span key={k} className={osCls}>
+        <span key={k} className={osCls} style={{ fontFamily: 'var(--dating-font-inner-os)' }}>
           {children}
         </span>
       )
@@ -157,6 +158,7 @@ export function parsePlotRichText(
         role="button"
         tabIndex={0}
         className={osClickableCls}
+        style={{ fontFamily: 'var(--dating-font-inner-os)' }}
         title="点击查看译文"
         onClick={(e) => {
           e.stopPropagation()
@@ -384,7 +386,14 @@ export function PlotRichParagraph({
   onRegenerateForMissingTranslation?: () => void
   backfillBusy?: boolean
 }) {
-  const merged = ['whitespace-pre-wrap break-words', className].filter(Boolean).join(' ')
+  const merged = [
+    'whitespace-pre-wrap break-words',
+    className,
+  ]
+    .filter(Boolean)
+    .join(' ')
+  // 正文旁白：继承 CSS 变量；对白/内心 OS 由 parsePlotRichText 内联指定
+  const rootStyle = { fontFamily: 'var(--dating-font-narrative)' } as const
   const localIndexRef = useRef(0)
   const localOsIndexRef = useRef(0)
   const indexRef = externalIndexRef ?? localIndexRef
@@ -434,7 +443,7 @@ export function PlotRichParagraph({
 
   return (
     <>
-      <span className={merged}>
+      <span className={merged} style={rootStyle}>
         {parsePlotRichText(content, 0, {
           plainDialogue,
           onDialogueClick: enableDialogueClick ? onDialogueClick : undefined,

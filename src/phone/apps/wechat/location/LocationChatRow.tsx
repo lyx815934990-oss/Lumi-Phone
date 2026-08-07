@@ -3,8 +3,10 @@ import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
 } from '../group/ChatGroupSpeakerAvatarWrap'
+import { WeChatAvatarChromeWrap } from '../WeChatAvatarChromeWrap'
 import type { WeChatLocationPayload } from '../newFriendsPersona/types'
 import { LocationMessageCard } from './LocationMessageCard'
+import { useChatSkinEngine } from '../WeChatChatSkinEngineContext'
 import {
   ImessageLocationCard,
   TelegramLocationBubble,
@@ -56,7 +58,8 @@ export function LocationChatRow({
   groupRankShowBesideNickname = true,
 }: Props) {
   const avatarPx = 40
-  const messengerStyle = resolveMessengerBubbleStyle(bubble)
+  const chatSkinEngine = useChatSkinEngine()
+  const messengerStyle = resolveMessengerBubbleStyle(bubble, chatSkinEngine)
   const talkmakerTimeLabel =
     messengerStyle === 'talkmaker' && typeof messageTimestampMs === 'number'
       ? formatTalkmakerExternalTime(messageTimestampMs)
@@ -84,7 +87,11 @@ export function LocationChatRow({
     ) : messengerStyle === 'talkmaker' ? (
       <TalkmakerLocationCard data={data} isSelf={isSelf} showTail={showBubbleTail} />
     ) : (
-      <LocationMessageCard data={data} wechatClassic={messengerStyle === 'wechat'} />
+      <LocationMessageCard
+        data={data}
+        wechatClassic={messengerStyle === 'wechat'}
+        cssSkin={messengerStyle === 'css'}
+      />
     )
   const card =
     talkmakerTimeLabel ? (
@@ -163,7 +170,7 @@ export function LocationChatRow({
         {showAvatarVisual ? (
           <div className="relative shrink-0">
             {!rankBeside ? (
-              <ChatGroupSpeakerRankOnAvatar rankBadge={chatOtherAvatarRankBadge}>
+              <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge}>
                 {chatOtherAvatarUrl?.trim() ? (
                   <img
                     src={chatOtherAvatarUrl.trim()}
@@ -181,21 +188,25 @@ export function LocationChatRow({
                   otherAvatarFallback
                 )}
               </ChatGroupSpeakerRankOnAvatar>
-            ) : chatOtherAvatarUrl?.trim() ? (
-              <img
-                src={chatOtherAvatarUrl.trim()}
-                alt=""
-                width={avatarPx}
-                height={avatarPx}
-                className="h-10 w-10 shrink-0 object-cover"
-                style={{
-                  borderRadius: `${bubble.avatarRadiusPx}px`,
-                  border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                }}
-                aria-hidden
-              />
             ) : (
-              otherAvatarFallback
+              <WeChatAvatarChromeWrap side="other">
+                {chatOtherAvatarUrl?.trim() ? (
+                  <img
+                    src={chatOtherAvatarUrl.trim()}
+                    alt=""
+                    width={avatarPx}
+                    height={avatarPx}
+                    className="h-10 w-10 shrink-0 object-cover"
+                    style={{
+                      borderRadius: `${bubble.avatarRadiusPx}px`,
+                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                    }}
+                    aria-hidden
+                  />
+                ) : (
+                  otherAvatarFallback
+                )}
+              </WeChatAvatarChromeWrap>
             )}
           </div>
         ) : reserveAvatarGutter ? (

@@ -6,7 +6,7 @@ import {
   weChatChatSkinCssVarLines,
 } from './wechatChatSkinVars'
 
-/** 聊天气泡页：导出 CSS 模版 / AI 提示词（暂未开放；美化预览已独立展示） */
+/** 聊天气泡页：导出 CSS 模版 / AI 提示词（旧路径；新流程见 bubblePack/） */
 export const WECHAT_CHAT_SKIN_EXPORT_UI_ENABLED = false
 
 export type WeChatChatSkinExportInput = {
