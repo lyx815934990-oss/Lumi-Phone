@@ -1,12 +1,16 @@
-import { useMemo, useState } from 'react'
-import { Pencil, UserCircle2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useCustomization } from '../CustomizationContext'
 import { resolveProfileAvatarPreviewUrl } from '../utils/characterAvatarUrl'
 import { resolvePersonalCardBackgroundUrl } from '../utils/personalCardAssets'
 import {
-  getAuthToken,
-} from '../userSystem/userSystemApi'
+  ensurePersonalCardFontLoaded,
+  personalCardFontStack,
+} from '../utils/personalCardFont'
+import {
+  DEFAULT_PERSONAL_CARD_STYLE,
+  personalCardBottomFadeCss,
+} from '../types'
 import { PersonalCardEditModal } from './PersonalCardEditModal'
 
 function formatDate(d: Date) {
@@ -32,19 +36,23 @@ function splitDateForNumberStyle(dateText: string) {
 export type PersonalCardProps = {
   /** 为 false 时不可点击（桌面组件编辑模式） */
   interactive?: boolean
-  /** 打开账号中心（个人名片左上角入口） */
-  onOpenUserAccount?: () => void
 }
 
-export function PersonalCard({ interactive = true, onOpenUserAccount }: PersonalCardProps) {
-  const { state, setPersonalCardProfile, setPersonalCardBackgroundUrl } = useCustomization()
-  const { personalCardProfile: profile, personalCardBackgroundUrl, theme } = state
+export function PersonalCard({ interactive = true }: PersonalCardProps) {
+  const {
+    state,
+    setPersonalCardProfile,
+    setPersonalCardBackgroundUrl,
+    setPersonalCardStyle,
+  } = useCustomization()
+  const {
+    personalCardProfile: profile,
+    personalCardBackgroundUrl,
+    personalCardStyle = DEFAULT_PERSONAL_CARD_STYLE,
+    theme,
+  } = state
   const [editOpen, setEditOpen] = useState(false)
-
-  const lumiSessionLabel = (() => {
-    if (!getAuthToken()) return null
-    return { text: 'Lumi 使用中', tone: 'active' as const }
-  })()
+  const [fontReady, setFontReady] = useState(false)
 
   const dateText = formatDate(new Date())
   const dateParts = splitDateForNumberStyle(dateText)
@@ -52,6 +60,41 @@ export function PersonalCard({ interactive = true, onOpenUserAccount }: Personal
     () => resolvePersonalCardBackgroundUrl(personalCardBackgroundUrl),
     [personalCardBackgroundUrl],
   )
+  const fadeCss = useMemo(
+    () => personalCardBottomFadeCss(theme.surface, theme.border, personalCardStyle),
+    [theme.surface, theme.border, personalCardStyle],
+  )
+
+  // 加载自定义字体文件
+  useEffect(() => {
+    let cancelled = false
+    const fam = personalCardStyle.customFontFamily
+    const url = personalCardStyle.customFontDataUrl
+    if (!fam || !url) {
+      setFontReady(false)
+      return
+    }
+    void ensurePersonalCardFontLoaded(fam, url, personalCardStyle.customFontFileName).then(
+      (ok) => {
+        if (!cancelled) setFontReady(ok)
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [
+    personalCardStyle.customFontFamily,
+    personalCardStyle.customFontDataUrl,
+    personalCardStyle.customFontFileName,
+  ])
+
+  const cardFont = fontReady
+    ? personalCardFontStack(personalCardStyle.customFontFamily, theme.fontFamily)
+    : undefined
+  const titleColor = personalCardStyle.titleColor.trim() || theme.text
+  const signatureColor = personalCardStyle.signatureColor.trim() || theme.textMuted
+  const dateColor = personalCardStyle.dateColor.trim() || theme.textMuted
+  const avatarRing = personalCardStyle.bottomColor.trim() || theme.surface
 
   const openEdit = interactive
     ? () => {
@@ -76,71 +119,22 @@ export function PersonalCard({ interactive = true, onOpenUserAccount }: Personal
               }
             : undefined
         }
-        className={`relative h-full overflow-hidden shadow-[var(--phone-shadow)]${interactive ? ' cursor-pointer transition-opacity active:opacity-[0.97]' : ''}`}
+        className={`relative flex h-full min-h-0 flex-col overflow-hidden${interactive ? ' cursor-pointer transition-opacity active:opacity-[0.97]' : ''}`}
         style={{
-          background: theme.surface,
+          background: 'transparent',
           borderRadius: 'var(--phone-radius-lg)',
-          border: `1px solid ${theme.border}`,
+          fontFamily: cardFont,
         }}
         aria-label={interactive ? '编辑桌面个人名片' : undefined}
       >
-        {interactive && onOpenUserAccount ? (
-          <div className="absolute left-2.5 top-2.5 z-[2] flex max-w-[calc(100%-5rem)] items-center gap-1.5">
-            <button
-              type="button"
-              className="flex size-7 shrink-0 items-center justify-center rounded-full border bg-white/88 shadow-sm backdrop-blur-sm active:scale-95"
-              style={{ borderColor: theme.border, color: theme.textMuted }}
-              aria-label="个人中心"
-              title="个人中心"
-              onClick={(e) => {
-                e.stopPropagation()
-                onOpenUserAccount()
-              }}
-            >
-              <UserCircle2 className="size-3.5" strokeWidth={1.75} />
-            </button>
-            {lumiSessionLabel ? (
-              <span
-                className="truncate rounded-full border px-2 py-0.5 text-[10px] font-medium leading-none shadow-sm backdrop-blur-sm"
-                style={{
-                  borderColor:
-                    lumiSessionLabel.tone === 'active'
-                      ? '#86EFAC'
-                      : lumiSessionLabel.tone === 'elsewhere'
-                        ? '#FCD34D'
-                        : theme.border,
-                  background:
-                    lumiSessionLabel.tone === 'active'
-                      ? 'rgba(240, 253, 244, 0.92)'
-                      : lumiSessionLabel.tone === 'elsewhere'
-                        ? 'rgba(255, 251, 235, 0.92)'
-                        : 'rgba(255, 255, 255, 0.88)',
-                  color:
-                    lumiSessionLabel.tone === 'active'
-                      ? '#15803D'
-                      : lumiSessionLabel.tone === 'elsewhere'
-                        ? '#B45309'
-                        : theme.textMuted,
-                }}
-                title={lumiSessionLabel.text}
-              >
-                {lumiSessionLabel.text}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-        {interactive ? (
-          <span
-            className="absolute right-2.5 top-2.5 z-[2] flex size-7 items-center justify-center rounded-full border bg-white/88 shadow-sm backdrop-blur-sm"
-            style={{ borderColor: theme.border, color: theme.textMuted }}
-            aria-hidden
-          >
-            <Pencil className="size-3.5" strokeWidth={1.75} />
-          </span>
-        ) : null}
         <div
-          className="h-1/2 w-full"
+          className="min-h-0 w-full shrink-0 overflow-hidden"
           style={{
+            height: '38%',
+            borderRadius: 'var(--phone-radius-lg) var(--phone-radius-lg) 0 0',
+            border: `1px solid ${theme.border}`,
+            borderBottom: 'none',
+            boxShadow: 'var(--phone-shadow)',
             backgroundImage: `linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.2) 100%), url(${JSON.stringify(bgStyle)})`,
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
@@ -148,18 +142,30 @@ export function PersonalCard({ interactive = true, onOpenUserAccount }: Personal
             backgroundColor: theme.surfaceMuted,
           }}
         />
-        <div className="relative px-5 pb-5 pt-0">
+
+        <div className="relative flex min-h-0 flex-1 flex-col px-4 pb-4 pt-0">
           <div
-            className="mx-auto flex w-full max-w-[280px] flex-col items-center"
-            style={{ marginTop: '-36px' }}
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 bottom-0"
+            style={fadeCss.fill}
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 bottom-0"
+            style={fadeCss.edge}
+          />
+
+          <div
+            className="relative z-[1] mx-auto flex w-full max-w-[280px] min-h-0 flex-1 flex-col items-center"
+            style={{ marginTop: '-28px' }}
           >
             <div
-              className="flex h-[72px] w-[72px] items-center justify-center overflow-hidden text-2xl shadow-[var(--phone-shadow)]"
+              className="flex size-[56px] shrink-0 items-center justify-center overflow-hidden text-xl shadow-[var(--phone-shadow)]"
               style={{
                 borderRadius: '999px',
                 background: theme.surfaceMuted,
-                border: `2px solid ${theme.surface}`,
-                color: theme.text,
+                border: `2px solid ${avatarRing}`,
+                color: titleColor,
               }}
             >
               {profile.avatarImageUrl ? (
@@ -172,32 +178,40 @@ export function PersonalCard({ interactive = true, onOpenUserAccount }: Personal
                 <span aria-hidden>{profile.avatarEmoji}</span>
               )}
             </div>
-            <h2
-              className="mt-3 text-center text-[1.35rem] font-semibold tracking-tight"
-              style={{ color: theme.text }}
-            >
-              {profile.displayName}
-            </h2>
+
+            <div className="mt-2.5 flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-2">
+              <h2
+                className="line-clamp-1 w-full text-center text-[1.05rem] font-semibold leading-snug tracking-[0.02em]"
+                style={{ color: titleColor }}
+                title={profile.displayName}
+              >
+                {profile.displayName}
+              </h2>
+              <p
+                className="line-clamp-2 w-full px-1 text-center text-[12px] leading-[1.55]"
+                style={{ color: signatureColor }}
+                title={profile.signature}
+              >
+                {profile.signature}
+              </p>
+            </div>
+
             <p
-              className="mt-1 text-center text-[13px] leading-relaxed"
-              style={{ color: theme.textMuted }}
-            >
-              {profile.signature}
-            </p>
-            <p
-              className="mt-3 text-[11px] uppercase tracking-[0.2em]"
-              style={{ color: theme.textMuted }}
+              className="mt-2.5 shrink-0 text-[10px] leading-none tracking-[0.08em]"
+              style={{ color: dateColor, opacity: 0.92 }}
             >
               {dateParts.map((p, idx) =>
                 p.kind === 'num' ? (
                   <span
                     key={`${idx}-${p.value}`}
                     style={{
-                      fontFamily: 'var(--wx-num-font, var(--phone-num-font))',
+                      fontFamily: cardFont
+                        ? cardFont
+                        : 'var(--wx-num-font, var(--phone-num-font))',
                       fontVariantNumeric: 'tabular-nums lining-nums',
                       fontFeatureSettings: '"tnum" 1, "lnum" 1',
                       display: 'inline-block',
-                      letterSpacing: '0.06em',
+                      letterSpacing: '0.04em',
                     }}
                   >
                     {p.value}
@@ -216,9 +230,11 @@ export function PersonalCard({ interactive = true, onOpenUserAccount }: Personal
         onClose={() => setEditOpen(false)}
         profile={profile}
         backgroundUrl={personalCardBackgroundUrl}
-        onSave={({ profile: profilePatch, backgroundUrl }) => {
+        cardStyle={personalCardStyle}
+        onSave={({ profile: profilePatch, backgroundUrl, cardStyle }) => {
           setPersonalCardProfile(profilePatch)
           setPersonalCardBackgroundUrl(backgroundUrl)
+          setPersonalCardStyle(cardStyle)
         }}
       />
     </>
