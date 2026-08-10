@@ -101,6 +101,20 @@
         color: rgba(28, 28, 30, 0.55);
         font-family: "SF Pro Text", "Helvetica Neue", sans-serif;
       }
+      .lumi-boot__retry {
+        display: none;
+        margin-top: 18px;
+        padding: 10px 18px;
+        border: 1px solid rgba(28, 28, 30, 0.14);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.72);
+        color: #2c2c2e;
+        font-size: 13px;
+        font-family: "SF Pro Text", "Helvetica Neue", sans-serif;
+      }
+      .lumi-boot__retry.lumi-boot__retry--show {
+        display: inline-flex;
+      }
     </style>
   </head>
   <body>
@@ -113,6 +127,7 @@
           <span aria-hidden="true"> · </span>
           <span id="lumi-boot-label">正在加载资源…</span>
         </div>
+        <button type="button" class="lumi-boot__retry" id="lumi-boot-retry">重新加载</button>
       </div>
     </div>
     <div id="root"></div>
@@ -122,11 +137,13 @@
         var fill = document.getElementById('lumi-boot-fill')
         var pctEl = document.getElementById('lumi-boot-pct')
         var labelEl = document.getElementById('lumi-boot-label')
+        var retryBtn = document.getElementById('lumi-boot-retry')
         var progress = 0
         var hidden = false
         var creepTimer = 0
         var bytesLoaded = 0
         var bytesSeen = 0
+        var reactAlive = false
 
         function paint() {
           if (!fill || !pctEl || !boot) return
@@ -145,8 +162,13 @@
           paint()
         }
 
+        function showRetry(msg) {
+          if (hidden) return
+          if (labelEl && msg) labelEl.textContent = msg
+          if (retryBtn) retryBtn.className = 'lumi-boot__retry lumi-boot__retry--show'
+        }
+
         function isSkippedBootAsset(name) {
-          // 剧本杀对局包 / 大视频：首开进度与预热一律不计、不拉
           return /JBSGameFlow|jubensha|Jubensha|jbsChat|剧本杀|\.mp4(?:$|\?)|聊天室背景/i.test(name)
         }
 
@@ -174,7 +196,6 @@
             bytesLoaded = loaded
             bytesSeen = Math.max(bytesSeen, total)
             if (bytesSeen <= 0) return
-            // 资源阶段最多推到 72%，留给 React 启动
             var ratio = Math.min(1, bytesLoaded / Math.max(bytesSeen, bytesLoaded + 80000))
             setProgress(8 + ratio * 64, '正在加载资源…')
           } catch (_) {}
@@ -197,6 +218,18 @@
           estimateFromResources()
         }, 280)
 
+        if (retryBtn) {
+          retryBtn.addEventListener('click', function () {
+            try {
+              var u = new URL(window.location.href)
+              u.searchParams.set('__boot_retry', String(Date.now()))
+              window.location.replace(u.toString())
+            } catch (_) {
+              window.location.reload()
+            }
+          })
+        }
+
         window.__lumiBoot = {
           set: setProgress,
           get: function () {
@@ -204,6 +237,10 @@
           },
           isVisible: function () {
             return !hidden
+          },
+          markReactAlive: function () {
+            reactAlive = true
+            setProgress(74, '正在启动应用…')
           },
           done: function (onHidden) {
             if (hidden) {
@@ -222,8 +259,32 @@
             }, 440)
           },
         }
+
+        // 主程序未起来：只显示重试，绝不拆加载层变白屏
+        window.setTimeout(function () {
+          if (hidden) return
+          if (!reactAlive) {
+            showRetry('加载过慢或失败，请点下方重试')
+            return
+          }
+          window.setTimeout(function () {
+            if (hidden) return
+            try {
+              window.__lumiBoot &&
+                window.__lumiBoot.done(function () {
+                  try {
+                    window.dispatchEvent(new CustomEvent('lumi-boot-timeout'))
+                  } catch (_) {}
+                })
+            } catch (_) {}
+          }, 8000)
+        }, 16000)
       })()
     </script>
-    <script type="module" src="/src/main.tsx"></script>
+    <script
+      type="module"
+      src="/src/main.tsx"
+      onerror="(function(){var l=document.getElementById('lumi-boot-label');var r=document.getElementById('lumi-boot-retry');if(l)l.textContent='主程序加载失败，请重试';if(r)r.className='lumi-boot__retry lumi-boot__retry--show';})()"
+    ></script>
   </body>
 </html>

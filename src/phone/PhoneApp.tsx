@@ -9,7 +9,8 @@ import { PhoneShell } from './components/PhoneShell'
 import { UserSystemAuthModal } from './components/UserSystemAuthModal'
 import { UserInfoCorrectionModal } from './components/UserInfoCorrectionModal'
 import { AccountStatusCheckingOverlay } from './components/AccountStatusCheckingOverlay'
-import { persistLoadedAssetsToServiceWorker, warmNonJubenshaAppChunks } from './boot/warmShellCache'
+import { persistLoadedAssetsToServiceWorker } from './boot/warmShellCache'
+import { readEnableSplashScreenSync } from './boot/splashPref'
 import { BootResourceGate } from './components/BootResourceGate'
 import { SplashScreen } from './components/SplashScreen'
 import { useCustomization } from './CustomizationContext'
@@ -198,10 +199,25 @@ export function PhoneApp() {
   /** 本次页面加载是否已做过开屏后的唯一一次账号检测（刷新页面会重置） */
   const sessionBootAuthDoneRef = useRef(false)
 
+  const enableSplashScreen = state.ui.enableSplashScreen !== false
+
   const handleBootReady = useCallback(() => {
     setBootDone(true)
-    if (!skipSplashOnBoot) setShowSplash(true)
+    // 用同步 localStorage 偏好，避免 IDB 水合前误用默认「开启」
+    const splashOn = !skipSplashOnBoot && readEnableSplashScreenSync()
+    setShowSplash(splashOn)
   }, [skipSplashOnBoot])
+
+  const handleSplashComplete = useCallback(() => {
+    setShowSplash(false)
+  }, [])
+
+  /** 设置里关掉开屏，或水合后发现已关闭：立刻停掉正在播的开屏 */
+  useEffect(() => {
+    if (!enableSplashScreen && showSplash) {
+      setShowSplash(false)
+    }
+  }, [enableSplashScreen, showSplash])
 
   useEffect(() => {
     if (!bootDone || showSplash) return
@@ -209,14 +225,13 @@ export function PhoneApp() {
     return () => window.clearTimeout(t)
   }, [bootDone, showSplash])
 
-  /** 桌面稳定后：缓存已下载壳资源 + 预取微信（绝不预热剧本杀） */
+  /** 桌面稳定后：把开屏已下载的壳资源写入 SW（剧本杀仍不缓存） */
   useEffect(() => {
     if (!bootDone || showSplash) return
     let cancelled = false
     const run = () => {
       if (cancelled) return
       void persistLoadedAssetsToServiceWorker()
-      if (!wechatKeepAlive) warmNonJubenshaAppChunks()
     }
     const ric = (
       window as Window & {
@@ -231,7 +246,7 @@ export function PhoneApp() {
       } else {
         run()
       }
-    }, 3500)
+    }, 1200)
     return () => {
       cancelled = true
       window.clearTimeout(warm)
@@ -239,7 +254,7 @@ export function PhoneApp() {
         window.cancelIdleCallback(idleId)
       }
     }
-  }, [bootDone, showSplash, wechatKeepAlive])
+  }, [bootDone, showSplash])
 
   useEffect(() => {
     if (localDevBypassAuth) openVerifiedRef.current = true
@@ -504,7 +519,7 @@ export function PhoneApp() {
 
   useEffect(() => {
     if (!canOfferEvolutionPush) {
-      setShowEvolutionPush(false)
+      setShowEvolutionPush((prev) => (prev ? false : prev))
       return
     }
     let cancelled = false
@@ -642,8 +657,13 @@ export function PhoneApp() {
                 key="home"
                 className={`route-page-layer relative flex h-full min-h-0 flex-col ${disableTransitions ? '' : 'transform-gpu'}`}
                 {...pageProps}
+                initial={false}
               >
-                <HomeScreen onOpenApp={openApp} onOpenUserAccount={() => openUserAccount('overview')} />
+                <HomeScreen
+                  onOpenApp={openApp}
+                  onOpenUserAccount={() => openUserAccount('overview')}
+                  onUserAccountAuthChange={syncUserAuthFromLocal}
+                />
               </motion.div>
             )}
             {route.name === 'userAccount' && (
@@ -717,7 +737,7 @@ export function PhoneApp() {
         {!bootDone ? (
           <BootResourceGate enabled={!skipSplashOnBoot} onReady={handleBootReady} />
         ) : null}
-        {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+        {showSplash && <SplashScreen onComplete={handleSplashComplete} maxMs={5500} />}
         <EntryNoticeModal
           open={bootDone && !showSplash && showEntryNotice}
           ageConfirmed={ageConfirmed}

@@ -196,6 +196,13 @@ function CategorySection({
                   <h3 className="font-serif text-lg font-semibold tracking-wide text-[#1C1C1E]">
                     {mod.moduleName}
                   </h3>
+                  {mod.entryPath ? (
+                    <p className="mt-2 text-[12px] leading-relaxed text-gray-400">
+                      <span className="font-medium text-gray-500">入口路径</span>
+                      <span className="mx-1.5 text-gray-300">·</span>
+                      <span>{mod.entryPath}</span>
+                    </p>
+                  ) : null}
                   {cat.type === 'feature' && mod.entryGuideId ? (
                     <FeatureEntryGuide entryGuideId={mod.entryGuideId} variant="card" />
                   ) : (

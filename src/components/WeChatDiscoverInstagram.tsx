@@ -16,7 +16,7 @@ import { lazyWithRetry } from '../phone/lazyWithRetry'
 
 import type { AnonymousQaWechatContext } from './anonymousQa/buildAnonymousQaPersonaContext'
 import type { MockContact } from './anonymousQa/types'
-import { LISTEN_TOGETHER_NAVIGATE_EVENT } from './discoverListen/listenTogetherNavigation'
+import { LISTEN_TOGETHER_NAVIGATE_EVENT, consumePendingOpenListenTogether } from './discoverListen/listenTogetherNavigation'
 import { LISTEN_TOGETHER_SHARE_TO_MOMENTS_EVENT } from './discoverListen/listenTogetherMomentShareNavigation'
 import {
   consumePendingPulseOpenWeibo,
@@ -178,7 +178,11 @@ export function WeChatDiscoverInstagram({
   }, [onImmersiveViewChange])
 
   useEffect(() => {
-    const onNavigate = () => setActiveView('listen-together')
+    if (consumePendingOpenListenTogether()) setActiveView('listen-together')
+    const onNavigate = () => {
+      consumePendingOpenListenTogether()
+      setActiveView('listen-together')
+    }
     window.addEventListener(LISTEN_TOGETHER_NAVIGATE_EVENT, onNavigate)
     return () => window.removeEventListener(LISTEN_TOGETHER_NAVIGATE_EVENT, onNavigate)
   }, [])

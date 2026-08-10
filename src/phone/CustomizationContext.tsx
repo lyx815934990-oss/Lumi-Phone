@@ -19,6 +19,10 @@ import {
 } from './apps/wechat/wechatAvatarChrome'
 import { bumpWeChatPersonaContactsUserMutation } from './apps/wechat/wechatPersonaContactsUserMutation'
 import {
+  readEnableSplashScreenSync,
+  writeEnableSplashScreenSync,
+} from './boot/splashPref'
+import {
   DEFAULT_CUSTOMIZATION,
   DEFAULT_PERSONAL_CARD_BG_PATH,
   DEFAULT_PERSONAL_CARD_PROFILE,
@@ -27,9 +31,11 @@ import {
   DEFAULT_PUBLIC_AVATAR_PATH,
   DEFAULT_WECHAT_MIRROR_PROFILE,
   DEFAULT_APP_PAGE_STYLE,
+  normalizePersonalCardStyle,
   type CustomizationState,
   type PhoneTheme,
   type Profile,
+  type PersonalCardStyle,
   type MusicInfo,
   type MusicPlayMode,
   type AppSlot,
@@ -48,6 +54,8 @@ import {
   type GestureEffectsSettings,
   normalizeGestureEffects,
   DESKTOP_LAYOUT_SLOT_COUNT,
+  DESKTOP_PAGE2_APP_IDS,
+  DESKTOP_PAGE2_SLOT_COUNT,
 } from './types'
 import { migrateLegacyRootPublicUrl } from '../publicAssetUrl'
 import { LUMI_ARCHIVE_IMPORTED_EVENT } from './apps/dataArchive/constants'
@@ -197,12 +205,17 @@ function normalizeState(raw: Partial<CustomizationState>): CustomizationState {
   if (!personalCardBackgroundUrl.trim()) {
     personalCardBackgroundUrl = DEFAULT_PERSONAL_CARD_BG_PATH
   }
+  const personalCardStyle = normalizePersonalCardStyle(
+    (raw as { personalCardStyle?: unknown }).personalCardStyle,
+    (raw as { personalCardBottomFade?: unknown }).personalCardBottomFade,
+  )
   const apps = normalizeApps(raw.apps)
   return {
     theme,
     profile,
     personalCardProfile,
     personalCardBackgroundUrl,
+    personalCardStyle,
     music: {
       ...musicMerged,
       playMode: normalizeMusicPlayMode(musicMerged.playMode),
@@ -214,9 +227,17 @@ function normalizeState(raw: Partial<CustomizationState>): CustomizationState {
     },
     apps,
     desktopLayout: normalizeDesktopLayout(raw.desktopLayout, apps),
+    desktopLayoutPage2: normalizeDesktopLayoutPage2(
+      (raw as { desktopLayoutPage2?: unknown }).desktopLayoutPage2,
+      apps,
+    ),
     ui: {
       ...DEFAULT_CUSTOMIZATION.ui,
       ...raw.ui,
+      enableSplashScreen:
+        typeof raw.ui?.enableSplashScreen === 'boolean'
+          ? raw.ui.enableSplashScreen
+          : DEFAULT_CUSTOMIZATION.ui.enableSplashScreen,
       keyboardDebugEnabled:
         typeof raw.ui?.keyboardDebugEnabled === 'boolean'
           ? raw.ui.keyboardDebugEnabled
@@ -630,23 +651,49 @@ function normalizeApps(parsedApps: unknown): AppSlot[] {
   })
 }
 
+const PAGE2_ID_SET = new Set<string>(DESKTOP_PAGE2_APP_IDS)
+
 function normalizeDesktopLayout(parsedLayout: unknown, apps: AppSlot[]): Array<AppSlot['id'] | null> {
-  const desktopIds = apps.slice(4).map((app) => app.id)
+  const desktopIds = apps.slice(4).map((app) => app.id).filter((id) => !PAGE2_ID_SET.has(id))
   const desktopSet = new Set(desktopIds)
   const fallback = Array.from({ length: DESKTOP_LAYOUT_SLOT_COUNT }, (_, index) => desktopIds[index] ?? null)
   if (!Array.isArray(parsedLayout)) return fallback
 
   const used = new Set<AppSlot['id']>()
-  const next = Array.from({ length: DESKTOP_LAYOUT_SLOT_COUNT }, (_, index) => {
+  // 保留显式 null：空槽表示图标在下一页溢出区，禁止自动回填
+  return Array.from({ length: DESKTOP_LAYOUT_SLOT_COUNT }, (_, index) => {
     const raw = parsedLayout[index]
     if (typeof raw !== 'string') return null
     const id = raw.trim() as AppSlot['id']
-    if (!desktopSet.has(id) || used.has(id)) return null
+    if (!desktopSet.has(id) || used.has(id) || PAGE2_ID_SET.has(id)) return null
+    used.add(id)
+    return id
+  })
+}
+
+function normalizeDesktopLayoutPage2(
+  parsedLayout: unknown,
+  apps: AppSlot[],
+): Array<AppSlot['id'] | null> {
+  const page2Ids = apps.map((app) => app.id).filter((id) => PAGE2_ID_SET.has(id))
+  const page2Set = new Set(page2Ids)
+  const fallback = Array.from(
+    { length: DESKTOP_PAGE2_SLOT_COUNT },
+    (_, index) => page2Ids[index] ?? null,
+  )
+  if (!Array.isArray(parsedLayout)) return fallback
+
+  const used = new Set<AppSlot['id']>()
+  const next = Array.from({ length: DESKTOP_PAGE2_SLOT_COUNT }, (_, index) => {
+    const raw = parsedLayout[index]
+    if (typeof raw !== 'string') return null
+    const id = raw.trim() as AppSlot['id']
+    if (!page2Set.has(id) || used.has(id)) return null
     used.add(id)
     return id
   })
 
-  for (const id of desktopIds) {
+  for (const id of page2Ids) {
     if (used.has(id)) continue
     const emptyIndex = next.findIndex((slot) => slot === null)
     if (emptyIndex < 0) break
@@ -665,10 +712,12 @@ type Ctx = {
   /** 主屏桌面个人名片 */
   setPersonalCardProfile: (patch: Partial<Profile>) => void
   setPersonalCardBackgroundUrl: (url: string) => void
+  setPersonalCardStyle: (patch: Partial<PersonalCardStyle>) => void
   setMusic: (patch: Partial<MusicInfo>) => void
   setUi: (patch: Partial<UiPreferences>) => void
   reorderApps: (orderedIds: AppSlot['id'][]) => void
   setDesktopLayout: (layout: Array<AppSlot['id'] | null>) => void
+  setDesktopLayoutPage2: (layout: Array<AppSlot['id'] | null>) => void
   setAppLabel: (id: AppSlot['id'], label: string) => void
   setAppIconImageUrl: (id: AppSlot['id'], iconImageUrl: string) => void
   setAppIconRadius: (id: AppSlot['id'], iconRadius: number) => void
@@ -748,7 +797,35 @@ function wechatThemeToStyle(theme: WeChatTheme, globalFontFamily: string): React
 }
 
 export function CustomizationProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<CustomizationState>(DEFAULT_CUSTOMIZATION)
+  const [state, setState] = useState<CustomizationState>(() => {
+    const withSplashPref = (base: CustomizationState): CustomizationState => ({
+      ...base,
+      ui: {
+        ...base.ui,
+        enableSplashScreen: readEnableSplashScreenSync(),
+      },
+    })
+    if (typeof window === 'undefined') return DEFAULT_CUSTOMIZATION
+    try {
+      const ua = window.navigator.userAgent.toLowerCase()
+      const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false
+      const narrow = window.matchMedia?.('(max-width: 900px)').matches ?? false
+      const isMobileUa = /android|iphone|ipad|ipod|harmonyos|mobile/.test(ua)
+      if (isMobileUa || (coarse && narrow)) {
+        return withSplashPref({
+          ...DEFAULT_CUSTOMIZATION,
+          ui: {
+            ...DEFAULT_CUSTOMIZATION.ui,
+            fullScreen: true,
+            showDeviceFrame: false,
+          },
+        })
+      }
+    } catch {
+      // ignore
+    }
+    return withSplashPref(DEFAULT_CUSTOMIZATION)
+  })
   const [customizationHydrated, setCustomizationHydrated] = useState(false)
   const [isStandaloneRuntime, setIsStandaloneRuntime] = useState(false)
 
@@ -765,8 +842,12 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         if (cancelled) return
         if (raw != null && typeof raw === 'object') {
           flushSync(() => {
-            setState(normalizeState(raw as Partial<CustomizationState>))
+            const next = normalizeState(raw as Partial<CustomizationState>)
+            writeEnableSplashScreenSync(next.ui.enableSplashScreen !== false)
+            setState(next)
           })
+        } else {
+          writeEnableSplashScreenSync(DEFAULT_CUSTOMIZATION.ui.enableSplashScreen)
         }
       } catch (err) {
         if (!cancelled) console.warn('Load customization failed:', err)
@@ -1013,6 +1094,16 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, personalCardBackgroundUrl: next }))
   }, [])
 
+  const setPersonalCardStyle = useCallback((patch: Partial<PersonalCardStyle>) => {
+    setState((s) => ({
+      ...s,
+      personalCardStyle: normalizePersonalCardStyle({
+        ...s.personalCardStyle,
+        ...patch,
+      }),
+    }))
+  }, [])
+
   const setMusic = useCallback((patch: Partial<MusicInfo>) => {
     setState((s) => ({ ...s, music: { ...s.music, ...patch } }))
   }, [])
@@ -1049,6 +1140,9 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setUi = useCallback((patch: Partial<UiPreferences>) => {
+    if (typeof patch.enableSplashScreen === 'boolean') {
+      writeEnableSplashScreenSync(patch.enableSplashScreen)
+    }
     setState((s) => ({ ...s, ui: { ...s.ui, ...patch } }))
   }, [])
 
@@ -1071,9 +1165,23 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setDesktopLayout = useCallback((layout: Array<AppSlot['id'] | null>) => {
+    setState((s) => {
+      const next = normalizeDesktopLayout(layout, s.apps)
+      const prev = s.desktopLayout
+      if (
+        prev.length === next.length &&
+        prev.every((id, i) => id === next[i])
+      ) {
+        return s
+      }
+      return { ...s, desktopLayout: next }
+    })
+  }, [])
+
+  const setDesktopLayoutPage2 = useCallback((layout: Array<AppSlot['id'] | null>) => {
     setState((s) => ({
       ...s,
-      desktopLayout: normalizeDesktopLayout(layout, s.apps),
+      desktopLayoutPage2: normalizeDesktopLayoutPage2(layout, s.apps),
     }))
   }, [])
 
@@ -1156,6 +1264,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const resetDefaults = useCallback(() => {
+    writeEnableSplashScreenSync(DEFAULT_CUSTOMIZATION.ui.enableSplashScreen)
     setState(DEFAULT_CUSTOMIZATION)
     void personaDb.deletePhoneKv(STORAGE_KEY)
     if (typeof localStorage !== 'undefined') {
@@ -1179,10 +1288,12 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
       setProfile,
       setPersonalCardProfile,
       setPersonalCardBackgroundUrl,
+      setPersonalCardStyle,
       setMusic,
       setUi,
       reorderApps,
       setDesktopLayout,
+      setDesktopLayoutPage2,
       setAppLabel,
       setAppIconImageUrl,
       setAppIconRadius,
@@ -1206,9 +1317,11 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
       setProfile,
       setPersonalCardProfile,
       setPersonalCardBackgroundUrl,
+      setPersonalCardStyle,
       setMusic,
       setUi,
       reorderApps,
+      setDesktopLayoutPage2,
       setDesktopLayout,
       setAppLabel,
       setAppIconImageUrl,

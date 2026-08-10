@@ -16,6 +16,8 @@ type Props = {
   isActiveDrag?: boolean
   isLongPressPrimed?: boolean
   isGhosted?: boolean
+  /** 编辑态多选 */
+  isSelected?: boolean
   pointerHandlers?: Pick<
     HTMLMotionProps<'button'>,
     'onPointerDown' | 'onPointerMove' | 'onPointerUp' | 'onPointerCancel' | 'onPointerLeave'
@@ -32,13 +34,14 @@ export function DesktopAppTile({
   isActiveDrag = false,
   isLongPressPrimed = false,
   isGhosted = false,
+  isSelected = false,
   pointerHandlers,
 }: Props) {
   const { state } = useCustomization()
   const { theme } = state
-  const iconBg = compact ? 54 : 64
-  const iconGlyph = compact ? 36 : 42
-  const labelSize = compact ? 'clamp(8px, 1.15vh, 9px)' : 'clamp(9px, 1.35vh, 10px)'
+  const iconBg = compact ? 48 : 56
+  const iconGlyph = compact ? 32 : 38
+  const labelSize = compact ? 'clamp(9px, 1.2vh, 10px)' : 'clamp(10px, 1.35vh, 11px)'
   const [rejectPulse, setRejectPulse] = useState(false)
 
   useEffect(() => {
@@ -57,7 +60,7 @@ export function DesktopAppTile({
         }
         onOpen(app.id)
       }}
-      className={`flex h-full w-full flex-col items-center justify-center gap-1.5 rounded-[var(--phone-radius-md)] bg-transparent px-1 py-0.5 ${className ?? ''}`}
+      className={`relative flex h-full w-full flex-col items-center justify-center gap-1 overflow-visible rounded-[var(--phone-radius-md)] bg-transparent px-0.5 py-0.5 ${className ?? ''}`}
       style={{
         background: 'transparent',
         color: theme.text,
@@ -100,7 +103,7 @@ export function DesktopAppTile({
       onContextMenu={(event) => event.preventDefault()}
     >
       <motion.div
-        className="rounded-[22px]"
+        className="relative shrink-0 rounded-[22px]"
         animate={
           isActiveDrag || isLongPressPrimed
             ? {
@@ -118,14 +121,28 @@ export function DesktopAppTile({
           glyphSize={iconGlyph}
           badgeCount={app.id === 'wechat' ? badgeCount : 0}
         />
+        {isEditMode && isSelected ? (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -right-1 -top-1 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full border border-white/85 bg-[#1c1c1e] text-[11px] font-bold leading-none text-white shadow-[0_2px_6px_rgba(0,0,0,0.35)]"
+          >
+            ✓
+          </span>
+        ) : null}
       </motion.div>
       <span
-        className="w-full max-w-full truncate px-1 text-center font-medium tracking-tight"
+        className="w-full max-w-full shrink-0 px-0.5 text-center font-medium tracking-tight"
         style={{
           fontSize: labelSize,
-          lineHeight: 1.25,
+          lineHeight: 1.3,
           color: theme.appLabelColor,
           opacity: isEditMode ? 0.94 : 1,
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+          overflowWrap: 'anywhere',
+          wordBreak: 'break-word',
         }}
       >
         {app.label}

@@ -398,8 +398,8 @@ export type UiPreferences = {
   showDeviceFrame: boolean
   /** 关闭页面切换动画（PPT 式切换，减少 iOS Safari 闪屏概率） */
   disablePageTransitions: boolean
-  /** 强制罗盘使用静态样式（关闭动画与高开销特效） */
-  forceStaticCompass: boolean
+  /** 启动时播放开屏动画（LUMI Splash） */
+  enableSplashScreen: boolean
   /** 键盘抬升调试面板（桌面与聊天页） */
   keyboardDebugEnabled: boolean
   /** 仅保留兼容字段，不再用于抬升逻辑 */
@@ -477,9 +477,13 @@ export type CustomizationState = {
   personalCardProfile: Profile
   /** 个人名片上半区背景图（规范路径或 data URL） */
   personalCardBackgroundUrl: string
+  /** 个人名片下半样式：渐隐 / 白底色 / 文字色 / 自定义字体 */
+  personalCardStyle: PersonalCardStyle
   music: MusicInfo
   apps: AppSlot[]
   desktopLayout: Array<AppSlot['id'] | null>
+  /** 主屏第二页桌面图标（与第一页分离，避免挤占 widget 区） */
+  desktopLayoutPage2: Array<AppSlot['id'] | null>
   ui: UiPreferences
   appPageStyles: Record<AppSlot['id'], AppPageStyle>
   dockStyle: DockStyle
@@ -495,6 +499,10 @@ export const DEFAULT_WALLPAPER_PATH = '/image/手机壁纸1.png'
 export const DEFAULT_WALLPAPER_URL = publicAssetUrl(DEFAULT_WALLPAPER_PATH)
 /** 主屏桌面图标格数量（4×4 桌面区内的 4×2 图标带） */
 export const DESKTOP_LAYOUT_SLOT_COUNT = 8
+/** 主屏第二页图标格数量 */
+export const DESKTOP_PAGE2_SLOT_COUNT = 8
+/** 不参与第一页桌面自动填槽的应用（固定落在第二页） */
+export const DESKTOP_PAGE2_APP_IDS = [] as const satisfies ReadonlyArray<AppSlot['id']>
 
 /** 微信「信息」列表与聊天会话页默认背景图（放在 `image/`，经 {@link resolvePublicImageUrl} 解析） */
 export const DEFAULT_WECHAT_CHAT_WALLPAPER_URL = publicAssetUrl(DEFAULT_WECHAT_CHAT_WALLPAPER_PATH)
@@ -507,6 +515,231 @@ export const DEFAULT_PUBLIC_AVATAR_URL = publicAssetUrl(DEFAULT_PUBLIC_AVATAR_PA
 /** 个人名片页上半身背景图（存库用规范路径） */
 export const DEFAULT_PERSONAL_CARD_BG_PATH = '/image/个人名片背景图1.png'
 export const DEFAULT_PERSONAL_CARD_BG_URL = publicAssetUrl(DEFAULT_PERSONAL_CARD_BG_PATH)
+
+/** 个人名片下半与文字样式 */
+export type PersonalCardStyle = {
+  /** 是否启用底部渐隐毛玻璃 */
+  fadeEnabled: boolean
+  /** 渐隐范围 0–100：只控制渐变带高度（越大渐变区越高） */
+  fadeAmount: number
+  /** 渐隐程度 0–100：只控制渐变带内过渡颗粒度（越大落差越陡） */
+  fadeIntensity: number
+  /** 下半白底色；空字符串表示跟随主题 surface */
+  bottomColor: string
+  /** 昵称颜色；空 = 主题 text */
+  titleColor: string
+  /** 签名颜色；空 = 主题 textMuted */
+  signatureColor: string
+  /** 日期颜色；空 = 主题 textMuted */
+  dateColor: string
+  /** 自定义字体 data URL */
+  customFontDataUrl: string
+  /** 自定义字体文件名（展示用） */
+  customFontFileName: string
+  /** FontFace 族名（有自定义字体时生成） */
+  customFontFamily: string
+}
+
+/** @deprecated 兼容旧字段名，等同 PersonalCardStyle 的渐隐子集 */
+export type PersonalCardBottomFade = Pick<
+  PersonalCardStyle,
+  'fadeEnabled' | 'fadeAmount' | 'fadeIntensity'
+> & {
+  enabled?: boolean
+  amount?: number
+  intensity?: number
+}
+
+export const DEFAULT_PERSONAL_CARD_STYLE: PersonalCardStyle = {
+  fadeEnabled: true,
+  fadeAmount: 55,
+  fadeIntensity: 75,
+  bottomColor: '',
+  titleColor: '',
+  signatureColor: '',
+  dateColor: '',
+  customFontDataUrl: '',
+  customFontFileName: '',
+  customFontFamily: '',
+}
+
+/** @deprecated 使用 DEFAULT_PERSONAL_CARD_STYLE */
+export const DEFAULT_PERSONAL_CARD_BOTTOM_FADE = {
+  enabled: true,
+  amount: 55,
+  intensity: 75,
+} as const
+
+function clampFadePct(n: unknown, fallback: number): number {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return fallback
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
+function optionalHexColor(raw: unknown, fallback = ''): string {
+  if (typeof raw !== 'string') return fallback
+  const s = raw.trim()
+  if (!s) return ''
+  if (/^#[0-9A-Fa-f]{6}$/i.test(s)) return s
+  if (/^#[0-9A-Fa-f]{3}$/i.test(s)) {
+    return `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`
+  }
+  return fallback
+}
+
+export function newPersonalCardFontFamily(): string {
+  return `PersonalCardFont-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+export function normalizePersonalCardStyle(raw: unknown, legacyFade?: unknown): PersonalCardStyle {
+  const d = DEFAULT_PERSONAL_CARD_STYLE
+  const primary =
+    raw && typeof raw === 'object'
+      ? (raw as Record<string, unknown>)
+      : legacyFade && typeof legacyFade === 'object'
+        ? (legacyFade as Record<string, unknown>)
+        : null
+  if (!primary) return { ...d }
+
+  // 兼容旧 personalCardBottomFade: enabled/amount/intensity
+  const fadeEnabled =
+    typeof primary.fadeEnabled === 'boolean'
+      ? primary.fadeEnabled
+      : typeof primary.enabled === 'boolean'
+        ? primary.enabled
+        : d.fadeEnabled
+  const fadeAmount = clampFadePct(
+    primary.fadeAmount ?? primary.amount,
+    d.fadeAmount,
+  )
+  const fadeIntensity = clampFadePct(
+    primary.fadeIntensity ?? primary.intensity,
+    d.fadeIntensity,
+  )
+  const customFontDataUrl =
+    typeof primary.customFontDataUrl === 'string' ? primary.customFontDataUrl.trim() : ''
+  const customFontFileName =
+    typeof primary.customFontFileName === 'string' ? primary.customFontFileName.trim() : ''
+  let customFontFamily =
+    typeof primary.customFontFamily === 'string' ? primary.customFontFamily.trim() : ''
+  if (customFontDataUrl && !customFontFamily) {
+    customFontFamily = newPersonalCardFontFamily()
+  }
+
+  return {
+    fadeEnabled,
+    fadeAmount,
+    fadeIntensity,
+    bottomColor: optionalHexColor(primary.bottomColor, d.bottomColor),
+    titleColor: optionalHexColor(primary.titleColor, d.titleColor),
+    signatureColor: optionalHexColor(primary.signatureColor, d.signatureColor),
+    dateColor: optionalHexColor(primary.dateColor, d.dateColor),
+    customFontDataUrl,
+    customFontFileName: customFontDataUrl ? customFontFileName || '自定义字体' : '',
+    customFontFamily: customFontDataUrl ? customFontFamily : '',
+  }
+}
+
+/** @deprecated */
+export function normalizePersonalCardBottomFade(raw: unknown): PersonalCardStyle {
+  return normalizePersonalCardStyle(raw)
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t
+}
+
+function mixSurface(color: string, alpha01: number): string {
+  const pct = Math.max(0, Math.min(100, Math.round(alpha01 * 100)))
+  if (pct >= 100) return color
+  if (pct <= 0) return 'transparent'
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`
+}
+
+/**
+ * 底部渐隐样式：
+ * - 范围 fadeAmount：只决定渐变带高度（越大渐变区越高）
+ * - 程度 fadeIntensity：只决定该带内透明度曲线陡峭程度（颗粒度）
+ * - 底边恒定为完全透明，禁止硬底边
+ */
+export function personalCardBottomFadeCss(
+  surface: string,
+  border: string,
+  style: PersonalCardStyle,
+): {
+  fill: { background: string; backdropFilter?: string; WebkitBackdropFilter?: string; maskImage?: string; WebkitMaskImage?: string }
+  edge: { borderLeft: string; borderRight: string; borderBottom?: string; maskImage?: string; WebkitMaskImage?: string }
+} {
+  const fillColor = style.bottomColor.trim() || surface
+  if (!style.fadeEnabled) {
+    return {
+      fill: { background: fillColor },
+      edge: {
+        borderLeft: `1px solid ${border}`,
+        borderRight: `1px solid ${border}`,
+        borderBottom: `1px solid ${border}`,
+      },
+    }
+  }
+
+  const rangeT = style.fadeAmount / 100
+  const grainT = style.fadeIntensity / 100
+
+  // 范围：仅改渐变带高度；终点永远在 100% 且透明
+  const fadeZone = 14 + rangeT * 58
+  const solidEnd = Math.max(8, Math.round(100 - fadeZone))
+  const p1 = Math.round(solidEnd + fadeZone * 0.28)
+  const p2 = Math.round(solidEnd + fadeZone * 0.55)
+  const p3 = Math.round(solidEnd + fadeZone * 0.78)
+
+  // 程度：带内曲线颗粒度（低=细腻缓降，高=带内陡降）；底端永远 0
+  const a1 = lerp(0.92, 0.42, grainT)
+  const a2 = lerp(0.72, 0.16, grainT)
+  const a3 = lerp(0.38, 0.04, grainT)
+
+  const bg = [
+    `${fillColor} 0%`,
+    `${fillColor} ${solidEnd}%`,
+    `${mixSurface(fillColor, a1)} ${p1}%`,
+    `${mixSurface(fillColor, a2)} ${p2}%`,
+    `${mixSurface(fillColor, a3)} ${p3}%`,
+    `transparent 100%`,
+  ].join(', ')
+
+  const mask = [
+    `#000 0%`,
+    `#000 ${solidEnd}%`,
+    `rgba(0,0,0,${a1.toFixed(3)}) ${p1}%`,
+    `rgba(0,0,0,${a2.toFixed(3)}) ${p2}%`,
+    `rgba(0,0,0,${Math.max(0.02, a3).toFixed(3)}) ${p3}%`,
+    `transparent 100%`,
+  ].join(', ')
+
+  const edgeMask = [
+    `#000 0%`,
+    `#000 ${Math.max(0, solidEnd - 2)}%`,
+    `rgba(0,0,0,${Math.min(1, a1 + 0.08).toFixed(3)}) ${p1}%`,
+    `rgba(0,0,0,${a2.toFixed(3)}) ${p2}%`,
+    `transparent 100%`,
+  ].join(', ')
+
+  const blurPx = Math.round(10 + grainT * 10)
+
+  return {
+    fill: {
+      background: `linear-gradient(to bottom, ${bg})`,
+      backdropFilter: `blur(${blurPx}px) saturate(1.15)`,
+      WebkitBackdropFilter: `blur(${blurPx}px) saturate(1.15)`,
+      maskImage: `linear-gradient(to bottom, ${mask})`,
+      WebkitMaskImage: `linear-gradient(to bottom, ${mask})`,
+    },
+    edge: {
+      borderLeft: `1px solid ${border}`,
+      borderRight: `1px solid ${border}`,
+      maskImage: `linear-gradient(to bottom, ${edgeMask})`,
+      WebkitMaskImage: `linear-gradient(to bottom, ${edgeMask})`,
+    },
+  }
+}
 
 /** 微信各 Tab 未单独覆盖时使用的默认页背景（与聊天壁纸一致） */
 export const DEFAULT_WECHAT_TAB_PAGE_BG: WxFillStyle = {
@@ -574,6 +807,7 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
   profile: { ...DEFAULT_WECHAT_MIRROR_PROFILE },
   personalCardProfile: { ...DEFAULT_PERSONAL_CARD_PROFILE },
   personalCardBackgroundUrl: DEFAULT_PERSONAL_CARD_BG_PATH,
+  personalCardStyle: { ...DEFAULT_PERSONAL_CARD_STYLE },
   music: {
     trackTitle: '静候播放',
     artistName: '本地音乐',
@@ -609,12 +843,14 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
     null,
     null,
   ],
+  /** 主屏第二页图标布局 */
+  desktopLayoutPage2: [null, null, null, null, null, null, null, null],
   ui: {
     showStatusBar: true,
     fullScreen: false,
     showDeviceFrame: true,
     disablePageTransitions: false,
-    forceStaticCompass: false,
+    enableSplashScreen: true,
     keyboardDebugEnabled: false,
     keyboardDebugSimulateOpen: false,
     keyboardDebugInsetPx: 0,

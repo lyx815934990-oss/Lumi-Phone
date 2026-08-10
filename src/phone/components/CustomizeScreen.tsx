@@ -7,6 +7,7 @@ import { ImageCropperModal } from './ImageCropperModal'
 import { DockStyleSection } from './DockStyleSection'
 import { migrateLegacyRootPublicUrl, resolvePublicImageUrl } from '../../publicAssetUrl'
 import { DEFAULT_CUSTOMIZATION, DEFAULT_WALLPAPER_PATH, type AppSlot } from '../types'
+import { WidgetGallerySettings } from '../widgetGallery'
 import {
   PHONE_GLOBAL_FONT_FALLBACK_STACK,
   clearPhoneGlobalFont,
@@ -32,6 +33,7 @@ type SectionKey =
   | 'font'
   | 'profile'
   | 'music'
+  | 'widgetGallery'
   | 'pageStyles'
   | 'gestureEffects'
   | 'appIcons'
@@ -103,7 +105,6 @@ export function CustomizeScreen({ onBack }: Props) {
     state,
     setTheme,
     setPersonalCardProfile,
-    setMusic,
     setUi,
     setAppLabel,
     setAppIconImageUrl,
@@ -118,7 +119,6 @@ export function CustomizeScreen({ onBack }: Props) {
   const {
     theme,
     personalCardProfile: profile,
-    music,
     apps,
     ui,
     appPageStyles,
@@ -158,6 +158,8 @@ export function CustomizeScreen({ onBack }: Props) {
         return '桌面个人名片'
       case 'music':
         return '桌面组件'
+      case 'widgetGallery':
+        return '高定桌面组件库'
       case 'pageStyles':
         return '页面样式'
       case 'gestureEffects':
@@ -352,7 +354,12 @@ export function CustomizeScreen({ onBack }: Props) {
               desc="主屏名片头像、昵称、签名（与微信资料独立）"
               onClick={() => setSection('profile')}
             />
-            <NavCard title="桌面组件" desc="播放器、Dock样式" onClick={() => setSection('music')} />
+            <NavCard title="桌面组件" desc="Dock 样式与桌面布局重置" onClick={() => setSection('music')} />
+            <NavCard
+              title="高定桌面组件库"
+              desc="长按桌面 → 右上角 + 添加组件（库已清空待重做）"
+              onClick={() => setSection('widgetGallery')}
+            />
             <NavCard
               title="点击动效和拖尾"
               desc="点击反馈与滑动拖尾、颜色与自定义 CSS"
@@ -399,6 +406,12 @@ export function CustomizeScreen({ onBack }: Props) {
               description="PPT 式切换（无过渡动画），可降低部分 iOS Safari 切页闪屏"
               checked={ui.disablePageTransitions}
               onChange={(v) => setUi({ disablePageTransitions: v })}
+            />
+            <SettingToggle
+              label="开屏动画"
+              description="启动加载完成后播放品牌开屏；关闭则直接进入桌面"
+              checked={ui.enableSplashScreen}
+              onChange={(v) => setUi({ enableSplashScreen: v })}
             />
             <SettingToggle
               label="启用键盘抬升调试"
@@ -623,7 +636,7 @@ export function CustomizeScreen({ onBack }: Props) {
                   onChange={(e) => setTheme({ surface: e.target.value })}
                   className="h-10 w-full cursor-pointer rounded-[12px] border border-black/10 bg-transparent p-1"
                 />
-                <p className="mt-1 text-[11px] opacity-70">用于名片、播放器、设置卡片底色</p>
+                <p className="mt-1 text-[11px] opacity-70">用于名片、设置卡片底色</p>
               </div>
               <div>
                 <FieldLabel>主文字</FieldLabel>
@@ -892,12 +905,6 @@ export function CustomizeScreen({ onBack }: Props) {
           </div>
         ) : section === 'music' ? (
           <div className="space-y-3">
-            <SettingToggle
-              label="罗盘极简模式"
-              description="强制桌面罗盘使用静态样式（无动画/无滤镜），优先稳定性"
-              checked={ui.forceStaticCompass}
-              onChange={(v) => setUi({ forceStaticCompass: v })}
-            />
             <Pressable
               onClick={() => {
                 window.dispatchEvent(new Event('lumi-reset-home-widget-layout'))
@@ -911,7 +918,7 @@ export function CustomizeScreen({ onBack }: Props) {
                 color: theme.text,
               }}
             >
-              重置桌面组件布局
+              重置桌面布局
             </Pressable>
             {showLayoutResetToast ? (
               <div
@@ -922,44 +929,9 @@ export function CustomizeScreen({ onBack }: Props) {
                   color: theme.text,
                 }}
               >
-                已重置桌面组件布局
+                已重置桌面布局
               </div>
             ) : null}
-            <div>
-              <FieldLabel>曲名</FieldLabel>
-              <input
-                className="w-full rounded-[12px] border px-3 py-2 text-base outline-none"
-                style={{
-                  borderColor: theme.border,
-                  background: theme.surface,
-                  color: theme.text,
-                }}
-                value={music.trackTitle}
-                onChange={(e) => setMusic({ trackTitle: e.target.value })}
-              />
-            </div>
-            <div>
-              <FieldLabel>艺人</FieldLabel>
-              <input
-                className="w-full rounded-[12px] border px-3 py-2 text-base outline-none"
-                style={{
-                  borderColor: theme.border,
-                  background: theme.surface,
-                  color: theme.text,
-                }}
-                value={music.artistName}
-                onChange={(e) => setMusic({ artistName: e.target.value })}
-              />
-            </div>
-            <div>
-              <FieldLabel>封面主色</FieldLabel>
-              <input
-                type="color"
-                value={music.coverTint}
-                onChange={(e) => setMusic({ coverTint: e.target.value })}
-                className="h-10 w-full cursor-pointer rounded-[12px] border border-black/10 bg-transparent p-1"
-              />
-            </div>
 
             <DockStyleSection
               theme={theme}
@@ -969,6 +941,8 @@ export function CustomizeScreen({ onBack }: Props) {
               onPickDockImage={() => openStyleImageUpload({ kind: 'dockBg' })}
             />
           </div>
+        ) : section === 'widgetGallery' ? (
+          <WidgetGallerySettings />
         ) : section === 'gestureEffects' ? (
           <div className="space-y-3">
             <input

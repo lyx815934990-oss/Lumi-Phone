@@ -48,7 +48,8 @@ export function PhoneShell({ children }: Props) {
       const h = Math.max(0, Math.floor(rect.height))
       if (!w || !h) return
       const s = Math.min(w / NON_FULLSCREEN_BASE_W, h / NON_FULLSCREEN_BASE_H, 1)
-      setNonFullscreenScale(Number.isFinite(s) ? s : 1)
+      const next = Number.isFinite(s) ? Math.round(s * 1000) / 1000 : 1
+      setNonFullscreenScale((prev) => (Math.abs(prev - next) < 0.002 ? prev : next))
     }
 
     compute()
@@ -119,7 +120,10 @@ export function PhoneShell({ children }: Props) {
         : 'flex min-h-0 justify-center'
 
   const innerContent = (
-    <div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div
+      data-phone-shell="true"
+      className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+    >
       {children}
       <ListenTogetherSyncDurationTracker />
       <ListenTogetherFullscreenHost />

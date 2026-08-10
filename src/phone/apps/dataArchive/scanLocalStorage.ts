@@ -28,6 +28,8 @@ function friendlyCategoryForKey(key: string): string {
 
   if (k.startsWith('lumi-home-widget')) return '主屏幕小组件布局'
 
+  if (k.startsWith('lumi-widget-gallery') || k.startsWith('lumi-affection-history')) return '高定桌面组件库'
+
   if (k === 'wechat-dating-archives-v1' || k.includes('wechat-dating-archives')) return '约会模式 · 剧情存档'
 
   if (k === 'wechat-dating-characters-v1' || k.includes('wechat-dating-characters')) return '约会模式 · 人设与列表'

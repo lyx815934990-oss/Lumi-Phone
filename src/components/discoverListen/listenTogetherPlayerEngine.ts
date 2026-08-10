@@ -26,7 +26,10 @@ import {
   type CachedPlayerSession,
 } from './listenTogetherPlayerSession'
 import type { ListenAttachedMusic } from './listenTogetherNotesMock'
-import { pauseMusicWidgetSharedAudio } from '../../phone/components/MusicWidget'
+import {
+  isDesktopLocalPlayback,
+  pauseMusicWidgetSharedAudio,
+} from '../../phone/components/musicWidgetAudio'
 import { isKeepAliveAudioElement } from '../../phone/apps/backgroundNotify/backgroundAudioCoexistence'
 import { useMusicStore, type MusicTrack } from '../../stores/useMusicStore'
 
@@ -161,6 +164,8 @@ function notifyUserPlaybackIntent() {
 }
 
 function pushStateToStore() {
+  /** 本地桌面播放占用 store 时，听一听侧勿覆盖（恢复会话 / 误触发事件） */
+  if (isDesktopLocalPlayback()) return
   const track = attachedToTrack(nowPlaying)
   useMusicStore.getState()._syncEngineState({
     currentTrack: track,
@@ -543,12 +548,15 @@ export function getListenTogetherPlayerSnapshot(): EngineSnapshot {
 export async function restorePlayerSessionFromCache(): Promise<boolean> {
   ensureListenTogetherPlayerEngine()
   if (hasActiveNowPlaying()) return false
+  /** 桌面组件正在播本地文件时，不要用听一听缓存覆盖 / 掐断 */
+  if (isDesktopLocalPlayback()) return false
 
   const session = getNeteaseListenSessionSync()
   if (!session.isActive) return false
 
   const cached = await getCachedPlayerSession()
   if (!cached?.song?.id) return false
+  if (isDesktopLocalPlayback()) return false
 
   const epoch = beginNewPlaybackEpoch()
 
@@ -600,6 +608,7 @@ export async function restorePlayerSessionFromCache(): Promise<boolean> {
   }
 
   if (isPlaybackEpochStale(epoch)) return false
+  if (isDesktopLocalPlayback()) return false
   pushStateToStore()
   return true
 }

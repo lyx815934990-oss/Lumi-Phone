@@ -4,6 +4,8 @@ export type LumiBootApi = {
   done: (onHidden?: () => void) => void
   get: () => number
   isVisible: () => boolean
+  /** 主模块已执行：避免未就绪时强拆加载层导致白屏 */
+  markReactAlive?: () => void
 }
 
 declare global {
@@ -14,6 +16,10 @@ declare global {
 
 export function markBootProgress(percent: number, label?: string) {
   window.__lumiBoot?.set(percent, label)
+}
+
+export function markBootReactAlive() {
+  window.__lumiBoot?.markReactAlive?.()
 }
 
 export function finishBootOverlay(onHidden?: () => void) {

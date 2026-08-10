@@ -1,10 +1,12 @@
 import { motion, useAnimationControls } from 'framer-motion'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 type SplashScreenProps = {
   onComplete?: () => void
   background?: '#FFFFFF' | '#F9FAFB' | string
   brandName?: string
+  /** 最长播放时间，超时强制结束，避免卡白屏 */
+  maxMs?: number
 }
 
 const whispers = [
@@ -60,6 +62,7 @@ export function SplashScreen({
   onComplete,
   background = '#FFFFFF',
   brandName = 'L U M I',
+  maxMs = 6500,
 }: SplashScreenProps) {
   const overlayControls = useAnimationControls()
   const lineControls = useAnimationControls()
@@ -67,6 +70,9 @@ export function SplashScreen({
   const whisperControls = useAnimationControls()
   const glowControls = useAnimationControls()
   const [active, setActive] = useState(true)
+  const onCompleteRef = useRef(onComplete)
+  onCompleteRef.current = onComplete
+  const finishedRef = useRef(false)
   const whisper = useMemo(
     () => whispers[Math.floor(Math.random() * whispers.length)] ?? whispers[0],
     [],
@@ -78,8 +84,19 @@ export function SplashScreen({
 
     let cancelled = false
 
+    const finish = () => {
+      if (finishedRef.current) return
+      finishedRef.current = true
+      document.body.style.overflow = previousOverflow
+      setActive(false)
+      onCompleteRef.current?.()
+    }
+
+    const safetyTimer = window.setTimeout(() => {
+      if (!cancelled) finish()
+    }, Math.max(1200, maxMs))
+
     const runSequence = async () => {
-      // 初始状态
       await Promise.all([
         overlayControls.set({ opacity: 1, y: 0 }),
         lineControls.set({ width: 0, height: 1, opacity: 1 }),
@@ -87,15 +104,14 @@ export function SplashScreen({
         whisperControls.set({ opacity: 0, y: 10, scale: 1, filter: 'blur(4px)' }),
         glowControls.set({ opacity: 0, scale: 0.96 }),
       ])
+      if (cancelled) return
 
-      // Stage 1: 线之凝结 (0.0 - 0.8s)
       await lineControls.start({
         width: 100,
         transition: { duration: 0.8, ease: 'easeInOut' },
       })
       if (cancelled) return
 
-      // Stage 2: 品牌名显影 (0.8 - 1.6s)
       await Promise.all([
         lineControls.start({
           height: 6,
@@ -111,7 +127,6 @@ export function SplashScreen({
       ])
       if (cancelled) return
 
-      // Stage 3: 寄语浮现 (1.8 - 3.5s)
       await whisperControls.start({
         opacity: 0.8,
         y: 0,
@@ -120,7 +135,6 @@ export function SplashScreen({
       })
       if (cancelled) return
 
-      // Stage 4: 晨雾揭幕 (3.5 - 4.5s)
       await Promise.all([
         textControls.start({
           scale: [1, 1.015, 0.98],
@@ -156,23 +170,23 @@ export function SplashScreen({
       })
       if (cancelled) return
 
-      document.body.style.overflow = previousOverflow
-      setActive(false)
-      onComplete?.()
+      finish()
     }
 
-    runSequence().catch(() => {
-      if (cancelled) return
-      document.body.style.overflow = previousOverflow
-      setActive(false)
-      onComplete?.()
+    void runSequence().catch(() => {
+      if (!cancelled) finish()
     })
 
     return () => {
       cancelled = true
+      window.clearTimeout(safetyTimer)
       document.body.style.overflow = previousOverflow
+      // StrictMode 会先卸载再挂载：不在此处 finish，避免误关第二次开屏。
+      // 真正卡死由 maxMs 兜底；若父级直接卸掉本组件，也无需再回调。
     }
-  }, [glowControls, lineControls, onComplete, overlayControls, textControls, whisperControls])
+    // 故意不把 onComplete 放进 deps，避免父组件重渲染反复打断动画导致白屏
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   if (!active) return null
 

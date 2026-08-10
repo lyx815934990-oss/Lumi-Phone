@@ -2,13 +2,14 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
-import { markBootProgress } from './phone/boot/lumiBootBridge'
+import { markBootProgress, markBootReactAlive } from './phone/boot/lumiBootBridge'
 import {
   isLikelyIosBrowser,
   setupServiceWorkerControlWatcher,
 } from './phone/apps/backgroundNotify/backgroundPushClient'
 import { maybeRecoverFromBrokenKeepAlivePwa } from './phone/apps/backgroundNotify/keepAliveBootRecovery'
 
+markBootReactAlive()
 markBootProgress(76, '正在启动应用…')
 
 /**
@@ -30,12 +31,22 @@ if (import.meta.env.DEV && isLikelyIosBrowser() && 'serviceWorker' in navigator)
   })
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
-markBootProgress(82, '界面准备中…')
+const rootEl = document.getElementById('root')
+if (!rootEl) {
+  markBootProgress(100, '启动失败：缺少根节点')
+} else {
+  try {
+    createRoot(rootEl).render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+    markBootProgress(82, '界面准备中…')
+  } catch (err) {
+    console.error('[Lumi] React mount failed', err)
+    markBootProgress(100, '界面启动失败，请刷新重试')
+  }
+}
 
 function runWhenIdle(task: () => void, timeoutMs: number) {
   const ric = (
