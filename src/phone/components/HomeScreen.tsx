@@ -1,5 +1,5 @@
-import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, animate as motionAnimate, motion, useMotionValue } from 'framer-motion'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { DESKTOP_LAYOUT_SLOT_COUNT, DESKTOP_PAGE2_APP_IDS, type AppSlot } from '../types'
 import { personaDb } from '../apps/wechat/newFriendsPersona/idb'
 import {
@@ -1215,9 +1215,57 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
   /** 落点高亮在哪一页网格 */
   const [hoverDropZone, setHoverDropZone] = useState<'desktop' | 'overflow' | null>(null)
   const [galleryDraggingId, setGalleryDraggingId] = useState<string | null>(null)
-  const homePageSwipeRef = useRef<{ x: number; y: number; active: boolean } | null>(null)
+  /** 主屏左右翻页手势：跟手拖动，松手按半屏吸附 */
+  const homePageSwipeRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    /** null 未判定；true 横向翻页；false 非翻页（交给点击/长按） */
+    axis: boolean | null
+    baseX: number
+  } | null>(null)
+  const pageOffsetX = useMotionValue(0)
+  const isPageDraggingRef = useRef(false)
+  const pageSwipeSuppressClickRef = useRef(false)
   const galleryDraggingIdRef = useRef<string | null>(null)
   galleryDraggingIdRef.current = galleryDraggingId
+
+  const getPagerWidth = useCallback(() => pagerViewportRef.current?.clientWidth ?? 0, [])
+
+  const snapPageOffset = useCallback(
+    (page: number, withSpring: boolean) => {
+      const w = getPagerWidth()
+      const target = -page * w
+      if (!withSpring || w <= 0) {
+        pageOffsetX.set(target)
+        return
+      }
+      void motionAnimate(pageOffsetX, target, { type: 'spring', stiffness: 420, damping: 38 })
+    },
+    [getPagerWidth, pageOffsetX],
+  )
+
+  const pagerMountedRef = useRef(false)
+
+  /** 外部改页（圆点 / 拖拽贴边）时对齐偏移；跟手拖动中不抢 */
+  useLayoutEffect(() => {
+    if (isPageDraggingRef.current) return
+    const withSpring =
+      pagerMountedRef.current && !(activeDrag || galleryDraggingId)
+    pagerMountedRef.current = true
+    snapPageOffset(homePage, withSpring)
+  }, [homePage, activeDrag, galleryDraggingId, snapPageOffset])
+
+  useEffect(() => {
+    const el = pagerViewportRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (isPageDraggingRef.current) return
+      pageOffsetX.set(-homePageRef.current * el.clientWidth)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [pageOffsetX])
 
   /** 主屏组件占用格 → 图标填剩余空格；挤不下的排到下一页 */
   useEffect(() => {
@@ -1398,6 +1446,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
     }
     window.getSelection()?.removeAllRanges()
     homePageSwipeRef.current = null
+    isPageDraggingRef.current = false
     setIsEditMode(true)
     setActiveDrag(null)
     setActiveWidgetDrag(null)
@@ -1428,18 +1477,38 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
   }, [])
 
   /**
-   * 禁止左右翻页的目标：编辑面板、组件内显式交互控件、图标/名片。
-   * 不要整块拦截 data-desktop-gallery-widget，也不要拦普通 button——
-   * 否则大面积封面/正文一点就卡住翻页。
+   * 禁止左右翻页的目标：编辑面板、表单控件。
+   * 普通态允许从图标/名片上起手翻页（否则主屏几乎滑不动）；
+   * 编辑态仍拦图标/名片，避免与拖拽抢手势。
+   * 不要整块拦截 data-desktop-gallery-widget——大面积封面一点就卡住翻页。
    */
-  const shouldBlockHomeSwipe = useCallback((target: HTMLElement | null) => {
-    if (!target) return false
-    if (target.closest('[data-widget-editing="true"]')) return true
-    if (target.closest('[data-widget-add-ui="true"]')) return true
-    if (target.closest('[data-desktop-tile="true"]')) return true
-    if (target.closest('[data-desktop-static="true"]')) return true
-    if (target.closest('input, textarea, select, [role="slider"]')) return true
-    return false
+  const shouldBlockHomeSwipe = useCallback(
+    (target: HTMLElement | null) => {
+      if (!target) return false
+      if (target.closest('[data-widget-editing="true"]')) return true
+      if (target.closest('[data-widget-add-ui="true"]')) return true
+      if (target.closest('input, textarea, select, [role="slider"]')) return true
+      if (isEditMode) {
+        if (target.closest('[data-desktop-tile="true"]')) return true
+        if (target.closest('[data-desktop-static="true"]')) return true
+      }
+      return false
+    },
+    [isEditMode],
+  )
+
+  /** 横向翻页后短时吞掉紧随的 click，避免误开应用/名片 */
+  const armPageSwipeClickGuard = useCallback(() => {
+    pageSwipeSuppressClickRef.current = true
+    const blockClick = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    document.addEventListener('click', blockClick, true)
+    window.setTimeout(() => {
+      document.removeEventListener('click', blockClick, true)
+      pageSwipeSuppressClickRef.current = false
+    }, 80)
   }, [])
 
   const persistFreeHomeLayout = useCallback(
@@ -1562,6 +1631,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
 
   const handleAppOpen = useCallback((id: AppSlot['id']) => {
     if (isEditMode) return
+    if (pageSwipeSuppressClickRef.current) return
     onOpenApp(id)
   }, [isEditMode, onOpenApp])
 
@@ -2079,14 +2149,20 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
             editBlankTapRef.current = { x: event.clientX, y: event.clientY }
           }
 
-          // 非拖拽时可追踪翻页（组件拖拽改用贴边停留 1 秒翻页）
+          // 非拖拽时可追踪翻页（组件拖拽改用贴边停留翻页）
           if (
             !activeDrag &&
             !activeWidgetDrag &&
             !galleryDraggingIdRef.current &&
             !shouldBlockHomeSwipe(target)
           ) {
-            homePageSwipeRef.current = { x: event.clientX, y: event.clientY, active: true }
+            homePageSwipeRef.current = {
+              pointerId: event.pointerId,
+              startX: event.clientX,
+              startY: event.clientY,
+              axis: null,
+              baseX: pageOffsetX.get(),
+            }
           } else {
             homePageSwipeRef.current = null
           }
@@ -2105,30 +2181,90 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
             const dy = event.clientY - tap.y
             if (Math.hypot(dx, dy) > 12) editBlankTapRef.current = null
           }
+
+          const swipe = homePageSwipeRef.current
+          if (!swipe || swipe.pointerId !== event.pointerId) return
+          if (activeDrag || activeWidgetDrag || galleryDraggingIdRef.current) return
+
+          const dx = event.clientX - swipe.startX
+          const dy = event.clientY - swipe.startY
+
+          if (swipe.axis === null) {
+            if (Math.hypot(dx, dy) < 10) return
+            // 明显横向才锁定翻页，否则交给点击 / 长按
+            swipe.axis = Math.abs(dx) >= Math.abs(dy) * 1.2
+            if (!swipe.axis) return
+            isPageDraggingRef.current = true
+            pageSwipeSuppressClickRef.current = true
+            editBlankTapRef.current = null
+            clearBlankLongPress()
+            try {
+              ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+            } catch {
+              /* ignore */
+            }
+          }
+
+          if (swipe.axis !== true) return
+
+          const w = getPagerWidth()
+          const minPage = isEditMode ? HOME_MAIN_PAGE : 0
+          const maxPage = HOME_PAGE_COUNT - 1
+          const maxX = -minPage * w
+          const minX = -maxPage * w
+          let next = swipe.baseX + dx
+          // 边缘轻微阻尼，避免拖出界
+          if (next > maxX) next = maxX + (next - maxX) * 0.22
+          if (next < minX) next = minX + (next - minX) * 0.22
+          pageOffsetX.set(next)
         }}
         onPointerUp={(event) => {
           clearBlankLongPress()
 
           const swipe = homePageSwipeRef.current
           homePageSwipeRef.current = null
+
           if (
-            swipe?.active &&
+            swipe?.axis === true &&
+            swipe.pointerId === event.pointerId &&
             !activeDrag &&
             !activeWidgetDrag &&
             !galleryDraggingIdRef.current
           ) {
-            const dx = event.clientX - swipe.x
-            const dy = event.clientY - swipe.y
-            if (Math.abs(dx) >= 48 && Math.abs(dx) >= Math.abs(dy) * 1.2) {
-              editBlankTapRef.current = null
-              if (dx < 0 && homePage < HOME_PAGE_COUNT - 1) setHomePage((p) => p + 1)
-              // 编辑态不滑进账号固定页
-              if (dx > 0 && homePage > (isEditMode ? HOME_MAIN_PAGE : 0)) {
-                setHomePage((p) => p - 1)
-              }
-              return
+            isPageDraggingRef.current = false
+            armPageSwipeClickGuard()
+            try {
+              ;(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId)
+            } catch {
+              /* ignore */
             }
+
+            const w = getPagerWidth()
+            const dx = event.clientX - swipe.startX
+            const minPage = isEditMode ? HOME_MAIN_PAGE : 0
+            const maxPage = HOME_PAGE_COUNT - 1
+            let nextPage = homePageRef.current
+            // 滑动超过半屏才翻页，否则回弹原页
+            if (w > 0 && Math.abs(dx) >= w * 0.5) {
+              if (dx < 0 && nextPage < maxPage) nextPage += 1
+              if (dx > 0 && nextPage > minPage) nextPage -= 1
+            }
+            if (nextPage !== homePageRef.current) {
+              homePageRef.current = nextPage
+              setHomePage(nextPage)
+            }
+            snapPageOffset(nextPage, true)
+            return
           }
+
+          if (swipe && swipe.pointerId === event.pointerId && swipe.axis === true) {
+            isPageDraggingRef.current = false
+            armPageSwipeClickGuard()
+            snapPageOffset(homePageRef.current, true)
+          } else if (swipe?.axis !== true) {
+            pageSwipeSuppressClickRef.current = false
+          }
+
           // 编辑态点空白（非滑动）：有多选先清空，否则退出编辑
           if (isEditMode && editBlankTapRef.current && !activeDrag && !activeWidgetDrag && !galleryDraggingIdRef.current) {
             editBlankTapRef.current = null
@@ -2141,10 +2277,21 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
           }
           editBlankTapRef.current = null
         }}
-        onPointerCancel={() => {
+        onPointerCancel={(event) => {
           clearBlankLongPress()
           editBlankTapRef.current = null
+          const swipe = homePageSwipeRef.current
           homePageSwipeRef.current = null
+          if (swipe?.axis === true) {
+            isPageDraggingRef.current = false
+            pageSwipeSuppressClickRef.current = false
+            try {
+              ;(event.currentTarget as HTMLElement).releasePointerCapture(swipe.pointerId)
+            } catch {
+              /* ignore */
+            }
+            snapPageOffset(homePageRef.current, true)
+          }
         }}
       >
         <WidgetEditAddUi
@@ -2171,13 +2318,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
         >
           <motion.div
             className="flex h-full"
-            style={{ width: '400%' }}
-            animate={{ x: `${-(homePage * 100) / 4}%` }}
-            transition={
-              activeDrag || galleryDraggingId
-                ? { duration: 0 }
-                : { type: 'spring', stiffness: 420, damping: 38 }
-            }
+            style={{ width: '400%', x: pageOffsetX }}
           >
             {/* 第 0 页：账号中心手势位（进入后跳转全屏路由） */}
             <div className="relative flex h-full w-1/4 min-w-0 flex-col overflow-hidden">
