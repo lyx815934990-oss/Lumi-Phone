@@ -52,8 +52,9 @@ import {
 import { consumeDiscordRegisterFromCommunityTroubleshoot } from './userSystem/discordRegisterFlags'
 import { storeDiscordRegisterPending } from './components/DiscordRegisterCompleteModal'
 
-const WeChatApp = lazyWithRetry(() =>
-  import('./apps/wechat/WeChatApp').then((m) => ({ default: m.WeChatApp })),
+const WeChatApp = lazyWithRetry(
+  () => import('./apps/wechat/WeChatApp').then((m) => ({ default: m.WeChatApp })),
+  { retries: 6, baseDelayMs: 700 },
 )
 const UserAccountApp = lazyWithRetry(() =>
   import('./apps/userAccount/UserAccountApp').then((m) => ({ default: m.UserAccountApp })),
@@ -221,6 +222,8 @@ export function PhoneApp() {
 
   useEffect(() => {
     if (!bootDone || showSplash) return
+    // 进桌面后立刻再拉一次微信（不挡 UI），降低点开失败率
+    prefetchAppChunk('wechat')
     const t = window.setTimeout(() => setDeferSecondaryRuntime(true), 1800)
     return () => window.clearTimeout(t)
   }, [bootDone, showSplash])

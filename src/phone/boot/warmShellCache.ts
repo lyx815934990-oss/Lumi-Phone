@@ -155,8 +155,8 @@ async function runPreloadQueue(
       try {
         const result = await withTimeout(
           importNamedWithRetry(task.load, {
-            retries: mobile ? 1 : 2,
-            baseDelayMs: mobile ? 280 : 400,
+            retries: mobile ? 3 : 3,
+            baseDelayMs: mobile ? 500 : 400,
           }),
           perTaskTimeoutMs,
         )
@@ -182,18 +182,30 @@ async function runPreloadQueue(
 }
 
 /**
- * 开屏只拉 critical（微信/账号/外观/API），尽快进桌面。
+ * 开屏优先单独拉微信（最大包），再补其余 critical，避免并发抢带宽导致微信永远下不完。
  */
 export async function preloadCriticalBootResources(
   onProgress?: (p: BootPreloadProgress) => void,
 ): Promise<void> {
   const mobile = isMobileBootClient()
-  const tasks = BOOT_PRELOAD_TASKS.filter((t) => t.critical)
-  await runPreloadQueue(tasks, onProgress, {
-    concurrency: mobile ? 2 : 3,
-    overallTimeoutMs: mobile ? 7_000 : 9_000,
-    perTaskTimeoutMs: mobile ? 5_500 : 8_000,
-  })
+  const critical = BOOT_PRELOAD_TASKS.filter((t) => t.critical)
+  const wechat = critical.filter((t) => t.label === '微信')
+  const rest = critical.filter((t) => t.label !== '微信')
+
+  if (wechat.length) {
+    await runPreloadQueue(wechat, onProgress, {
+      concurrency: 1,
+      overallTimeoutMs: mobile ? 18_000 : 20_000,
+      perTaskTimeoutMs: mobile ? 16_000 : 18_000,
+    })
+  }
+  if (rest.length) {
+    await runPreloadQueue(rest, onProgress, {
+      concurrency: mobile ? 2 : 3,
+      overallTimeoutMs: mobile ? 8_000 : 10_000,
+      perTaskTimeoutMs: mobile ? 5_000 : 8_000,
+    })
+  }
 }
 
 /**

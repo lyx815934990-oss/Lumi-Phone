@@ -74,14 +74,15 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
         ])
         if (cancelled || sealedRef.current) return
 
-        markBootProgress(84, mobile ? '正在准备常用应用…' : '正在准备核心应用…')
+        markBootProgress(84, mobile ? '正在准备微信…' : '正在准备核心应用…')
         await Promise.race([
           preloadCriticalBootResources((p) => {
             if (sealedRef.current) return
             const pct = 84 + Math.round(p.ratio * 12)
             markBootProgress(Math.min(pct, 96), p.label)
           }),
-          sleep(mobile ? 7_500 : 9_500),
+          // 微信包较大：给足时间，别 7s 就掐断导致点开失败
+          sleep(mobile ? 22_000 : 24_000),
         ])
         if (sealedRef.current) return
 

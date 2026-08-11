@@ -91,7 +91,8 @@ export async function importWithRetry(
 /** 用法同 React.lazy，失败时自动重试（含 cache-bust） */
 export function lazyWithRetry(
   importer: AnyImporter,
+  opts?: { retries?: number; baseDelayMs?: number },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): LazyExoticComponent<ComponentType<any>> {
-  return lazy(() => importWithRetry(importer))
+  return lazy(() => importWithRetry(importer, opts))
 }

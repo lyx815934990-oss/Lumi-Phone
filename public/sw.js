@@ -2,8 +2,8 @@
 
 const NOTIFY_ICON_CACHE = 'lumi-notify-icons-v1'
 /** 发版后 bump，强制丢掉指着旧 hash / 坏 vendor 拆包的壳缓存 */
-const ASSET_CACHE = 'lumi-runtime-assets-v4'
-const SHELL_CACHE = 'lumi-shell-v4'
+const ASSET_CACHE = 'lumi-runtime-assets-v5'
+const SHELL_CACHE = 'lumi-shell-v5'
 const NOTIFY_ICON_PATH_MARKER = '/__lumi_notify_icon__/'
 
 /** 剧本杀 / 超大视频：永不进 SW 缓存，也勿拦截为 cache-first */
