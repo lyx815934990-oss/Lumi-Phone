@@ -12,6 +12,7 @@ import {
   isPreferSystemClockDespiteStoryFloor,
   isWeChatClockAlignedWithStoryFloor,
   resetOnlineClockToSystemTime,
+  resolveCharacterChatMessageTimeFloor,
   resolveCharacterStoryTimeFloor,
   restoreOnlineClockToStoryTime,
   syncStoryTimelineNowFromOnlineClock,
@@ -207,6 +208,9 @@ function ResetSystemClockDialog({
           将把本角色线上时间改回设备本地时间，并解除剧情锚点对线上时钟的锁定。
         </p>
         <p className="mt-2 text-[13px] leading-6" style={{ color: ink.mid }}>
+          若手机当前时间早于本会话最后一条消息（例如剧情已聊到晚上、手机还是下午），会自动对齐到最后消息之后，避免新消息时间戳倒序或插回历史。
+        </p>
+        <p className="mt-2 text-[13px] leading-6" style={{ color: ink.mid }}>
           不会自动改写线下摘要或约会剧情正文里的时间。请尽快到「记忆档案馆 › 线下摘要」手动核对或修改时间点，否则继续走线下或跨通道时容易时序混乱。
         </p>
       </div>
@@ -283,6 +287,7 @@ export function ChatTimeSettingsScreen({
     floorMs: null,
     hasFloor: false,
   })
+  const [chatFloorMs, setChatFloorMs] = useState<number | null>(null)
   const [floorHint, setFloorHint] = useState('')
   const [savedSnapshot, setSavedSnapshot] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -304,11 +309,13 @@ export function ChatTimeSettingsScreen({
   const load = useCallback(async () => {
     const cid = characterId.trim()
     if (!cid) return
-    const [gs, row, floor] = await Promise.all([
+    const [gs, row, floor, chatFloor] = await Promise.all([
       personaDb.getGlobalSettings(),
       personaDb.getCharacterTimeSettings(cid),
       resolveCharacterStoryTimeFloor(cid),
+      resolveCharacterChatMessageTimeFloor(cid),
     ])
+    setChatFloorMs(chatFloor.hasFloor ? chatFloor.floorMs : null)
     let config = normalizeWeChatTimeConfig(row?.config ?? gs.globalTimeConfig)
     let perception = isCharacterTimePerceptionEnabled(row)
     const preferSystem = isPreferSystemClockDespiteStoryFloor(row)
@@ -363,6 +370,20 @@ export function ChatTimeSettingsScreen({
         hint = '请记得手动改线下摘要时间点'
       }
     }
+    if (chatFloor.hasFloor && chatFloor.floorMs != null) {
+      const liveAfter = resolveWeChatCurrentTimeMs(config)
+      if (liveAfter < chatFloor.floorMs) {
+        config = normalizeWeChatTimeConfig({
+          ...config,
+          mode: 'custom',
+          customBaseTime: chatFloor.floorMs,
+          customAnchorRealTime: Date.now(),
+        })
+        hint = '不能早于本会话最后一条消息时间，已对齐到消息之后'
+      } else if (!hint) {
+        hint = '若只想缩短「隔了很久才回」的体感：直接把时间拨到最后一条消息附近即可，不必先重置为系统时间'
+      }
+    }
     setForm(config)
     setTimePerceptionEnabled(perception)
     setFloorHint(hint)
@@ -382,9 +403,18 @@ export function ChatTimeSettingsScreen({
   const setChosenTime = useCallback(
     (rawMs: number) => {
       let next = rawMs
-      if (lockedByStory && storyFloor.floorMs != null && next < storyFloor.floorMs) {
-        next = storyFloor.floorMs
-        setFloorHint('不能早于剧情时间点，已钳制到剧情锚点')
+      const floors = [
+        lockedByStory ? storyFloor.floorMs : null,
+        chatFloorMs,
+      ].filter((x): x is number => typeof x === 'number' && Number.isFinite(x))
+      const hardFloor = floors.length ? Math.max(...floors) : null
+      if (hardFloor != null && next < hardFloor) {
+        next = hardFloor
+        setFloorHint(
+          chatFloorMs != null && hardFloor === chatFloorMs
+            ? '不能早于本会话最后一条消息，已钳制到消息之后'
+            : '不能早于剧情时间点，已钳制到剧情锚点',
+        )
       } else {
         setFloorHint('')
       }
@@ -395,7 +425,7 @@ export function ChatTimeSettingsScreen({
         customAnchorRealTime: Date.now(),
       }))
     },
-    [lockedByStory, storyFloor.floorMs],
+    [chatFloorMs, lockedByStory, storyFloor.floorMs],
   )
 
   const save = useCallback(async () => {
@@ -411,7 +441,13 @@ export function ChatTimeSettingsScreen({
         timePerceptionEnabled: lockedByStory ? true : timePerceptionEnabled,
         mode: lockedByStory ? 'custom' : form.mode,
       })
-      if (result.clamped) setFloorHint('不能早于剧情时间点，已钳制到剧情锚点')
+      if (result.clamped) {
+        setFloorHint(
+          chatFloorMs != null && result.chosenTimeMs === chatFloorMs
+            ? '不能早于本会话最后一条消息，已钳制到消息之后'
+            : '不能早于剧情/会话时间下限，已自动钳制',
+        )
+      }
       const nextForm = normalizeWeChatTimeConfig({
         mode: lockedByStory || form.mode === 'custom' ? 'custom' : form.mode,
         customBaseTime: result.chosenTimeMs,
@@ -433,7 +469,7 @@ export function ChatTimeSettingsScreen({
     } finally {
       setSaving(false)
     }
-  }, [characterId, form, lockedByStory, reload, saving, timePerceptionEnabled])
+  }, [characterId, chatFloorMs, form, lockedByStory, reload, saving, timePerceptionEnabled])
 
   const requestClose = useCallback(() => {
     if (dirty) {
@@ -453,10 +489,14 @@ export function ChatTimeSettingsScreen({
     if (resetting || restoring) return
     setResetting(true)
     try {
-      await resetOnlineClockToSystemTime(characterId)
+      const result = await resetOnlineClockToSystemTime(characterId)
       setResetConfirmOpen(false)
-      setPreferSystemClock(true)
-      setFloorHint('请记得手动改线下摘要时间点')
+      setPreferSystemClock(!result.clampedToLastMessage)
+      setFloorHint(
+        result.clampedToLastMessage
+          ? '系统时间早于会话最后一条消息，已对齐到消息之后，避免时间戳倒序'
+          : '请记得手动改线下摘要时间点',
+      )
       await load()
     } finally {
       setResetting(false)
@@ -493,7 +533,14 @@ export function ChatTimeSettingsScreen({
     return currentTimeMs
   }, [currentTimeMs, form, lockedByStory])
   const previewMessageTime = useMemo(() => displayLiveMs - 8 * 24 * 60 * 60 * 1000, [displayLiveMs])
-  const minLocal = lockedByStory && storyFloor.floorMs != null ? toDateTimeLocalValue(storyFloor.floorMs) : undefined
+  const effectiveMinMs = useMemo(() => {
+    const floors = [
+      lockedByStory ? storyFloor.floorMs : null,
+      chatFloorMs,
+    ].filter((x): x is number => typeof x === 'number' && Number.isFinite(x))
+    return floors.length ? Math.max(...floors) : null
+  }, [chatFloorMs, lockedByStory, storyFloor.floorMs])
+  const minLocal = effectiveMinMs != null ? toDateTimeLocalValue(effectiveMinMs) : undefined
 
   /** 剧情时间点与线上「现在」同步流逝（有锚点时） */
   const liveStoryLabel = useMemo(() => {

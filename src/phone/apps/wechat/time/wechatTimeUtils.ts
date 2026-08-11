@@ -114,7 +114,14 @@ export function formatWeChatChatTimestamp(messageTimeMs: number, currentTimeMs: 
   const hhmm = `${pad2(target.getHours())}:${pad2(target.getMinutes())}`
   const dayDiff = Math.round((startOfDay(currentTimeMs) - startOfDay(messageTimeMs)) / 86400000)
 
-  if (dayDiff <= 0) return hhmm
+  // 消息日历日晚于「现在」（时钟被往回拨后，历史里更晚的消息）：须带日期，避免只显示 22:16 像「今天」
+  if (dayDiff < 0) {
+    if (target.getFullYear() === now.getFullYear()) {
+      return `${target.getMonth() + 1}月${target.getDate()}日 ${hhmm}`
+    }
+    return `${target.getFullYear()}年${target.getMonth() + 1}月${target.getDate()}日 ${hhmm}`
+  }
+  if (dayDiff === 0) return hhmm
   if (dayDiff === 1) return `昨天 ${hhmm}`
   if (dayDiff <= 6) return `${WEEKDAY_LABELS[target.getDay()]} ${hhmm}`
   if (target.getFullYear() === now.getFullYear()) return `${target.getMonth() + 1}月${target.getDate()}日 ${hhmm}`

@@ -6048,6 +6048,40 @@ export class PersonaDb {
   }
 
   /**
+   * 该角色所有私聊会话（含玩家气泡）中最新消息时间戳。
+   * 按 conversationKey 解析 peer characterId，避免只扫 characterId 字段漏掉玩家消息。
+   */
+  async peekLatestTimestampInPeerPrivateChats(peerCharacterId: string): Promise<number | null> {
+    const cid = peerCharacterId.trim()
+    if (!cid) return null
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(CHAT_MSG_STORE)) {
+      db.close()
+      return null
+    }
+    const tx = db.transaction(CHAT_MSG_STORE, 'readonly')
+    const req = tx.objectStore(CHAT_MSG_STORE).getAll()
+    const raw = await new Promise<unknown[]>((resolve, reject) => {
+      req.onsuccess = () => resolve((req.result as unknown[]) ?? [])
+      req.onerror = () => reject(req.error ?? new Error('chatMessages getAll for peer peek'))
+    })
+    await txDone(tx)
+    db.close()
+
+    let maxTs: number | null = null
+    for (const x of raw) {
+      const m = normalizeWeChatChatMessage(x)
+      if (!m) continue
+      const parsed = parsePrivateWeChatConversationCharacterAndSession(m.conversationKey)
+      if (!parsed || parsed.characterId !== cid) continue
+      const ts = typeof m.timestamp === 'number' ? m.timestamp : 0
+      if (!Number.isFinite(ts) || ts <= 0) continue
+      if (maxTs == null || ts > maxTs) maxTs = ts
+    }
+    return maxTs
+  }
+
+  /**
    * 按角色聚合最近消息（跨玩家身份 / 跨会话 key）。
    * 用于记忆页兜底展示：当当前身份会话下暂无记录时，仍可看到该角色历史。
    */
