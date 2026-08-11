@@ -1,9 +1,9 @@
 /* PWA Service Worker：壳资源缓存 + Web Push 系统通知 */
 
 const NOTIFY_ICON_CACHE = 'lumi-notify-icons-v1'
-/** 发版后 bump，强制丢掉指着旧 hash 的壳/资源缓存，避免发现页等 lazy chunk 404 */
-const ASSET_CACHE = 'lumi-runtime-assets-v3'
-const SHELL_CACHE = 'lumi-shell-v3'
+/** 发版后 bump，强制丢掉指着旧 hash / 坏 vendor 拆包的壳缓存 */
+const ASSET_CACHE = 'lumi-runtime-assets-v4'
+const SHELL_CACHE = 'lumi-shell-v4'
 const NOTIFY_ICON_PATH_MARKER = '/__lumi_notify_icon__/'
 
 /** 剧本杀 / 超大视频：永不进 SW 缓存，也勿拦截为 cache-first */
