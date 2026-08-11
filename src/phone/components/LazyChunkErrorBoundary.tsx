@@ -25,6 +25,27 @@ function isChunkLoadError(error: unknown): boolean {
   )
 }
 
+async function clearStaleRuntimeCaches(): Promise<void> {
+  if (typeof caches === 'undefined') return
+  try {
+    const keys = await caches.keys()
+    await Promise.all(
+      keys
+        .filter((k) => /lumi-(runtime-assets|shell)/i.test(k))
+        .map((k) => caches.delete(k)),
+    )
+  } catch {
+    /* ignore */
+  }
+  try {
+    const regs = await navigator.serviceWorker?.getRegistrations?.()
+    if (!regs?.length) return
+    await Promise.all(regs.map((r) => r.update().catch(() => undefined)))
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 捕获按需 chunk 下载失败，提供重试 / 刷新，避免整机白屏 */
 export class LazyChunkErrorBoundary extends Component<Props, State> {
   state: State = { error: null, retryKey: 0 }
@@ -41,21 +62,27 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
   }
 
   /**
-   * React.lazy 会 sticky 缓存失败的 Promise，仅清 error + remount 不会重新拉 chunk。
-   * 带 cache-bust 软刷新，才能真正重新下载。
+   * React.lazy 会 sticky 缓存失败的 Promise；发版后旧壳还会指向已删 hash。
+   * 先清 runtime/shell 缓存再硬刷新，才能拉到新入口。
    */
   private handleRetry = () => {
-    try {
-      const u = new URL(window.location.href)
-      u.searchParams.set('__lazy_retry', String(Date.now()))
-      window.location.replace(u.href)
-    } catch {
-      window.location.reload()
-    }
+    void (async () => {
+      await clearStaleRuntimeCaches()
+      try {
+        const u = new URL(window.location.href)
+        u.searchParams.set('__lazy_retry', String(Date.now()))
+        window.location.replace(u.href)
+      } catch {
+        window.location.reload()
+      }
+    })()
   }
 
   private handleReload = () => {
-    window.location.reload()
+    void (async () => {
+      await clearStaleRuntimeCaches()
+      window.location.reload()
+    })()
   }
 
   render() {
@@ -77,7 +104,7 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
             {this.props.label ? `${this.props.label}失败` : '模块加载失败'}
           </p>
           <p className="max-w-[260px] text-[12px] leading-relaxed text-black/45">
-            网络中断或资源下载被重置。可重试加载；若刚更新过站点，请刷新页面。
+            多半是刚更新后还在用旧缓存，或资源下载被重置。点重试会清缓存并重新进入。
           </p>
           <div className="mt-1 flex gap-2">
             <button
