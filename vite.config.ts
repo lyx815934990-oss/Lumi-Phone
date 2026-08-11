@@ -262,8 +262,7 @@ export default defineConfig(({ command, mode }) => {
   base,
   /** Rolldown reporter 对中文路径截断会 panic；产物名只用 hash，并关闭 gzip 体积报告 */
   build: {
-    target: 'es2022',
-    minify: 'esbuild',
+    // 勿设 build.target：Vite 8 worker 打包会走 esbuild transpile，未单独安装时 CI 直接失败
     cssMinify: true,
     sourcemap: false,
     reportCompressedSize: false,
