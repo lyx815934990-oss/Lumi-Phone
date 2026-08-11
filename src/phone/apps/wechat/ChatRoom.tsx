@@ -3344,7 +3344,10 @@ export function ChatRoomInner({
       .catch(() => {})
   }, [conversationKey, conversationCharacterId, personaCharacterId, playerIdentityId])
   const rebuildWithCurrentTime = useCallback(
-    (msgs: ChatMsg[]) => rebuildChatItemsWithTimestamps(msgs, formatWxTimeLabel, getCurrentTimeMs()),
+    (msgs: ChatMsg[]) => {
+      const sorted = [...msgs].sort(compareChatMsgByRevealOrder)
+      return rebuildChatItemsWithTimestamps(sorted, formatWxTimeLabel, getCurrentTimeMs())
+    },
     [formatWxTimeLabel, getCurrentTimeMs],
   )
   const extractMessages = useCallback((list: ChatItem[]) => list.filter((it): it is ChatMsg => it.kind === 'msg'), [])
