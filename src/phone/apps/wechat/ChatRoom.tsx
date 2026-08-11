@@ -1243,32 +1243,62 @@ function messagePlainPreview(
   return '...'
 }
 
-function parseReplyMarker(raw: string): { replyMessageId?: string; text: string } {
-  const line = String(raw ?? '')
-    // 无论出现在行首/行中/行尾，都剥离模型泄露的内部消息ID标记
+/** 剥离模型把历史前缀 / 假占位写进可见气泡的泄漏 */
+function stripMessageIdProtocolLeak(raw: string): string {
+  return String(raw ?? '')
     .replace(/\s*(?:\[消息ID[:：][^\]]+\]|【消息ID[:：][^】]+】)\s*/g, ' ')
+    .replace(/\s*(?:\[消息ID占位\]|【消息ID占位】|\[消息ID\]|【消息ID】)\s*/g, ' ')
+    .replace(/\b消息ID占位\b/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim()
+}
+
+/** 历史 id 多为 wxm-…；拒绝提示词模板词与「占位」假 id */
+function normalizeQuoteTargetId(raw: string | undefined | null): string | undefined {
+  let id = String(raw ?? '')
+    .trim()
+    .replace(/^\[+|\]+$/g, '')
+    .replace(/^【+|】+$/g, '')
+    .trim()
+  if (!id) return undefined
+  if (/^消息ID(?:占位)?$/i.test(id)) return undefined
+  if (/占位|示例|example|placeholder/i.test(id)) return undefined
+  if (/^messageId$/i.test(id)) return undefined
+  // 过短基本不可能是本客户端消息 id
+  if (id.length < 8) return undefined
+  return id
+}
+
+function parseReplyMarker(raw: string): { replyMessageId?: string; text: string } {
+  const line = stripMessageIdProtocolLeak(raw)
   if (!line) return { text: '' }
   const spaceQuote = matchAnyDirectiveName(line, [WxCmd.quote])
   if (spaceQuote) {
-    const id =
+    const idRaw =
       pickNamed(spaceQuote, ['id', '消息', 'messageId']) || pickPositional(spaceQuote, 0)
+    const replyMessageId = normalizeQuoteTargetId(idRaw)
     const text =
       spaceQuote.positional.length >= 2
         ? spaceQuote.positional.slice(1).join(' ').trim()
         : ''
-    if (id) return { replyMessageId: id, text }
+    // `引用 消息ID` / `引用 消息ID占位`：整行丢弃，勿当成可见正文
+    if (!replyMessageId && !text) return { text: '' }
+    if (replyMessageId) return { replyMessageId, text }
+    // 有正文但 id 假：只保留正文，不当引用
+    if (text) return { text }
   }
   const inline = line.match(/^\[引用[:：]([^\]]+)\]\s*(.*)$/)
   if (inline) {
-    return {
-      replyMessageId: inline[1]?.trim() || undefined,
-      text: (inline[2] ?? '').trim(),
-    }
+    const replyMessageId = normalizeQuoteTargetId(inline[1])
+    const text = (inline[2] ?? '').trim()
+    if (replyMessageId) return { replyMessageId, text }
+    return { text }
   }
   const pure = line.match(/^\[引用[:：]([^\]]+)\]$/)
-  if (pure) return { replyMessageId: pure[1]?.trim() || undefined, text: '' }
+  if (pure) {
+    const replyMessageId = normalizeQuoteTargetId(pure[1])
+    return replyMessageId ? { replyMessageId, text: '' } : { text: '' }
+  }
   // 兼容旧格式：
   // [引用回复] 本条正在回复：消息ID=xxx; 发送者=xxx; 原文=xxx; <正文>
   // 以及仅有头部、正文另起一行/下一条的场景
@@ -1276,14 +1306,17 @@ function parseReplyMarker(raw: string): { replyMessageId?: string; text: string 
     /^\[引用回复\]\s*本条正在回复[:：]\s*消息ID\s*[=：:]\s*([^;；\s]+)\s*[;；]?\s*([\s\S]*)$/,
   )
   if (legacyHeader) {
-    const replyMessageId = legacyHeader[1]?.trim() || undefined
+    const replyMessageId = normalizeQuoteTargetId(legacyHeader[1])
     const tail = (legacyHeader[2] ?? '').trim()
     // 尽量剥离 "发送者=...; 原文=...;" 的元信息，保留真正正文
-    const text = tail
-      .replace(/^(?:发送者\s*[=：:]\s*[^;；\n]+[;；]?\s*)+/u, '')
-      .replace(/^(?:原文\s*[=：:]\s*[^;；\n]+[;；]?\s*)+/u, '')
-      .trim()
-    return { replyMessageId, text }
+    const text = stripMessageIdProtocolLeak(
+      tail
+        .replace(/^(?:发送者\s*[=：:]\s*[^;；\n]+[;；]?\s*)+/u, '')
+        .replace(/^(?:原文\s*[=：:]\s*[^;；\n]+[;；]?\s*)+/u, '')
+        .trim(),
+    )
+    if (replyMessageId) return { replyMessageId, text }
+    return { text }
   }
   return { text: line }
 }
