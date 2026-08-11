@@ -262,32 +262,10 @@ export default defineConfig(({ command, mode }) => {
   base,
   /** Rolldown reporter 对中文路径截断会 panic；产物名只用 hash，并关闭 gzip 体积报告 */
   build: {
-    // 勿设 build.target：Vite 8 worker 打包会走 esbuild transpile，未单独安装时 CI 直接失败
-    cssMinify: true,
-    sourcemap: false,
     reportCompressedSize: false,
-    /** 小图少塞进 JS，避免主包被 data-url 撑大 */
-    assetsInlineLimit: 2048,
     rolldownOptions: {
       output: {
         assetFileNames: 'assets/[hash][extname]',
-        chunkFileNames: 'assets/[hash].js',
-        entryFileNames: 'assets/[hash].js',
-        /**
-         * 稳定拆 vendor：发版时没改到的依赖包可继续走缓存，
-         * 用户只下变更相关的业务 chunk（体积感知更像「只更新改动」）。
-         */
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return
-          if (id.includes('framer-motion')) return 'vendor-motion'
-          if (id.includes('react-dom') || id.includes(`${path.sep}react${path.sep}`) || id.includes('/react/')) {
-            return 'vendor-react'
-          }
-          if (id.includes('lucide-react')) return 'vendor-icons'
-          if (id.includes('@dnd-kit')) return 'vendor-dnd'
-          if (id.includes('zustand') || id.includes('axios')) return 'vendor-lib'
-          return 'vendor'
-        },
       },
     },
   },
