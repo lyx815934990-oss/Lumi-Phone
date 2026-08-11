@@ -249,6 +249,8 @@ export async function dumpWeChatPersonaIndexedDbSnapshot(): Promise<{
       const all = await getAllFromStore(tx.objectStore(sn))
       await txDone(tx)
       stores[sn] = all
+      // 大库逐表让出主线程，避免导出前就把 UI 线程掐死
+      await new Promise<void>((r) => window.setTimeout(r, 0))
     }
 
     return { dbName: WECHAT_PERSONA_DB_NAME, dbVersion, stores }

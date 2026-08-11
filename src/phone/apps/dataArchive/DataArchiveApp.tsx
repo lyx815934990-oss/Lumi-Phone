@@ -82,7 +82,7 @@ export function DataArchiveApp({ onBack }: Props) {
         transition={{ duration: 0.4 }}
       >
         <p className="mb-4 text-center text-[11px] leading-relaxed" style={{ color: PLATINUM.ash }}>
-          圆心「可打包约」为导出 <span className="font-mono">.lumi</span> 时主内容字节估算（localStorage + 微信
+          圆心「可打包约」为导出 <span className="font-mono">.json</span> 时主内容字节估算（localStorage + 微信
           IndexedDB），不含 Service Worker 离线缓存等浏览器自带占用；灵感消耗为累计 tok，单独展示。
         </p>
 
@@ -153,7 +153,7 @@ export function DataArchiveApp({ onBack }: Props) {
         >
           <p className="text-center text-[13px] font-semibold">数据引流与归档</p>
           <p className="mx-auto mt-1 max-w-[300px] text-center text-[11px] leading-relaxed" style={{ color: PLATINUM.ash }}>
-            导出为 <span className="font-mono text-[10px]">.lumi</span>（JSON）：含 localStorage 与当前已接入的 IndexedDB 快照；导入成功后会提示完成，无需整页重启。
+            导出为 <span className="font-mono text-[10px]">.json</span> 数据包：含 localStorage 与当前已接入的 IndexedDB 快照；旧版 <span className="font-mono text-[10px]">.lumi</span> 仍可导入。导入成功后会提示完成，无需整页重启。
           </p>
           <MigrationPanel />
         </div>

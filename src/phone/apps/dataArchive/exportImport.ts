@@ -48,7 +48,7 @@ export function collectLocalStorageSnapshot(): Record<string, string | null> {
   return out
 }
 
-/** 默认归档主文件名（不含 .lumi） */
+/** 默认归档主文件名（不含后缀） */
 export function defaultLumiArchiveBaseName(): string {
   const d = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -57,17 +57,17 @@ export function defaultLumiArchiveBaseName(): string {
 
 function sanitizeUserArchiveBaseName(input: string): string {
   let t = input.replace(/[\\/:*?"<>|\u0000-\u001F]/g, '_').replace(/\s+/g, ' ').trim()
-  t = t.replace(/\.lumi$/i, '')
+  t = t.replace(/\.(lumi|json)$/i, '')
   t = t.replace(/^\.+/, '').replace(/\.+$/g, '').trim()
   if (t.length > 100) t = t.slice(0, 100)
   return t
 }
 
-/** 生成安全下载文件名，始终带 .lumi 后缀 */
+/** 生成安全下载文件名：JSON 数据包，后缀固定 .json（旧版 .lumi 仍可导入） */
 export function buildLumiArchiveDownloadFilename(userLabel: string | null | undefined): string {
   const cleaned = sanitizeUserArchiveBaseName(userLabel ?? '')
   const base = cleaned || defaultLumiArchiveBaseName()
-  return `${base}.lumi`
+  return `${base}.json`
 }
 
 function toExportError(error: unknown): Error {
@@ -87,6 +87,131 @@ function toExportError(error: unknown): Error {
   return new Error('导出失败')
 }
 
+function isIosLike(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  )
+}
+
+type JsonBlobBuilder = {
+  parts: BlobPart[]
+  approxChars: number
+  push: (chunk: string) => void
+  flush: () => Promise<void>
+}
+
+function createJsonBlobBuilder(): JsonBlobBuilder {
+  const parts: BlobPart[] = []
+  let approxChars = 0
+  let sinceYield = 0
+  const builder: JsonBlobBuilder = {
+    parts,
+    approxChars: 0,
+    push(chunk: string) {
+      parts.push(chunk)
+      approxChars += chunk.length
+      builder.approxChars = approxChars
+      sinceYield += chunk.length
+    },
+    async flush() {
+      // 每拼约 256KB 文本让出主线程，减轻 iOS 卡死/OOM 连带「模块加载失败」
+      if (sinceYield < 262_144) return
+      sinceYield = 0
+      await yieldToUi()
+    },
+  }
+  return builder
+}
+
+/**
+ * 分片拼出归档 JSON Blob：避免整包 JSON.stringify 同时占着对象树 + 巨串，
+ * 这是手机上导出后报「Importing a module script failed」的主因。
+ */
+async function buildArchiveBlobFromParts(
+  localStorageSnap: Record<string, string | null>,
+  idb: {
+    dbName: string
+    dbVersion: number
+    stores: Record<string, unknown[]>
+  } | null,
+): Promise<{ blob: Blob; approxBytes: number }> {
+  const b = createJsonBlobBuilder()
+  const note = idb
+    ? '含 localStorage 与当前已接入的 IndexedDB 全表快照。'
+    : '含 localStorage；未发现已接入的 IndexedDB（若尚未产生索引数据则属正常）。'
+
+  try {
+    b.push('{')
+    b.push(`"kind":${JSON.stringify(ARCHIVE_KIND)}`)
+    b.push(`,"version":${ARCHIVE_VERSION}`)
+    b.push(`,"exportedAt":${Date.now()}`)
+    b.push(',"localStorage":{')
+
+    const lsKeys = Object.keys(localStorageSnap)
+    for (let i = 0; i < lsKeys.length; i += 1) {
+      const key = lsKeys[i]!
+      if (i > 0) b.push(',')
+      b.push(JSON.stringify(key))
+      b.push(':')
+      b.push(JSON.stringify(localStorageSnap[key] ?? null))
+      delete localStorageSnap[key]
+      await b.flush()
+    }
+    b.push('}')
+
+    if (idb) {
+      b.push(',"wechatIndexedDb":{')
+      b.push(`"dbName":${JSON.stringify(idb.dbName)}`)
+      b.push(`,"dbVersion":${idb.dbVersion}`)
+      b.push(',"stores":{')
+      const storeNames = Object.keys(idb.stores)
+      for (let si = 0; si < storeNames.length; si += 1) {
+        const storeName = storeNames[si]!
+        const rows = idb.stores[storeName] ?? []
+        if (si > 0) b.push(',')
+        b.push(JSON.stringify(storeName))
+        b.push(':[')
+        for (let ri = 0; ri < rows.length; ri += 1) {
+          if (ri > 0) b.push(',')
+          try {
+            b.push(JSON.stringify(rows[ri]))
+          } catch (e) {
+            throw toExportError(e)
+          }
+          ;(rows as unknown[])[ri] = undefined
+          if (ri % 24 === 23) await b.flush()
+        }
+        b.push(']')
+        delete idb.stores[storeName]
+        await yieldToUi()
+      }
+      b.push('}}')
+    }
+
+    b.push(',"meta":{')
+    b.push(`"generator":${JSON.stringify('Lumi Phone · Data Archive')}`)
+    b.push(`,"note":${JSON.stringify(note)}`)
+    b.push('}}')
+  } catch (e) {
+    b.parts.length = 0
+    throw toExportError(e)
+  }
+
+  let blob: Blob
+  try {
+    // 下载用 octet-stream：iOS 对 application/json 常会另存成「文本」无后缀文件
+    blob = new Blob(b.parts, { type: 'application/octet-stream' })
+  } catch (e) {
+    throw toExportError(e)
+  } finally {
+    b.parts.length = 0
+  }
+
+  return { blob, approxBytes: b.approxChars * 2 }
+}
+
 export async function exportDataToFile(options?: {
   /** 用户自定义主文件名，可不含后缀；非法字符会替换为下划线 */
   displayName?: string | null
@@ -97,43 +222,21 @@ export async function exportDataToFile(options?: {
   const localStorageSnap = collectLocalStorageSnapshot()
   await yieldToUi()
 
-  const payload: LumiCloudArchive = {
-    kind: ARCHIVE_KIND,
-    version: ARCHIVE_VERSION,
-    exportedAt: Date.now(),
-    localStorage: localStorageSnap,
-    ...(idbSnap ? { wechatIndexedDb: idbSnap } : {}),
-    meta: {
-      generator: 'Lumi Phone · Data Archive',
-      note: idbSnap
-        ? '含 localStorage 与当前已接入的 IndexedDB 全表快照。'
-        : '含 localStorage；未发现已接入的 IndexedDB（若尚未产生索引数据则属正常）。',
-    },
-  }
-
-  let json: string
-  try {
-    json = JSON.stringify(payload)
-  } catch (e) {
-    throw toExportError(e)
-  }
-
-  // 尽快松开大对象，减轻 iOS Safari 内存压力（否则后续动态模块加载易失败）
-  payload.localStorage = {}
-  if (payload.wechatIndexedDb) payload.wechatIndexedDb.stores = {}
-
-  const approxBytes = json.length * 2
   let blob: Blob
+  let approxBytes: number
   try {
-    blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+    const built = await buildArchiveBlobFromParts(localStorageSnap, idbSnap)
+    blob = built.blob
+    approxBytes = built.approxBytes
   } catch (e) {
     throw toExportError(e)
-  } finally {
-    json = ''
   }
+
+  // 再让出一两帧，给 Safari 回收刚拆掉的对象树
+  await yieldToUi()
+  await yieldToUi()
 
   const filename = buildLumiArchiveDownloadFilename(options?.displayName)
-  await yieldToUi()
   return { blob, filename, approxBytes }
 }
 
@@ -143,36 +246,46 @@ type ShareNavigator = Navigator & {
 }
 
 /**
- * 触发下载。iOS Safari 对大 Blob 的 a.download 不稳定，优先走系统分享面板保存到文件。
+ * 触发下载。
+ * iOS：只用系统分享保存文件；禁止再走 a.download（Safari 会无视文件名，另存成「文本」）。
+ * 桌面：a.download。
  */
 export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
   const nav = navigator as ShareNavigator
-  const isIos =
-    typeof navigator !== 'undefined' &&
-    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+  const ios = isIosLike()
+  const safeName = /\.(json|lumi)$/i.test(filename) ? filename : `${filename}.json`
+  // 强制二进制类型，避免被当成可编辑「文本」文档
+  const binaryBlob =
+    blob.type === 'application/octet-stream'
+      ? blob
+      : new Blob([blob], { type: 'application/octet-stream' })
 
-  if (isIos && typeof nav.share === 'function') {
+  if (ios && typeof nav.share === 'function') {
     try {
-      const file = new File([blob], filename, {
-        type: blob.type || 'application/json',
+      const file = new File([binaryBlob], safeName, {
+        type: 'application/octet-stream',
       })
-      const data: ShareData = { files: [file], title: filename }
+      const data: ShareData = { files: [file] }
       if (typeof nav.canShare !== 'function' || nav.canShare(data)) {
         await nav.share(data)
         return
       }
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') return
-      /* 分享失败则回退 a.download */
+      throw new Error(
+        '无法打开系统分享面板保存文件。请点分享里的「存储到文件」，不要选「拷贝」或「备忘录」（会变成文本）。',
+      )
     }
+    throw new Error(
+      '当前系统不支持分享保存文件。请换用电脑浏览器导出，或升级 iOS 后再试。',
+    )
   }
 
-  const url = URL.createObjectURL(blob)
+  const url = URL.createObjectURL(binaryBlob)
   try {
     const a = document.createElement('a')
     a.href = url
-    a.download = filename
+    a.download = safeName
     a.rel = 'noopener'
     document.body.appendChild(a)
     a.click()

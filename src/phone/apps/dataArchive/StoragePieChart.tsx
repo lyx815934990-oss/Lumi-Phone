@@ -234,7 +234,7 @@ export function StoragePieChart({
 
       {variant === 'merged' ? (
         <p className="mt-3 max-w-[320px] px-2 text-center text-[10px] leading-relaxed" style={{ color: PLATINUM.ash }}>
-          与导出 <span className="font-mono">.lumi</span> 主内容一致（不含浏览器离线缓存等）；环图为二者合并占比。
+          与导出 <span className="font-mono">.json</span> 主内容一致（不含浏览器离线缓存等）；环图为二者合并占比。
         </p>
       ) : null}
     </div>

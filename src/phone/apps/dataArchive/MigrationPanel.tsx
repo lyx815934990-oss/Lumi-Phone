@@ -18,10 +18,13 @@ function CeremonyOverlay({
   open,
   lines,
   activeLine,
+  lightweight,
 }: {
   open: boolean
   lines: readonly string[]
   activeLine: number
+  /** 导出大数据时关掉 blur，避免和 JSON 拼装一起把手机内存顶爆 */
+  lightweight?: boolean
 }) {
   return (
     <AnimatePresence>
@@ -33,9 +36,9 @@ function CeremonyOverlay({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.35 }}
           style={{
-            background: 'rgba(243, 239, 234, 0.72)',
-            backdropFilter: 'blur(18px)',
-            WebkitBackdropFilter: 'blur(18px)',
+            background: lightweight ? 'rgba(243, 239, 234, 0.92)' : 'rgba(243, 239, 234, 0.72)',
+            backdropFilter: lightweight ? undefined : 'blur(18px)',
+            WebkitBackdropFilter: lightweight ? undefined : 'blur(18px)',
           }}
         >
           <div className="relative flex max-w-[320px] flex-col items-center text-center">
@@ -100,10 +103,14 @@ export function MigrationPanel() {
 
     // 桌面组件大图 / 名片字体会把归档撑到几十 MB，iPhone 上易 OOM 并触发「模块加载失败」整页崩
     const lsChars = estimateLocalStorageChars()
-    if (lsChars > 12_000_000) {
+    const isIos =
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    const warnAt = isIos ? 6_000_000 : 12_000_000
+    if (lsChars > warnAt) {
       const mb = (lsChars / (1024 * 1024)).toFixed(1)
       const ok = window.confirm(
-        `当前本机数据约 ${mb} MB，在手机上导出可能因内存不足失败。\n\n建议：删掉部分组件大图或名片自定义字体后再试，或换电脑浏览器导出。\n\n仍要继续吗？`,
+        `当前本机数据约 ${mb} MB，在手机上导出可能因内存不足失败（会误报「模块加载失败」）。\n\n建议：删掉部分组件大图或名片自定义字体后再试，或换电脑浏览器导出。\n\n仍要继续吗？`,
       )
       if (!ok) return
     }
@@ -139,13 +146,15 @@ export function MigrationPanel() {
     setLineIdx(0)
 
     // 先卸掉全屏动画，再触发下载，降低 iOS 上后续动态 import 失败概率
-    await new Promise((r) => window.setTimeout(r, 80))
+    await new Promise((r) => window.setTimeout(r, 120))
     try {
       if (blob) await downloadBlob(blob, filename)
     } catch (e) {
       window.alert(e instanceof Error ? e.message : '保存文件失败')
     } finally {
       blob = null
+      // 再让出几帧给 Safari 回收 Blob/File，减少紧接着路由切换时的 chunk 加载失败
+      await new Promise((r) => window.setTimeout(r, isIos ? 280 : 60))
     }
   }, [])
 
@@ -211,7 +220,12 @@ export function MigrationPanel() {
 
   return (
     <div id="data-archive-migration-panel" className="mt-6 space-y-3">
-      <CeremonyOverlay open={ceremonyOpen} lines={ceremonyLines} activeLine={lineIdx} />
+      <CeremonyOverlay
+        open={ceremonyOpen}
+        lines={ceremonyLines}
+        activeLine={lineIdx}
+        lightweight={busy === 'export'}
+      />
 
       {exportNameOpen ? (
         <div
@@ -233,7 +247,7 @@ export function MigrationPanel() {
               命名备份文件
             </p>
             <p className="mt-2 text-[12px] leading-relaxed" style={{ color: PLATINUM.ash }}>
-              便于区分多次导出；非法字符会自动替换。下载文件名预览：
+              将保存为 JSON 数据包。手机上请在分享面板选「存储到文件」，不要选拷贝/备忘录（会变成「文本」）。预览：
               <span className="mt-1 block font-mono text-[11px]" style={{ color: PLATINUM.ink }}>
                 {buildLumiArchiveDownloadFilename(exportNameDraft)}
               </span>
@@ -361,7 +375,7 @@ export function MigrationPanel() {
         }}
       >
         <Download className="size-4" style={{ color: PLATINUM.gold }} />
-        备份导出 · Lumi Archive
+        备份导出 · JSON 数据包
       </button>
 
       <label
