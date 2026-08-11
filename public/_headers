@@ -1,0 +1,10 @@
+# Cloudflare Pages：hashed 静态资源长期缓存（内容变则 hash 变）
+# 传输压缩由 Cloudflare 自动做 Brotli/Gzip，无需预生成 .br/.gz
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache

@@ -41,13 +41,13 @@ export async function persistLoadedAssetsToServiceWorker(): Promise<void> {
 type PreloadTask = {
   /** 进度文案里的短名 */
   label: string
-  /** 手机端弱网只预热标为 critical 的项，避免卡在 82% */
+  /** 开屏只等 critical；其余进桌面后 idle 预热 */
   critical?: boolean
   load: () => Promise<unknown>
 }
 
 /**
- * 开屏必须拉齐的非剧本杀路由 / 发现页 chunk（与 PhoneApp / Discover 的 lazy 对齐）。
+ * 非剧本杀路由 / 发现页 chunk（与 PhoneApp / Discover 的 lazy 对齐）。
  * 绝不包含 jubensha / JBSGameFlow / 对局媒体。
  */
 const BOOT_PRELOAD_TASKS: PreloadTask[] = [
@@ -67,7 +67,6 @@ const BOOT_PRELOAD_TASKS: PreloadTask[] = [
   { label: '更新推送', load: () => import('../apps/evolution/EvolutionUpdatePushModal') },
   {
     label: '听一听',
-    critical: true,
     load: () => import('../../components/discoverListen/ListenTogetherPlayerBootstrap'),
   },
   { label: '宴席', load: () => import('../apps/takeout/TasteFeastCeremonyHost') },
@@ -81,6 +80,7 @@ const BOOT_PRELOAD_TASKS: PreloadTask[] = [
   { label: '微博广场', load: () => import('../apps/lumiPulse/WeChatDiscoverLumiPulseApp') },
   { label: '浮光直播', load: () => import('../apps/lumiLive') },
   { label: '私语档案', load: () => import('../apps/wechat/diary/SubconsciousArchivesApp') },
+  { label: '外观工坊', load: () => import('../apps/lookWorkshop') },
 ]
 
 export type BootPreloadProgress = {
@@ -117,30 +117,23 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | 'tim
   }
 }
 
-/**
- * 开屏阶段限流预取：进桌面前把常用 App 与发现页 chunk 拉进浏览器缓存。
- * 单项失败 / 超时不阻断；手机端只预热 critical，并带总时限，避免卡在 82%。
- */
-export async function preloadNonJubenshaResources(
+async function runPreloadQueue(
+  tasks: PreloadTask[],
   onProgress?: (p: BootPreloadProgress) => void,
-  opts?: { concurrency?: number; overallTimeoutMs?: number },
+  opts?: { concurrency?: number; overallTimeoutMs?: number; perTaskTimeoutMs?: number },
 ): Promise<void> {
-  const mobile = isMobileBootClient()
-  const tasks = mobile
-    ? BOOT_PRELOAD_TASKS.filter((t) => t.critical)
-    : BOOT_PRELOAD_TASKS
   const total = tasks.length
   if (total === 0) return
 
+  const mobile = isMobileBootClient()
   let done = 0
   let cursor = 0
   const concurrency = Math.max(
     1,
-    Math.min(opts?.concurrency ?? (mobile ? 1 : 2), total),
+    Math.min(opts?.concurrency ?? (mobile ? 2 : 3), total),
   )
-  const perTaskTimeoutMs = mobile ? 7_000 : 14_000
-  const overallTimeoutMs =
-    opts?.overallTimeoutMs ?? (mobile ? 12_000 : 28_000)
+  const perTaskTimeoutMs = opts?.perTaskTimeoutMs ?? (mobile ? 6_000 : 10_000)
+  const overallTimeoutMs = opts?.overallTimeoutMs ?? (mobile ? 8_000 : 12_000)
 
   const report = (label: string) => {
     onProgress?.({
@@ -163,8 +156,8 @@ export async function preloadNonJubenshaResources(
       try {
         const result = await withTimeout(
           importNamedWithRetry(task.load, {
-            retries: mobile ? 1 : 3,
-            baseDelayMs: mobile ? 350 : 450,
+            retries: mobile ? 1 : 2,
+            baseDelayMs: mobile ? 280 : 400,
           }),
           perTaskTimeoutMs,
         )
@@ -183,7 +176,6 @@ export async function preloadNonJubenshaResources(
     Promise.all(Array.from({ length: concurrency }, () => worker())),
     overallTimeoutMs,
   )
-  // 总超时也直接放行
   if (done < total) {
     done = total
     report('应用资源已就绪')
@@ -191,9 +183,104 @@ export async function preloadNonJubenshaResources(
 }
 
 /**
- * @deprecated 请用 {@link preloadNonJubenshaResources}（开屏阶段已全量预热）
- * 保留空实现以免旧调用处报错。
+ * 开屏只拉 critical（微信/账号/外观/API），尽快进桌面。
+ */
+export async function preloadCriticalBootResources(
+  onProgress?: (p: BootPreloadProgress) => void,
+): Promise<void> {
+  const mobile = isMobileBootClient()
+  const tasks = BOOT_PRELOAD_TASKS.filter((t) => t.critical)
+  await runPreloadQueue(tasks, onProgress, {
+    concurrency: mobile ? 2 : 3,
+    overallTimeoutMs: mobile ? 7_000 : 9_000,
+    perTaskTimeoutMs: mobile ? 5_500 : 8_000,
+  })
+}
+
+/**
+ * 进桌面后 idle 预热其余 App / 发现页，不挡首屏。
+ */
+export function scheduleBackgroundAppWarm(): void {
+  if (typeof window === 'undefined') return
+  const tasks = BOOT_PRELOAD_TASKS.filter((t) => !t.critical)
+  if (!tasks.length) return
+
+  const run = () => {
+    void runPreloadQueue(tasks, undefined, {
+      concurrency: isMobileBootClient() ? 1 : 2,
+      overallTimeoutMs: isMobileBootClient() ? 24_000 : 40_000,
+      perTaskTimeoutMs: isMobileBootClient() ? 8_000 : 12_000,
+    }).then(() => {
+      void persistLoadedAssetsToServiceWorker()
+    })
+  }
+
+  const ric = (
+    window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+    }
+  ).requestIdleCallback
+
+  window.setTimeout(() => {
+    if (typeof ric === 'function') {
+      ric(run, { timeout: 3500 })
+    } else {
+      run()
+    }
+  }, 900)
+}
+
+/**
+ * @deprecated 请用 {@link preloadCriticalBootResources}；保留兼容旧调用。
+ */
+export async function preloadNonJubenshaResources(
+  onProgress?: (p: BootPreloadProgress) => void,
+  opts?: { concurrency?: number; overallTimeoutMs?: number },
+): Promise<void> {
+  const mobile = isMobileBootClient()
+  await runPreloadQueue(
+    BOOT_PRELOAD_TASKS.filter((t) => t.critical),
+    onProgress,
+    {
+      concurrency: opts?.concurrency ?? (mobile ? 2 : 3),
+      overallTimeoutMs: opts?.overallTimeoutMs ?? (mobile ? 7_000 : 9_000),
+    },
+  )
+}
+
+/**
+ * @deprecated 请用 {@link scheduleBackgroundAppWarm}
  */
 export function warmNonJubenshaAppChunks(): void {
-  // no-op：开屏 BootResourceGate 已预取
+  scheduleBackgroundAppWarm()
+}
+
+/** 按 app id 预取对应 lazy chunk（点图标瞬间先拉，减少白屏） */
+const APP_IMPORT_BY_ID: Partial<Record<string, () => Promise<unknown>>> = {
+  wechat: () => import('../apps/wechat/WeChatApp'),
+  weibo: () => import('../apps/wechat/WeChatApp'),
+  appearance: () => import('../components/CustomizeScreen'),
+  lumiMeet: () => import('../apps/lumiMeet/LumiMeetAppRoute'),
+  api: () => import('../apps/api/ApiSettingsApp'),
+  voiceprint: () => import('../apps/voiceprint/VoiceprintHubApp'),
+  dataArchive: () => import('../apps/dataArchive/DataArchiveApp'),
+  loreArchive: () => import('../apps/loreArchive/LoreArchiveApp'),
+  recycleBin: () => import('../apps/recycleBin/RecycleBinApp'),
+  backgroundNotify: () => import('../apps/backgroundNotify/BackgroundNotifyApp'),
+  sandbox: () => import('../apps/sandbox/SandboxApp'),
+  evolution: () => import('../apps/evolution/EvolutionApp'),
+  takeout: () => import('../apps/takeout/LumiTasteApp'),
+  lookWorkshop: () => import('../apps/lookWorkshop'),
+}
+
+const appPrefetchStarted = new Set<string>()
+
+export function prefetchAppChunk(id: string): void {
+  if (!id || appPrefetchStarted.has(id)) return
+  const load = APP_IMPORT_BY_ID[id]
+  if (!load) return
+  appPrefetchStarted.add(id)
+  void importNamedWithRetry(load, { retries: 1, baseDelayMs: 200 }).catch(() => {
+    appPrefetchStarted.delete(id)
+  })
 }

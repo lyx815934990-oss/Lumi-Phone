@@ -70,27 +70,56 @@ async function networkFirst(request, cacheName) {
   }
 }
 
+async function staleWhileRevalidate(request, cacheName) {
+  const cache = await caches.open(cacheName)
+  const cached = await cache.match(request)
+  const networkPromise = fetch(request)
+    .then(async (res) => {
+      if (res && res.ok) {
+        try {
+          await cache.put(request, res.clone())
+        } catch {
+          /* quota */
+        }
+      }
+      return res
+    })
+    .catch((err) => {
+      if (cached) return cached
+      throw err
+    })
+  // 有缓存立刻回，后台刷新；首次无缓存再等网络
+  return cached || networkPromise
+}
+
 async function putUrls(urls) {
   const cache = await caches.open(ASSET_CACHE)
   const list = Array.isArray(urls) ? urls : []
-  await Promise.all(
-    list.map(async (raw) => {
-      if (typeof raw !== 'string' || !raw) return
-      if (shouldSkipCache(raw)) return
+  // 限流写入，避免开屏后和业务 chunk 抢带宽
+  const concurrency = 3
+  let cursor = 0
+  const worker = async () => {
+    while (cursor < list.length) {
+      const index = cursor
+      cursor += 1
+      const raw = list[index]
+      if (typeof raw !== 'string' || !raw) continue
+      if (shouldSkipCache(raw)) continue
       try {
         const url = new URL(raw, self.registration.scope)
-        if (url.origin !== self.location.origin) return
-        if (!isCacheableAsset(url) && !/\.(js|css)($|\?)/i.test(url.pathname)) return
+        if (url.origin !== self.location.origin) continue
+        if (!isCacheableAsset(url) && !/\.(js|css)($|\?)/i.test(url.pathname)) continue
         const req = new Request(url.href, { credentials: 'same-origin' })
         const hit = await cache.match(req)
-        if (hit) return
+        if (hit) continue
         const res = await fetch(req)
         if (res && res.ok) await cache.put(req, res)
       } catch {
         /* ignore single url */
       }
-    }),
-  )
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, () => worker()))
 }
 
 self.addEventListener('install', (event) => {
@@ -127,7 +156,7 @@ self.addEventListener('fetch', (event) => {
   if (shouldSkipCache(url)) return
 
   if (req.mode === 'navigate') {
-    event.respondWith(networkFirst(req, SHELL_CACHE))
+    event.respondWith(staleWhileRevalidate(req, SHELL_CACHE))
     return
   }
 

@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react'
 import { finishBootOverlay, markBootProgress } from '../boot/lumiBootBridge'
 import {
   isMobileBootClient,
-  preloadNonJubenshaResources,
+  preloadCriticalBootResources,
+  scheduleBackgroundAppWarm,
 } from '../boot/warmShellCache'
 
 type BootResourceGateProps = {
@@ -19,7 +20,7 @@ function sleep(ms: number) {
 
 /**
  * 接管 index.html 里的 #lumi-boot。
- * 先 onReady 再淡出加载层，避免出现「加载完 → 白屏空窗」。
+ * 只等 critical chunk（微信/账号/外观/API）后进桌面；其余 idle 后台预热。
  */
 export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
   const onReadyRef = useRef(onReady)
@@ -32,6 +33,7 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
         sealedRef.current = true
         onReadyRef.current()
         finishBootOverlay()
+        scheduleBackgroundAppWarm()
       }
       return
     }
@@ -44,13 +46,14 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
       if (sealedRef.current) return
       sealedRef.current = true
       markBootProgress(100, '准备就绪')
-      // 先进入桌面，再拆加载层，底下已有内容就不会白
       try {
         onReadyRef.current()
       } catch (err) {
         console.error('[Lumi] boot onReady failed', err)
       }
       finishBootOverlay()
+      // 进桌面后再暖其余 App，不挡首屏
+      scheduleBackgroundAppWarm()
     }
 
     const onBootTimeout = () => {
@@ -62,28 +65,23 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
       try {
         markBootProgress(78, '核心模块就绪…')
 
-        if (mobile) {
-          markBootProgress(96, '即将进入…')
-          sealReady()
-          return
-        }
-
+        // 字体最多等 400ms，不等 Google Fonts 拖死开屏
         await Promise.race([
           typeof document !== 'undefined' && document.fonts?.ready
             ? document.fonts.ready.catch(() => undefined)
             : Promise.resolve(),
-          sleep(600),
+          sleep(400),
         ])
         if (cancelled || sealedRef.current) return
 
-        markBootProgress(82, '正在准备应用资源…')
+        markBootProgress(84, mobile ? '正在准备常用应用…' : '正在准备核心应用…')
         await Promise.race([
-          preloadNonJubenshaResources((p) => {
+          preloadCriticalBootResources((p) => {
             if (sealedRef.current) return
-            const pct = 82 + Math.round(p.ratio * 13)
-            markBootProgress(Math.min(pct, 95), p.label)
+            const pct = 84 + Math.round(p.ratio * 12)
+            markBootProgress(Math.min(pct, 96), p.label)
           }),
-          sleep(16_000),
+          sleep(mobile ? 7_500 : 9_500),
         ])
         if (sealedRef.current) return
 

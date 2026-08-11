@@ -9,7 +9,7 @@ import { PhoneShell } from './components/PhoneShell'
 import { UserSystemAuthModal } from './components/UserSystemAuthModal'
 import { UserInfoCorrectionModal } from './components/UserInfoCorrectionModal'
 import { AccountStatusCheckingOverlay } from './components/AccountStatusCheckingOverlay'
-import { persistLoadedAssetsToServiceWorker } from './boot/warmShellCache'
+import { prefetchAppChunk, persistLoadedAssetsToServiceWorker } from './boot/warmShellCache'
 import { readEnableSplashScreenSync } from './boot/splashPref'
 import { BootResourceGate } from './components/BootResourceGate'
 import { SplashScreen } from './components/SplashScreen'
@@ -93,6 +93,9 @@ const EvolutionApp = lazyWithRetry(() =>
 const LumiTasteApp = lazyWithRetry(() =>
   import('./apps/takeout/LumiTasteApp').then((m) => ({ default: m.LumiTasteApp })),
 )
+const LookWorkshopApp = lazyWithRetry(() =>
+  import('./apps/lookWorkshop').then((m) => ({ default: m.LookWorkshopApp })),
+)
 const AppPlaceholderScreen = lazyWithRetry(() =>
   import('./components/AppPlaceholderScreen').then((m) => ({ default: m.AppPlaceholderScreen })),
 )
@@ -140,7 +143,7 @@ function shouldSkipSplashOnBoot(): boolean {
   return !!resolveDiscordAuthTabAfterOAuth()
 }
 
-const transition = { duration: 0.32, ease: [0.22, 1, 0.36, 1] as const }
+const transition = { duration: 0.18, ease: [0.22, 1, 0.36, 1] as const }
 
 function buildPageProps(disableTransitions: boolean) {
   if (disableTransitions) {
@@ -155,9 +158,9 @@ function buildPageProps(disableTransitions: boolean) {
     }
   }
   return {
-    initial: { opacity: 0, y: 12 },
+    initial: { opacity: 0, y: 8 },
     animate: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: -10 },
+    exit: { opacity: 0, y: -6 },
     transition,
     style: {
       willChange: 'transform, opacity',
@@ -280,6 +283,8 @@ export function PhoneApp() {
   const goHome = useCallback(() => setRoute({ name: 'home' }), [])
 
   const openApp = useCallback((id: AppSlot['id']) => {
+    // 点图标瞬间先拉 chunk，和路由切换并行，减少「打开…」卡住
+    prefetchAppChunk(id === 'appearance' ? 'appearance' : id)
     if (id === 'wechat') setWechatKeepAlive(true)
     if (id === 'weibo') {
       setWechatKeepAlive(true)
@@ -651,7 +656,7 @@ export function PhoneApp() {
               </SuspenseApp>
             </div>
           ) : null}
-          <AnimatePresence mode="wait" initial={false}>
+          <AnimatePresence mode="sync" initial={false}>
             {route.name === 'home' && (
               <motion.div
                 key="home"
@@ -720,6 +725,8 @@ export function PhoneApp() {
                     <EvolutionApp onBack={goHome} />
                   ) : route.id === 'takeout' ? (
                     <LumiTasteApp onBack={goHome} />
+                  ) : route.id === 'lookWorkshop' ? (
+                    <LookWorkshopApp onBack={goHome} />
                   ) : (
                     <AppPlaceholderScreen appId={route.id} onBack={goHome} />
                   )}
@@ -737,7 +744,7 @@ export function PhoneApp() {
         {!bootDone ? (
           <BootResourceGate enabled={!skipSplashOnBoot} onReady={handleBootReady} />
         ) : null}
-        {showSplash && <SplashScreen onComplete={handleSplashComplete} maxMs={5500} />}
+        {showSplash && <SplashScreen onComplete={handleSplashComplete} maxMs={3200} />}
         <EntryNoticeModal
           open={bootDone && !showSplash && showEntryNotice}
           ageConfirmed={ageConfirmed}

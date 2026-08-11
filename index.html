@@ -10,22 +10,10 @@
     <meta name="theme-color" content="#f2f2f4" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <!-- 外链字体异步加载，避免阻塞首屏；功能页用到对应 family 时再生效 -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Long+Cang&family=LXGW+WenKai&family=Noto+Sans+SC:wght@200;300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap"
-      media="print"
-      onload="this.media='all'"
-    />
-    <noscript>
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Long+Cang&family=LXGW+WenKai&family=Noto+Sans+SC:wght@200;300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap"
-      />
-    </noscript>
-    <!-- 霞鹜文楷 · 规整楷书（国内镜像，异步） -->
+    <!-- 外链字体延后加载：开屏不抢带宽（国内直连 Google 常极慢，开不开梯子都拖） -->
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
+    <!-- 霞鹜文楷 · 国内镜像，异步（不挡首屏） -->
     <link
       rel="stylesheet"
       href="https://cdn.staticfile.org/lxgw-wenkai-webfont/1.7.0/style.css"
@@ -35,6 +23,18 @@
     <noscript>
       <link rel="stylesheet" href="https://cdn.staticfile.org/lxgw-wenkai-webfont/1.7.0/style.css" />
     </noscript>
+    <script>
+      // 进桌面后再拉 Google 字体族，避免与主包 / App chunk 抢连接
+      window.addEventListener('load', function () {
+        window.setTimeout(function () {
+          var l = document.createElement('link')
+          l.rel = 'stylesheet'
+          l.href =
+            'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Long+Cang&family=LXGW+WenKai&family=Noto+Sans+SC:wght@200;300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=Zhi+Mang+Xing&display=swap'
+          document.head.appendChild(l)
+        }, 2800)
+      })
+    </script>
     <!-- 沉浸式：网页内容与系统状态栏重叠区域由应用自行绘制，不再预留 safe-area 顶距 -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Lumi Phone" />
