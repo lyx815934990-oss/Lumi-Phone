@@ -6,6 +6,7 @@ import {
   buildLumiArchiveDownloadFilename,
   defaultLumiArchiveBaseName,
   downloadBlob,
+  estimateLocalStorageChars,
   exportDataToFile,
   importDataFromFile,
 } from './exportImport'
@@ -96,6 +97,17 @@ export function MigrationPanel() {
 
   const runExportWithChosenName = useCallback(async (displayName: string) => {
     setExportNameOpen(false)
+
+    // 桌面组件大图 / 名片字体会把归档撑到几十 MB，iPhone 上易 OOM 并触发「模块加载失败」整页崩
+    const lsChars = estimateLocalStorageChars()
+    if (lsChars > 12_000_000) {
+      const mb = (lsChars / (1024 * 1024)).toFixed(1)
+      const ok = window.confirm(
+        `当前本机数据约 ${mb} MB，在手机上导出可能因内存不足失败。\n\n建议：删掉部分组件大图或名片自定义字体后再试，或换电脑浏览器导出。\n\n仍要继续吗？`,
+      )
+      if (!ok) return
+    }
+
     setBusy('export')
     setCeremonyLines(EXPORT_LINES)
     setLineIdx(0)
@@ -104,17 +116,36 @@ export function MigrationPanel() {
     lineTimer.current = window.setInterval(() => {
       setLineIdx((i) => Math.min(i + 1, EXPORT_LINES.length - 1))
     }, 900)
-    await new Promise((r) => window.setTimeout(r, 2800))
+
+    let blob: Blob | null = null
+    let filename = ''
     try {
-      const { blob, filename } = await exportDataToFile({ displayName })
-      downloadBlob(blob, filename)
+      // 边做导出边播仪式动画，避免先空等 2.8s 再一次性撑爆内存
+      const result = await exportDataToFile({ displayName })
+      blob = result.blob
+      filename = result.filename
     } catch (e) {
       window.alert(e instanceof Error ? e.message : '导出失败')
-    } finally {
       clearLineTimers()
       setCeremonyOpen(false)
       setBusy(null)
       setLineIdx(0)
+      return
+    }
+
+    clearLineTimers()
+    setCeremonyOpen(false)
+    setBusy(null)
+    setLineIdx(0)
+
+    // 先卸掉全屏动画，再触发下载，降低 iOS 上后续动态 import 失败概率
+    await new Promise((r) => window.setTimeout(r, 80))
+    try {
+      if (blob) await downloadBlob(blob, filename)
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '保存文件失败')
+    } finally {
+      blob = null
     }
   }, [])
 

@@ -18,6 +18,25 @@ export type LumiCloudArchive = {
   meta: { generator: string; note?: string }
 }
 
+function yieldToUi(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0)
+  })
+}
+
+/** 粗估 localStorage 体积（字符数），用于导出前提示 */
+export function estimateLocalStorageChars(): number {
+  if (typeof localStorage === 'undefined') return 0
+  let n = 0
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i)
+    if (!key) continue
+    n += key.length
+    n += (localStorage.getItem(key) ?? '').length
+  }
+  return n
+}
+
 export function collectLocalStorageSnapshot(): Record<string, string | null> {
   const out: Record<string, string | null> = {}
   if (typeof localStorage === 'undefined') return out
@@ -51,16 +70,38 @@ export function buildLumiArchiveDownloadFilename(userLabel: string | null | unde
   return `${base}.lumi`
 }
 
+function toExportError(error: unknown): Error {
+  if (error instanceof Error) {
+    const msg = error.message || ''
+    const name = error.name || ''
+    if (
+      name === 'RangeError' ||
+      /out of memory|allocation failed|invalid string length|maximum call stack/i.test(msg)
+    ) {
+      return new Error(
+        '本机数据过大，导出时内存不足。请先删掉部分桌面组件大图 / 名片自定义字体后再试，或换电脑浏览器导出。',
+      )
+    }
+    return error
+  }
+  return new Error('导出失败')
+}
+
 export async function exportDataToFile(options?: {
   /** 用户自定义主文件名，可不含后缀；非法字符会替换为下划线 */
   displayName?: string | null
-}): Promise<{ blob: Blob; filename: string }> {
+}): Promise<{ blob: Blob; filename: string; approxBytes: number }> {
+  await yieldToUi()
   const idbSnap = await dumpWeChatPersonaIndexedDbSnapshot()
+  await yieldToUi()
+  const localStorageSnap = collectLocalStorageSnapshot()
+  await yieldToUi()
+
   const payload: LumiCloudArchive = {
     kind: ARCHIVE_KIND,
     version: ARCHIVE_VERSION,
     exportedAt: Date.now(),
-    localStorage: collectLocalStorageSnapshot(),
+    localStorage: localStorageSnap,
     ...(idbSnap ? { wechatIndexedDb: idbSnap } : {}),
     meta: {
       generator: 'Lumi Phone · Data Archive',
@@ -69,22 +110,76 @@ export async function exportDataToFile(options?: {
         : '含 localStorage；未发现已接入的 IndexedDB（若尚未产生索引数据则属正常）。',
     },
   }
-  const json = JSON.stringify(payload)
-  const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+
+  let json: string
+  try {
+    json = JSON.stringify(payload)
+  } catch (e) {
+    throw toExportError(e)
+  }
+
+  // 尽快松开大对象，减轻 iOS Safari 内存压力（否则后续动态模块加载易失败）
+  payload.localStorage = {}
+  if (payload.wechatIndexedDb) payload.wechatIndexedDb.stores = {}
+
+  const approxBytes = json.length * 2
+  let blob: Blob
+  try {
+    blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+  } catch (e) {
+    throw toExportError(e)
+  } finally {
+    json = ''
+  }
+
   const filename = buildLumiArchiveDownloadFilename(options?.displayName)
-  return { blob, filename }
+  await yieldToUi()
+  return { blob, filename, approxBytes }
 }
 
-export function downloadBlob(blob: Blob, filename: string) {
+type ShareNavigator = Navigator & {
+  share?: (data: ShareData) => Promise<void>
+  canShare?: (data: ShareData) => boolean
+}
+
+/**
+ * 触发下载。iOS Safari 对大 Blob 的 a.download 不稳定，优先走系统分享面板保存到文件。
+ */
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
+  const nav = navigator as ShareNavigator
+  const isIos =
+    typeof navigator !== 'undefined' &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+
+  if (isIos && typeof nav.share === 'function') {
+    try {
+      const file = new File([blob], filename, {
+        type: blob.type || 'application/json',
+      })
+      const data: ShareData = { files: [file], title: filename }
+      if (typeof nav.canShare !== 'function' || nav.canShare(data)) {
+        await nav.share(data)
+        return
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return
+      /* 分享失败则回退 a.download */
+    }
+  }
+
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.rel = 'noopener'
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 2500)
+  try {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 2500)
+  }
 }
 
 export type ImportArchiveResult = { keysRestored: number; indexedDbRestored: boolean }
@@ -138,7 +233,7 @@ export async function importDataFromFile(text: string): Promise<ImportArchiveRes
   if (indexedDbRestored) {
     try {
       const { reconcileWeChatCharacterOwnershipAfterArchiveImport } = await import(
-        '../wechat/wechatAccountPersistence'
+        '../wechat/wechatAccountPersistence',
       )
       await reconcileWeChatCharacterOwnershipAfterArchiveImport()
     } catch {
