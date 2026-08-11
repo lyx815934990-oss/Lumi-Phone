@@ -80,7 +80,6 @@ const BOOT_PRELOAD_TASKS: PreloadTask[] = [
   { label: '微博广场', load: () => import('../apps/lumiPulse/WeChatDiscoverLumiPulseApp') },
   { label: '浮光直播', load: () => import('../apps/lumiLive') },
   { label: '私语档案', load: () => import('../apps/wechat/diary/SubconsciousArchivesApp') },
-  { label: '外观工坊', load: () => import('../apps/lookWorkshop') },
 ]
 
 export type BootPreloadProgress = {
@@ -270,7 +269,6 @@ const APP_IMPORT_BY_ID: Partial<Record<string, () => Promise<unknown>>> = {
   sandbox: () => import('../apps/sandbox/SandboxApp'),
   evolution: () => import('../apps/evolution/EvolutionApp'),
   takeout: () => import('../apps/takeout/LumiTasteApp'),
-  lookWorkshop: () => import('../apps/lookWorkshop'),
 }
 
 const appPrefetchStarted = new Set<string>()
