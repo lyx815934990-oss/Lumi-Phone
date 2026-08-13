@@ -1,7 +1,7 @@
 /** 首开预热 / 缓存：排除剧本杀与超大媒体 */
 
 import { importNamedWithRetry } from '../lazyWithRetry'
-import { loadWeChatAppModule } from './wechatAppModule'
+import { loadWeChatAppDefault, loadWeChatAppModule } from './wechatAppModule'
 
 const SKIP_URL_RE =
   /JBSGameFlow|jubensha|Jubensha|jbsChat|剧本杀|\.mp4(?:$|\?)|聊天室背景/i
@@ -52,7 +52,7 @@ type PreloadTask = {
  * 绝不包含 jubensha / JBSGameFlow / 对局媒体。
  */
 const BOOT_PRELOAD_TASKS: PreloadTask[] = [
-  { label: '微信', critical: true, load: () => loadWeChatAppModule() },
+  { label: '微信', critical: true, load: () => loadWeChatAppDefault() },
   { label: '账号', critical: true, load: () => import('../apps/userAccount/UserAccountApp') },
   { label: '外观', critical: true, load: () => import('../components/CustomizeScreen') },
   { label: '遇见', load: () => import('../apps/lumiMeet/LumiMeetAppRoute') },
@@ -200,7 +200,8 @@ async function preloadWeChatUntilReady(
   while (Date.now() - started < budgetMs) {
     try {
       const remain = Math.max(5_000, budgetMs - (Date.now() - started))
-      const result = await withTimeout(loadWeChatAppModule(), Math.min(remain, 90_000))
+      // 直接拉 lazy 用的 default Promise，保证开屏完成 = 点开可同步用
+      const result = await withTimeout(loadWeChatAppDefault(), Math.min(remain, 90_000))
       if (result !== 'timeout') {
         onProgress?.({ done: 1, total: 1, ratio: 1, label: '微信已就绪' })
         return true
@@ -324,8 +325,8 @@ export function warmNonJubenshaAppChunks(): void {
 
 /** 按 app id 预取对应 lazy chunk（点图标瞬间先拉，减少白屏） */
 const APP_IMPORT_BY_ID: Partial<Record<string, () => Promise<unknown>>> = {
-  wechat: () => loadWeChatAppModule(),
-  weibo: () => loadWeChatAppModule(),
+  wechat: () => loadWeChatAppDefault(),
+  weibo: () => loadWeChatAppDefault(),
   appearance: () => import('../components/CustomizeScreen'),
   lumiMeet: () => import('../apps/lumiMeet/LumiMeetAppRoute'),
   api: () => import('../apps/api/ApiSettingsApp'),

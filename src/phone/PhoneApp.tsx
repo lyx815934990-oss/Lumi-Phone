@@ -10,7 +10,7 @@ import { UserSystemAuthModal } from './components/UserSystemAuthModal'
 import { UserInfoCorrectionModal } from './components/UserInfoCorrectionModal'
 import { AccountStatusCheckingOverlay } from './components/AccountStatusCheckingOverlay'
 import { prefetchAppChunk, persistLoadedAssetsToServiceWorker } from './boot/warmShellCache'
-import { loadWeChatAppDefault } from './boot/wechatAppModule'
+import { isWeChatAppModuleReady, loadWeChatAppDefault } from './boot/wechatAppModule'
 import { readEnableSplashScreenSync } from './boot/splashPref'
 import { BootResourceGate } from './components/BootResourceGate'
 import { SplashScreen } from './components/SplashScreen'
@@ -112,10 +112,19 @@ const TasteFeastCeremonyHost = lazyWithRetry(() =>
   })),
 )
 
-function SuspenseApp({ children, label }: { children: ReactNode; label?: string }) {
+function SuspenseApp({
+  children,
+  label,
+  /** true：开屏已就绪 / 后台预挂，不再甩进度条 */
+  skipFallback,
+}: {
+  children: ReactNode
+  label?: string
+  skipFallback?: boolean
+}) {
   return (
     <LazyChunkErrorBoundary label={label}>
-      <Suspense fallback={<LazyRouteFallback label={label} />}>{children}</Suspense>
+      <Suspense fallback={skipFallback ? null : <LazyRouteFallback label={label} />}>{children}</Suspense>
     </LazyChunkErrorBoundary>
   )
 }
@@ -219,9 +228,15 @@ export function PhoneApp() {
     }
   }, [enableSplashScreen, showSplash])
 
+  /** 开屏一结束就后台挂起微信（hidden），点开时不应再出「打开微信…」进度条 */
+  useEffect(() => {
+    if (!bootDone) return
+    setWechatKeepAlive(true)
+    void loadWeChatAppDefault()
+  }, [bootDone])
+
   useEffect(() => {
     if (!bootDone || showSplash) return
-    // 进桌面后立刻再拉一次微信（不挡 UI），降低点开失败率
     prefetchAppChunk('wechat')
     const t = window.setTimeout(() => setDeferSecondaryRuntime(true), 1800)
     return () => window.clearTimeout(t)
@@ -650,7 +665,11 @@ export function PhoneApp() {
               }`}
               aria-hidden={!wechatVisible}
             >
-              <SuspenseApp label="打开微信…">
+              <SuspenseApp
+                label="打开微信…"
+                // 开屏已拉好、或仍在桌面后台挂载：绝不弹进度条抢戏
+                skipFallback={isWeChatAppModuleReady() || !wechatVisible}
+              >
                 <WeChatApp onBack={goHome} />
               </SuspenseApp>
             </div>

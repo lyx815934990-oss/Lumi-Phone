@@ -4,25 +4,44 @@ import type { ComponentType } from 'react'
 
 type WeChatAppProps = { onBack: () => void }
 type WeChatMod = { WeChatApp: ComponentType<WeChatAppProps> }
+type WeChatLazyDefault = { default: ComponentType<WeChatAppProps> }
 
 let wechatModulePromise: Promise<WeChatMod> | null = null
+let wechatDefaultPromise: Promise<WeChatLazyDefault> | null = null
+let wechatReady = false
 
 export function loadWeChatAppModule(): Promise<WeChatMod> {
   if (!wechatModulePromise) {
-    wechatModulePromise = (
-      import('../apps/wechat/WeChatApp') as Promise<WeChatMod>
-    ).catch((err) => {
-      // 失败后允许重试，勿把 rejected Promise 永久钉死
+    wechatModulePromise = (import('../apps/wechat/WeChatApp') as Promise<WeChatMod>).catch((err) => {
       wechatModulePromise = null
+      wechatDefaultPromise = null
+      wechatReady = false
       throw err
     })
   }
   return wechatModulePromise
 }
 
-/** 供 React.lazy：始终走同一模块 Promise */
-export function loadWeChatAppDefault(): Promise<{ default: ComponentType<WeChatAppProps> }> {
-  return loadWeChatAppModule().then((m) => ({ default: m.WeChatApp }))
+/** 供 React.lazy：缓存同一 default Promise，避免每次 .then 新建挂起 */
+export function loadWeChatAppDefault(): Promise<WeChatLazyDefault> {
+  if (!wechatDefaultPromise) {
+    wechatDefaultPromise = loadWeChatAppModule()
+      .then((m) => {
+        wechatReady = true
+        return { default: m.WeChatApp }
+      })
+      .catch((err) => {
+        wechatDefaultPromise = null
+        wechatReady = false
+        throw err
+      })
+  }
+  return wechatDefaultPromise
+}
+
+/** 模块 import 是否已成功（开屏拉完应为 true） */
+export function isWeChatAppModuleReady(): boolean {
+  return wechatReady
 }
 
 export function isWeChatAppModuleCached(): boolean {
