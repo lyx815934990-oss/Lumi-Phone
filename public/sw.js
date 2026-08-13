@@ -1,9 +1,12 @@
-/* PWA Service Worker：壳资源缓存 + Web Push 系统通知 */
+/* PWA Service Worker：壳资源缓存 + Web Push 系统通知
+ * 硬规则：fetch 处理器里 respondWith 的 Promise **禁止 reject**（iOS 会直接白屏：
+ * FetchEvent.respondWith received an error: TypeError: Load failed）
+ */
 
 const NOTIFY_ICON_CACHE = 'lumi-notify-icons-v1'
 /** 发版后 bump，强制丢掉指着旧 hash / 坏 vendor 拆包的壳缓存 */
-const ASSET_CACHE = 'lumi-runtime-assets-v5'
-const SHELL_CACHE = 'lumi-shell-v5'
+const ASSET_CACHE = 'lumi-runtime-assets-v6'
+const SHELL_CACHE = 'lumi-shell-v6'
 const NOTIFY_ICON_PATH_MARKER = '/__lumi_notify_icon__/'
 
 /** 剧本杀 / 超大视频：永不进 SW 缓存，也勿拦截为 cache-first */
@@ -37,45 +40,63 @@ function isCacheableAsset(url) {
   return /\.(js|css|woff2?|png|jpg|jpeg|webp|svg|gif|avif)($|\?)/i.test(url.pathname)
 }
 
+/** 导航失败时仍返回可读页，并尽量跳到 www、卸掉坏 SW */
+function offlineNavigateResponse() {
+  const html = `<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="robots" content="noindex"/>
+<title>Lumi Phone</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif;
+background:#f2f2f4;color:#1c1c1e;padding:24px;text-align:center}
+a{color:#007aff;font-weight:600}
+p{line-height:1.55;font-size:15px;max-width:320px;margin:0 auto 12px}
+</style></head><body>
+<p>页面暂时打不开（更新后缓存或网络异常）。</p>
+<p><a id="go" href="https://www.lumiphone.cn/">点这里打开 www.lumiphone.cn</a></p>
+<script>
+(function(){
+  try{
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.getRegistrations().then(function(rs){
+        rs.forEach(function(r){ try{ r.unregister(); }catch(e){} });
+      });
+    }
+    if(typeof caches!=='undefined'){
+      caches.keys().then(function(ks){ ks.forEach(function(k){ caches.delete(k); }); });
+    }
+  }catch(e){}
+  var q=location.search||'';
+  var h=location.hash||'';
+  var target='https://www.lumiphone.cn/'+q+h;
+  var a=document.getElementById('go');
+  if(a) a.href=target;
+  setTimeout(function(){ location.replace(target); }, 600);
+})();
+</script>
+</body></html>`
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+    },
+  })
+}
+
+function emptyErrorResponse(status) {
+  return new Response('', { status: status || 503, statusText: 'Unavailable' })
+}
+
 async function cacheFirst(request, cacheName) {
-  const cache = await caches.open(cacheName)
-  const hit = await cache.match(request, { ignoreSearch: false })
-  if (hit) return hit
-  const res = await fetch(request)
-  if (res && res.ok) {
-    try {
-      await cache.put(request, res.clone())
-    } catch {
-      /* quota */
-    }
-  }
-  return res
-}
-
-async function networkFirst(request, cacheName) {
-  const cache = await caches.open(cacheName)
   try {
-    const res = await fetch(request)
-    if (res && res.ok) {
-      try {
-        await cache.put(request, res.clone())
-      } catch {
-        /* quota */
-      }
-    }
-    return res
-  } catch (err) {
-    const hit = await cache.match(request)
+    const cache = await caches.open(cacheName)
+    const hit = await cache.match(request, { ignoreSearch: false })
     if (hit) return hit
-    throw err
-  }
-}
-
-async function staleWhileRevalidate(request, cacheName) {
-  const cache = await caches.open(cacheName)
-  const cached = await cache.match(request)
-  const networkPromise = fetch(request)
-    .then(async (res) => {
+    try {
+      const res = await fetch(request)
       if (res && res.ok) {
         try {
           await cache.put(request, res.clone())
@@ -84,19 +105,44 @@ async function staleWhileRevalidate(request, cacheName) {
         }
       }
       return res
-    })
-    .catch((err) => {
-      if (cached) return cached
-      throw err
-    })
-  // 有缓存立刻回，后台刷新；首次无缓存再等网络
-  return cached || networkPromise
+    } catch {
+      return emptyErrorResponse(504)
+    }
+  } catch {
+    return emptyErrorResponse(504)
+  }
+}
+
+async function networkFirst(request, cacheName) {
+  try {
+    const cache = await caches.open(cacheName)
+    try {
+      const res = await fetch(request)
+      if (res && res.ok) {
+        try {
+          await cache.put(request, res.clone())
+        } catch {
+          /* quota */
+        }
+      }
+      // 即使非 ok 也返回网络响应，勿 throw
+      if (res) return res
+    } catch {
+      /* fall through to cache / offline */
+    }
+    const hit = await cache.match(request)
+    if (hit) return hit
+    if (request.mode === 'navigate') return offlineNavigateResponse()
+    return emptyErrorResponse(504)
+  } catch {
+    if (request.mode === 'navigate') return offlineNavigateResponse()
+    return emptyErrorResponse(504)
+  }
 }
 
 async function putUrls(urls) {
   const cache = await caches.open(ASSET_CACHE)
   const list = Array.isArray(urls) ? urls : []
-  // 限流写入，避免开屏后和业务 chunk 抢带宽
   const concurrency = 3
   let cursor = 0
   const worker = async () => {
@@ -142,13 +188,21 @@ self.addEventListener('fetch', (event) => {
   const req = event.request
   if (req.method !== 'GET') return
 
-  const url = new URL(req.url)
+  let url
+  try {
+    url = new URL(req.url)
+  } catch {
+    return
+  }
 
   if (url.pathname.includes(NOTIFY_ICON_PATH_MARKER)) {
     event.respondWith(
-      caches.open(NOTIFY_ICON_CACHE).then((cache) =>
-        cache.match(req).then((cached) => cached || new Response('', { status: 404, statusText: 'Not Found' })),
-      ),
+      caches
+        .open(NOTIFY_ICON_CACHE)
+        .then((cache) =>
+          cache.match(req).then((cached) => cached || new Response('', { status: 404, statusText: 'Not Found' })),
+        )
+        .catch(() => new Response('', { status: 404, statusText: 'Not Found' })),
     )
     return
   }
@@ -157,7 +211,7 @@ self.addEventListener('fetch', (event) => {
   if (shouldSkipCache(url)) return
 
   if (req.mode === 'navigate') {
-    // 文档必须尽量拿新壳：SWR 会先吐旧 HTML，发版后旧入口继续去拉已删的 chunk → 发现页失败
+    // 文档必须尽量拿新壳；失败时绝不能 reject respondWith
     event.respondWith(networkFirst(req, SHELL_CACHE))
     return
   }
@@ -173,6 +227,16 @@ self.addEventListener('message', (event) => {
   if (!data || typeof data !== 'object') return
   if (data.type === 'SKIP_WAITING') {
     void self.skipWaiting()
+    return
+  }
+  if (data.type === 'LUMI_UNREGISTER_SW') {
+    event.waitUntil(
+      (async () => {
+        const keys = await caches.keys()
+        await Promise.all(keys.map((k) => caches.delete(k)))
+        await self.registration.unregister()
+      })(),
+    )
     return
   }
   if (data.type === 'lumi-cache-urls') {
