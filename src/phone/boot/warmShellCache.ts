@@ -1,7 +1,7 @@
 /** 首开预热 / 缓存：排除剧本杀与超大媒体 */
 
 import { importNamedWithRetry } from '../lazyWithRetry'
-import { loadWeChatAppDefault, loadWeChatAppModule } from './wechatAppModule'
+import { loadWeChatAppDefault } from './wechatAppModule'
 
 const SKIP_URL_RE =
   /JBSGameFlow|jubensha|Jubensha|jbsChat|剧本杀|\.mp4(?:$|\?)|聊天室背景/i
