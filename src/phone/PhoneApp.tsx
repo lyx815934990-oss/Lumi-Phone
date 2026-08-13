@@ -93,9 +93,6 @@ const EvolutionApp = lazyWithRetry(() =>
 const LumiTasteApp = lazyWithRetry(() =>
   import('./apps/takeout/LumiTasteApp').then((m) => ({ default: m.LumiTasteApp })),
 )
-const LookWorkshopApp = lazyWithRetry(() =>
-  import('./apps/lookWorkshop/LookWorkshopApp').then((m) => ({ default: m.LookWorkshopApp })),
-)
 const AppPlaceholderScreen = lazyWithRetry(() =>
   import('./components/AppPlaceholderScreen').then((m) => ({ default: m.AppPlaceholderScreen })),
 )
@@ -727,8 +724,6 @@ export function PhoneApp() {
                     <EvolutionApp onBack={goHome} />
                   ) : route.id === 'takeout' ? (
                     <LumiTasteApp onBack={goHome} />
-                  ) : route.id === 'lookWorkshop' ? (
-                    <LookWorkshopApp onBack={goHome} />
                   ) : (
                     <AppPlaceholderScreen appId={route.id} onBack={goHome} />
                   )}
