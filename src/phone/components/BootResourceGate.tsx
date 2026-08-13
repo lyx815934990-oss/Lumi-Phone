@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { finishBootOverlay, markBootProgress } from '../boot/lumiBootBridge'
 import {
   isMobileBootClient,
-  preloadCriticalBootResources,
+  preloadAllNonJubenshaBootResources,
   scheduleBackgroundAppWarm,
 } from '../boot/warmShellCache'
 
@@ -20,7 +20,7 @@ function sleep(ms: number) {
 
 /**
  * 接管 index.html 里的 #lumi-boot。
- * 只等 critical chunk（微信/账号/外观/API）后进桌面；其余 idle 后台预热。
+ * 开屏阶段尽量拉齐非剧本杀 App / 发现页资源后再进桌面。
  */
 export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
   const onReadyRef = useRef(onReady)
@@ -52,7 +52,7 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
         console.error('[Lumi] boot onReady failed', err)
       }
       finishBootOverlay()
-      // 进桌面后再暖其余 App，不挡首屏
+      // 若开屏被总超时打断，进桌面后再补一轮
       scheduleBackgroundAppWarm()
     }
 
@@ -74,19 +74,20 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
         ])
         if (cancelled || sealedRef.current) return
 
-        markBootProgress(84, mobile ? '正在准备微信…' : '正在准备核心应用…')
+        markBootProgress(82, mobile ? '正在准备微信与常用应用…' : '正在准备全部应用资源…')
         await Promise.race([
-          preloadCriticalBootResources((p) => {
+          preloadAllNonJubenshaBootResources((p) => {
             if (sealedRef.current) return
-            const pct = 84 + Math.round(p.ratio * 12)
-            markBootProgress(Math.min(pct, 96), p.label)
+            // 82% → 98% 跟真实任务进度
+            const pct = 82 + Math.round(p.ratio * 16)
+            markBootProgress(Math.min(pct, 98), p.label)
           }),
-          // 微信包较大：给足时间，别 7s 就掐断导致点开失败
-          sleep(mobile ? 22_000 : 24_000),
+          // 给足弱网时间；真超时再进桌面，剩余由后台补暖
+          sleep(300_000),
         ])
         if (sealedRef.current) return
 
-        markBootProgress(98, '即将进入…')
+        markBootProgress(99, '即将进入…')
         sealReady()
       } catch (err) {
         console.warn('[Lumi] boot gate failed, force enter', err)

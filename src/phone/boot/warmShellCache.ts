@@ -41,7 +41,7 @@ export async function persistLoadedAssetsToServiceWorker(): Promise<void> {
 type PreloadTask = {
   /** 进度文案里的短名 */
   label: string
-  /** 开屏只等 critical；其余进桌面后 idle 预热 */
+  /** 开屏优先单独拉的大包（微信） */
   critical?: boolean
   load: () => Promise<unknown>
 }
@@ -105,34 +105,37 @@ export function isMobileBootClient(): boolean {
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | 'timeout'> {
-  let timer = 0
   try {
     return await Promise.race([
       promise.then((v) => v as T),
       sleep(ms).then(() => 'timeout' as const),
     ])
-  } finally {
-    window.clearTimeout(timer)
+  } catch {
+    throw new Error('preload task failed')
   }
 }
 
 async function runPreloadQueue(
   tasks: PreloadTask[],
   onProgress?: (p: BootPreloadProgress) => void,
-  opts?: { concurrency?: number; overallTimeoutMs?: number; perTaskTimeoutMs?: number },
-): Promise<void> {
+  opts?: {
+    concurrency?: number
+    overallTimeoutMs?: number
+    perTaskTimeoutMs?: number
+    /** true：超时不假装全部完成，留给上层继续等/补拉 */
+    strict?: boolean
+  },
+): Promise<{ completed: number; total: number }> {
   const total = tasks.length
-  if (total === 0) return
+  if (total === 0) return { completed: 0, total: 0 }
 
   const mobile = isMobileBootClient()
   let done = 0
   let cursor = 0
-  const concurrency = Math.max(
-    1,
-    Math.min(opts?.concurrency ?? (mobile ? 2 : 3), total),
-  )
-  const perTaskTimeoutMs = opts?.perTaskTimeoutMs ?? (mobile ? 6_000 : 10_000)
-  const overallTimeoutMs = opts?.overallTimeoutMs ?? (mobile ? 8_000 : 12_000)
+  const concurrency = Math.max(1, Math.min(opts?.concurrency ?? (mobile ? 2 : 3), total))
+  const perTaskTimeoutMs = opts?.perTaskTimeoutMs ?? (mobile ? 45_000 : 60_000)
+  const overallTimeoutMs = opts?.overallTimeoutMs ?? 300_000
+  const strict = opts?.strict === true
 
   const report = (label: string) => {
     onProgress?.({
@@ -155,13 +158,13 @@ async function runPreloadQueue(
       try {
         const result = await withTimeout(
           importNamedWithRetry(task.load, {
-            retries: mobile ? 3 : 3,
-            baseDelayMs: mobile ? 500 : 400,
+            retries: mobile ? 4 : 3,
+            baseDelayMs: mobile ? 600 : 400,
           }),
           perTaskTimeoutMs,
         )
         if (result === 'timeout') {
-          // 弱网挂死的 dynamic import：跳过，进页再 lazy
+          // 单项超时：不记成功；strict 时后续可再补
         }
       } catch {
         // 弱网单项失败：不卡死开屏
@@ -171,56 +174,90 @@ async function runPreloadQueue(
     }
   }
 
-  await withTimeout(
+  const raced = await withTimeout(
     Promise.all(Array.from({ length: concurrency }, () => worker())),
     overallTimeoutMs,
   )
-  if (done < total) {
-    done = total
-    report('应用资源已就绪')
+
+  if (raced === 'timeout') {
+    if (!strict) {
+      done = total
+      report('应用资源已就绪')
+    } else {
+      report(done >= total ? '应用资源已就绪' : '仍有资源在后台继续…')
+    }
+  }
+
+  return { completed: done, total }
+}
+
+/**
+ * 开屏拉齐全部非剧本杀 App / 发现页 chunk。
+ * 微信单独优先（最大包），再串/并补其余，避免进桌面后点开又卡。
+ */
+export async function preloadAllNonJubenshaBootResources(
+  onProgress?: (p: BootPreloadProgress) => void,
+): Promise<void> {
+  const mobile = isMobileBootClient()
+  const wechat = BOOT_PRELOAD_TASKS.filter((t) => t.label === '微信')
+  const rest = BOOT_PRELOAD_TASKS.filter((t) => t.label !== '微信')
+  const totalAll = BOOT_PRELOAD_TASKS.length
+  let finished = 0
+
+  const mapProgress = (local: BootPreloadProgress, baseDone: number) => {
+    const done = baseDone + local.done
+    onProgress?.({
+      done: Math.min(done, totalAll),
+      total: totalAll,
+      ratio: totalAll > 0 ? Math.min(done, totalAll) / totalAll : 1,
+      label: local.label,
+    })
+  }
+
+  if (wechat.length) {
+    const r = await runPreloadQueue(wechat, (p) => mapProgress(p, 0), {
+      concurrency: 1,
+      overallTimeoutMs: 120_000,
+      perTaskTimeoutMs: 120_000,
+      strict: true,
+    })
+    finished = r.completed
+  }
+
+  if (rest.length) {
+    await runPreloadQueue(rest, (p) => mapProgress(p, finished), {
+      concurrency: mobile ? 2 : 3,
+      // 微信最多约 2 分钟，其余用满开屏 5 分钟预算
+      overallTimeoutMs: 180_000,
+      perTaskTimeoutMs: mobile ? 45_000 : 60_000,
+      strict: true,
+    })
   }
 }
 
 /**
- * 开屏优先单独拉微信（最大包），再补其余 critical，避免并发抢带宽导致微信永远下不完。
+ * @deprecated 请用 {@link preloadAllNonJubenshaBootResources}
  */
 export async function preloadCriticalBootResources(
   onProgress?: (p: BootPreloadProgress) => void,
 ): Promise<void> {
-  const mobile = isMobileBootClient()
-  const critical = BOOT_PRELOAD_TASKS.filter((t) => t.critical)
-  const wechat = critical.filter((t) => t.label === '微信')
-  const rest = critical.filter((t) => t.label !== '微信')
-
-  if (wechat.length) {
-    await runPreloadQueue(wechat, onProgress, {
-      concurrency: 1,
-      overallTimeoutMs: mobile ? 18_000 : 20_000,
-      perTaskTimeoutMs: mobile ? 16_000 : 18_000,
-    })
-  }
-  if (rest.length) {
-    await runPreloadQueue(rest, onProgress, {
-      concurrency: mobile ? 2 : 3,
-      overallTimeoutMs: mobile ? 8_000 : 10_000,
-      perTaskTimeoutMs: mobile ? 5_000 : 8_000,
-    })
-  }
+  await preloadAllNonJubenshaBootResources(onProgress)
 }
 
 /**
- * 进桌面后 idle 预热其余 App / 发现页，不挡首屏。
+ * 进桌面后补拉：若开屏被总超时打断，再静默暖一轮。
  */
 export function scheduleBackgroundAppWarm(): void {
   if (typeof window === 'undefined') return
-  const tasks = BOOT_PRELOAD_TASKS.filter((t) => !t.critical)
+  const tasks = BOOT_PRELOAD_TASKS
   if (!tasks.length) return
 
   const run = () => {
     void runPreloadQueue(tasks, undefined, {
       concurrency: isMobileBootClient() ? 1 : 2,
-      overallTimeoutMs: isMobileBootClient() ? 24_000 : 40_000,
-      perTaskTimeoutMs: isMobileBootClient() ? 8_000 : 12_000,
+      overallTimeoutMs: 300_000,
+      perTaskTimeoutMs: isMobileBootClient() ? 45_000 : 60_000,
+      strict: false,
     }).then(() => {
       void persistLoadedAssetsToServiceWorker()
     })
@@ -242,21 +279,14 @@ export function scheduleBackgroundAppWarm(): void {
 }
 
 /**
- * @deprecated 请用 {@link preloadCriticalBootResources}；保留兼容旧调用。
+ * @deprecated 请用 {@link preloadAllNonJubenshaBootResources}
  */
 export async function preloadNonJubenshaResources(
   onProgress?: (p: BootPreloadProgress) => void,
   opts?: { concurrency?: number; overallTimeoutMs?: number },
 ): Promise<void> {
-  const mobile = isMobileBootClient()
-  await runPreloadQueue(
-    BOOT_PRELOAD_TASKS.filter((t) => t.critical),
-    onProgress,
-    {
-      concurrency: opts?.concurrency ?? (mobile ? 2 : 3),
-      overallTimeoutMs: opts?.overallTimeoutMs ?? (mobile ? 7_000 : 9_000),
-    },
-  )
+  void opts
+  await preloadAllNonJubenshaBootResources(onProgress)
 }
 
 /**
