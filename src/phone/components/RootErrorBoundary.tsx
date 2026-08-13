@@ -24,19 +24,7 @@ export class RootErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[Lumi] root render crashed', error, info.componentStack)
-
-    // 更新后旧 chunk 404 / 导出撑爆内存导致模块加载失败：自动硬刷新一次
-    if (!isChunkLoadError(error)) return
-    try {
-      const key = 'lumi-chunk-err-autoreload'
-      if (sessionStorage.getItem(key) === '1') return
-      sessionStorage.setItem(key, '1')
-      const u = new URL(window.location.href)
-      u.searchParams.set('__chunk_retry', String(Date.now()))
-      window.location.replace(u.toString())
-    } catch {
-      /* fall through to UI */
-    }
+    // 不再自动硬刷新：易与懒加载重试叠成死循环；交给用户点「重新加载」
   }
 
   private handleReload = () => {

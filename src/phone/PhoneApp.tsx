@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { EntryNoticeModal } from './components/EntryNoticeModal'
 import { HomeScreen } from './components/HomeScreen'
 import { LazyChunkErrorBoundary } from './components/LazyChunkErrorBoundary'
@@ -10,6 +10,7 @@ import { UserSystemAuthModal } from './components/UserSystemAuthModal'
 import { UserInfoCorrectionModal } from './components/UserInfoCorrectionModal'
 import { AccountStatusCheckingOverlay } from './components/AccountStatusCheckingOverlay'
 import { prefetchAppChunk, persistLoadedAssetsToServiceWorker } from './boot/warmShellCache'
+import { loadWeChatAppDefault } from './boot/wechatAppModule'
 import { readEnableSplashScreenSync } from './boot/splashPref'
 import { BootResourceGate } from './components/BootResourceGate'
 import { SplashScreen } from './components/SplashScreen'
@@ -52,10 +53,8 @@ import {
 import { consumeDiscordRegisterFromCommunityTroubleshoot } from './userSystem/discordRegisterFlags'
 import { storeDiscordRegisterPending } from './components/DiscordRegisterCompleteModal'
 
-const WeChatApp = lazyWithRetry(
-  () => import('./apps/wechat/WeChatApp').then((m) => ({ default: m.WeChatApp })),
-  { retries: 6, baseDelayMs: 700 },
-)
+// 与开屏预加载共用同一模块 Promise；禁止 cache-bust 重试，避免进度到 90% 被整页打断
+const WeChatApp = lazy(loadWeChatAppDefault)
 const UserAccountApp = lazyWithRetry(() =>
   import('./apps/userAccount/UserAccountApp').then((m) => ({ default: m.UserAccountApp })),
 )
@@ -93,6 +92,9 @@ const EvolutionApp = lazyWithRetry(() =>
 )
 const LumiTasteApp = lazyWithRetry(() =>
   import('./apps/takeout/LumiTasteApp').then((m) => ({ default: m.LumiTasteApp })),
+)
+const LookWorkshopApp = lazyWithRetry(() =>
+  import('./apps/lookWorkshop/LookWorkshopApp').then((m) => ({ default: m.LookWorkshopApp })),
 )
 const AppPlaceholderScreen = lazyWithRetry(() =>
   import('./components/AppPlaceholderScreen').then((m) => ({ default: m.AppPlaceholderScreen })),
@@ -725,6 +727,8 @@ export function PhoneApp() {
                     <EvolutionApp onBack={goHome} />
                   ) : route.id === 'takeout' ? (
                     <LumiTasteApp onBack={goHome} />
+                  ) : route.id === 'lookWorkshop' ? (
+                    <LookWorkshopApp onBack={goHome} />
                   ) : (
                     <AppPlaceholderScreen appId={route.id} onBack={goHome} />
                   )}
