@@ -2,11 +2,134 @@ import { Eye, EyeOff, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { MemoryModelIdText } from '../../wechat/memory/MemoryModelIdText'
 import { InlineDropdown } from '../../wechat/newFriendsPersona/InlineDropdown'
+import { CommitOnReleaseRangeInput } from '../../wechat/chatSettings/CommitOnReleaseRangeInput'
 import { apiTheme } from '../theme'
 import { fetchModels, testConnectionSim } from '../apiSim'
 import { formatModelPricingLabel } from '../modelPricingUtils'
 import type { ApiConfig } from '../types'
+import { ApiSamplingParamHelpButton, type ApiSamplingHelpKey } from './ApiSamplingParamHelp'
 import { TextField } from './TextField'
+
+function formatSamplingDisplay(n: number, digits: number): string {
+  if (digits <= 0) return String(Math.round(n))
+  const fixed = n.toFixed(digits)
+  return fixed.replace(/\.?0+$/, '')
+}
+
+/** 可选参数滑杆：未定制时显示预览默认值；拖动即写入；可一键恢复默认（不传） */
+function SamplingSliderField({
+  label,
+  helpKey,
+  hint,
+  value,
+  min,
+  max,
+  step,
+  digits,
+  defaultPreview,
+  minLabel,
+  maxLabel,
+  onCommit,
+}: {
+  label: string
+  helpKey: ApiSamplingHelpKey
+  hint?: string
+  value: number | undefined
+  min: number
+  max: number
+  step: number
+  /** 展示小数位；0 为整数 */
+  digits: number
+  /** 未定制时滑杆停靠的预览位置（不写进配置） */
+  defaultPreview: number
+  minLabel: string
+  maxLabel: string
+  onCommit: (next: number | undefined) => void
+}) {
+  const customized = typeof value === 'number' && Number.isFinite(value)
+  const committed = customized
+    ? Math.min(max, Math.max(min, value))
+    : Math.min(max, Math.max(min, defaultPreview))
+  const [uiValue, setUiValue] = useState(committed)
+  const [dragging, setDragging] = useState(false)
+
+  useEffect(() => {
+    setUiValue(committed)
+  }, [committed])
+
+  const showValue = dragging || customized
+
+  return (
+    <div className="rounded-xl bg-white px-3 py-3 ring-1 ring-black/5">
+      <div className="flex items-start justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-1 text-[12px]" style={{ color: apiTheme.subText }}>
+          <span className="min-w-0 font-medium" style={{ color: apiTheme.text }}>
+            {label}
+          </span>
+          <ApiSamplingParamHelpButton helpKey={helpKey} />
+        </span>
+        {customized && !dragging ? (
+          <button
+            type="button"
+            onClick={() => onCommit(undefined)}
+            className="shrink-0 text-[11px]"
+            style={{ color: '#576b95' }}
+          >
+            恢复默认
+          </button>
+        ) : null}
+      </div>
+      <div className="mt-1.5 flex items-baseline justify-between gap-2">
+        <span className="text-[14px] font-semibold tabular-nums" style={{ color: apiTheme.text }}>
+          {showValue ? formatSamplingDisplay(uiValue, digits) : '系统默认'}
+        </span>
+        {hint ? (
+          <span className="text-[10px] leading-relaxed" style={{ color: apiTheme.subText }}>
+            {hint}
+          </span>
+        ) : null}
+      </div>
+      <CommitOnReleaseRangeInput
+        min={min}
+        max={max}
+        step={step}
+        value={committed}
+        onDraftChange={setUiValue}
+        onDragStateChange={setDragging}
+        onCommit={(n) => onCommit(n)}
+        className="mt-2 w-full accent-black"
+        aria-label={label}
+      />
+      <div className="mt-1 flex justify-between text-[10px]" style={{ color: apiTheme.subText }}>
+        <span>{minLabel}</span>
+        <span>{maxLabel}</span>
+      </div>
+    </div>
+  )
+}
+
+function patchSampling(
+  config: ApiConfig,
+  patch: Partial<
+    Pick<
+      ApiConfig,
+      'temperature' | 'topP' | 'maxTokens' | 'frequencyPenalty' | 'presencePenalty' | 'streamEnabled'
+    >
+  >,
+): ApiConfig {
+  const next: ApiConfig = { ...config, ...patch }
+  for (const key of [
+    'temperature',
+    'topP',
+    'maxTokens',
+    'frequencyPenalty',
+    'presencePenalty',
+  ] as const) {
+    if (key in patch && patch[key] === undefined) delete next[key]
+  }
+  if ('streamEnabled' in patch && !patch.streamEnabled) delete next.streamEnabled
+  return next
+}
 
 export function ApiConfigBlock({
   title,
@@ -241,6 +364,114 @@ export function ApiConfigBlock({
                 </p>
               ) : null}
             </label>
+
+            <div
+              className="rounded-xl px-4 py-3"
+              style={{ border: `1px solid ${apiTheme.border}`, background: '#fafafa' }}
+            >
+              <div className="flex items-center gap-1.5">
+                <p className="text-[13px] font-semibold" style={{ color: apiTheme.text }}>
+                  模型输出参数
+                </p>
+                <ApiSamplingParamHelpButton helpKey="section" />
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed" style={{ color: apiTheme.subText }}>
+                未拖动为系统默认。调过「最大 Token」后，聊天 / 约会 / 起名 / 摘要 / 弹幕等走本配置的请求都会用它（覆盖功能内置上限）。点「？」看说明。
+              </p>
+              <div className="mt-3 space-y-2.5">
+                <SamplingSliderField
+                  label="温度"
+                  helpKey="temperature"
+                  hint="推荐 0.7～0.9"
+                  value={config.temperature}
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  digits={2}
+                  defaultPreview={0.7}
+                  minLabel="0 更稳"
+                  maxLabel="2 更发散"
+                  onCommit={(n) => onChange(patchSampling(config, { temperature: n }))}
+                />
+                <SamplingSliderField
+                  label="Top P"
+                  helpKey="topP"
+                  hint="多数可不调"
+                  value={config.topP}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  digits={2}
+                  defaultPreview={1}
+                  minLabel="0 更窄"
+                  maxLabel="1 更广"
+                  onCommit={(n) => onChange(patchSampling(config, { topP: n }))}
+                />
+                <SamplingSliderField
+                  label="最大 Token"
+                  helpKey="maxTokens"
+                  hint="滑杆最高 128000"
+                  value={config.maxTokens}
+                  min={256}
+                  max={128000}
+                  step={256}
+                  digits={0}
+                  defaultPreview={4096}
+                  minLabel="256 短"
+                  maxLabel="128k 长"
+                  onCommit={(n) =>
+                    onChange(patchSampling(config, { maxTokens: n != null ? Math.floor(n) : undefined }))
+                  }
+                />
+                <SamplingSliderField
+                  label="频率惩罚"
+                  helpKey="frequencyPenalty"
+                  hint="推荐 0～0.3"
+                  value={config.frequencyPenalty}
+                  min={-2}
+                  max={2}
+                  step={0.05}
+                  digits={2}
+                  defaultPreview={0}
+                  minLabel="-2"
+                  maxLabel="2 少重复"
+                  onCommit={(n) => onChange(patchSampling(config, { frequencyPenalty: n }))}
+                />
+                <SamplingSliderField
+                  label="存在惩罚"
+                  helpKey="presencePenalty"
+                  hint="推荐 0～0.3"
+                  value={config.presencePenalty}
+                  min={-2}
+                  max={2}
+                  step={0.05}
+                  digits={2}
+                  defaultPreview={0}
+                  minLabel="-2"
+                  maxLabel="2 换话题"
+                  onCommit={(n) => onChange(patchSampling(config, { presencePenalty: n }))}
+                />
+              </div>
+              <div className="mt-3 flex items-start gap-3 rounded-xl bg-white px-3 py-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 size-4 shrink-0 accent-black"
+                  checked={config.streamEnabled === true}
+                  onChange={(e) =>
+                    onChange(patchSampling(config, { streamEnabled: e.target.checked ? true : undefined }))
+                  }
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1 text-[13px] font-medium" style={{ color: apiTheme.text }}>
+                    流式输出（SSE）
+                    <ApiSamplingParamHelpButton helpKey="stream" />
+                  </span>
+                  <span className="mt-0.5 block text-[11px] leading-relaxed" style={{ color: apiTheme.subText }}>
+                    默认关；仅当中转要求 stream 时再开。
+                  </span>
+                </span>
+              </div>
+            </div>
           </>
         ) : (
           <div

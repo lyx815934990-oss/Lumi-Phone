@@ -1,6 +1,8 @@
-/** 系统演进录入机推送 · 今日关闭 / 本次关闭 */
+/** 系统演进录入机推送 · 今日关闭 / 本次关闭 / 已读（跳过强制停留） */
 
 const TODAY_DISMISS_KEY = 'lumi-evolution-push-dismissed-date-v2'
+/** 已读过该版本更新内容（含强制停留结束或点进完整日志）→ 再次弹出不再强制 15 秒 */
+const READ_VERSION_KEY = 'lumi-evolution-push-read-version-v1'
 
 /**
  * 「关闭」仅本次页面生命周期有效（刷新 / 重新打开会再弹）。
@@ -47,12 +49,35 @@ export function dismissEvolutionPushThisSession(version: string): void {
   sessionDismissedVersions.add(v)
 }
 
-/** 本地测试：清掉「今日关闭 / 本次关闭」，下次满足条件会再弹 */
+export function isEvolutionPushVersionRead(version: string): boolean {
+  if (typeof window === 'undefined') return true
+  const v = version.trim()
+  if (!v) return true
+  try {
+    return window.localStorage.getItem(READ_VERSION_KEY) === v
+  } catch {
+    return false
+  }
+}
+
+export function markEvolutionPushVersionRead(version: string): void {
+  if (typeof window === 'undefined') return
+  const v = version.trim()
+  if (!v) return
+  try {
+    window.localStorage.setItem(READ_VERSION_KEY, v)
+  } catch {
+    // ignore
+  }
+}
+
+/** 本地测试：清掉「今日关闭 / 本次关闭 / 已读」，下次满足条件会再弹且需重新停留 */
 export function resetEvolutionPushDismissals(): void {
   sessionDismissedVersions.clear()
   if (typeof window === 'undefined') return
   try {
     window.localStorage.removeItem(TODAY_DISMISS_KEY)
+    window.localStorage.removeItem(READ_VERSION_KEY)
     window.localStorage.removeItem('lumi-evolution-push-dismissed-date-v1')
     // 清掉旧版误用的 sessionStorage，避免历史残留继续挡弹窗
     window.sessionStorage.removeItem('lumi-evolution-push-session-dismissed-v1')

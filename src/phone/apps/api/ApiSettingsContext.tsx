@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { flushSync } from 'react-dom'
 import { personaDb, pullPhoneKvWithLocalStorageLegacy } from '../wechat/newFriendsPersona/idb'
 import { createEmptyApiConfig, createEmptyPreset, newPresetId } from './mock'
+import { pickApiConfigSamplingFields } from './apiConfigSampling'
 import { migrateLegacyImageGenIntoStore, normalizeImageGenSettings } from './imageGenPresetUtils'
 import {
   API_STORE_STORAGE_KEY,
@@ -50,6 +51,7 @@ function normalizeApiConfig(raw: unknown): ApiConfig {
             at: Number((r.lastTest as { at?: unknown }).at ?? 0),
           }
         : undefined,
+    ...pickApiConfigSamplingFields(r),
   }
 }
 

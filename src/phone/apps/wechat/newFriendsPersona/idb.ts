@@ -1039,9 +1039,15 @@ function normalizeWeChatChatMessage(input: unknown): WeChatChatMessage | null {
     typeof (m as { stickerRef?: unknown }).stickerRef === 'string'
       ? (m as { stickerRef: string }).stickerRef.trim().slice(0, 120)
       : ''
-  if (!stickerRef && content.trim().startsWith('[表情包]')) {
-    const payload = content.trim().slice('[表情包]'.length).trim()
-    if (payload) stickerRef = payload.slice(0, 120)
+  if (!stickerRef) {
+    const c = content.trim()
+    if (c.startsWith('[表情包]')) {
+      const payload = c.slice('[表情包]'.length).trim()
+      if (payload) stickerRef = payload.slice(0, 120)
+    } else {
+      const mSticker = /^表情包\s+(.+)$/.exec(c) || /^表情包\s*[:：]\s*(.+)$/.exec(c)
+      if (mSticker?.[1]?.trim()) stickerRef = mSticker[1]!.trim().slice(0, 120)
+    }
   }
   const thinking =
     typeof (m as { thinking?: unknown }).thinking === 'string'
@@ -1991,6 +1997,220 @@ function normalizeChatConversationSettingsRow(input: unknown): ChatConversationS
       ? { friendRequestAcceptedAtMs: r.friendRequestAcceptedAtMs }
       : {}),
   }
+}
+
+/** 非空字符串优先；两侧都有内容时取 `preferred`。 */
+function coalesceNonEmptyStr(
+  preferred: string | undefined,
+  fallback: string | undefined,
+): string | undefined {
+  const p = typeof preferred === 'string' ? preferred.trim() : ''
+  if (p) return p
+  const f = typeof fallback === 'string' ? fallback.trim() : ''
+  return f || undefined
+}
+
+/**
+ * 会话键迁移 / 重绑时合并两条设置，避免空壳 stub（仅 lastMessageTime）盖掉背景、输出语言等。
+ * 布尔与数值覆写字段：以 updatedAt 较新一侧为底，再对字符串类用户字段做非空回填。
+ */
+function mergeChatConversationSettingsRows(
+  a: ChatConversationSettingsRow,
+  b: ChatConversationSettingsRow,
+  opts: {
+    conversationKey: string
+    peerCharacterId: string
+    playerIdentityId: string
+    /**
+     * uiOnlyHiddenBeforeTimestamp：
+     * - preferA / preferB：只保留指定侧（rekey 时用 preferA=目标主桶）
+     * - either：较新侧优先，否则取另一侧
+     */
+    uiOnlyHiddenMode?: 'preferA' | 'preferB' | 'either'
+  },
+): ChatConversationSettingsRow {
+  const aNewer = (a.updatedAt ?? 0) >= (b.updatedAt ?? 0)
+  const newer = aNewer ? a : b
+  const older = aNewer ? b : a
+  const merged: ChatConversationSettingsRow = {
+    ...older,
+    ...newer,
+    conversationKey: opts.conversationKey.trim(),
+    peerCharacterId: opts.peerCharacterId,
+    playerIdentityId: opts.playerIdentityId,
+    // 任一侧开启则保留（避免 stub 的 false 抹掉用户置顶/静音等）
+    isPinned: a.isPinned || b.isPinned,
+    isMuted: a.isMuted || b.isMuted,
+    hiddenFromMessageList: a.hiddenFromMessageList && b.hiddenFromMessageList
+      ? true
+      : a.hiddenFromMessageList || b.hiddenFromMessageList
+        ? // 冲突：一侧隐藏一侧显示 → 取较新侧
+          newer.hiddenFromMessageList
+        : false,
+    notifyEnabled: newer.notifyEnabled,
+    showThinkingChain: a.showThinkingChain || b.showThinkingChain,
+    forwardHistoryCardEnabled: a.forwardHistoryCardEnabled || b.forwardHistoryCardEnabled,
+    pulseDmScreenshotEnabled: a.pulseDmScreenshotEnabled || b.pulseDmScreenshotEnabled,
+    profileImageChangeEnabled: a.profileImageChangeEnabled || b.profileImageChangeEnabled,
+    internetMemeLexiconEnabled: a.internetMemeLexiconEnabled || b.internetMemeLexiconEnabled,
+    isDanmakuMode: a.isDanmakuMode || b.isDanmakuMode,
+    showGroupMemberNicknameInChat: newer.showGroupMemberNicknameInChat,
+    showGroupRankBadgesInChat: a.showGroupRankBadgesInChat || b.showGroupRankBadgesInChat,
+    lastMessageTime: Math.max(a.lastMessageTime ?? 0, b.lastMessageTime ?? 0),
+    updatedAt: Math.max(a.updatedAt ?? 0, b.updatedAt ?? 0),
+  }
+
+  merged.chatBackground =
+    coalesceNonEmptyStr(newer.chatBackground, older.chatBackground) ?? ''
+
+  const playerChatAvatarUrl = coalesceNonEmptyStr(newer.playerChatAvatarUrl, older.playerChatAvatarUrl)
+  if (playerChatAvatarUrl) merged.playerChatAvatarUrl = playerChatAvatarUrl
+  else delete merged.playerChatAvatarUrl
+
+  const replyOutputLanguage = coalesceNonEmptyStr(newer.replyOutputLanguage, older.replyOutputLanguage)
+  if (replyOutputLanguage) merged.replyOutputLanguage = replyOutputLanguage.slice(0, 16)
+  else delete merged.replyOutputLanguage
+
+  const replyVoiceLanguage = coalesceNonEmptyStr(newer.replyVoiceLanguage, older.replyVoiceLanguage)
+  if (replyVoiceLanguage) merged.replyVoiceLanguage = replyVoiceLanguage.slice(0, 16)
+  else delete merged.replyVoiceLanguage
+
+  const replyVoiceId = coalesceNonEmptyStr(newer.replyVoiceId, older.replyVoiceId)
+  if (replyVoiceId) merged.replyVoiceId = replyVoiceId.slice(0, 120)
+  else delete merged.replyVoiceId
+
+  const translationLanguage = coalesceNonEmptyStr(newer.translationLanguage, older.translationLanguage)
+  if (translationLanguage) merged.translationLanguage = translationLanguage.slice(0, 16)
+  else delete merged.translationLanguage
+
+  const translationVoiceId = coalesceNonEmptyStr(newer.translationVoiceId, older.translationVoiceId)
+  if (translationVoiceId) merged.translationVoiceId = translationVoiceId.slice(0, 120)
+  else delete merged.translationVoiceId
+
+  // 可选布尔：较新侧未写时回填较旧侧
+  if (typeof newer.translationSyncEnabled !== 'boolean' && typeof older.translationSyncEnabled === 'boolean') {
+    merged.translationSyncEnabled = older.translationSyncEnabled
+  }
+  if (typeof newer.translationAutoExpand !== 'boolean' && typeof older.translationAutoExpand === 'boolean') {
+    merged.translationAutoExpand = older.translationAutoExpand
+  }
+  if (
+    typeof newer.proactiveMessageEnabled !== 'boolean' &&
+    typeof older.proactiveMessageEnabled === 'boolean'
+  ) {
+    merged.proactiveMessageEnabled = older.proactiveMessageEnabled
+  }
+  if (
+    typeof newer.proactiveMessageVariableIntervalEnabled !== 'boolean' &&
+    typeof older.proactiveMessageVariableIntervalEnabled === 'boolean'
+  ) {
+    merged.proactiveMessageVariableIntervalEnabled = older.proactiveMessageVariableIntervalEnabled
+  }
+  if (
+    typeof newer.imageGenStyleOverrideEnabled !== 'boolean' &&
+    typeof older.imageGenStyleOverrideEnabled === 'boolean'
+  ) {
+    merged.imageGenStyleOverrideEnabled = older.imageGenStyleOverrideEnabled
+  }
+
+  const imageGenStylePresetId = coalesceNonEmptyStr(
+    newer.imageGenStylePresetId,
+    older.imageGenStylePresetId,
+  )
+  if (imageGenStylePresetId) merged.imageGenStylePresetId = imageGenStylePresetId.slice(0, 64)
+  else delete merged.imageGenStylePresetId
+
+  const imageGenCustomStylePrefix = coalesceNonEmptyStr(
+    newer.imageGenCustomStylePrefix,
+    older.imageGenCustomStylePrefix,
+  )
+  if (imageGenCustomStylePrefix) merged.imageGenCustomStylePrefix = imageGenCustomStylePrefix.slice(0, 500)
+  else delete merged.imageGenCustomStylePrefix
+
+  // 数值覆写：较新侧缺省时回填较旧侧
+  const numKeys = [
+    'stickerRoundTriggerPercent',
+    'classicEmojiRoundTriggerPercent',
+    'voiceRoundTriggerPercent',
+    'imageRoundTriggerPercent',
+    'imageRoundCountMin',
+    'imageRoundCountMax',
+    'proactiveMessageIntervalSeconds',
+    'proactiveMessageLastFiredAtMs',
+    'proactiveMessageVariableIntervalMinSeconds',
+    'proactiveMessageVariableIntervalMaxSeconds',
+    'proactiveMessageNextIntervalSeconds',
+    'friendRequestAcceptedAtMs',
+  ] as const
+  for (const key of numKeys) {
+    const nVal = newer[key]
+    const oVal = older[key]
+    if (typeof nVal === 'number' && Number.isFinite(nVal)) {
+      merged[key] = nVal as never
+    } else if (typeof oVal === 'number' && Number.isFinite(oVal)) {
+      merged[key] = oVal as never
+    } else {
+      delete merged[key]
+    }
+  }
+
+  // 列表 / 对象：较新侧有内容则用较新，否则用较旧
+  if (newer.stickerTargetedGroups?.length) merged.stickerTargetedGroups = newer.stickerTargetedGroups
+  else if (older.stickerTargetedGroups?.length) merged.stickerTargetedGroups = older.stickerTargetedGroups
+  else delete merged.stickerTargetedGroups
+
+  if (newer.stickerBannedRefs?.length) merged.stickerBannedRefs = newer.stickerBannedRefs
+  else if (older.stickerBannedRefs?.length) merged.stickerBannedRefs = older.stickerBannedRefs
+  else delete merged.stickerBannedRefs
+
+  if (newer.classicEmojiBannedNames?.length) merged.classicEmojiBannedNames = newer.classicEmojiBannedNames
+  else if (older.classicEmojiBannedNames?.length) merged.classicEmojiBannedNames = older.classicEmojiBannedNames
+  else delete merged.classicEmojiBannedNames
+
+  if (newer.stickerTargetedEntries && Object.keys(newer.stickerTargetedEntries).length) {
+    merged.stickerTargetedEntries = newer.stickerTargetedEntries
+  } else if (older.stickerTargetedEntries && Object.keys(older.stickerTargetedEntries).length) {
+    merged.stickerTargetedEntries = older.stickerTargetedEntries
+  } else {
+    delete merged.stickerTargetedEntries
+  }
+
+  if (typeof newer.stickerTargetedModeEnabled === 'boolean') {
+    merged.stickerTargetedModeEnabled = newer.stickerTargetedModeEnabled
+  } else if (typeof older.stickerTargetedModeEnabled === 'boolean') {
+    merged.stickerTargetedModeEnabled = older.stickerTargetedModeEnabled
+  } else {
+    delete merged.stickerTargetedModeEnabled
+  }
+
+  if (typeof newer.imageGenStylePrefixMode === 'string') {
+    merged.imageGenStylePrefixMode = newer.imageGenStylePrefixMode
+  } else if (typeof older.imageGenStylePrefixMode === 'string') {
+    merged.imageGenStylePrefixMode = older.imageGenStylePrefixMode
+  } else {
+    delete merged.imageGenStylePrefixMode
+  }
+
+  const uiMode = opts.uiOnlyHiddenMode ?? 'either'
+  if (uiMode === 'preferA') {
+    if (a.uiOnlyHiddenBeforeTimestamp) {
+      merged.uiOnlyHiddenBeforeTimestamp = a.uiOnlyHiddenBeforeTimestamp
+    } else {
+      delete merged.uiOnlyHiddenBeforeTimestamp
+    }
+  } else if (uiMode === 'preferB') {
+    if (b.uiOnlyHiddenBeforeTimestamp) {
+      merged.uiOnlyHiddenBeforeTimestamp = b.uiOnlyHiddenBeforeTimestamp
+    } else {
+      delete merged.uiOnlyHiddenBeforeTimestamp
+    }
+  } else {
+    const ui = newer.uiOnlyHiddenBeforeTimestamp ?? older.uiOnlyHiddenBeforeTimestamp
+    if (ui) merged.uiOnlyHiddenBeforeTimestamp = ui
+    else delete merged.uiOnlyHiddenBeforeTimestamp
+  }
+
+  return merged
 }
 
 function normalizeGroupMember(input: unknown): GroupMember | null {
@@ -3641,13 +3861,31 @@ export class PersonaDb {
         const tx2 = db2.transaction(CHAT_CONV_SETTINGS_STORE, 'readwrite')
         const css = tx2.objectStore(CHAT_CONV_SETTINGS_STORE)
         css.delete(from)
-        const base = { ...(toSt ?? fromSt)!, conversationKey: to, playerIdentityId: pid, updatedAt: Date.now() }
-        /** 分裂桶合并时勿把副桶的「仅 UI 隐藏」裁切带到主桶，避免历史像被删光 */
-        if (toSt?.uiOnlyHiddenBeforeTimestamp) {
-          base.uiOnlyHiddenBeforeTimestamp = toSt.uiOnlyHiddenBeforeTimestamp
-        } else {
+        /** 分裂桶合并：勿整行 toSt??fromSt（空壳目标会抹掉源侧背景/输出语言）；ui-only 裁切仍只认主桶 */
+        const peer =
+          (toSt?.peerCharacterId ?? fromSt?.peerCharacterId ?? '').trim() ||
+          parsePrivateWeChatConversationCharacterAndSession(to)?.characterId ||
+          ''
+        const base =
+          toSt && fromSt
+            ? mergeChatConversationSettingsRows(toSt, fromSt, {
+                conversationKey: to,
+                peerCharacterId: peer || toSt.peerCharacterId,
+                playerIdentityId: pid,
+                uiOnlyHiddenMode: 'preferA',
+              })
+            : {
+                ...(toSt ?? fromSt)!,
+                conversationKey: to,
+                playerIdentityId: pid,
+                updatedAt: Date.now(),
+              }
+        if (!toSt?.uiOnlyHiddenBeforeTimestamp) {
           delete base.uiOnlyHiddenBeforeTimestamp
+        } else {
+          base.uiOnlyHiddenBeforeTimestamp = toSt.uiOnlyHiddenBeforeTimestamp
         }
+        base.updatedAt = Math.max(base.updatedAt ?? 0, Date.now())
         css.put(base)
         await txDone(tx2)
         db2.close()
@@ -3924,11 +4162,15 @@ export class PersonaDb {
           const existing = normalizeChatConversationSettingsRow(existingRaw)
           store.delete(row.conversationKey)
           if (existing) {
-            store.put({
-              ...existing,
-              lastMessageTime: Math.max(row.lastMessageTime, existing.lastMessageTime),
-              updatedAt: Math.max(row.updatedAt, existing.updatedAt),
-            })
+            // 目标键常有「仅 lastMessageTime」空壳；必须与源行字段合并，否则背景/输出语言会被抹掉
+            store.put(
+              mergeChatConversationSettingsRows(existing, row, {
+                conversationKey: newKey,
+                peerCharacterId: row.peerCharacterId || existing.peerCharacterId,
+                playerIdentityId: toPid,
+                uiOnlyHiddenMode: 'either',
+              }),
+            )
           } else {
             store.put({ ...row, conversationKey: newKey, playerIdentityId: toPid })
           }

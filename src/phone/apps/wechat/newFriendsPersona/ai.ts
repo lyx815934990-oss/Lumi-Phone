@@ -13,6 +13,12 @@ import {
   WECHAT_SIGNATURE_DISPLAY_MAX,
 } from './wechatSignatureStyleRules'
 import type { ApiConfig } from '../../api/types'
+import {
+  applySamplingToGeminiGenerationConfig,
+  applySamplingToOpenAiChatBody,
+  resolveChatSampling,
+  type ChatSamplingOptions,
+} from '../../api/apiConfigSampling'
 import { buildOpenAiChatCompletionsEndpoint } from '../../api/openAiCompatibleEndpoints'
 import { LUMI_SYS_TOKENS_TOTAL_KEY } from '../../dataArchive/constants'
 import {
@@ -652,6 +658,99 @@ async function readFetchJsonBody(resp: Response): Promise<unknown> {
   }
 }
 
+/** 将 OpenAI chat/completions SSE 文本拼成可被 parseOpenAiChoiceMessage 消费的完整 JSON */
+function parseOpenAiChatCompletionSseText(textRaw: string, httpStatus: number): unknown {
+  const text = textRaw.trim()
+  if (!text) {
+    throw new Error(`网关返回空流式响应（HTTP ${httpStatus}）。`)
+  }
+  // 部分中转即使 stream:true 仍回整包 JSON（含错误体）
+  if (text.startsWith('{') || text.startsWith('[')) {
+    try {
+      return JSON.parse(text) as unknown
+    } catch {
+      /* fall through to SSE parse */
+    }
+  }
+
+  let content = ''
+  let reasoning = ''
+  let usage: unknown
+  let model: string | undefined
+  let id: string | undefined
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('data:')) continue
+    const payload = trimmed.slice(5).trim()
+    if (!payload || payload === '[DONE]') continue
+    let obj: Record<string, unknown>
+    try {
+      obj = JSON.parse(payload) as Record<string, unknown>
+    } catch {
+      continue
+    }
+    if (typeof obj.id === 'string' && obj.id) id = obj.id
+    if (typeof obj.model === 'string' && obj.model) model = obj.model
+    if (obj.usage && typeof obj.usage === 'object') usage = obj.usage
+    const choices = Array.isArray(obj.choices) ? obj.choices : []
+    for (const ch of choices) {
+      const choice = ch && typeof ch === 'object' ? (ch as Record<string, unknown>) : null
+      if (!choice) continue
+      const delta =
+        choice.delta && typeof choice.delta === 'object'
+          ? (choice.delta as Record<string, unknown>)
+          : null
+      const message =
+        choice.message && typeof choice.message === 'object'
+          ? (choice.message as Record<string, unknown>)
+          : null
+      const piece =
+        (delta && typeof delta.content === 'string' ? delta.content : '') ||
+        (message && typeof message.content === 'string' ? message.content : '')
+      if (piece) content += piece
+      const thinkPiece =
+        (delta && typeof delta.reasoning_content === 'string' ? delta.reasoning_content : '') ||
+        (message && typeof message.reasoning_content === 'string' ? message.reasoning_content : '')
+      if (thinkPiece) reasoning += thinkPiece
+    }
+  }
+
+  if (!content.trim() && !reasoning.trim()) {
+    const head = text.slice(0, 240).replace(/\s+/g, ' ')
+    throw new Error(
+      `流式响应未解析到正文（HTTP ${httpStatus}）。请确认网关支持 OpenAI SSE，或关闭「流式输出」。响应开头：${head}${text.length > 240 ? '…' : ''}`,
+    )
+  }
+
+  const message: Record<string, unknown> = { role: 'assistant', content }
+  if (reasoning.trim()) message.reasoning_content = reasoning
+  return {
+    id: id ?? 'stream-accumulated',
+    object: 'chat.completion',
+    model: model ?? '',
+    choices: [{ index: 0, message, finish_reason: 'stop' }],
+    ...(usage ? { usage } : {}),
+  }
+}
+
+async function readOpenAiChatCompletionBody(resp: Response, stream: boolean): Promise<unknown> {
+  if (!stream) return readFetchJsonBody(resp)
+  const raw = await resp.text()
+  // 错误响应优先按 JSON 错误体解析，便于上层取 message
+  if (!resp.ok) {
+    const t = raw.trim()
+    if (t.startsWith('{') || t.startsWith('[')) {
+      try {
+        return JSON.parse(t) as unknown
+      } catch {
+        /* fall through */
+      }
+    }
+    return { error: { message: t.slice(0, 400) || `请求失败（HTTP ${resp.status}）` } }
+  }
+  return parseOpenAiChatCompletionSseText(raw, resp.status)
+}
+
 function parseGeminiText(data: unknown): string {
   const root = (data && typeof data === 'object' ? (data as Record<string, unknown>) : {}) as Record<string, unknown>
   const candidates = Array.isArray(root.candidates) ? root.candidates : []
@@ -769,8 +868,9 @@ function partitionOpenAiMessagesForGemini(messages: unknown[]): {
 export async function openAiCompatibleChatAny(
   cfg: ApiConfig,
   messages: unknown[],
-  options?: { temperature?: number; max_tokens?: number },
+  options?: ChatSamplingOptions,
 ): Promise<string> {
+  const sampling = resolveChatSampling(cfg, options)
   // Gemini 原生 generateContent：按 parts 规则（先 text，后 inline_data）。
   // 仅在 apiUrl 明确指向 generateContent 时启用，避免误伤 OpenAI Compatible 代理。
   if (isGeminiGenerateContentUrl(cfg.apiUrl)) {
@@ -808,14 +908,11 @@ export async function openAiCompatibleChatAny(
       parts.push({ inline_data: { mime_type: img.mime_type, data: img.data } })
     }
 
+    const generationConfig: Record<string, unknown> = {}
+    applySamplingToGeminiGenerationConfig(generationConfig, sampling)
     const body: Record<string, unknown> = {
       contents: [{ parts }],
-      generationConfig: {
-        temperature: options?.temperature ?? 0.7,
-      },
-    }
-    if (options?.max_tokens != null) {
-      ;(body.generationConfig as Record<string, unknown>).maxOutputTokens = options.max_tokens
+      generationConfig,
     }
 
     const resp = await fetch(url, {
@@ -838,9 +935,8 @@ export async function openAiCompatibleChatAny(
   const body: Record<string, unknown> = {
     model: cfg.modelId || undefined,
     messages,
-    temperature: options?.temperature ?? 0.7,
   }
-  if (options?.max_tokens != null) applyChatCompletionTokenLimits(body, options.max_tokens)
+  applySamplingToOpenAiChatBody(body, sampling, applyChatCompletionTokenLimits)
   const resp = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -849,7 +945,7 @@ export async function openAiCompatibleChatAny(
     },
     body: JSON.stringify(body),
   })
-  const data: unknown = await readFetchJsonBody(resp)
+  const data: unknown = await readOpenAiChatCompletionBody(resp, sampling.stream)
   if (!resp.ok) {
     const rec = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
     const errObj = rec?.error && typeof rec.error === 'object' ? (rec.error as Record<string, unknown>) : null
@@ -864,7 +960,7 @@ export async function openAiCompatibleChatAny(
 export async function openAiCompatibleChatLenient(
   cfg: ApiConfig,
   messages: OpenAiCompatibleMessage[],
-  options?: { temperature?: number; max_tokens?: number },
+  options?: ChatSamplingOptions,
 ): Promise<string> {
   if (isGeminiGenerateContentUrl(cfg.apiUrl)) {
     try {
@@ -875,13 +971,13 @@ export async function openAiCompatibleChatLenient(
     }
   }
 
+  const sampling = resolveChatSampling(cfg, options)
   const endpoint = buildOpenAiChatCompletionsEndpoint(cfg.apiUrl)
   const body: Record<string, unknown> = {
     model: cfg.modelId || undefined,
     messages,
-    temperature: options?.temperature ?? 0.7,
   }
-  if (options?.max_tokens != null) applyChatCompletionTokenLimits(body, options.max_tokens)
+  applySamplingToOpenAiChatBody(body, sampling, applyChatCompletionTokenLimits)
   const resp = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -890,7 +986,7 @@ export async function openAiCompatibleChatLenient(
     },
     body: JSON.stringify(body),
   })
-  const data: unknown = await readFetchJsonBody(resp)
+  const data: unknown = await readOpenAiChatCompletionBody(resp, sampling.stream)
   if (!resp.ok) {
     const rec = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
     const errObj = rec?.error && typeof rec.error === 'object' ? (rec.error as Record<string, unknown>) : null
@@ -907,24 +1003,19 @@ export async function openAiCompatibleChatLenient(
 export async function openAiCompatibleChat(
   cfg: ApiConfig,
   messages: OpenAiCompatibleMessage[],
-  options?: {
-    temperature?: number
-    max_tokens?: number
+  options?: ChatSamplingOptions & {
     response_format?: 'json_object'
     signal?: AbortSignal
   },
 ): Promise<string> {
+  const sampling = resolveChatSampling(cfg, options)
   // 文本链路也兼容 Gemini 原生 generateContent（避免 `contents is required`）
   if (isGeminiGenerateContentUrl(cfg.apiUrl)) {
     const endpoint = buildGeminiGenerateContentEndpoint(cfg)
     const url = `${endpoint}${endpoint.includes('?') ? '&' : '?'}key=${encodeURIComponent(cfg.apiKey)}`
     const partitioned = partitionOpenAiMessagesForGemini(messages as unknown[])
-    const generationConfig: Record<string, unknown> = {
-      temperature: options?.temperature ?? 0.7,
-    }
-    if (options?.max_tokens != null) {
-      generationConfig.maxOutputTokens = options.max_tokens
-    }
+    const generationConfig: Record<string, unknown> = {}
+    applySamplingToGeminiGenerationConfig(generationConfig, sampling)
     if (options?.response_format === 'json_object') {
       generationConfig.responseMimeType = 'application/json'
     }
@@ -968,12 +1059,11 @@ export async function openAiCompatibleChat(
   const body: Record<string, unknown> = {
     model: cfg.modelId || undefined,
     messages,
-    temperature: options?.temperature ?? 0.7,
   }
+  applySamplingToOpenAiChatBody(body, sampling, applyChatCompletionTokenLimits)
   if (options?.response_format === 'json_object') {
     body.response_format = { type: 'json_object' }
   }
-  if (options?.max_tokens != null) applyChatCompletionTokenLimits(body, options.max_tokens)
   const resp = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -983,7 +1073,7 @@ export async function openAiCompatibleChat(
     body: JSON.stringify(body),
     signal: options?.signal,
   })
-  const data: unknown = await readFetchJsonBody(resp)
+  const data: unknown = await readOpenAiChatCompletionBody(resp, sampling.stream)
   if (!resp.ok) {
     const rec = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
     const errObj = rec?.error && typeof rec.error === 'object' ? (rec.error as Record<string, unknown>) : null

@@ -1,5 +1,9 @@
 import { ARCHIVE_KIND, ARCHIVE_VERSION, LUMI_ARCHIVE_IMPORTED_EVENT } from './constants'
 import {
+  filterIdbSnapshotForUserData,
+  filterLocalStorageSnapshotForUserData,
+} from './archiveUserDataFilter'
+import {
   dumpWeChatPersonaIndexedDbSnapshot,
   restoreWeChatPersonaIndexedDbSnapshot,
 } from './scanWeChatPersonaIndexedDb'
@@ -139,8 +143,8 @@ async function buildArchiveBlobFromParts(
 ): Promise<{ blob: Blob; approxBytes: number }> {
   const b = createJsonBlobBuilder()
   const note = idb
-    ? '含 localStorage 与当前已接入的 IndexedDB 全表快照。'
-    : '含 localStorage；未发现已接入的 IndexedDB（若尚未产生索引数据则属正常）。'
+    ? '仅含用户活动数据（localStorage + IndexedDB）；已排除代码内置默认项与可重建缓存。'
+    : '仅含用户活动的 localStorage；已排除代码内置默认项与可重建缓存。'
 
   try {
     b.push('{')
@@ -217,9 +221,14 @@ export async function exportDataToFile(options?: {
   displayName?: string | null
 }): Promise<{ blob: Blob; filename: string; approxBytes: number }> {
   await yieldToUi()
-  const idbSnap = await dumpWeChatPersonaIndexedDbSnapshot()
+  const idbRaw = await dumpWeChatPersonaIndexedDbSnapshot()
   await yieldToUi()
-  const localStorageSnap = collectLocalStorageSnapshot()
+  const lsRaw = collectLocalStorageSnapshot()
+  await yieldToUi()
+
+  // 只保留用户活动数据：去掉代码默认种子与可重建缓存
+  const localStorageSnap = filterLocalStorageSnapshotForUserData(lsRaw)
+  const idbSnap = idbRaw ? filterIdbSnapshotForUserData(idbRaw) : null
   await yieldToUi()
 
   let blob: Blob

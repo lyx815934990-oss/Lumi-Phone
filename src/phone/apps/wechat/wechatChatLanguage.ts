@@ -47,7 +47,21 @@ export function weChatChatLanguageNativeName(code: string | null | undefined): s
   return WECHAT_CHAT_LANGUAGE_OPTIONS.find((o) => o.code === c)?.native ?? c
 }
 
-/** 注入 system：文字气泡 / 语音脚本可分别指定语言 */
+/** 简体中文硬约束：默认也要注入，否则历史繁体气泡会 few-shot 带偏 */
+function buildSimplifiedChineseScriptHardRules(): string {
+  return `
+- **字形硬项（简体）**：必须使用**中国大陆简体汉字**（如：脸/机/继续/实/点/温），**禁止**台湾/香港繁体字形（如：臉/機/繼續/實/點/溫）及港台用词习惯冒充简体。
+- **历史干扰**：上文若出现繁体气泡，那是旧设定或误输出；**本轮起一律改回简体**，禁止跟着历史繁体续写。
+- 标点可用「」或普通引号；不影响简繁字形要求。`.trim()
+}
+
+function buildTraditionalChineseScriptHardRules(): string {
+  return `
+- **字形硬项（繁體）**：必須使用**繁體中文**字形（如：臉/機/繼續/實），**禁止**改回簡體（如：脸/机/继续/实）。
+- **歷史干擾**：上文若為簡體，那是舊設定；本輪起一律改為繁體，禁止跟著歷史簡體續寫。`.trim()
+}
+
+/** 注入 system：文字气泡 / 语音脚本可分别指定语言（含默认简体，防止被历史繁体带偏） */
 export function buildWechatReplyOutputLanguageAppendix(
   replyLanguage: string | null | undefined,
   replyVoiceLanguage?: string | null,
@@ -62,7 +76,6 @@ export function buildWechatReplyOutputLanguageAppendix(
   const voiceCode = normalizeWeChatChatLanguageCode(
     replyVoiceLanguage?.trim() ? replyVoiceLanguage : replyLanguage,
   )
-  if (textCode === 'zh-CN' && voiceCode === 'zh-CN') return ''
 
   const textNative = weChatChatLanguageNativeName(textCode)
   const textLabel = weChatChatLanguageLabel(textCode)
@@ -77,6 +90,14 @@ export function buildWechatReplyOutputLanguageAppendix(
   )
   const transNative = weChatChatLanguageNativeName(transCode)
   const transLabel = weChatChatLanguageLabel(transCode)
+
+  const scriptHard =
+    textCode === 'zh-CN'
+      ? `\n${buildSimplifiedChineseScriptHardRules()}`
+      : textCode === 'zh-TW'
+        ? `\n${buildTraditionalChineseScriptHardRules()}`
+        : ''
+
   const syncHard = syncOn
     ? dedicated
       ? `
@@ -84,26 +105,50 @@ export function buildWechatReplyOutputLanguageAppendix(
       : `
 - **禁止中日（或其它语言）混着发气泡（硬项）**：用户可见文字气泡只能是 **${textNative}**。若开启同步翻译，**${transLabel}（${transNative}）译文只能写在单独的 \`[译]……\` 行**，禁止把译文当作下一条普通气泡发出去（错误例：先发日文「いい夢見てね。」再发中文气泡「做个好梦。」）。
 - **禁止**在同一条可见气泡里中日夹杂正文（假名专名/少量对方语言词可保留）；中文整句只能进 \`[译]\`。`
-    : `
+    : textCode === 'zh-CN' || textCode === 'zh-TW'
+      ? `
+- **禁止**把其它语言整句当作可见气泡混发（主体必须是 ${textNative}）；也不要先发一种中文形体再跟另一条简繁对照复述。`
+      : `
 - **禁止**把其它语言整句当作可见气泡混发（主体必须是 ${textNative}）；不要先发 ${textNative} 再跟一条简体中文复述。`
 
   if (same) {
     return `
 【回复输出语言 · 最高优先级之一】
 - 本会话用户已指定：角色对外可见的**文字气泡**与**【语音】脚本正文**一律使用 **${textLabel}（${textNative}）** 书写/口述。
-- 禁止默认改回简体中文（协议说明、系统指令本身除外）；用户用中文提问时，仍用 ${textNative} 回复（可偶尔夹少量对方语言词，但主体必须是 ${textNative}）。
+- ${
+      textCode === 'zh-CN'
+        ? '即使用户用繁体提问、或上文全是繁体，**本轮可见回复仍须简体**（协议说明、系统指令本身除外）。'
+        : textCode === 'zh-TW'
+          ? '即使用户用简体提问、或上文全是简体，**本轮可见回复仍须繁體**（协议说明、系统指令本身除外）。'
+          : `禁止默认改回简体中文（协议说明、系统指令本身除外）；用户用中文提问时，仍用 ${textNative} 回复（可偶尔夹少量对方语言词，但主体必须是 ${textNative}）。`
+    }
+${scriptHard}
 - \`语音 \` 行内 TTS 脚本的可朗读正文须为 ${textNative}；情绪/停顿控制标签语法不变。
 - 表情包引用名、协议标记行（如 \`发图\` \`表情包\`）保持原协议格式；图片左侧通俗描述可用 ${textNative}。
 ${syncHard}
 `.trim()
   }
 
+  const voiceScriptHard =
+    voiceCode === 'zh-CN'
+      ? `\n- **语音脚本字形**：须为简体中文，禁止繁体。`
+      : voiceCode === 'zh-TW'
+        ? `\n- **語音腳本字形**：須為繁體中文，禁止簡體。`
+        : ''
+
   return `
 【回复输出语言 · 最高优先级之一】
 - 本会话用户已分别指定：
   - **文字气泡**：一律使用 **${textLabel}（${textNative}）**。
   - **【语音】脚本正文**：一律使用 **${voiceLabel}（${voiceNative}）** 口述（与音色无关）。
-- 禁止默认改回简体中文（协议说明、系统指令本身除外）。
+- ${
+    textCode === 'zh-CN'
+      ? '文字气泡须简体；禁止因历史繁体气泡而继续写繁体。'
+      : textCode === 'zh-TW'
+        ? '文字氣泡須繁體；禁止因歷史簡體氣泡而繼續寫簡體。'
+        : '禁止默认改回简体中文（协议说明、系统指令本身除外）。'
+  }
+${scriptHard}${voiceScriptHard}
 - \`语音 \` 行内 TTS 脚本的可朗读正文须为 ${voiceNative}；情绪/停顿控制标签语法不变。
 - 表情包引用名、协议标记行（如 \`发图\` \`表情包\`）保持原协议格式；图片左侧通俗描述可用 ${textNative}。
 ${syncHard}

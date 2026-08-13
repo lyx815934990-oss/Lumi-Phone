@@ -32,6 +32,25 @@ export type ApiConfig = {
   modelPricingById?: Record<string, ApiModelPricing>
   /** 最近一次测试连接结果（用于首页显示连接状态） */
   lastTest?: { ok: boolean; message: string; at: number }
+  /**
+   * 采样温度 0～2；未设置则沿用各功能内部默认（多为 0.7）。
+   * 填写后优先于单次调用硬编码温度。
+   */
+  temperature?: number
+  /** nucleus sampling 0～1；未设置则不传 top_p */
+  topP?: number
+  /** 单次补全最大 token；未设置则不限制（或由调用方指定） */
+  maxTokens?: number
+  /** frequency_penalty -2～2 */
+  frequencyPenalty?: number
+  /** presence_penalty -2～2 */
+  presencePenalty?: number
+  /**
+   * OpenAI 兼容 chat/completions 是否请求 SSE 流式。
+   * 开启后客户端仍会拼成完整回复再展示（非逐字打字机）；部分仅支持 stream 的网关可开。
+   * Gemini 原生 generateContent 忽略此项。
+   */
+  streamEnabled?: boolean
 }
 
 /** 聊天/摘要 API 最小字段（无 modelList，dating/摘要 fallback 常用） */

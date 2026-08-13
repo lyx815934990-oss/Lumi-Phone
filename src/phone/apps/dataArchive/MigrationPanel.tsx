@@ -1,7 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Download, Upload } from 'lucide-react'
+import { Download, Eraser, Upload } from 'lucide-react'
 import { PLATINUM } from './constants'
+import {
+  cleanupRedundantLocalData,
+  formatFreedBytes,
+} from './cleanupRedundantLocalData'
 import {
   buildLumiArchiveDownloadFilename,
   defaultLumiArchiveBaseName,
@@ -85,7 +89,7 @@ export function MigrationPanel() {
   const [exportNameOpen, setExportNameOpen] = useState(false)
   const [exportNameDraft, setExportNameDraft] = useState('')
   const exportNameInputRef = useRef<HTMLInputElement>(null)
-  const [busy, setBusy] = useState<'export' | 'import' | null>(null)
+  const [busy, setBusy] = useState<'export' | 'import' | 'cleanup' | null>(null)
   const lineTimer = useRef<number>(0)
 
   const clearLineTimers = () => {
@@ -155,6 +159,35 @@ export function MigrationPanel() {
       blob = null
       // 再让出几帧给 Safari 回收 Blob/File，减少紧接着路由切换时的 chunk 加载失败
       await new Promise((r) => window.setTimeout(r, isIos ? 280 : 60))
+    }
+  }, [])
+
+  const runLocalCleanup = useCallback(async () => {
+    const ok = window.confirm(
+      '将清理本机可重建缓存，以及已不在剧情里引用的约会附图。\n\n不会删除聊天记录、人设、仍在用的图片/字体。\n\n继续？',
+    )
+    if (!ok) return
+    setBusy('cleanup')
+    try {
+      const result = await cleanupRedundantLocalData()
+      try {
+        window.dispatchEvent(new CustomEvent('wechat-storage-changed'))
+      } catch {
+        /* ignore */
+      }
+      if (result.removedKeys <= 0) {
+        window.alert('没有发现可清理的冗余数据。')
+      } else {
+        window.alert(
+          `已清理 ${result.removedKeys} 项，约释放 ${formatFreedBytes(result.approxFreedBytes)}。\n` +
+            `其中：缓存 ${result.cacheKeys}、孤儿剧情图 ${result.orphanPlotImages}、本地标记 ${result.localStorageKeys}。\n` +
+            `饼图将稍后刷新；可点右上角刷新查看最新占用。`,
+        )
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '清理失败')
+    } finally {
+      setBusy(null)
     }
   }, [])
 
@@ -247,7 +280,7 @@ export function MigrationPanel() {
               命名备份文件
             </p>
             <p className="mt-2 text-[12px] leading-relaxed" style={{ color: PLATINUM.ash }}>
-              将保存为 JSON 数据包。手机上请在分享面板选「存储到文件」，不要选拷贝/备忘录（会变成「文本」）。预览：
+              只保存用户活动数据（不含代码默认资源与临时缓存）。手机上请在分享面板选「存储到文件」。预览：
               <span className="mt-1 block font-mono text-[11px]" style={{ color: PLATINUM.ink }}>
                 {buildLumiArchiveDownloadFilename(exportNameDraft)}
               </span>
@@ -361,6 +394,22 @@ export function MigrationPanel() {
           </div>
         </div>
       ) : null}
+
+      <button
+        type="button"
+        disabled={busy !== null || exportNameOpen}
+        onClick={() => void runLocalCleanup()}
+        className="flex w-full items-center justify-center gap-2 rounded-2xl border py-3.5 text-[14px] font-semibold transition-opacity disabled:opacity-50"
+        style={{
+          borderColor: PLATINUM.line,
+          color: PLATINUM.ink,
+          background: 'rgba(255,255,255,0.55)',
+          boxShadow: '0 6px 24px rgba(28,28,30,0.04)',
+        }}
+      >
+        <Eraser className="size-4" style={{ color: PLATINUM.gold }} />
+        {busy === 'cleanup' ? '正在压缩本机数据…' : '压缩本机数据 · 清理冗余缓存'}
+      </button>
 
       <button
         type="button"

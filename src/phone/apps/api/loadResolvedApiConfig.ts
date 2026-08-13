@@ -10,6 +10,7 @@ import {
   mergeApiStoreLinkPreview,
 } from './linkPreviewSettingsUtils'
 import { normalizeTranslationSubFields } from './translationProviders'
+import { pickApiConfigSamplingFields } from './apiConfigSampling'
 
 const STORAGE_KEY = API_STORE_STORAGE_KEY
 
@@ -30,6 +31,7 @@ function normalizeApiConfig(raw: unknown): ApiConfig {
             at: Number((r.lastTest as { at?: unknown }).at ?? 0),
           }
         : undefined,
+    ...pickApiConfigSamplingFields(r),
   }
 }
 

@@ -7,17 +7,84 @@ import { EvolutionFeatureEntryCoach } from './EvolutionFeatureEntryCoach'
 import {
   dismissEvolutionPushForToday,
   dismissEvolutionPushThisSession,
+  isEvolutionPushVersionRead,
+  markEvolutionPushVersionRead,
 } from './evolutionPushStorage'
 import {
   getEvolutionEntryGuide,
   type EvolutionEntryGuide,
 } from './evolutionFeatureEntryGuides'
-import { getLatestEvolutionRecord } from './evolutionLogData'
+import {
+  getLatestEvolutionRecord,
+  type UpdateCategory,
+  type UpdateDetail,
+} from './evolutionLogData'
 
 type Props = {
   open: boolean
   onClose: () => void
   onOpenEvolution: () => void
+}
+
+const DWELL_SECONDS = 15
+
+const CAT_LABEL: Record<UpdateCategory['type'], string> = {
+  feature: '新增',
+  optimization: '优化',
+  fix: '修复',
+}
+
+const CAT_SECTION_META: Record<
+  UpdateCategory['type'],
+  {
+    en: string
+    shell: string
+    head: string
+    accent: string
+    pill: string
+    title: string
+    card: string
+    module: string
+    body: string
+  }
+> = {
+  feature: {
+    en: 'NEW',
+    shell: 'overflow-hidden rounded-[18px] border border-[#1C1C1E]/10 bg-[#1C1C1E]',
+    head: 'flex items-center gap-2.5 border-b border-white/10 bg-[#1C1C1E] px-3.5 py-2.5',
+    accent: 'h-5 w-1 rounded-full bg-white',
+    pill: 'rounded-full bg-white px-2 py-0.5 font-mono text-[9px] font-semibold tracking-[0.18em] text-[#1C1C1E]',
+    title: 'font-serif text-[15px] font-semibold tracking-[0.08em] text-white',
+    card: 'rounded-[12px] border border-white/10 bg-white/[0.06] px-3 py-2.5',
+    module: 'text-[11px] font-medium text-white/75',
+    body: 'mt-1 text-[12px] leading-relaxed text-white/55',
+  },
+  optimization: {
+    en: 'OPT',
+    shell: 'overflow-hidden rounded-[18px] border border-[#1C1C1E]/8 bg-[#F0F0F3]',
+    head: 'flex items-center gap-2.5 border-b border-[#1C1C1E]/8 bg-[#E4E4EA] px-3.5 py-2.5',
+    accent: 'h-5 w-1 rounded-full bg-[#1C1C1E]',
+    pill: 'rounded-full bg-[#1C1C1E] px-2 py-0.5 font-mono text-[9px] font-semibold tracking-[0.18em] text-white',
+    title: 'font-serif text-[15px] font-semibold tracking-[0.08em] text-[#1C1C1E]',
+    card: 'rounded-[12px] border border-[#1C1C1E]/6 bg-white px-3 py-2.5 shadow-[0_1px_0_rgba(28,28,30,0.04)]',
+    module: 'text-[11px] font-medium text-[#1C1C1E]/85',
+    body: 'mt-1 text-[12px] leading-relaxed text-[#1C1C1E]/55',
+  },
+  fix: {
+    en: 'FIX',
+    shell: 'overflow-hidden rounded-[18px] border border-dashed border-[#C4C4CC] bg-white',
+    head: 'flex items-center gap-2.5 border-b border-dashed border-[#D8D8DE] bg-[#FAFAFB] px-3.5 py-2.5',
+    accent: 'h-5 w-1 rounded-full bg-[#8E8E93]',
+    pill: 'rounded-full border border-[#C7C7CC] bg-white px-2 py-0.5 font-mono text-[9px] font-semibold tracking-[0.18em] text-[#636366]',
+    title: 'font-serif text-[15px] font-semibold tracking-[0.08em] text-[#3A3A3C]',
+    card: 'rounded-[12px] border border-[#E8E8ED] bg-[#FBFBFC] px-3 py-2.5',
+    module: 'text-[11px] font-medium text-[#48484A]',
+    body: 'mt-1 text-[12px] leading-relaxed text-[#6C6C70]',
+  },
+}
+
+function detailLine(item: UpdateDetail): string {
+  return item.highlight ? `${item.highlight}${item.text}` : item.text
 }
 
 export function EvolutionUpdatePushModal({ open, onClose, onOpenEvolution }: Props) {
@@ -34,31 +101,83 @@ export function EvolutionUpdatePushModal({ open, onClose, onOpenEvolution }: Pro
       .filter((x): x is { moduleName: string; guide: EvolutionEntryGuide } => !!x)
   }, [latest])
 
+  const summarySections = useMemo(() => {
+    return latest.categories
+      .map((cat) => ({
+        type: cat.type,
+        label: CAT_LABEL[cat.type],
+        rows: cat.modules.flatMap((m) =>
+          m.items.map((item) => ({
+            module: m.moduleName,
+            text: detailLine(item),
+          })),
+        ),
+      }))
+      .filter((s) => s.rows.length > 0)
+  }, [latest])
+
   const [pickerOpen, setPickerOpen] = useState(false)
   const [activeGuide, setActiveGuide] = useState<EvolutionEntryGuide | null>(null)
+  /** 未读时需倒计时；已读则立即解锁关闭 */
+  const [alreadyRead, setAlreadyRead] = useState(() => isEvolutionPushVersionRead(version))
+  const [remainSec, setRemainSec] = useState(() =>
+    isEvolutionPushVersionRead(version) ? 0 : DWELL_SECONDS,
+  )
+
+  const canDismiss = alreadyRead || remainSec <= 0
 
   useEffect(() => {
     if (!open) {
       setPickerOpen(false)
       setActiveGuide(null)
+      return
     }
-  }, [open])
+    const read = isEvolutionPushVersionRead(version)
+    setAlreadyRead(read)
+    setRemainSec(read ? 0 : DWELL_SECONDS)
+  }, [open, version])
+
+  useEffect(() => {
+    if (!open || alreadyRead) return
+    const id = window.setInterval(() => {
+      setRemainSec((s) => {
+        if (s <= 1) {
+          markEvolutionPushVersionRead(version)
+          setAlreadyRead(true)
+          return 0
+        }
+        return s - 1
+      })
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [open, alreadyRead, version])
+
+  const markReadAndClose = (closeFn: () => void) => {
+    if (!canDismiss) return
+    markEvolutionPushVersionRead(version)
+    closeFn()
+  }
 
   const handleViewLog = () => {
+    markEvolutionPushVersionRead(version)
     dismissEvolutionPushThisSession(version)
     onClose()
     onOpenEvolution()
   }
 
   const handleCloseSession = () => {
-    dismissEvolutionPushThisSession(version)
-    onClose()
+    markReadAndClose(() => {
+      dismissEvolutionPushThisSession(version)
+      onClose()
+    })
   }
 
   const handleCloseToday = () => {
-    dismissEvolutionPushForToday(version)
-    dismissEvolutionPushThisSession(version)
-    onClose()
+    markReadAndClose(() => {
+      dismissEvolutionPushForToday(version)
+      dismissEvolutionPushThisSession(version)
+      onClose()
+    })
   }
 
   const handleOpenFeatureGuides = () => {
@@ -92,9 +211,16 @@ export function EvolutionUpdatePushModal({ open, onClose, onOpenEvolution }: Pro
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
             <div className="shrink-0 border-b border-gray-100 bg-[#FAFAFA] px-5 py-5 sm:px-6">
-              <p className="text-[10px] font-medium uppercase tracking-[0.28em] text-gray-400">
-                System Update
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-medium uppercase tracking-[0.28em] text-gray-400">
+                  System Update
+                </p>
+                {!canDismiss ? (
+                  <span className="rounded-full bg-[#1C1C1E] px-2.5 py-1 font-mono text-[11px] tabular-nums text-white">
+                    {remainSec}s
+                  </span>
+                ) : null}
+              </div>
               <div className="mt-3 flex items-end justify-between gap-3">
                 <p className="font-mono text-[32px] font-light leading-none tracking-tight text-[#1C1C1E]">
                   {latest.version}
@@ -106,14 +232,47 @@ export function EvolutionUpdatePushModal({ open, onClose, onOpenEvolution }: Pro
               <h2 className="mt-3 font-serif text-[17px] font-semibold leading-snug tracking-wide text-[#1C1C1E]">
                 {latest.title}
               </h2>
+              {!canDismiss ? (
+                <p className="mt-2 text-[12px] leading-relaxed text-[#1C1C1E]/55">
+                  请先浏览下方更新要点，{remainSec} 秒后可关闭（已读过本版则不再强制停留）。
+                </p>
+              ) : null}
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6 [scrollbar-width:thin]">
               <p className="text-[13px] leading-relaxed text-[#1C1C1E]/65 sm:text-[14px]">
-                账号检测已完成。可先看新增功能高亮指引，找到开关位置；或打开完整更新日志。
+                以下为本版演进录已登记的优化与修复。可下滑浏览，或打开完整更新日志。
               </p>
 
-              <div className="mt-5 space-y-2.5">
+              <div className="mt-4 space-y-3.5 pb-1">
+                {summarySections.map((sec) => {
+                  const meta = CAT_SECTION_META[sec.type]
+                  return (
+                    <section key={sec.type} className={meta.shell}>
+                      <header className={meta.head}>
+                        <span className={meta.accent} aria-hidden />
+                        <span className={meta.pill}>{meta.en}</span>
+                        <h3 className={`min-w-0 flex-1 ${meta.title}`}>{sec.label}</h3>
+                        <span className="font-mono text-[10px] tabular-nums text-current opacity-40">
+                          {String(sec.rows.length).padStart(2, '0')}
+                        </span>
+                      </header>
+                      <ul className="space-y-2 p-2.5">
+                        {sec.rows.map((row, i) => (
+                          <li key={`${sec.type}-${i}-${row.module}`} className={meta.card}>
+                            <p className={meta.module}>{row.module}</p>
+                            <p className={meta.body}>{row.text}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="shrink-0 border-t border-gray-100 bg-white px-5 pb-4 pt-3 sm:px-6">
+              <div className="space-y-2.5">
                 {guidedFeatures.length > 0 ? (
                   <button
                     type="button"
@@ -135,24 +294,27 @@ export function EvolutionUpdatePushModal({ open, onClose, onOpenEvolution }: Pro
                 </button>
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2.5">
+              <div className="mt-2.5 grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
+                  disabled={!canDismiss}
                   onClick={handleCloseToday}
-                  className="h-10 rounded-[12px] border border-gray-200 bg-[#F9FAFB] text-[13px] font-medium text-[#1C1C1E]/75 transition hover:bg-gray-100"
+                  className="h-10 rounded-[12px] border border-gray-200 bg-[#F9FAFB] text-[13px] font-medium text-[#1C1C1E]/75 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  今日关闭
+                  {canDismiss ? '今日关闭' : `今日关闭（${remainSec}s）`}
                 </button>
                 <button
                   type="button"
+                  disabled={!canDismiss}
                   onClick={handleCloseSession}
-                  className="h-10 rounded-[12px] border border-transparent text-[13px] font-medium text-gray-400 transition hover:text-[#1C1C1E]/70"
+                  className="h-10 rounded-[12px] border border-transparent text-[13px] font-medium text-gray-400 transition hover:text-[#1C1C1E]/70 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  关闭
+                  {canDismiss ? '关闭' : `关闭（${remainSec}s）`}
                 </button>
               </div>
-              <p className="mt-3 text-center text-[11px] leading-relaxed text-gray-400">
-                「关闭」仅本次停留不再弹出；刷新或重新打开页面仍会提醒。选「今日关闭」则今天不再弹出。
+              <p className="mt-2.5 text-center text-[11px] leading-relaxed text-gray-400">
+                「关闭」仅本次停留不再弹出；刷新仍会提醒。「今日关闭」则今天不再弹出。
+                未读首次需停留约 {DWELL_SECONDS} 秒。
               </p>
             </div>
           </motion.div>

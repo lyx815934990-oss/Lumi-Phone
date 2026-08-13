@@ -68,7 +68,8 @@ const CATEGORY_META: Record<
     label: '优化',
     en: 'OPT',
     index: '02',
-    barClass: 'bg-[#E8E8ED] shadow-[0_4px_16px_rgba(0,0,0,0.04)]',
+    barClass:
+      'bg-gradient-to-r from-[#E4E4EA] to-[#F2F2F5] shadow-[0_4px_16px_rgba(0,0,0,0.05)] ring-1 ring-[#1C1C1E]/6',
     accentClass: 'bg-[#1C1C1E]',
     pillClass: 'bg-[#1C1C1E] text-white',
     titleClass: 'text-[#1C1C1E]',
@@ -78,11 +79,12 @@ const CATEGORY_META: Record<
     label: '修复',
     en: 'FIX',
     index: '03',
-    barClass: 'bg-white border border-gray-200 shadow-[0_4px_16px_rgba(0,0,0,0.03)]',
-    accentClass: 'bg-gray-400',
-    pillClass: 'border border-gray-300 bg-gray-50 text-gray-600',
-    titleClass: 'text-[#1C1C1E]',
-    chevronClass: 'bg-gray-100 text-gray-500',
+    barClass:
+      'border border-dashed border-[#C7C7CC] bg-white shadow-[0_4px_16px_rgba(0,0,0,0.03)]',
+    accentClass: 'bg-[#8E8E93]',
+    pillClass: 'border border-[#C7C7CC] bg-[#FAFAFB] text-[#636366]',
+    titleClass: 'text-[#3A3A3C]',
+    chevronClass: 'bg-[#F2F2F7] text-[#8E8E93]',
   },
 }
 

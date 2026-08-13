@@ -1103,11 +1103,18 @@ function splitSingleLineWechatBubble(line: string): string[] {
   return out.length ? out : [src]
 }
 
-const WECHAT_STICKER_LINE_MARKERS = ['[表情包]', '表情包 '] as const
+const WECHAT_STICKER_LINE_MARKERS = [
+  '[表情包]',
+  '【表情包】',
+  '[动画表情]',
+  '表情包 ',
+  '表情包：',
+  '表情包:',
+] as const
 
 /**
  * 把「普通文字 + 同行 表情包…」拆成多条气泡文本。
- * 客户端要求整行以 `表情包 ` 或旧 `[表情包]` 开头；群模型常把二者粘在 SPEAKER 同一行，故在解析层强制拆开。
+ * 客户端要求整行以 `表情包 `（推荐）或旧 `[表情包]` 等开头；群模型常把二者粘在 SPEAKER 同一行，故在解析层强制拆开。
  */
 export function splitInlineStickerPayloadsFromPlainText(input: string): string[] {
   const raw = String(input ?? '').trim()
@@ -3840,7 +3847,7 @@ export async function requestStoryTimelineSummaryOnly(params: {
   ]
   const text = await openAiCompatibleChatLenient(cfg, messages, {
     temperature: 0.35,
-    max_tokens: 1400,
+    max_tokens: 5000,
   })
   if (!text.trim()) return undefined
   const parsed = parseUnifiedMemorySummaryWithLinkedModelOutput(text)
@@ -4398,9 +4405,9 @@ const WECHAT_GROUP_MULTI_SPEAKER_LUMI_RULES = `
 
 【表情包（强约束｜与文字禁止同一行）】
 - **宁缺毋滥**：默认不发；只有《表情包资源》里存在**贴脸**条目时才单独发 \`表情包 引用名\` 行；无合适则只文字，禁止乱选凑数。
-- 客户端只会把**整行以** \`表情包 \` **开头**的行识别为表情包气泡；若写成「一句对白 + 同行 表情包…」，会整段当普通字、资源匹配失败。
+- 客户端**只认**整行以 \`表情包 \`（半角空格）开头、且后面是目录引用名原文的行；写成「一句对白 + 同行 表情包…」、\`[表情包]\`、\`表情包：\`、自造名 → 发不出去或变纯文字。
 - **正确**：先发完**纯文字**的一行（须带 <<SPEAKER>>），下一行再发**仅含** \`表情包 \` +《表情包资源》**引用名原文** 的一行（**必须**重新写一行 \`<<SPEAKER:同一角色ID>>\`，且**该行除表情包载荷外不要夹其它字**）。
-- **错误示例（禁止）**：\`<<SPEAKER:id>>大人你居然还在笑！表情包 爷真的服了（无语流汗）\`
+- **错误示例（禁止）**：\`<<SPEAKER:id>>大人你居然还在笑！表情包 爷真的服了（无语流汗）\`；\`<<SPEAKER:id>>[表情包]爷真的服了\`；\`<<SPEAKER:id>>表情包：无语\`
 - **正确示例**：\`<<SPEAKER:id>>大人你居然还在笑！\` 换行后 \`<<SPEAKER:id>>表情包 爷真的服了（无语流汗）\`
 - **禁止** \`emoji:\` / \`emoji：\`、\`表情:\`、\`sticker:\` 等前缀；否则无法匹配资源。
 
