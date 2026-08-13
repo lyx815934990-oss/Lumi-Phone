@@ -131,7 +131,7 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
                 : '模块加载失败'}
           </p>
           <p className="max-w-[260px] text-[12px] leading-relaxed text-black/45">
-            多半是更新后旧缓存或资源下载中断。可点重试；若仍不行，请关掉网页重新打开一次。
+            多半是更新后旧缓存或资源下载中断。可点重试清缓存重进；若仍不行，请完全关掉网页再打开一次。
           </p>
           <div className="mt-1 flex gap-2">
             <button
