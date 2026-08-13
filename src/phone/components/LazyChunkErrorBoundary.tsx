@@ -1,5 +1,12 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
+import {
+  AUTO_RECOVER_KEY,
+  clearLumiRuntimeCaches,
+  hardReloadWithBust,
+  recoverLazyRouteSoft,
+} from './lazyRouteRecover'
+
 type Props = {
   children: ReactNode
   label?: string
@@ -13,8 +20,6 @@ type State = {
   recovering: boolean
 }
 
-const AUTO_RECOVER_KEY = 'lumi-chunk-auto-recover'
-
 function isChunkLoadError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error ?? '')
   const lower = msg.toLowerCase()
@@ -25,36 +30,6 @@ function isChunkLoadError(error: unknown): boolean {
     lower.includes('load failed') ||
     (lower.includes('failed to fetch') && lower.includes('module'))
   )
-}
-
-/** 彻底清掉壳缓存与 SW，避免旧 hash / 坏拆包一直卡住微信、发现页 */
-async function nukeRuntimeCachesAndSw(): Promise<void> {
-  try {
-    if (typeof caches !== 'undefined') {
-      const keys = await caches.keys()
-      await Promise.all(keys.map((k) => caches.delete(k)))
-    }
-  } catch {
-    /* ignore */
-  }
-  try {
-    const regs = await navigator.serviceWorker?.getRegistrations?.()
-    if (regs?.length) {
-      await Promise.all(regs.map((r) => r.unregister().catch(() => false)))
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
-function hardReloadWithBust(): void {
-  try {
-    const u = new URL(window.location.href)
-    u.searchParams.set('__lazy_retry', String(Date.now()))
-    window.location.replace(u.href)
-  } catch {
-    window.location.reload()
-  }
 }
 
 /** 捕获按需 chunk 下载失败，提供重试 / 刷新，避免整机白屏 */
@@ -69,7 +44,7 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.warn('[Lumi] lazy route failed', error, info.componentStack)
 
-    // 仅对典型 chunk 下载失败做一次自动抢救；其它错误交给用户点重试
+    // 仅对典型 chunk 下载失败做一次「软」自动抢救（不清 SW）
     if (!isChunkLoadError(error)) return
 
     try {
@@ -79,26 +54,22 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
       return
     }
     this.setState({ recovering: true })
-    void nukeRuntimeCachesAndSw().finally(() => {
+    void clearLumiRuntimeCaches().finally(() => {
       hardReloadWithBust()
     })
   }
 
   private handleRetry = () => {
     this.setState({ recovering: true })
-    void nukeRuntimeCachesAndSw().finally(() => {
-      try {
-        sessionStorage.removeItem(AUTO_RECOVER_KEY)
-      } catch {
-        /* ignore */
-      }
-      hardReloadWithBust()
+    void recoverLazyRouteSoft().catch(() => {
+      this.setState({ recovering: false })
+      window.location.reload()
     })
   }
 
   private handleReload = () => {
     this.setState({ recovering: true })
-    void nukeRuntimeCachesAndSw().finally(() => {
+    void clearLumiRuntimeCaches().finally(() => {
       try {
         sessionStorage.removeItem(AUTO_RECOVER_KEY)
       } catch {
@@ -131,7 +102,7 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
                 : '模块加载失败'}
           </p>
           <p className="max-w-[260px] text-[12px] leading-relaxed text-black/45">
-            多半是更新后旧缓存或资源下载中断。可点重试清缓存重进；若仍不行，请完全关掉网页再打开一次。
+            多半是更新后旧缓存或资源下载中断。请优先打开 www.lumiphone.cn；可点重试清缓存重进。若仍不行，请完全关掉网页再开。
           </p>
           <div className="mt-1 flex gap-2">
             <button

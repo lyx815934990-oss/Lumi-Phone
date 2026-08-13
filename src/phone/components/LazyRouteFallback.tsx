@@ -1,35 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const AUTO_RECOVER_KEY = 'lumi-chunk-auto-recover'
-
-async function nukeRuntimeCachesAndSw(): Promise<void> {
-  try {
-    if (typeof caches !== 'undefined') {
-      const keys = await caches.keys()
-      await Promise.all(keys.map((k) => caches.delete(k)))
-    }
-  } catch {
-    /* ignore */
-  }
-  try {
-    const regs = await navigator.serviceWorker?.getRegistrations?.()
-    if (regs?.length) {
-      await Promise.all(regs.map((r) => r.unregister().catch(() => false)))
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
-function hardReloadWithBust(): void {
-  try {
-    const u = new URL(window.location.href)
-    u.searchParams.set('__lazy_retry', String(Date.now()))
-    window.location.replace(u.href)
-  } catch {
-    window.location.reload()
-  }
-}
+import { recoverLazyRouteSoft } from './lazyRouteRecover'
 
 /** 路由级 lazy 加载时的轻量占位；过久未完成则给出清缓存重进，避免「打开微信…」永久卡住 */
 export function LazyRouteFallback({
@@ -52,13 +23,9 @@ export function LazyRouteFallback({
 
   const handleRecover = () => {
     setRecovering(true)
-    void nukeRuntimeCachesAndSw().finally(() => {
-      try {
-        sessionStorage.removeItem(AUTO_RECOVER_KEY)
-      } catch {
-        /* ignore */
-      }
-      hardReloadWithBust()
+    void recoverLazyRouteSoft().catch(() => {
+      setRecovering(false)
+      window.location.reload()
     })
   }
 
@@ -69,7 +36,8 @@ export function LazyRouteFallback({
           {recovering ? '正在清理缓存并重新进入…' : `${label.replace(/…$/, '')}太久了`}
         </p>
         <p className="max-w-[280px] text-[12px] leading-relaxed text-black/45">
-          多半是刚更新后旧缓存和新技术包对不上。点下方清理后会强制重进；若仍不行，请完全关掉网页再开一次。
+          多半是刚更新后旧缓存和新技术包对不上。请优先用 www.lumiphone.cn；点下方会清缓存并重进（不会立刻卸掉
+          Service Worker，避免 iPhone 报「丢失网络连接」）。
         </p>
         <button
           type="button"
