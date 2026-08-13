@@ -62,15 +62,16 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
   state: State = { error: null, retryKey: 0, recovering: false }
 
   static getDerivedStateFromError(error: Error): Partial<State> | null {
-    if (isChunkLoadError(error)) return { error }
-    return null
+    // 更新后 chunk 失败 / 模块求值失败都拦，避免白屏或永久停在 Suspense
+    return { error }
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    if (!isChunkLoadError(error)) return
-    console.warn('[Lumi] lazy chunk load failed', error, info.componentStack)
+    console.warn('[Lumi] lazy route failed', error, info.componentStack)
 
-    // 每个标签页只自动抢救一次，避免死循环
+    // 仅对典型 chunk 下载失败做一次自动抢救；其它错误交给用户点重试
+    if (!isChunkLoadError(error)) return
+
     try {
       if (sessionStorage.getItem(AUTO_RECOVER_KEY) === '1') return
       sessionStorage.setItem(AUTO_RECOVER_KEY, '1')
