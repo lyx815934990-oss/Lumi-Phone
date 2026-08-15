@@ -67,6 +67,110 @@ export function resolveStoryCalendarAnchorFloorMs(anchor: string | null | undefi
   return null
 }
 
+const STORY_CAL_YMD_RE = /(\d{4})年(\d{1,2})月(\d{1,2})日/
+const STORY_CAL_HM_RE = /(\d{1,2}):(\d{2})/
+
+/** 取两条故事内日历标签中公历日较晚者（同日保留 a） */
+export function pickLaterStoryCalendarLabel(a: string, b: string): string {
+  const aT = String(a ?? '').trim()
+  const bT = String(b ?? '').trim()
+  if (!aT) return bT
+  if (!bT) return aT
+  const aMs = resolveStoryCalendarAnchorFloorMs(aT)
+  const bMs = resolveStoryCalendarAnchorFloorMs(bT)
+  if (aMs != null && bMs != null) return aMs >= bMs ? aT : bT
+  if (aMs != null) return aT
+  if (bMs != null) return bT
+  return aT || bT
+}
+
+/**
+ * 线上「现在」与线下末条对齐：
+ * - 线上已不早于末条 → 用线上
+ * - 线上年份偏早（如末条已是 2027 旅行、线上仍停在 2026-10-11）→ 把线上的月日迁到末条年份，得到 ≥ 末条的「现在」
+ * - 否则取较晚者
+ */
+export function mergeOnlineStoryNowWithOfflineFloor(
+  onlineOrStateLabel: string | null | undefined,
+  offlineLastLabel: string | null | undefined,
+): string {
+  const online = String(onlineOrStateLabel ?? '').trim()
+  const offline = String(offlineLastLabel ?? '').trim()
+  if (!online) return offline
+  if (!offline) return online
+  const onlineMs = resolveStoryCalendarAnchorFloorMs(online)
+  const offlineMs = resolveStoryCalendarAnchorFloorMs(offline)
+  if (onlineMs != null && offlineMs != null && onlineMs >= offlineMs) return online
+
+  const oYmd = online.match(STORY_CAL_YMD_RE)
+  const fYmd = offline.match(STORY_CAL_YMD_RE)
+  if (oYmd && fYmd) {
+    const year = Number(fYmd[1])
+    const month = Number(oYmd[2])
+    const day = Number(oYmd[3])
+    if (
+      Number.isFinite(year) &&
+      Number.isFinite(month) &&
+      Number.isFinite(day) &&
+      month >= 1 &&
+      month <= 12 &&
+      day >= 1 &&
+      day <= 31
+    ) {
+      const hm = online.match(STORY_CAL_HM_RE)
+      const storyDay = `${year}年${month}月${day}日`
+      const storyTime = hm ? `${hm[1]!.padStart(2, '0')}:${hm[2]}` : undefined
+      const merged = composeStoryTimelineCalendarAnchorLabel({
+        story_day: storyDay,
+        story_time: storyTime,
+      }).trim()
+      const mergedMs = resolveStoryCalendarAnchorFloorMs(merged)
+      if (merged && mergedMs != null && offlineMs != null && mergedMs >= offlineMs) {
+        return merged
+      }
+    }
+  }
+  return pickLaterStoryCalendarLabel(online, offline)
+}
+
+/** 取多条故事内日历标签中公历时刻最晚者（含钟点） */
+export function pickLatestStoryCalendarLabel(
+  ...labels: Array<string | null | undefined>
+): string {
+  let best = ''
+  let bestMs = Number.NEGATIVE_INFINITY
+  for (const raw of labels) {
+    const t = String(raw ?? '').trim()
+    if (!t) continue
+    const dayMs = resolveStoryCalendarAnchorFloorMs(t)
+    if (dayMs == null) continue
+    // 有 HH:mm 时用当日偏移区分先后；无钟点视为当日 0 点
+    const clock = t.match(/(\d{1,2}):(\d{2})/)
+    const ms =
+      clock != null
+        ? dayMs +
+          Math.min(23, Math.max(0, Number(clock[1]))) * 3_600_000 +
+          Math.min(59, Math.max(0, Number(clock[2]))) * 60_000
+        : dayMs
+    if (ms >= bestMs) {
+      bestMs = ms
+      best = t
+    }
+  }
+  return best
+}
+
+/** 线下剧情落库 chronology 底线：故事「现在」与线下末条取较晚 */
+export function resolveDatingPlotChronologyFloorLabel(params: {
+  storyNowLabel?: string | null
+  offlineLastLabel?: string | null
+}): string {
+  return pickLaterStoryCalendarLabel(
+    String(params.storyNowLabel ?? '').trim(),
+    String(params.offlineLastLabel ?? '').trim(),
+  )
+}
+
 /**
  * @deprecated 仅保留排序/游标用途；**禁止**作为剧情公历锚点展示或写入 prompt。
  * plot.timestamp 为落库时刻，不是故事内时间。

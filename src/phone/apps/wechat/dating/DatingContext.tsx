@@ -56,7 +56,7 @@ import { resolveOnlineMessageTimeBoundsForConversation } from '../wechatCrossCha
 import { getAiPlotActiveTimelineDelta } from './plotTimelineDelta'
 import { formatPlotPromptTimeBracket } from './plotStoryTimeLabel'
 import { loadStoryTimelinePromptBlock, rebuildStoryTimelineFromDatingPlots } from '../memory/storyTimelinePersist'
-import { resolveStoryCalendarAnchorFloorMs, resolveStoryCalendarAnchorFromPlotItems, resolveStoryCalendarAnchorFromPlots, STORY_TIMELINE_CALENDAR_CHRONOLOGY_RULES } from '../memory/storyTimelineCalendarContext'
+import { resolveStoryCalendarAnchorFloorMs, resolveStoryCalendarAnchorFromPlotItems, resolveStoryCalendarAnchorFromPlots, resolveDatingPlotChronologyFloorLabel, mergeOnlineStoryNowWithOfflineFloor, pickLatestStoryCalendarLabel, STORY_TIMELINE_CALENDAR_CHRONOLOGY_RULES } from '../memory/storyTimelineCalendarContext'
 import {
   buildDatingStoryTimelineFallbackMaterial,
 } from '../memory/storyTimelineSummaryFallback'
@@ -75,6 +75,8 @@ import {
   enforceStoryTimelineDeltaChronology,
   composeStoryTimelineCalendarAnchorLabel,
   formatGregorianStoryDayFromMs,
+  formatStoryTimelineDeltaForDisplay,
+  formatStoryTimelineListTimeLabel,
   createEmptyStoryTimelineState,
 } from '../memory/storyTimelineTypes'
 import { syncNetworkStoryNowFromPrimary } from '../memory/storyTimelineNetworkNowSync'
@@ -1014,7 +1016,12 @@ async function timelinePersistFieldsFromAiTextRaw(
   if (timelineDelta && opts?.mainCharacterOffstage) {
     timelineDelta = { ...timelineDelta, side_perspective: true }
   }
-  return { timelineSnap, timelineDelta }
+  // 摘要展示文案须跟钳制后的 delta，禁止沿用模型原文里的错误年份【本轮锚点】
+  const timelineSnapEnforced =
+    timelineDelta && hasTimelineDeltaContent(timelineDelta)
+      ? formatStoryTimelineDeltaForDisplay(timelineDelta, { recordedAtMs })
+      : timelineSnap
+  return { timelineSnap: timelineSnapEnforced || timelineSnap, timelineDelta }
 }
 
 function aiPlotPersistFields(
@@ -2047,17 +2054,23 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     storyNowLabel,
     offlineLastCalendarAnchor,
   )
+  const chronologyFloorForPrompt = resolveDatingPlotChronologyFloorLabel({
+    storyNowLabel,
+    offlineLastLabel: offlineLastCalendarAnchor,
+  })
   const storyCalendarHint = storyNowLabel
-    ? calendarAdvanced
-      ? `\n【剧情时间锚点】故事「现在」= ${storyNowLabel}（线上/剧情轴已推进）；线下末条参考 ${offlineLastCalendarAnchor}（往事；禁止倒回；timeline 年份须跟「现在」；勿用手机日期）\n`
+    ? calendarAdvanced ||
+      (chronologyFloorForPrompt && chronologyFloorForPrompt !== offlineLastCalendarAnchor)
+      ? `\n【剧情时间锚点】故事「现在」= **${storyNowLabel}**（线上/剧情轴已推进；线下末条参考 ${offlineLastCalendarAnchor || '无'} 为往事）。本轮正文与 [TIMELINE] 的 story_day/**年份与月日必须等于该「现在」或其后**，禁止写成末条年或更早（例：禁止在「现在」已是 10月11日时仍写 10月8日）。勿用手机日期。\n`
       : `\n【剧情时间锚点（上一回合故事内末尾·本轮须承接；勿用手机日期）】${storyNowLabel}\n`
     : ''
-  const storyCalendarChronologyRule = offlineLastCalendarAnchor
-    ? `\n${STORY_TIMELINE_CALENDAR_CHRONOLOGY_RULES}\n` +
-      (calendarAdvanced && storyNowLabel
-        ? `【跳时后补充】接续公历须以故事「现在」= **${storyNowLabel}** 为底线（同日或更晚）；**禁止**写成线下末条 **${offlineLastCalendarAnchor}** 那年。\n`
-        : '')
-    : ''
+  const storyCalendarChronologyRule =
+    chronologyFloorForPrompt || offlineLastCalendarAnchor
+      ? `\n${STORY_TIMELINE_CALENDAR_CHRONOLOGY_RULES}\n` +
+        (chronologyFloorForPrompt
+          ? `【落库底线】本轮 story_day 不得早于 **${chronologyFloorForPrompt}**（故事「现在」与线下末条取较晚；客户端会钳制倒流年份/日期）。\n`
+          : '')
+      : ''
   const offlineCalendarHandoffRule = buildOfflineCalendarAdvancedHandoffRule({
     storyCalendarAnchor: offlineLastCalendarAnchor,
     storyNowLabel,
@@ -2997,9 +3010,85 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         if (bMs != null) return b
         return a || b
       }
-      const storyNowLabel = pickLaterStoryLabel(stateStoryLabel, offlineLastCalendarAnchor)
+      // 自定义线上时钟：即使「未对齐」也作为候选「现在」（用户设的 10/11 应压过错误的 plot 2026-10-08）
+      let liveStoryLabel = ''
+      try {
+        const timeRow = await personaDb.getCharacterTimeSettings(cid)
+        const cfg = timeRow?.config ? normalizeWeChatTimeConfig(timeRow.config) : null
+        if (cfg?.mode === 'custom' && timeRow?.timePerceptionEnabled !== false) {
+          liveStoryLabel = composeStoryTimelineCalendarAnchorLabel({
+            story_day: formatGregorianStoryDayFromMs(liveTimeMs),
+            story_time: formatStoryTimeClockFromMs(liveTimeMs),
+          }).trim()
+        }
+      } catch {
+        liveStoryLabel = ''
+      }
+      // 手改过的线下摘要行锚点（用户已对齐到 2027，但 plot.timelineDelta 仍可能是 2026）
+      let latestRowCalendarLabel = ''
+      try {
+        const rows = await personaDb.listStoryTimelinePlotRowsByCharacterId(cid)
+        for (const r of rows) {
+          const label = formatStoryTimelineListTimeLabel(r.rowText ?? '').trim()
+          if (label) {
+            latestRowCalendarLabel = pickLatestStoryCalendarLabel(latestRowCalendarLabel, label)
+          }
+        }
+      } catch {
+        latestRowCalendarLabel = ''
+      }
+      // 取线上时钟 / 剧情轴 / 手改摘要行 / 线下末条中最晚者，再与末条做年月对齐
+      const storyNowLabel =
+        mergeOnlineStoryNowWithOfflineFloor(
+          pickLatestStoryCalendarLabel(
+            stateStoryLabel,
+            liveStoryLabel,
+            latestRowCalendarLabel,
+            offlineLastCalendarAnchor,
+          ),
+          offlineLastCalendarAnchor,
+        ) || pickLaterStoryLabel(stateStoryLabel, offlineLastCalendarAnchor)
       const storyCalendarAnchor = offlineLastCalendarAnchor
       const storyNowMs = parseStoryAnchorLabelToMs(storyNowLabel)
+
+      // 合并后年份/日期已抬升：写回剧情轴「现在」，避免下一轮线上仍停在旧年
+      if (storyNowLabel && storyNowLabel !== stateStoryLabel) {
+        const dayPart = storyNowLabel.match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1]
+        const timePart = storyNowLabel.match(/(\d{1,2}:\d{2})/)?.[1]
+        if (dayPart) {
+          try {
+            const prev =
+              (await personaDb.getStoryTimelineState(cid)) ?? createEmptyStoryTimelineState(cid)
+            const storyTime =
+              timePart && /^\d{1,2}:\d{2}$/.test(timePart)
+                ? `${timePart.split(':')[0]!.padStart(2, '0')}:${timePart.split(':')[1]}`
+                : prev.currentStoryTime || undefined
+            await personaDb.putStoryTimelineState({
+              ...prev,
+              characterId: cid,
+              updatedAt: Date.now(),
+              currentStoryDay: dayPart,
+              currentStoryTime: storyTime,
+              todos: [],
+            })
+            if (storyNowMs != null) {
+              try {
+                await syncNetworkStoryNowFromPrimary({
+                  sourceCharacterId: cid,
+                  storyDay: dayPart,
+                  storyTime: storyTime || formatStoryTimeClockFromMs(storyNowMs),
+                  storyNowMs,
+                  syncOnlineClock: true,
+                })
+              } catch {
+                /* ignore */
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
 
       let unsummarizedPrivateBlock = ''
       let unsummarizedGroupBlock = ''
@@ -3569,6 +3658,15 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           })
           const parsedForPersist = { ...parsed, content: finalized.content }
           const plotTs = Date.now()
+          const offlineLastForFloor = resolveStoryCalendarAnchorFromPlotItems(plotsForModel)
+          const chronologyFloorLabel = resolveDatingPlotChronologyFloorLabel({
+            storyNowLabel:
+              onlineCtx?.storyNowLabel?.trim() ||
+              onlineCtx?.onlineInjectScope?.storyNowLabel?.trim() ||
+              onlineCtx?.storyCalendarAnchor?.trim() ||
+              '',
+            offlineLastLabel: offlineLastForFloor,
+          })
           const { timelineSnap, timelineDelta } = await timelinePersistFieldsFromAiTextRaw(aiTextRaw, plotTs, {
             apiConfig,
             plotBody: parsedForPersist.content,
@@ -3576,7 +3674,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             characterId: char.id,
             characterRealName: char.realName,
             mainCharacterOffstage: !!archiveSnap.mainCharacterOffstage,
-            storyCalendarAnchor: resolveStoryCalendarAnchorFromPlotItems(plotsForModel),
+            storyCalendarAnchor: chronologyFloorLabel || offlineLastForFloor,
           })
           const wbRevertNew = sanitizeWorldBookAfterRevertEntries(aiGen.worldBookAfterRevertEntries)
           const storyFields = dualNarrativeStoryFieldsFromDelta(timelineDelta)
@@ -4166,6 +4264,15 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         })
         const parsedRegen = { ...parsed, content: finalizedRegen.content }
         const plotTsRegen = Date.now()
+        const offlineLastForFloorRegen = resolveStoryCalendarAnchorFromPlotItems(before)
+        const chronologyFloorLabelRegen = resolveDatingPlotChronologyFloorLabel({
+          storyNowLabel:
+            onlineCtx?.storyNowLabel?.trim() ||
+            onlineCtx?.onlineInjectScope?.storyNowLabel?.trim() ||
+            onlineCtx?.storyCalendarAnchor?.trim() ||
+            '',
+          offlineLastLabel: offlineLastForFloorRegen,
+        })
         const { timelineSnap: timelineSnapRegen, timelineDelta: timelineDeltaRegen } =
           await timelinePersistFieldsFromAiTextRaw(aiTextRaw, plotTsRegen, {
             apiConfig,
@@ -4174,7 +4281,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             characterId: char.id,
             characterRealName: char.realName,
             mainCharacterOffstage: !!archive.mainCharacterOffstage,
-            storyCalendarAnchor: resolveStoryCalendarAnchorFromPlotItems(before),
+            storyCalendarAnchor: chronologyFloorLabelRegen || offlineLastForFloorRegen,
           })
         const nextRevert = sanitizeWorldBookAfterRevertEntries(aiGenRegen.worldBookAfterRevertEntries)
         const regenStory = dualNarrativeStoryFieldsFromDelta(timelineDeltaRegen)

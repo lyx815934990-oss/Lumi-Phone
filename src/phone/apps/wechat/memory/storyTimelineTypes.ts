@@ -615,19 +615,22 @@ export function enforceStoryTimelineDeltaChronology(
   if (floorMs == null || !Number.isFinite(floorMs)) return delta
   if (isStoryTimelineFlashbackDelta(delta)) return delta
 
-  const startMs = delta.story_day?.trim() ? storyCalendarDayStartMs(delta.story_day) : null
-  const endMs = delta.story_day_end?.trim() ? storyCalendarDayStartMs(delta.story_day_end) : null
-  const anchorMs = endMs ?? startMs
-  if (anchorMs == null || anchorMs >= floorMs) return delta
-
   const floorDay = formatGregorianStoryDayFromMs(floorMs)
   const patch: StoryTimelineSummaryDelta = { ...delta }
+
+  // 模型漏写 story_day 时用底线补上，避免卡片落到更早默认年
+  if (!patch.story_day?.trim()) {
+    patch.story_day = floorDay
+  }
+
+  const startMs = patch.story_day?.trim() ? storyCalendarDayStartMs(patch.story_day) : null
+  const endMs = patch.story_day_end?.trim() ? storyCalendarDayStartMs(patch.story_day_end) : null
+
   if (startMs != null && startMs < floorMs) {
     patch.story_day = floorDay
   }
   if (endMs != null && endMs < floorMs) {
     patch.story_day_end = undefined
-    if (!patch.story_day?.trim()) patch.story_day = floorDay
   }
   return patch
 }
@@ -1623,6 +1626,69 @@ export function upsertStoryTimelineTitleInRowText(rowText: string, title?: strin
   const normalized = normalizeStoryTimelineRowTitle(title)
   if (!normalized) return body
   return body ? `【摘要标题】${normalized}\n\n${body}` : `【摘要标题】${normalized}`
+}
+
+/**
+ * 从摘要行【本轮锚点】解析公历字段，用于手改行覆盖错误的 plot.timelineDelta。
+ */
+export function extractStoryCalendarFieldsFromRowText(
+  rowText: string,
+): Pick<
+  StoryTimelineSummaryDelta,
+  'story_day' | 'story_time' | 'story_day_end' | 'story_time_end'
+> | null {
+  const anchorMatch = String(rowText ?? '').match(/【本轮锚点】([^\n]+)/)
+  const anchorText = anchorMatch?.[1]?.trim() ?? ''
+  if (!anchorText) return null
+  const range = anchorText.match(STORY_TIMELINE_GREGORIAN_ANCHOR_RE)
+  const label = (range?.[0] ?? anchorText.split(' · ')[0] ?? '').trim()
+  if (!label || !/^\d{4}年/.test(label)) return null
+  const parts = label.split(/\s*-\s*/).map((p) => p.trim()).filter(Boolean)
+  const parseEnd = (seg: string) => {
+    const day = seg.match(/^(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1]
+    const clock = seg.match(/(\d{1,2}):(\d{2})/)
+    const story_time = clock
+      ? `${String(clock[1]).padStart(2, '0')}:${clock[2]}`
+      : undefined
+    return {
+      ...(day ? { story_day: day } : {}),
+      ...(story_time ? { story_time } : {}),
+    }
+  }
+  if (parts.length >= 2) {
+    const start = parseEnd(parts[0]!)
+    const end = parseEnd(parts[parts.length - 1]!)
+    if (!start.story_day && !end.story_day) return null
+    return {
+      ...(start.story_day ? { story_day: start.story_day } : {}),
+      ...(start.story_time ? { story_time: start.story_time } : {}),
+      ...(end.story_day ? { story_day_end: end.story_day } : {}),
+      ...(end.story_time ? { story_time_end: end.story_time } : {}),
+    }
+  }
+  const one = parseEnd(parts[0] ?? label)
+  if (!one.story_day) return null
+  return one
+}
+
+/** 手改摘要行的公历覆盖 plot delta（重建 state 时避免错误年份盖回） */
+export function overlayStoryTimelineDeltaCalendarFromRowText(
+  delta: StoryTimelineSummaryDelta,
+  rowText: string,
+): StoryTimelineSummaryDelta {
+  const cal = extractStoryCalendarFieldsFromRowText(rowText)
+  if (!cal?.story_day) return delta
+  return {
+    ...delta,
+    story_day: cal.story_day,
+    ...(cal.story_time ? { story_time: cal.story_time } : { story_time: undefined }),
+    ...(cal.story_day_end
+      ? { story_day_end: cal.story_day_end }
+      : { story_day_end: undefined }),
+    ...(cal.story_time_end
+      ? { story_time_end: cal.story_time_end }
+      : { story_time_end: undefined }),
+  }
 }
 
 /**

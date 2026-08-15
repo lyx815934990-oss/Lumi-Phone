@@ -21,6 +21,7 @@ import {
   upsertStoryTimelineCalendarAnchorInRowText,
   extractStoryTimelineEditableCalendarLabel,
   normalizeStoryTimelineRowTitle,
+  parseStoryCalendarDayStartMs,
   STORY_TIMELINE_ROW_TITLE_MAX,
   type StoryTimelineEventScope,
   type StoryTimelinePlotRow,
@@ -212,6 +213,41 @@ export function StoryTimelineEditorSheet({
           return
         }
         await personaDb.upsertStoryTimelinePlotRow(next)
+        // 手改公历：抬升剧情轴「现在」，避免下一轮生成仍按错误 plot 年份落库
+        if (calendarLabel) {
+          const dayPart = calendarLabel.match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1]
+          const timePart = calendarLabel.match(/(\d{1,2}):(\d{2})/)?.[1]
+          if (dayPart) {
+            const cid = resolveEditorCharacterId(target)
+            const st =
+              (await personaDb.getStoryTimelineState(cid)) ??
+              ({
+                characterId: cid,
+                updatedAt: Date.now(),
+                costumes: [],
+                items: [],
+                foreshadows: [],
+                todos: [],
+                recentEvents: [],
+              } satisfies StoryTimelineState)
+            const nextDayMs = parseStoryCalendarDayStartMs(dayPart)
+            const curDayMs = st.currentStoryDay?.trim()
+              ? parseStoryCalendarDayStartMs(st.currentStoryDay.trim())
+              : null
+            if (nextDayMs != null && (curDayMs == null || nextDayMs >= curDayMs)) {
+              await personaDb.putStoryTimelineState({
+                ...st,
+                characterId: cid,
+                updatedAt: Date.now(),
+                currentStoryDay: dayPart,
+                currentStoryTime: timePart
+                  ? `${timePart.split(':')[0]!.padStart(2, '0')}:${timePart.split(':')[1]}`
+                  : st.currentStoryTime,
+                todos: [],
+              })
+            }
+          }
+        }
       } else if (target.kind === 'state-edit') {
         const cid = target.characterId.trim()
         if (!cid) return

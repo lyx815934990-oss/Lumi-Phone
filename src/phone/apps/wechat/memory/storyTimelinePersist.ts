@@ -18,13 +18,17 @@ import { MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS } from './memorySummaryRet
 import {
   buildStoryTimelinePlotRowFromDelta,
   buildStoryTimelineMainCharPresenceOpts,
+  composeStoryTimelineCalendarAnchorLabel,
   createEmptyStoryTimelineState,
   enforceStoryTimelineDeltaChronology,
+  formatGregorianStoryDayFromMs,
   formatStoryTimelineDeltaForDisplay,
   formatStoryTimelineInjectBody,
+  formatStoryTimelineListTimeLabel,
   formatStoryTimelineOpenAnchorsForSummaryPrompt,
   hasTimelineDeltaContent,
   mergeStoryTimelineState,
+  overlayStoryTimelineDeltaCalendarFromRowText,
   parseStoryCalendarDayStartMs,
   resolveStoryTimelineCurrentCalendarMs,
   selectStoryTimelineRecentInjectRows,
@@ -34,6 +38,9 @@ import {
   type StoryTimelinePromptLoadOpts,
   type StoryTimelineSummaryDelta,
 } from './storyTimelineTypes'
+import { pickLatestStoryCalendarLabel } from './storyTimelineCalendarContext'
+import { normalizeWeChatTimeConfig, resolveWeChatCurrentTimeMs } from '../time/wechatTimeUtils'
+import { formatStoryTimeClockFromMs } from '../time/applyOnlineChatTimeFusion'
 
 async function loadStoryTimelineMainCharPresence(characterId: string): Promise<StoryTimelineMainCharPresenceOpts> {
   const cid = characterId.trim()
@@ -57,8 +64,40 @@ export async function persistStoryTimelineFromSummaryDelta(
   const cid = characterId.trim()
   if (!cid || !delta) return
   const prev = await personaDb.getStoryTimelineState(cid)
-  const floorMs =
-    prev?.currentStoryDay?.trim()
+  // 底线取 state / 线上时钟 / 已有摘要行最晚者，禁止被错误的 2026 plot 年份钉死
+  let floorLabel = ''
+  if (prev?.currentStoryDay?.trim()) {
+    floorLabel = composeStoryTimelineCalendarAnchorLabel({
+      story_day: prev.currentStoryDay,
+      story_time: prev.currentStoryTime,
+    })
+  }
+  try {
+    const rows = await personaDb.listStoryTimelinePlotRowsByCharacterId(cid)
+    for (const r of rows) {
+      const label = formatStoryTimelineListTimeLabel(r.rowText ?? '').trim()
+      if (label) floorLabel = pickLatestStoryCalendarLabel(floorLabel, label)
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const timeRow = await personaDb.getCharacterTimeSettings(cid)
+    const cfg = timeRow?.config ? normalizeWeChatTimeConfig(timeRow.config) : null
+    if (cfg?.mode === 'custom' && timeRow?.timePerceptionEnabled !== false) {
+      const liveMs = resolveWeChatCurrentTimeMs(cfg)
+      const liveLabel = composeStoryTimelineCalendarAnchorLabel({
+        story_day: formatGregorianStoryDayFromMs(liveMs),
+        story_time: formatStoryTimeClockFromMs(liveMs),
+      }).trim()
+      floorLabel = pickLatestStoryCalendarLabel(floorLabel, liveLabel)
+    }
+  } catch {
+    /* ignore */
+  }
+  const floorMs = floorLabel
+    ? parseStoryCalendarDayStartMs(floorLabel.match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1] ?? '')
+    : prev?.currentStoryDay?.trim()
       ? parseStoryCalendarDayStartMs(prev.currentStoryDay.trim())
       : null
   const enforcedDelta = enforceStoryTimelineDeltaChronology(delta, floorMs)
@@ -163,6 +202,11 @@ export async function rebuildStoryTimelineFromDatingPlots(
   for (const plot of plots) {
     if (plot.type !== 'ai') continue
     let delta = getAiPlotActiveTimelineDelta(plot)
+    const lockedEarly = plot.id?.trim() ? userEditedByPlotId.get(plot.id.trim()) : undefined
+    // 用户手改过的摘要行公历优先于错误的 plot.timelineDelta（否则 rebuild 会把 2027 改回 2026）
+    if (delta && hasTimelineDeltaContent(delta) && lockedEarly?.rowText) {
+      delta = overlayStoryTimelineDeltaCalendarFromRowText(delta, lockedEarly.rowText)
+    }
     if (plot.parallelEvent?.content?.trim() && delta && hasTimelineDeltaContent(delta)) {
       const foot = parallelEventMainPlotSummaryFootnote()
       const base = String(delta.event_summary ?? '').trim()
@@ -188,6 +232,50 @@ export async function rebuildStoryTimelineFromDatingPlots(
       })
       if (parallelRows.length) parallelSummaryPlotIds.push(plot.id)
       plotRows.push(...parallelRows)
+    }
+  }
+
+  // 手改行 / 线上时钟若已晚于 plot 合并结果，抬升「现在」，禁止错误年份盖回
+  if (merged) {
+    let latestRowLabel = ''
+    for (const r of existingRows) {
+      const label = formatStoryTimelineListTimeLabel(r.rowText ?? '').trim()
+      if (label) latestRowLabel = pickLatestStoryCalendarLabel(latestRowLabel, label)
+    }
+    let liveLabel = ''
+    try {
+      const timeRow = await personaDb.getCharacterTimeSettings(cid)
+      const cfg = timeRow?.config ? normalizeWeChatTimeConfig(timeRow.config) : null
+      if (cfg?.mode === 'custom' && timeRow?.timePerceptionEnabled !== false) {
+        const liveMs = resolveWeChatCurrentTimeMs(cfg)
+        liveLabel = composeStoryTimelineCalendarAnchorLabel({
+          story_day: formatGregorianStoryDayFromMs(liveMs),
+          story_time: formatStoryTimeClockFromMs(liveMs),
+        }).trim()
+      }
+    } catch {
+      /* ignore */
+    }
+    const lifted = pickLatestStoryCalendarLabel(
+      composeStoryTimelineCalendarAnchorLabel({
+        story_day: merged.currentStoryDay,
+        story_time: merged.currentStoryTime,
+      }),
+      latestRowLabel,
+      liveLabel,
+    )
+    if (lifted) {
+      const day = lifted.match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1]
+      const clock = lifted.match(/(\d{1,2}):(\d{2})/)
+      if (day) {
+        merged = {
+          ...merged,
+          currentStoryDay: day,
+          currentStoryTime: clock
+            ? `${String(clock[1]).padStart(2, '0')}:${clock[2]}`
+            : merged.currentStoryTime,
+        }
+      }
     }
   }
 
