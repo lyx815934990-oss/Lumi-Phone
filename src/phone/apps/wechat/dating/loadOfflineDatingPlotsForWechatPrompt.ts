@@ -15,6 +15,28 @@ import { datingPlotBodyForPromptInjection } from './plotCoT'
 import { formatPlotPromptTimeBracket } from './plotStoryTimeLabel'
 import { resolvePlotSystemRecordedAtMs } from '../wechatCrossChannelTimeline'
 import { extractStoryCalendarFromPromptBracket } from './datingOnlineInjectScope'
+import {
+  composeStoryTimelineCalendarAnchorLabel,
+  parseStoryCalendarDayStartMs,
+} from '../memory/storyTimelineTypes'
+
+/** 从故事内日历文案解析当日 0 点毫秒（如 `2025年10月8日 晚上`） */
+export function parseStoryCalendarLabelDayStartMs(label: string | null | undefined): number | null {
+  const day = String(label ?? '').match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1]
+  if (!day) return null
+  return parseStoryCalendarDayStartMs(day)
+}
+
+/** 故事「现在」公历日是否已晚于线下末条（线上时间跳过后常见） */
+export function isStoryNowCalendarAfterOfflineLast(
+  storyNowLabel: string | null | undefined,
+  offlineLastLabel: string | null | undefined,
+): boolean {
+  const nowMs = parseStoryCalendarLabelDayStartMs(storyNowLabel)
+  const lastMs = parseStoryCalendarLabelDayStartMs(offlineLastLabel)
+  if (nowMs == null || lastMs == null) return false
+  return nowMs > lastMs
+}
 
 function plotBodyForPrompt(p: DatingPlotSnapshotItem): string {
   return datingPlotBodyForPromptInjection(String(p.content || ''), p.type)
@@ -379,29 +401,62 @@ export function extractLatestOfflinePlotSpatialAnchor(body: string): string {
   return last.length > 520 ? `…${last.slice(-520)}` : last
 }
 
-/** 微信私聊：线下末尾空间事实优先于尾声/旧记忆，防「门外守着」却写「怀里」。 */
+export type OnlineOfflineSpatialContinuityOpts = {
+  /** 故事内「现在」（剧情轴 / 线上时间跳转后）；晚于线下末条时改按「往事」读 */
+  storyNowLabel?: string | null
+}
+
+/** 微信私聊：线下末尾空间事实优先于尾声/旧记忆；若线上日历已推进则勿把末条现场当「现在」。 */
 export function buildOnlineOfflineSpatialContinuityAppendix(
   body: string,
   characterDisplayName?: string | null,
+  opts?: OnlineOfflineSpatialContinuityOpts,
 ): string {
   const trimmed = String(body ?? '').trim()
   if (!trimmed) return ''
   const peer = characterDisplayName?.trim() || '对方'
   const tail = extractLatestOfflinePlotSpatialAnchor(trimmed)
   const storyFromTail = tail ? extractStoryCalendarFromPromptBracket(tail) : null
+  const storyNow =
+    String(opts?.storyNowLabel ?? '').trim() ||
+    null
+  const calendarAdvanced = isStoryNowCalendarAfterOfflineLast(storyNow, storyFromTail)
+
+  if (calendarAdvanced && storyNow && storyFromTail) {
+    const lines = [
+      `【线下→线上·时空错位铁律（最高优先级）】`,
+      `- 故事内「现在」= **${storyNow}**，已**晚于**上方最近线下剧情末条日历 **${storyFromTail}**（用户曾在线上时间设置中往后跳过）。`,
+      `- 上方「最近线下剧情」是 **过去已发生** 的场景实录（约数日前），**不是**你此刻所在的现场；**禁止**用现在进行时把末条地点/行程当作当前仍在发生。`,
+      `- **地点/行程**：末条里的酒店、国外旅游、当地交通、当晚去向等，仅可作**回溯**（「那天在…」「出国那段」）；**禁止**在「现在」仍说「回酒店 / 今晚还在国外 / 明天继续玩」——除非用户本轮明确表示又回到该状态。`,
+      `- **当前物理空间**以【剧情时间轴·当前状态】与「现在」= **${storyNow}** 为准（例如已回学校/宿舍/日常城市）；冲突时**丢弃**末条现场地点，改按当前锚点说话。`,
+      `- 态度、称呼、好感、已发生事实仍可参考末条；但勿把「数日前在场细节」写成此刻贴身接触。`,
+      `- 用户当轮发来微信 = 远程打字；可按当前分离/日常状态接话，勿写成仍在旅游同场。`,
+      `- **禁止催睡赶人**：勿因往事时段或墙钟，输出「快去睡/早点歇」赶对方离场。`,
+    ]
+    if (tail) {
+      lines.push('', `【线下末条·仅作往事参考（非当前现场）】`, tail)
+    }
+    return lines.join('\n')
+  }
+
   const lines = [
     `【线下→线上·空间状态铁律（最高优先级）】`,
     ...(storyFromTail
       ? [
           `- **故事内时刻（线下末条）**：摘录末条故事时间为 **${storyFromTail}**（空间/在场以该条为准）。`,
-          `- **若【剧情时间轴·当前状态】锚点已晚于该末条**（用户在线上时间设置中往后推过）：线上「现在」以剧情轴当前锚点为准，**禁止**强行拉回末条那一夜；空间仍承接末条分离/同场事实，时段按推进后的锚点理解。`,
+          ...(storyNow && storyNow !== storyFromTail
+            ? [
+                `- 当前剧情轴/线上「现在」标注为 **${storyNow}**（与末条文案不同但公历日未判定更晚时）：仍优先按末条同时段理解，**禁止**无依据跳到另一套现场地点。`,
+              ]
+            : []),
+          `- **若【剧情时间轴·当前状态】锚点已晚于该末条**（用户在线上时间设置中往后推过）：线上「现在」以剧情轴当前锚点为准，**禁止**强行拉回末条那一夜；**地点/行程以推进后的「现在」为准**，末条酒店/旅游等仅可回溯，不可当当前现场。`,
           `- **若剧情轴当前锚点未推进、仍与末条同时段**：线上按 **${storyFromTail}** 同一夜/同一时段理解；**禁止**用设备落库钟点（如上午 10:20）误判为剧情清晨或另一天。`,
         ]
       : []),
     `- 微信线上 = **远程用手机发消息**；须承接上方「最近线下剧情」**最后一条 AI 剧情**所写的**当场空间事实**：谁在场、是否同室、门内外、睡/醒、有无肢体接触。`,
     `- **禁止**用更早条目、【尾声延展】或长期记忆里旧的「同场/怀里/同床」描写，覆盖末尾已写明的**分离状态**（例如末尾已写 ${peer} 出门/在门外守/离开房间/各自在不同空间，则禁止气泡写「你缩在我怀里」「抱着你」「同床」「面对面」等同场肢体接触）。`,
-    `- 【尾声延展】条目约束**态度、称呼、好感档位**，**不约束**物理空间；二者冲突时以**线下末尾最新 AI 条**的空间事实为准。`,
-    `- 若【剧情时间轴·当前状态】锚点**晚于**线下末条（如末条 08:00 已分别、轴指 10:00）：须按**已推进后的时段**理解（对方已起床/在路上/到机场等），**禁止**仍按分手前作息反问「起这么早 / 不是睡到中午吗 / 昨晚拍戏」；语义召回/长期记忆里**早于末条**的作息或事件不得覆盖末条事实。`,
+    `- 【尾声延展】条目约束**态度、称呼、好感档位**，**不约束**物理空间；二者冲突时以**线下末尾最新 AI 条**的空间事实为准（**仅当**故事「现在」仍落在末条同一公历日/同时段）。`,
+    `- 若【剧情时间轴·当前状态】锚点**晚于**线下末条：须按**已推进后的时段与地点**理解，**禁止**仍按旅游/酒店现场接话；语义召回/长期记忆里**早于末条**的作息或事件不得覆盖当前锚点。`,
     `- 用户当轮发来微信，默认表示 ${peer} **不在同一物理接触距离内**打字；可写符合分离事实的反应，勿写成贴身耳语体。`,
     `- **禁止催睡赶人**：即使末条在酒店/深夜、或墙钟已晚，只要 ${peer} 仍在线上主动找聊/调情/追问，**禁止**据此输出「快去睡/早点歇/明天有正事先睡」；空间事实可知情，但不可拿来赶对方离场。`,
   ]
@@ -415,6 +470,7 @@ export function buildOnlineOfflineSpatialContinuityAppendix(
 export async function loadOfflineDatingPlotsPromptBlock(
   characterId: string | null | undefined,
   characterDisplayName?: string | null,
+  opts?: OnlineOfflineSpatialContinuityOpts,
 ): Promise<string> {
   const cid = characterId?.trim()
   const rounds = MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS
@@ -424,15 +480,38 @@ export async function loadOfflineDatingPlotsPromptBlock(
   const ctx = cid ? await resolveOfflineDatingArchiveContext(cid) : null
   const borrowed = !!(ctx && ctx.perspectiveCharacterId !== ctx.archiveCharacterId)
 
+  let storyNowLabel = String(opts?.storyNowLabel ?? '').trim() || null
+  if (!storyNowLabel && cid) {
+    try {
+      const state = await personaDb.getStoryTimelineState(cid)
+      storyNowLabel =
+        composeStoryTimelineCalendarAnchorLabel({
+          story_day: state?.currentStoryDay,
+          story_time: state?.currentStoryTime,
+        }).trim() || null
+    } catch {
+      storyNowLabel = null
+    }
+  }
+
+  const tail = extractLatestOfflinePlotSpatialAnchor(body)
+  const offlineLast = tail ? extractStoryCalendarFromPromptBracket(tail) : null
+  const calendarAdvanced = isStoryNowCalendarAfterOfflineLast(storyNowLabel, offlineLast)
+
   const timeHint =
     '每条前缀优先为**故事内公历时刻**（来自该条 timeline 锚点）；无锚点时方显示 `[…·落库]` 系统落库时刻（真实生成钟点，**不是**故事内时间）'
+  const staleHint = calendarAdvanced
+    ? `故事「现在」已到 **${storyNowLabel}**，晚于末条 **${offlineLast}**：下列视为**往事实录**，**禁止**当当前现场（酒店/旅游地点等仅可回溯）。`
+    : `须全文承接近端事实；**禁止**明显矛盾或假装未发生末条事件（若故事「现在」已晚于末条公历日，则改按往事读，地点以剧情轴当前为准）。`
   const header = borrowed
     ? `【最近线下剧情（关联主角·固定最近 ${rounds} 轮 AI）】` +
-      `你与「${(ctx?.archiveOwner?.name ?? '').trim() || '主角'}」同属一条时间线；下列为约会页**时间/落库最新**的 ${rounds} 轮 AI 剧情及其间玩家输入（${timeHint}）。线下每轮通常已写入摘要，本块仍须全文承接；更早段由【剧情时间轴】/长期记忆/语义召回补全。`
+      `你与「${(ctx?.archiveOwner?.name ?? '').trim() || '主角'}」同属一条时间线；下列为约会页**时间/落库最新**的 ${rounds} 轮 AI 剧情及其间玩家输入（${timeHint}）。${staleHint}更早段由【剧情时间轴】/长期记忆/语义召回补全。`
     : `【最近线下剧情（固定最近 ${rounds} 轮 AI）】` +
-      `与当前会话为**同一角色、同一时间线**；下列为约会页**时间/落库最新**的 ${rounds} 轮 AI 剧情及其间玩家输入（${timeHint}）。线下每轮通常已写入摘要，本块仍须全文承接近端事实；更早段由【剧情时间轴】/长期记忆/语义召回补全；**禁止**明显矛盾或假装未发生末条事件。`
+      `与当前会话为**同一角色、同一时间线**；下列为约会页**时间/落库最新**的 ${rounds} 轮 AI 剧情及其间玩家输入（${timeHint}）。${staleHint}更早段由【剧情时间轴】/长期记忆/语义召回补全。`
 
-  const spatialRule = buildOnlineOfflineSpatialContinuityAppendix(body, characterDisplayName)
+  const spatialRule = buildOnlineOfflineSpatialContinuityAppendix(body, characterDisplayName, {
+    storyNowLabel,
+  })
   return `${header}\n\n${body}\n\n---\n${spatialRule}`
 }
 

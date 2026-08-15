@@ -3152,8 +3152,25 @@ export function ChatRoomInner({
       const chRow = await personaDb.getCharacter(pc)
       const anchorGroupId =
         peekPrivateChatGroupAnchorFromDockStaging(pc) ?? (await personaDb.getPrivateChatAnchorGroupId(pc, pid))
+
+      // 先把线上时钟同步进剧情轴，再拼线下注入，否则「跳到 10/11」仍按末条 10/8 现场读
+      const liveMsEarly = getCurrentTimeMs()
+      const syncedStoryEarly = await syncStoryTimelineNowFromOnlineClock({
+        characterId: pc,
+        liveTimeMs: liveMsEarly,
+      })
+      const timelineStateEarly = await personaDb.getStoryTimelineState(pc)
+      const storyNowForOffline =
+        syncedStoryEarly.storyLabel.trim() ||
+        composeStoryTimelineCalendarAnchorLabel({
+          story_day: timelineStateEarly?.currentStoryDay,
+          story_time: timelineStateEarly?.currentStoryTime,
+        }).trim() ||
+        undefined
       const offlineHay = (
-        await loadOfflineDatingPlotsPromptBlock(pc, chRow?.name ?? chRow?.wechatNickname ?? null)
+        await loadOfflineDatingPlotsPromptBlock(pc, chRow?.name ?? chRow?.wechatNickname ?? null, {
+          storyNowLabel: storyNowForOffline,
+        })
       ).trim()
 
       const fromMeet = isMeetSyncedCharacter(pc, chRow?.worldBooks)
@@ -3240,18 +3257,13 @@ export function ChatRoomInner({
       ])
       const timelineApiConfig =
         apiConfig?.apiUrl?.trim() && apiConfig?.apiKey?.trim() ? apiConfig : null
-      const liveMs = getCurrentTimeMs()
-      // 线上时钟在流逝时，把剧情轴「现在」推到同一时刻（未点保存也会同步）
-      const syncedStory = await syncStoryTimelineNowFromOnlineClock({
-        characterId: pc,
-        liveTimeMs: liveMs,
-      })
-      const timelineState = await personaDb.getStoryTimelineState(pc)
+      const liveMs = liveMsEarly
       const storyCalendarAnchor =
-        syncedStory.storyLabel.trim() ||
+        storyNowForOffline ||
+        syncedStoryEarly.storyLabel.trim() ||
         composeStoryTimelineCalendarAnchorLabel({
-          story_day: timelineState?.currentStoryDay,
-          story_time: timelineState?.currentStoryTime,
+          story_day: timelineStateEarly?.currentStoryDay,
+          story_time: timelineStateEarly?.currentStoryTime,
         }).trim() ||
         undefined
       const lastOnlineNote = (
@@ -8639,10 +8651,27 @@ export function ChatRoomInner({
           ),
         ]
         let loreSceneMemberIds: string[] = privateWorldbookMemberIds
-        let offlineDatingPlotsContext =
-          pm === 'persona' && cid
-            ? await loadOfflineDatingPlotsPromptBlock(cid, character?.name ?? null)
-            : ''
+        let offlineDatingPlotsContext = ''
+        if (pm === 'persona' && cid) {
+          const liveForOffline = getCurrentTimeMs()
+          const syncedForOffline = await syncStoryTimelineNowFromOnlineClock({
+            characterId: cid,
+            liveTimeMs: liveForOffline,
+          })
+          const tlForOffline = await personaDb.getStoryTimelineState(cid)
+          const storyNowForOfflineEarly =
+            syncedForOffline.storyLabel.trim() ||
+            composeStoryTimelineCalendarAnchorLabel({
+              story_day: tlForOffline?.currentStoryDay,
+              story_time: tlForOffline?.currentStoryTime,
+            }).trim() ||
+            undefined
+          offlineDatingPlotsContext = await loadOfflineDatingPlotsPromptBlock(
+            cid,
+            character?.name ?? null,
+            { storyNowLabel: storyNowForOfflineEarly },
+          )
+        }
 
         let aiReply: WeChatPeerReplyResult = { bubbles: [] }
         let aiRequestFailed = false
