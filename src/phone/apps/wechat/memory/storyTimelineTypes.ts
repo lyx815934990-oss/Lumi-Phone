@@ -1647,7 +1647,12 @@ export function upsertStoryTimelineCalendarAnchorInRowText(
       .split(/\s*·\s*/)
       .map((p) => p.trim())
       .filter(Boolean)
-      .filter((p) => !GREGORIAN_ANCHOR_PART_RE.test(p) && !/^剧情日\s/.test(p))
+      .filter(
+        (p) =>
+          !STORY_TIMELINE_GREGORIAN_ANCHOR_RE.test(p) &&
+          !GREGORIAN_ANCHOR_PART_RE.test(p) &&
+          !/^剧情日\s/.test(p),
+      )
     return `${m[1]}${[label, ...parts].join(' · ')}`
   })
   if (found) return next.join('\n')

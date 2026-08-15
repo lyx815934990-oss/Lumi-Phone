@@ -9,13 +9,20 @@ import {
   composeStoryTimelineCalendarAnchorLabel,
   formatGregorianStoryDayFromMs,
   parseStoryCalendarDayStartMs,
+  STORY_TIMELINE_GREGORIAN_ANCHOR_RE,
 } from './storyTimelineTypes'
+
+export type StoryTimeEditMode = 'point' | 'range'
 
 export type DualNarrativeStoryFields = {
   storyDay?: string
   storyTime?: string
-  /** 用户可见的剧情时间文案 */
+  storyDayEnd?: string
+  storyTimeEnd?: string
+  /** 用户可见的剧情时间文案（单点或「开始 - 结束」） */
   storyTimeLabel?: string
+  /** 编辑器模式：时间点 / 时间段 */
+  editMode?: StoryTimeEditMode
 }
 
 /** 从 timeline delta 提取剧情时间字段（优先 end 锚点） */
@@ -26,20 +33,25 @@ export function dualNarrativeStoryFieldsFromDelta(
   > | null | undefined,
 ): DualNarrativeStoryFields {
   if (!delta) return {}
-  const storyDay = (delta.story_day_end || delta.story_day || '').trim() || undefined
-  const storyTime = (delta.story_time_end || delta.story_time || '').trim() || undefined
-  const storyTimeLabel =
-    composeStoryTimelineCalendarAnchorLabel(delta).trim() ||
-    (storyDay
-      ? storyTime
-        ? `${storyDay} ${storyTime}`
-        : storyDay
-      : storyTime || undefined)
-  if (!storyDay && !storyTime && !storyTimeLabel) return {}
+  const storyDay = (delta.story_day || '').trim() || undefined
+  const storyTime = (delta.story_time || '').trim() || undefined
+  const storyDayEnd = (delta.story_day_end || '').trim() || undefined
+  const storyTimeEnd = (delta.story_time_end || '').trim() || undefined
+  const storyTimeLabel = composeStoryTimelineCalendarAnchorLabel(delta).trim() || undefined
+  const hasRange = Boolean(
+    storyDayEnd ||
+      (storyTimeEnd && storyDayEnd) ||
+      (storyDay && storyDayEnd && storyDayEnd !== storyDay) ||
+      (storyTime && storyTimeEnd && storyTimeEnd !== storyTime),
+  )
+  if (!storyDay && !storyTime && !storyDayEnd && !storyTimeEnd && !storyTimeLabel) return {}
   return {
     ...(storyDay ? { storyDay } : {}),
     ...(storyTime ? { storyTime } : {}),
+    ...(storyDayEnd ? { storyDayEnd } : {}),
+    ...(storyTimeEnd ? { storyTimeEnd } : {}),
     ...(storyTimeLabel ? { storyTimeLabel } : {}),
+    editMode: hasRange ? 'range' : 'point',
   }
 }
 
@@ -59,7 +71,7 @@ export function extractStoryTimeLabelFromText(text: string): string | undefined 
     if (!label) continue
     // 过滤误把系统落库行当成展示时间
     if (/系统落库|勿按系统公历/.test(label)) continue
-    return label.slice(0, 120)
+    return label.slice(0, 160)
   }
   return undefined
 }
@@ -79,36 +91,94 @@ export function resolveMemoryDisplayTimeLabel(params: {
   return ''
 }
 
-/** 从剧情时间文案解析 storyDay / storyTime（供手动改时刻入库） */
-export function parseDualNarrativeFieldsFromLabel(label: string | null | undefined): DualNarrativeStoryFields {
-  const raw = String(label ?? '').trim()
+function parseOneEndpointLabel(part: string): { storyDay?: string; storyTime?: string } {
+  const raw = String(part ?? '').trim()
   if (!raw) return {}
   const day = raw.match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1]
   const clock = raw.match(/(\d{1,2}):(\d{2})/)
   const storyTime = clock
     ? `${String(clock[1]).padStart(2, '0')}:${clock[2]}`
     : undefined
-  const storyDay = day || undefined
-  const storyTimeLabel =
-    composeStoryTimelineCalendarAnchorLabel({
-      story_day: storyDay,
-      story_time: storyTime,
-    }).trim() || raw.slice(0, 120)
   return {
-    ...(storyDay ? { storyDay } : {}),
+    ...(day ? { storyDay: day } : {}),
     ...(storyTime ? { storyTime } : {}),
-    storyTimeLabel,
   }
 }
 
-/** datetime-local 值（YYYY-MM-DDTHH:mm）→ 剧情字段 */
-export function dualNarrativeFieldsFromDatetimeLocal(
-  value: string | null | undefined,
+/** 用结构化字段拼展示文案（点或段） */
+export function composeDualNarrativeStoryTimeLabel(fields: DualNarrativeStoryFields): string {
+  const mode = fields.editMode === 'range' || fields.storyDayEnd || fields.storyTimeEnd ? 'range' : 'point'
+  if (mode === 'range') {
+    return composeStoryTimelineCalendarAnchorLabel({
+      story_day: fields.storyDay,
+      story_time: fields.storyTime,
+      story_day_end: fields.storyDayEnd || fields.storyDay,
+      story_time_end: fields.storyTimeEnd || fields.storyTime,
+    }).trim()
+  }
+  return composeStoryTimelineCalendarAnchorLabel({
+    story_day: fields.storyDay,
+    story_time: fields.storyTime,
+  }).trim()
+}
+
+/** 规范化编辑草稿：补齐 storyTimeLabel / editMode */
+export function normalizeDualNarrativeStoryFields(
+  fields: DualNarrativeStoryFields,
 ): DualNarrativeStoryFields {
+  const mode: StoryTimeEditMode =
+    fields.editMode === 'range' || Boolean(fields.storyDayEnd?.trim() || fields.storyTimeEnd?.trim())
+      ? 'range'
+      : 'point'
+  const next: DualNarrativeStoryFields = {
+    ...fields,
+    editMode: mode,
+  }
+  if (mode === 'point') {
+    delete next.storyDayEnd
+    delete next.storyTimeEnd
+  }
+  const label = composeDualNarrativeStoryTimeLabel(next)
+  if (label) next.storyTimeLabel = label
+  else delete next.storyTimeLabel
+  return next
+}
+
+/** 从剧情时间文案解析 storyDay / storyTime（含时间段） */
+export function parseDualNarrativeFieldsFromLabel(label: string | null | undefined): DualNarrativeStoryFields {
+  const raw = String(label ?? '').trim()
+  if (!raw) return {}
+  const rangeHit = raw.match(STORY_TIMELINE_GREGORIAN_ANCHOR_RE)?.[0]?.trim()
+  const source = rangeHit || raw
+  if (/\s-\s/.test(source)) {
+    const [startRaw, endRaw] = source.split(/\s-\s/).map((s) => s.trim())
+    const start = parseOneEndpointLabel(startRaw || '')
+    const end = parseOneEndpointLabel(endRaw || '')
+    return normalizeDualNarrativeStoryFields({
+      ...start,
+      storyDayEnd: end.storyDay,
+      storyTimeEnd: end.storyTime,
+      editMode: 'range',
+    })
+  }
+  const point = parseOneEndpointLabel(source)
+  return normalizeDualNarrativeStoryFields({
+    ...point,
+    editMode: 'point',
+  })
+}
+
+/** datetime-local 值（YYYY-MM-DDTHH:mm）→ 单端点字段 */
+export function dualNarrativeEndpointFromDatetimeLocal(
+  value: string | null | undefined,
+): { storyDay?: string; storyTime?: string } {
   const raw = String(value ?? '').trim()
   if (!raw) return {}
   const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/)
-  if (!m) return parseDualNarrativeFieldsFromLabel(raw)
+  if (!m) {
+    const parsed = parseOneEndpointLabel(raw)
+    return parsed
+  }
   const y = Number(m[1])
   const mo = Number(m[2])
   const d = Number(m[3])
@@ -119,38 +189,99 @@ export function dualNarrativeFieldsFromDatetimeLocal(
     hh != null && mm != null && Number.isFinite(hh) && Number.isFinite(mm)
       ? `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
       : undefined
-  const storyTimeLabel = composeStoryTimelineCalendarAnchorLabel({
-    story_day: storyDay,
-    story_time: storyTime,
-  }).trim()
   return {
     storyDay,
     ...(storyTime ? { storyTime } : {}),
-    ...(storyTimeLabel ? { storyTimeLabel } : {}),
   }
 }
 
-/** 剧情字段 → datetime-local（供编辑器控件） */
-export function dualNarrativeFieldsToDatetimeLocal(fields: DualNarrativeStoryFields): string {
-  const day =
-    fields.storyDay?.trim() ||
-    fields.storyTimeLabel?.match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1] ||
+/** datetime-local 值 → 剧情字段（单点） */
+export function dualNarrativeFieldsFromDatetimeLocal(
+  value: string | null | undefined,
+): DualNarrativeStoryFields {
+  const endpoint = dualNarrativeEndpointFromDatetimeLocal(value)
+  if (!endpoint.storyDay && !endpoint.storyTime) return {}
+  return normalizeDualNarrativeStoryFields({
+    ...endpoint,
+    editMode: 'point',
+  })
+}
+
+/** 起止 datetime-local → 时间段字段 */
+export function dualNarrativeFieldsFromDatetimeLocalRange(
+  startValue: string | null | undefined,
+  endValue: string | null | undefined,
+): DualNarrativeStoryFields {
+  const start = dualNarrativeEndpointFromDatetimeLocal(startValue)
+  const end = dualNarrativeEndpointFromDatetimeLocal(endValue)
+  if (!start.storyDay && !end.storyDay) return {}
+  return normalizeDualNarrativeStoryFields({
+    storyDay: start.storyDay || end.storyDay,
+    storyTime: start.storyTime,
+    storyDayEnd: end.storyDay || start.storyDay,
+    storyTimeEnd: end.storyTime || start.storyTime,
+    editMode: 'range',
+  })
+}
+
+function endpointToDatetimeLocal(day?: string, time?: string, labelFallback?: string): string {
+  const dayRaw =
+    day?.trim() ||
+    labelFallback?.match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1] ||
     ''
-  const dayMs = day ? parseStoryCalendarDayStartMs(day) : null
+  const dayMs = dayRaw ? parseStoryCalendarDayStartMs(dayRaw) : null
   if (dayMs == null) return ''
   const d = new Date(dayMs)
   const yyyy = d.getFullYear()
   const mo = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
   const clock =
-    fields.storyTime?.match(/(\d{1,2}):(\d{2})/) ||
-    fields.storyTimeLabel?.match(/(\d{1,2}):(\d{2})/)
+    time?.match(/(\d{1,2}):(\d{2})/) ||
+    labelFallback?.match(/(\d{1,2}):(\d{2})/)
   if (clock) {
     const hh = String(Number(clock[1])).padStart(2, '0')
     const mm = clock[2]
     return `${yyyy}-${mo}-${dd}T${hh}:${mm}`
   }
   return `${yyyy}-${mo}-${dd}T00:00`
+}
+
+/** 剧情字段 → datetime-local（开始 / 单点） */
+export function dualNarrativeFieldsToDatetimeLocal(fields: DualNarrativeStoryFields): string {
+  return endpointToDatetimeLocal(fields.storyDay, fields.storyTime, fields.storyTimeLabel)
+}
+
+/** 剧情字段 → 结束端 datetime-local（时间段） */
+export function dualNarrativeFieldsToEndDatetimeLocal(fields: DualNarrativeStoryFields): string {
+  const endLabel = fields.storyTimeLabel?.includes(' - ')
+    ? fields.storyTimeLabel.split(/\s-\s/)[1]?.trim()
+    : undefined
+  return endpointToDatetimeLocal(
+    fields.storyDayEnd || fields.storyDay,
+    fields.storyTimeEnd || fields.storyTime,
+    endLabel || fields.storyTimeLabel,
+  )
+}
+
+/** 切换点/段模式，尽量保留已填时刻 */
+export function switchDualNarrativeStoryEditMode(
+  fields: DualNarrativeStoryFields,
+  mode: StoryTimeEditMode,
+): DualNarrativeStoryFields {
+  if (mode === 'point') {
+    return normalizeDualNarrativeStoryFields({
+      storyDay: fields.storyDay,
+      storyTime: fields.storyTime,
+      editMode: 'point',
+    })
+  }
+  return normalizeDualNarrativeStoryFields({
+    storyDay: fields.storyDay,
+    storyTime: fields.storyTime,
+    storyDayEnd: fields.storyDayEnd || fields.storyDay,
+    storyTimeEnd: fields.storyTimeEnd || fields.storyTime,
+    editMode: 'range',
+  })
 }
 
 /** 写入/更新记忆正文中的【剧情时间】行（与 structured storyTimeLabel 对齐） */

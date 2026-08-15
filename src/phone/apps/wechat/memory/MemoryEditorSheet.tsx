@@ -43,13 +43,13 @@ import {
   writeMemoryCoachSeen,
 } from './memoryCoachTypes'
 import {
-  dualNarrativeFieldsFromDatetimeLocal,
-  dualNarrativeFieldsToDatetimeLocal,
   extractStoryTimeLabelFromText,
+  normalizeDualNarrativeStoryFields,
   parseDualNarrativeFieldsFromLabel,
   upsertOnlineMemoryStoryTimeInContent,
   type DualNarrativeStoryFields,
 } from './dualNarrativeTime'
+import { MemoryStoryTimeFieldsEditor } from './MemoryStoryTimeFieldsEditor'
 
 const INK = ARCHIVE_INK
 const MUTED = ARCHIVE_MUTED
@@ -407,15 +407,7 @@ export function MemoryEditorSheet({
       const meetOnly =
         tags.includes('遇见') && !tags.includes('私聊') && !tags.includes('群聊')
 
-      const storyPatch: DualNarrativeStoryFields = storyFields.storyTimeLabel?.trim()
-        ? parseDualNarrativeFieldsFromLabel(storyFields.storyTimeLabel)
-        : storyFields.storyDay?.trim()
-          ? parseDualNarrativeFieldsFromLabel(
-              `${storyFields.storyDay.trim()}${
-                storyFields.storyTime?.trim() ? ` ${storyFields.storyTime.trim()}` : ''
-              }`,
-            )
-          : {}
+      const storyPatch: DualNarrativeStoryFields = normalizeDualNarrativeStoryFields(storyFields)
       const body = upsertOnlineMemoryStoryTimeInContent(
         bodyRaw,
         storyPatch.storyTimeLabel ?? null,
@@ -801,34 +793,13 @@ export function MemoryEditorSheet({
                       <p className="text-[10px] tracking-[0.2em] uppercase" style={{ color: MUTED }}>
                         剧情时间
                       </p>
-                      <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
-                        卡片「剧情时间」与系统历史判定均读此字段；只改正文里的年份不够。改完会同步写入【剧情时间】行。
-                      </p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <input
-                          type="datetime-local"
-                          value={dualNarrativeFieldsToDatetimeLocal(storyFields)}
-                          onChange={(e) => {
-                            const next = dualNarrativeFieldsFromDatetimeLocal(e.target.value)
-                            setStoryFields(next)
-                          }}
-                          className="min-w-0 flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-[14px] text-gray-900 outline-none focus:border-gray-400 focus:bg-white"
+                      <div className="mt-2">
+                        <MemoryStoryTimeFieldsEditor
+                          value={storyFields}
+                          onChange={setStoryFields}
+                          hint="卡片「剧情时间」与系统历史判定均读此字段；可选手动设时间点或时间段。改完会同步写入【剧情时间】行。"
                         />
-                        {storyFields.storyTimeLabel || storyFields.storyDay ? (
-                          <button
-                            type="button"
-                            className="shrink-0 rounded-full px-3 py-2 text-[12px] text-gray-500 active:bg-gray-100"
-                            onClick={() => setStoryFields({})}
-                          >
-                            清除
-                          </button>
-                        ) : null}
                       </div>
-                      {storyFields.storyTimeLabel ? (
-                        <p className="mt-1.5 text-[12px] text-gray-500">
-                          将保存为：{storyFields.storyTimeLabel}
-                        </p>
-                      ) : null}
                     </div>
 
                     <div className="mt-5">

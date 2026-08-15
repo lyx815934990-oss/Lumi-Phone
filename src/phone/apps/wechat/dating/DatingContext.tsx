@@ -43,6 +43,7 @@ import {
 } from '../wechatMemoryPromptBlocks'
 import {
   buildCrossChannelStoryTimeSyncRule,
+  buildOfflineCalendarAdvancedHandoffRule,
   buildOfflineOnlineSpatialContinuityRule,
   formatDatingGroupOnlineInjectScopeFooter,
   formatDatingOnlineInjectScopeFooter,
@@ -50,6 +51,7 @@ import {
   resolveLastOfflineAiPlotTimestampMs,
   type DatingOnlineInjectScopeMeta,
 } from './datingOnlineInjectScope'
+import { isStoryNowCalendarAfterOfflineLast } from './loadOfflineDatingPlotsForWechatPrompt'
 import { resolveOnlineMessageTimeBoundsForConversation } from '../wechatCrossChannelTimeline'
 import { getAiPlotActiveTimelineDelta } from './plotTimelineDelta'
 import { formatPlotPromptTimeBracket } from './plotStoryTimeLabel'
@@ -1947,19 +1949,36 @@ ${body}`
    - 若出现「闪回段旁白 + 第一人称」冲突，以本条为绝对优先：改写成第三人称【旁白】或拆成【内心】。
 ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBackgroundRule}\n` : ''}${vnBgmRule ? `${vnBgmRule}\n` : ''}${vnAtmosphereRule ? `${vnAtmosphereRule}\n` : ''}`.trim()
     : ''
+  const offlineLastCalendarAnchorEarly = resolveStoryCalendarAnchorFromPlotItems(history)
+  const storyNowLabelEarly =
+    onlineCtx?.storyNowLabel?.trim() ||
+    onlineCtx?.onlineInjectScope?.storyNowLabel?.trim() ||
+    onlineCtx?.storyCalendarAnchor?.trim() ||
+    offlineLastCalendarAnchorEarly
+  const calendarAdvancedEarly = isStoryNowCalendarAfterOfflineLast(
+    storyNowLabelEarly,
+    offlineLastCalendarAnchorEarly,
+  )
   const vnContinuityRule = isVnMode
     ? `【VN·时空连续与去重复（最高优先级）】` +
-      `下方「最近剧情」按时间顺序排列，**越靠后越新**；**最后一条**中的场所（室内/户外/具体空间）、时段（昼/夜/睡前术后）、人物相对位置与姿态即当场锚点。` +
+      `下方「最近剧情」按时间顺序排列，**越靠后越新**；` +
+      (calendarAdvancedEarly
+        ? `故事「现在」已晚于末条公历日：末条场所/旅途仅为**往事锚点**，本轮开场须落在【剧情时间轴·当前状态】与线上「现在」，可用旁白交代回国/到校间隔；**禁止**因「承接末条场所」而续写仍在国外。`
+        : `**最后一条**中的场所（室内/户外/具体空间）、时段（昼/夜/睡前术后）、人物相对位置与姿态即当场锚点。`) +
       (playerInputIntentMode === 'paraphrase'
         ? `若本轮**导演指令**要求推进到分别/换场/换日等目的地：须**服从指令抵达目的地**，可用一行旁白交代间隔；勿因「须直接承接末条场所」而原地续写上一段话题。`
-        : `本轮正文必须**直接承接**末条锚点，禁止无因果的「状态清零」。`) +
+        : calendarAdvancedEarly
+          ? `本轮正文须承接「现在」时空，禁止无因果把场景清零成另一套日常；亦禁止无视跳时仍钉死末条旅途。`
+          : `本轮正文必须**直接承接**末条锚点，禁止无因果的「状态清零」。`) +
       `禁止无过渡的瞬移（例如上文已关灯就寝，下文突然户外路边）；若必须换场，至少用一行旁白交代「间隔多久 / 为何出门 / 如何抵达」。` +
       `禁止在近 ${DATING_AI_PLOT_HISTORY_MAX} 条已发生剧情中，把**同一核心桥段**改头换面再演一遍（重复接吻拉扯、同梗吃醋质问、已收束的回忆又当新情节）；须推进**新的**动作、对白信息或矛盾。\n`
     : ''
   const isRegenerateTurn = datingExtras?.regeneratingWorldBookBaseline === true
   const plotEmotionalDirectionRule =
     `【情绪方向与对称旧梗】` +
-    `1）**本轮锚点优先**：「玩家输入/导演指令/屏外引导」与「最近剧情」**末尾最新**条目共同决定当轮矛盾方向（谁嫉妒谁、谁质问谁、谁主动/谁退缩、谁道歉/谁冷战）。` +
+    (calendarAdvancedEarly
+      ? `1）**本轮锚点优先**：「玩家输入/导演指令/屏外引导」、【剧情时间轴·当前状态】与「尚未总结·私聊」**末尾最新**共同决定当轮方向；「最近剧情」末条若日历已过期，只作关系/态度参考，**不得**决定本轮地点与旅途话题。`
+      : `1）**本轮锚点优先**：「玩家输入/导演指令/屏外引导」与「最近剧情」**末尾最新**条目共同决定当轮矛盾方向（谁嫉妒谁、谁质问谁、谁主动/谁退缩、谁道歉/谁冷战）。`) +
     (playerInputIntentMode === 'paraphrase'
       ? `若导演指令给出**明确目的地**（分别、告别、换场、换日等），以指令目的地为当轮主轴，末条旧话题仅作过渡素材，勿压过目的地。`
       : '') +
@@ -1969,7 +1988,9 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       ? `4）**记忆块用法（重新生成）**：「尚未总结·私聊/群聊」与「剧情时间轴·当前状态」、尾声延展中的**明文已定事实**仍不得捏造改写；场面如何重演、情绪与桥段如何改写以「本次生成偏向」为最高优先。\n`
       : `4）**记忆块用法（续写）**：「尚未总结·私聊/群聊」与长期记忆里源自微信的内容作**既定事实**（见【线上聊天事实铁律】）；玩家输入/导演指令/屏外引导仅作**推进方向**，给角色自主行动空间。事实与引导冲突时**事实优先**。\n`)
   const plotAntiEchoRule = !isVnMode
-    ? `【普通模式·去重复】「最近剧情」**末尾最新**优先；禁止把更早条目里的**同一核心桥段**（同梗吃醋/同场质问/已和解又重演）改头换面再演一遍；须推进**新的**对白、动作或矛盾。\n`
+    ? calendarAdvancedEarly
+      ? `【普通模式·去重复】跳时后禁止续写「最近剧情」末条同一旅途/酒店桥段；须按「现在」地点推进**新的**对白、动作或矛盾。\n`
+      : `【普通模式·去重复】「最近剧情」**末尾最新**优先；禁止把更早条目里的**同一核心桥段**（同梗吃醋/同场质问/已和解又重演）改头换面再演一遍；须推进**新的**对白、动作或矛盾。\n`
     : ''
   /** 普通模式：历史里常混入曾用 VN 写的条目，模型会照抄标签；须明文禁止 */
   const normalPlotFormatRule = !isVnMode
@@ -2022,14 +2043,29 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     onlineCtx?.onlineInjectScope?.storyNowLabel?.trim() ||
     onlineCtx?.storyCalendarAnchor?.trim() ||
     offlineLastCalendarAnchor
+  const calendarAdvanced = isStoryNowCalendarAfterOfflineLast(
+    storyNowLabel,
+    offlineLastCalendarAnchor,
+  )
   const storyCalendarHint = storyNowLabel
-    ? offlineLastCalendarAnchor && offlineLastCalendarAnchor !== storyNowLabel
-      ? `\n【剧情时间锚点】故事「现在」= ${storyNowLabel}（线上/剧情轴已推进）；线下末条参考 ${offlineLastCalendarAnchor}（禁止倒回；勿用手机日期）\n`
+    ? calendarAdvanced
+      ? `\n【剧情时间锚点】故事「现在」= ${storyNowLabel}（线上/剧情轴已推进）；线下末条参考 ${offlineLastCalendarAnchor}（往事；禁止倒回；timeline 年份须跟「现在」；勿用手机日期）\n`
       : `\n【剧情时间锚点（上一回合故事内末尾·本轮须承接；勿用手机日期）】${storyNowLabel}\n`
     : ''
   const storyCalendarChronologyRule = offlineLastCalendarAnchor
-    ? `\n${STORY_TIMELINE_CALENDAR_CHRONOLOGY_RULES}\n`
+    ? `\n${STORY_TIMELINE_CALENDAR_CHRONOLOGY_RULES}\n` +
+      (calendarAdvanced && storyNowLabel
+        ? `【跳时后补充】接续公历须以故事「现在」= **${storyNowLabel}** 为底线（同日或更晚）；**禁止**写成线下末条 **${offlineLastCalendarAnchor}** 那年。\n`
+        : '')
     : ''
+  const offlineCalendarHandoffRule = buildOfflineCalendarAdvancedHandoffRule({
+    storyCalendarAnchor: offlineLastCalendarAnchor,
+    storyNowLabel,
+    peerName: character.realName,
+    hasOnlineInject:
+      Boolean(onlineCtx?.onlineInjectScope?.privateMessageCount) ||
+      Boolean(onlineCtx?.unsummarizedPrivateBlock?.trim()),
+  })
   const hasVectorStoryRecall = hasStoryTimelineVectorRecallInBlock(storyTimelineRecallAndNear || storyTimelineClipped)
   const unsPrivClipped = clipDatingReferenceTail(unsPrivBlock ?? '', refCap, '尚未总结·私聊')
   const unsGrpClipped = clipDatingReferenceTail(unsGrpBlock ?? '', refCap, '尚未总结·群聊')
@@ -2331,13 +2367,21 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       `「本次生成偏向」为**内容最高优先级**：场面如何改写、情绪与桥段如何重排须优先满足偏向；` +
       `【界面生成设置】（人称/视角/导演/字数/时间推进）与输出格式硬约束仍须遵守；` +
       `不得捏造与「尚未总结·私聊/群聊」「剧情时间轴·当前状态」「尾声延展」**明文冲突**的已定事实。\n\n`
-    : `【效力层级·续写】本轮在已定事实之上推进剧情：` +
-      `**【界面生成设置】**（人称、上帝/侧幕、导演模式、目标字数、剧情时间推进）为当轮**最高优先级硬约束** > ` +
-      `输出格式硬约束 > 玩家身份铁律 > **约会对象·档案与人设世界书 = 全局档案室世界书**（同级最高设定）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
-      `文风禁词与内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
-      `剧情时间轴·当前状态 > 尚未总结·私聊/群聊（末尾最新）=最近剧情（末尾最新） > 时间轴语义召回/近端摘要 > 向量长期记忆。` +
-      `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；玩家输入决定当轮方向，**不得**改写已定事实；角色在边界内可自主行动。` +
-      `若时间推进已锁定：不得因旧稿节奏或笼统「禁跳时」而缩小/取消跨度；须「间隔带过→主事件落点」。\n\n`
+    : calendarAdvanced
+      ? `【效力层级·续写】本轮在已定事实之上推进剧情：` +
+        `**【界面生成设置】**（人称、上帝/侧幕、导演模式、目标字数、剧情时间推进）为当轮**最高优先级硬约束** > ` +
+        `输出格式硬约束 > 玩家身份铁律 > **约会对象·档案与人设世界书 = 全局档案室世界书**（同级最高设定）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
+        `文风禁词与内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
+        `剧情时间轴·当前状态 = 尚未总结·私聊/群聊（末尾最新） > **最近剧情（跳时后作往事，不得压过当前地点）** > 时间轴语义召回/近端摘要 > 向量长期记忆。` +
+        `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；玩家输入决定当轮方向，**不得**改写已定事实；角色在边界内可自主行动。` +
+        `若时间推进已锁定：不得因旧稿节奏或笼统「禁跳时」而缩小/取消跨度；须「间隔带过→主事件落点」。\n\n`
+      : `【效力层级·续写】本轮在已定事实之上推进剧情：` +
+        `**【界面生成设置】**（人称、上帝/侧幕、导演模式、目标字数、剧情时间推进）为当轮**最高优先级硬约束** > ` +
+        `输出格式硬约束 > 玩家身份铁律 > **约会对象·档案与人设世界书 = 全局档案室世界书**（同级最高设定）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
+        `文风禁词与内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
+        `剧情时间轴·当前状态 > 尚未总结·私聊/群聊（末尾最新）=最近剧情（末尾最新） > 时间轴语义召回/近端摘要 > 向量长期记忆。` +
+        `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；玩家输入决定当轮方向，**不得**改写已定事实；角色在边界内可自主行动。` +
+        `若时间推进已锁定：不得因旧稿节奏或笼统「禁跳时」而缩小/取消跨度；须「间隔带过→主事件落点」。\n\n`
   const biasBlock = initialBias
     ? isRegenerateTurn
       ? `本次生成偏向（**内容最高优先级**）：${initialBias}\n\n`
@@ -2357,16 +2401,26 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
             ? `**本轮须维持 ${character.realName} 不在场，只写玩家与 NPC**`
             : ''
       }\n`
-    : `【本轮承接范围】**第一优先**对照「尚未总结·私聊/群聊」**末尾最新**与「剧情时间轴·当前状态」；` +
-      `再承接「${playerInputHeader}」意图，并与「最近剧情」**末尾最新**在情绪方向、主动方上保持一致；` +
-      `向量召回的长期记忆与时间轴往事摘要不得覆盖上述近端事实。` +
-      `可回接**兼容**的未收束点，但**禁止**拾取与本轮方向矛盾的对称旧梗。${
-        godPerspective
-          ? '**本轮须维持玩家不在场的屏外镜头**'
-          : mainCharacterOffstage
-            ? `**本轮须维持 ${character.realName} 不在场，只写玩家与 NPC**`
-            : ''
-      }\n`
+    : calendarAdvanced
+      ? `【本轮承接范围】**第一优先**对照「剧情时间轴·当前状态」与「尚未总结·私聊/群聊」**末尾最新**（跳时后的「现在」地点/约定）；` +
+        `「最近剧情」末条若公历已过期，仅作关系/态度与往事事实，**禁止**决定本轮开场场所或续写旅途。` +
+        `再承接「${playerInputHeader}」意图。向量召回不得覆盖近端事实。${
+          godPerspective
+            ? '**本轮须维持玩家不在场的屏外镜头**'
+            : mainCharacterOffstage
+              ? `**本轮须维持 ${character.realName} 不在场，只写玩家与 NPC**`
+              : ''
+        }\n`
+      : `【本轮承接范围】**第一优先**对照「尚未总结·私聊/群聊」**末尾最新**与「剧情时间轴·当前状态」；` +
+        `再承接「${playerInputHeader}」意图，并与「最近剧情」**末尾最新**在情绪方向、主动方上保持一致；` +
+        `向量召回的长期记忆与时间轴往事摘要不得覆盖上述近端事实。` +
+        `可回接**兼容**的未收束点，但**禁止**拾取与本轮方向矛盾的对称旧梗。${
+          godPerspective
+            ? '**本轮须维持玩家不在场的屏外镜头**'
+            : mainCharacterOffstage
+              ? `**本轮须维持 ${character.realName} 不在场，只写玩家与 NPC**`
+              : ''
+        }\n`
   const formatHardConstraintsBlock =
     `本轮模式：${roleMode}\n` +
     `${perspectiveRule}\n` +
@@ -2405,6 +2459,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `【剧情时间轴·当前状态】（故事内「现在」；承接地点/时段/服装优先对照本块；**高于**下方语义召回与向量长期记忆）：${storyCalendarHint}\n${
       storyTimelineCurrentState || '（暂无）'
     }\n\n` +
+    `${offlineCalendarHandoffRule}` +
     `${onlineTemporalScopeRule}` +
     `${offlineOnlineSpatialRule}` +
     `${onlineWechatFactCanonRule}` +
@@ -2423,9 +2478,10 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `${godHistoryIsolationNote}` +
     `${mainCharacterOffstageHistoryNote}` +
     `${sideStageKnowledgeIsolationNote}` +
-    `最近剧情（最近 ${DATING_AI_PLOT_HISTORY_MAX} 条，**含本轮玩家输入**；**末尾最新**；超长时保留末尾；正文已去思维链）：\n${
-      historyClipped || '（暂无历史）'
-    }\n\n` +
+    (calendarAdvanced
+      ? `最近剧情（最近 ${DATING_AI_PLOT_HISTORY_MAX} 条，**含本轮玩家输入**；末条公历已早于「现在」= **${storyNowLabel}** → **整段视作往事实录**，场所/旅途不可当本轮开场；超长时保留末尾；正文已去思维链）：\n`
+      : `最近剧情（最近 ${DATING_AI_PLOT_HISTORY_MAX} 条，**含本轮玩家输入**；**末尾最新**；超长时保留末尾；正文已去思维链）：\n`) +
+    `${historyClipped || '（暂无历史）'}\n\n` +
     `${storyTimelineVectorRecallRule}` +
     `【剧情时间轴·语义召回/近端摘要】（往事补全；**不得**覆盖上方当前状态与未总结/最近剧情末尾）：\n${
       storyTimelineRecallAndNear || '（暂无）'

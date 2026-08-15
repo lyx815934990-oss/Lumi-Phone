@@ -27,11 +27,11 @@ import {
   type StoryTimelineState,
 } from './storyTimelineTypes'
 import {
-  dualNarrativeFieldsFromDatetimeLocal,
-  dualNarrativeFieldsToDatetimeLocal,
   parseDualNarrativeFieldsFromLabel,
+  normalizeDualNarrativeStoryFields,
   type DualNarrativeStoryFields,
 } from './dualNarrativeTime'
+import { MemoryStoryTimeFieldsEditor } from './MemoryStoryTimeFieldsEditor'
 
 export type StoryTimelineEditorTarget =
   | { kind: 'row-create'; characterId: string; defaultScope?: StoryTimelineEventScope }
@@ -171,7 +171,7 @@ export function StoryTimelineEditorSheet({
         )
       }
       const mergedWithTitle = upsertStoryTimelineTitleInRowText(bodyForStorage, normalizedTitle).slice(0, 4000)
-      const calendarLabel = storyFields.storyTimeLabel?.trim() || ''
+      const calendarLabel = normalizeDualNarrativeStoryFields(storyFields).storyTimeLabel?.trim() || ''
       const mergedRowText =
         isRow && calendarLabel
           ? upsertStoryTimelineCalendarAnchorInRowText(mergedWithTitle, calendarLabel).slice(0, 4000)
@@ -318,33 +318,14 @@ export function StoryTimelineEditorSheet({
                   <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">
                     剧情时间（锚点）
                   </p>
-                  <p className="mb-2 text-[11px] leading-relaxed text-gray-400">
-                    系统用【本轮锚点】里的公历日判断是否为「历史」。只改正文年份不够；在此改正会同步改锚点。
-                  </p>
-                  <div className="mb-4 flex items-center gap-2">
-                    <input
-                      type="datetime-local"
-                      value={dualNarrativeFieldsToDatetimeLocal(storyFields)}
-                      onChange={(e) => setStoryFields(dualNarrativeFieldsFromDatetimeLocal(e.target.value))}
+                  <div className="mb-4">
+                    <MemoryStoryTimeFieldsEditor
+                      value={storyFields}
+                      onChange={setStoryFields}
                       disabled={busy || loadingDisplay}
-                      className="min-w-0 flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-[14px] text-gray-900 outline-none focus:border-gray-400 focus:bg-white disabled:opacity-60"
+                      hint="系统用【本轮锚点】公历日判断是否为「历史」。可选时间点或时间段；保存会同步改锚点。"
                     />
-                    {storyFields.storyTimeLabel ? (
-                      <button
-                        type="button"
-                        disabled={busy || loadingDisplay}
-                        className="shrink-0 rounded-full px-3 py-2 text-[12px] text-gray-500 active:bg-gray-100 disabled:opacity-50"
-                        onClick={() => setStoryFields({})}
-                      >
-                        清除
-                      </button>
-                    ) : null}
                   </div>
-                  {storyFields.storyTimeLabel ? (
-                    <p className="mb-4 -mt-2 text-[12px] text-gray-500">
-                      将写入锚点：{storyFields.storyTimeLabel}
-                    </p>
-                  ) : null}
                 </>
               ) : null}
               <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">
