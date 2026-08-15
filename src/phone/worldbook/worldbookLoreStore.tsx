@@ -196,6 +196,7 @@ function schedulePersist() {
         pureRestrainLove: snap.builtinPresets.pureRestrainLove,
         offlineRichInnerOs: snap.builtinPresets.offlineRichInnerOs,
         offlineFashionStyling: snap.builtinPresets.offlineFashionStyling,
+        offlineCoupleIntimacyPoses: snap.builtinPresets.offlineCoupleIntimacyPoses,
       },
       weibo: { _reserved: true },
     }

@@ -1,6 +1,9 @@
 import type { ApiConfig } from '../api/types'
-import { buildWorldbookContext } from '../../worldbook/buildWorldbookContext'
-import { getWorldbookLoreEntriesSnapshot } from '../../worldbook/worldbookLoreStore'
+import { buildWorldbookContext, listArchiveWorldbookTracePills } from '../../worldbook/buildWorldbookContext'
+import {
+  getLoreArchiveBuiltinPresetTogglesSnapshot,
+  getWorldbookLoreEntriesSnapshot,
+} from '../../worldbook/worldbookLoreStore'
 import type { GlobalWechatPlate } from '../../worldbook/globalWorldBookTypes'
 import type { Character } from './newFriendsPersona/types'
 import { personaDb } from './newFriendsPersona/idb'
@@ -688,6 +691,12 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
     params.globalWechatPlate,
     { skipLengthCap: true, plainUserEntriesOnly: true },
   ).trim()
+  const globalWorldbookPills = listArchiveWorldbookTracePills(
+    params.chatMemberIds,
+    getWorldbookLoreEntriesSnapshot(),
+    params.globalWechatPlate,
+    getLoreArchiveBuiltinPresetTogglesSnapshot(),
+  )
   const playerFb = await resolvePlayerDisplayFallbackForTrace()
   const expand = await expandTraceTextForCharacter(params.character, playerFb)
   const characterWorldBook = expand(characterWorldBookRaw)
@@ -880,7 +889,7 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
         worldBackground: worldBgOut,
         characterWorldBook: characterWorldBook || '（未绑定或未启用人设世界书条目）',
         globalWorldbook: globalWorldbook || '（当前场景无匹配的档案室全局条目）',
-        worldbooks: [],
+        worldbooks: globalWorldbookPills,
       },
       storyTimeline,
       recentContext: {
@@ -941,6 +950,12 @@ export async function publishWeChatGroupMemoryTrace(params: {
     'group_chat',
     { skipLengthCap: true, plainUserEntriesOnly: true },
   ).trim()
+  const globalWorldbookPills = listArchiveWorldbookTracePills(
+    params.wbGroupCharIds,
+    getWorldbookLoreEntriesSnapshot(),
+    'group_chat',
+    getLoreArchiveBuiltinPresetTogglesSnapshot(),
+  )
   const playerFb = await resolvePlayerDisplayFallbackForTrace()
   const expand = await expandTraceTextForCharacter(primaryChar, playerFb)
   const characterWorldBook = expand(characterWorldBookRaw)
@@ -1002,7 +1017,7 @@ export async function publishWeChatGroupMemoryTrace(params: {
         worldBackground: worldBgOut,
         characterWorldBook: characterWorldBook || '（该 NPC 未绑定或未启用人设世界书）',
         globalWorldbook: globalWorldbook || '（当前群场景无匹配的档案室全局条目）',
-        worldbooks: [],
+        worldbooks: globalWorldbookPills,
       },
       recentContext: {
         activeSessionMessages: activeSessionMessageCount(params.transcript),
@@ -1096,6 +1111,12 @@ export async function publishDatingOfflineMemoryTrace(params: {
     skipLengthCap: true,
     plainUserEntriesOnly: true,
   }).trim()
+  const globalWorldbookPills = listArchiveWorldbookTracePills(
+    [cid],
+    getWorldbookLoreEntriesSnapshot(),
+    plate,
+    getLoreArchiveBuiltinPresetTogglesSnapshot(),
+  )
   const playerFb = await resolvePlayerDisplayFallbackForTrace()
   const expand = await expandTraceTextForCharacter(chRow, playerFb)
   const characterWorldBook = expand(characterWorldBookRaw)
@@ -1210,7 +1231,7 @@ export async function publishDatingOfflineMemoryTrace(params: {
         worldBackground: worldBgOut,
         characterWorldBook: characterWorldBook || '（未绑定或未启用人设世界书）',
         globalWorldbook: globalWorldbook,
-        worldbooks: [],
+        worldbooks: globalWorldbookPills,
       },
       storyTimeline,
       recentContext: {

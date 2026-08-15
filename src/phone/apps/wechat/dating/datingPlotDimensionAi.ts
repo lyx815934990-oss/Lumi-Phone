@@ -27,6 +27,7 @@ import { splitDatingAssistantOutput } from './plotCoT'
 import { buildDatingStyleSystemAppend } from './datingStylePrompt'
 import { OFFLINE_DATING_RICH_INNER_OS_APPENDIX } from './offlineDatingRichInnerOsAppendix'
 import { OFFLINE_DATING_FASHION_STYLING_APPENDIX } from './offlineDatingFashionStylingAppendix'
+import { OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX } from './offlineDatingCoupleIntimacyPoseAppendix'
 import {
   buildDatingLanguageAppendix,
   finalizeDatingPlotDialogueTranslations,
@@ -184,6 +185,9 @@ function buildDimensionSystemPrompt(
   const fashionBlock = resolvedPresets.offlineFashionStyling
     ? `【档案室预设·穿搭造型·已开启】本段线下旁支同样适用（禁敷衍衣着三件套）：\n${OFFLINE_DATING_FASHION_STYLING_APPENDIX}`
     : ''
+  const intimacyPoseBlock = resolvedPresets.offlineCoupleIntimacyPoses
+    ? `【档案室预设·耳后三厘米经济特区·已开启】旁支同样适用：具体姿势+表情+短蜜语；禁空词、跳过前戏、哑巴动作、羞辱：\n${OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX}`
+    : ''
   const styleAppend = buildDatingStyleSystemAppend(
     opts.styleGenOptions
       ? {
@@ -201,6 +205,7 @@ ${archiveBlock ? `${archiveBlock}\n\n` : ''}${worldbookDuty}
 ${romanceBuiltinBlock ? `\n\n${romanceBuiltinBlock}` : ''}
 ${richOsBlock ? `\n\n${richOsBlock}` : ''}
 ${fashionBlock ? `\n\n${fashionBlock}` : ''}
+${intimacyPoseBlock ? `\n\n${intimacyPoseBlock}` : ''}
 
 你是线下约会「${PLOT_DIMENSION_LABELS[kind]}」写手：与主线约会**同一文风管线、同一档案室约束**，不是另一套模板腔助手。
 ${modeNote}

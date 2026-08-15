@@ -3,6 +3,7 @@ import { DATING_INNER_OS_MARKUP_RULE } from './datingInnerOsMarkup'
 import { LUMI_UNIFIED_STYLE_ATMOSPHERE_BOOK } from './lumiOfflineWritingRulebook'
 import { OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES } from './offlineDatingExpressionRules'
 import { OFFLINE_DATING_FASHION_STYLING_APPENDIX } from './offlineDatingFashionStylingAppendix'
+import { OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX } from './offlineDatingCoupleIntimacyPoseAppendix'
 import type { LoreArchiveBuiltinPresetToggles } from '../../../worldbook/loreArchiveBuiltinPresets'
 import {
   buildOfflineRomanceThinkingChainSections,
@@ -478,11 +479,16 @@ export function buildDatingStyleSystemPrompt(
       ? `\n\n【档案室预设·穿搭造型·已开启】衣着禁止「深灰卫衣+黑运动裤+帆布鞋」等敷衍三件套；须写廓形/面料/剪裁/配饰或鞋履设计（详见思维链【线下约会·穿搭造型描写引擎】）。`
       : `\n\n【档案室预设·穿搭造型·已开启】\n${OFFLINE_DATING_FASHION_STYLING_APPENDIX}`
     : ''
+  const intimacyPosePresetNote = resolved.offlineCoupleIntimacyPoses
+    ? thinkingChainEnabled
+      ? `\n\n【档案室预设·耳后三厘米经济特区·已开启】亲密须写具体姿势、表情与短对白；禁「很动情」等空词、禁跳过前戏（详见思维链内特区条文）。`
+      : `\n\n【档案室预设·耳后三厘米经济特区·已开启】\n${OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX}`
+    : ''
   const shell = thinkingChainEnabled ? DATING_LUMI_SYSTEM_SHELL : DATING_LUMI_DIRECT_SHELL
   const books = thinkingChainEnabled
     ? `\n\n${buildLumiThinkingChainBooksPrompt(toggles)}`
     : ''
-  return `${shell}\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n\n${OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES}${books}${innerOsPresetNote}${fashionPresetNote}`
+  return `${shell}\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n\n${OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES}${books}${innerOsPresetNote}${fashionPresetNote}${intimacyPosePresetNote}`
 }
 
 /** 默认全开（与档案室内置预设默认一致） */

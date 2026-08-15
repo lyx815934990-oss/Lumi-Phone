@@ -11,6 +11,11 @@ import { lineRelationUiLabel } from './wechatMemoryLineScope'
 import { MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS } from './memory/memorySummaryRetention'
 import { parseStoryTimelineInjectBodyForTrace } from './memory/storyTimelineTypes'
 import { stripUnsummarizedOnlineTimestampsForDisplay, sanitizeMemoryTraceDisplayText } from './memoryTraceDisplaySanitize'
+import { listArchiveWorldbookTracePills } from '../../worldbook/buildWorldbookContext'
+import {
+  getLoreArchiveBuiltinPresetTogglesSnapshot,
+  getWorldbookLoreEntriesSnapshot,
+} from '../../worldbook/worldbookLoreStore'
 
 export type { MemoryTraceData } from './memoryTraceTypes'
 
@@ -326,6 +331,21 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
   }, [matrix?.deepMemory.keywordHits])
 
   const personaWbText = traceText(matrix?.baseDirectives.characterWorldBook)
+  const globalWbNames = useMemo(() => {
+    const stored = matrix?.baseDirectives.worldbooks ?? []
+    if (stored.length > 0) return stored
+    // 旧溯源未写入名称 / 仅开了系统内置：打开面板时按当前档案室开关回显
+    try {
+      return listArchiveWorldbookTracePills(
+        [],
+        getWorldbookLoreEntriesSnapshot(),
+        null,
+        getLoreArchiveBuiltinPresetTogglesSnapshot(),
+      )
+    } catch {
+      return []
+    }
+  }, [matrix?.baseDirectives.worldbooks])
   const globalWbText = traceText(matrix?.baseDirectives.globalWorldbook)
   const personaDetailText = traceText(matrix?.baseDirectives.personaDetail)
   const worldBgText = traceText(matrix?.baseDirectives.worldBackground)
@@ -334,8 +354,9 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
     !!personaWbText &&
     !/^\(未绑定|^（未绑定|^无$|未启用人设世界书/.test(personaWbText)
   const hasGlobalWb =
-    !!globalWbText &&
-    !/^\(当前场景无|^（当前场景无|^无$|无匹配的档案室/.test(globalWbText)
+    globalWbNames.length > 0 ||
+    (!!globalWbText &&
+      !/^\(当前场景无|^（当前场景无|^（当前群场景无|^（当前板块无|^无$|无匹配的档案室/.test(globalWbText))
 
   const wbAfter = data?.worldBookAfterChat
   const hasWbAfter =
@@ -774,30 +795,31 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                             hasGlobalWb ? 'bg-emerald-50 text-emerald-800' : 'bg-neutral-100 text-neutral-500'
                           }`}
                         >
-                          {hasGlobalWb ? '已注入' : '暂无'}
+                          {hasGlobalWb
+                            ? globalWbNames.length
+                              ? `${globalWbNames.length}`
+                              : '已注入'
+                            : '暂无'}
                         </span>
                       }
                     >
                       <div className="px-1">
-                        {hasGlobalWb ? (
-                          <TraceCard>
-                            <TraceBody text={globalWbText} maxClass="max-h-[min(40vh,400px)]" />
-                          </TraceCard>
-                        ) : (
-                          <EmptyHint text="本轮无匹配的档案室全局世界书条目。" />
-                        )}
-                        {!hasGlobalWb && matrix.baseDirectives.worldbooks.length > 0 ? (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {matrix.baseDirectives.worldbooks.map((wb, i) => (
+                        {globalWbNames.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {globalWbNames.map((wb, i) => (
                               <span
                                 key={`${wb.title}-${i}`}
-                                className="rounded-full border border-amber-100 bg-amber-50/50 px-3 py-1 text-[11px] font-medium text-neutral-800"
+                                className="rounded-full border border-amber-100 bg-amber-50/60 px-3 py-1.5 text-[12px] font-medium text-neutral-800"
                               >
-                                {wb.type === 'global' ? '全局' : '专属'} · {wb.title}
+                                {wb.title}
                               </span>
                             ))}
                           </div>
-                        ) : null}
+                        ) : hasGlobalWb ? (
+                          <EmptyHint text="本轮已注入档案室条目，但未记录名称。再生成一轮后会显示书名。" />
+                        ) : (
+                          <EmptyHint text="本轮无匹配的档案室全局世界书条目。" />
+                        )}
                       </div>
                     </AccordionRow>
 

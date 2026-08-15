@@ -3,6 +3,10 @@ import { formatGlobalWorldBookItemLineForPrompt } from './buildGlobalWechatWorld
 import type { GlobalWechatPlate, GlobalWechatWorldBookScope } from './globalWorldBookTypes'
 import { GLOBAL_WECHAT_PLATE_LABELS, normalizeGlobalWechatWorldBookScope } from './globalWorldBookTypes'
 import { DATING_AI_REFERENCE_SECTION_CHAR_CAP } from '../apps/wechat/dating/types'
+import {
+  listEnabledBuiltinPresetTitlesForTrace,
+  type LoreArchiveBuiltinPresetToggles,
+} from './loreArchiveBuiltinPresets'
 
 /** 与线下约会参考资料同量级；具体能吃掉多少仍取决于所选模型的 context window */
 const MAX_LORE_INJECT_CHARS = DATING_AI_REFERENCE_SECTION_CHAR_CAP
@@ -159,4 +163,26 @@ export function listWorldbookTracePills(
     type: e.characterScope?.mode === 'characters' ? ('personal' as const) : ('global' as const),
     title: String(e.title ?? '').trim() || '未命名',
   }))
+}
+
+/**
+ * 思维溯源「档案室」名称列表：自建条目 + 系统内置预设（纯爱克制等）。
+ */
+export function listArchiveWorldbookTracePills(
+  currentChatMembers: string[],
+  entries: LoreEntry[],
+  plate: GlobalWechatPlate | null | undefined,
+  builtinToggles: LoreArchiveBuiltinPresetToggles | null | undefined,
+): Array<{ type: 'global' | 'personal'; title: string }> {
+  const lore = listWorldbookTracePills(currentChatMembers, entries, plate)
+  const builtins = listEnabledBuiltinPresetTitlesForTrace(builtinToggles, plate ?? null)
+  const seen = new Set<string>()
+  const out: Array<{ type: 'global' | 'personal'; title: string }> = []
+  for (const row of [...builtins, ...lore]) {
+    const key = row.title.trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(row)
+  }
+  return out
 }

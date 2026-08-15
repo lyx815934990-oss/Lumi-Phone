@@ -2,6 +2,7 @@ import {
   CHARACTER_EMOTION_CONFESSION_ENGINE_APPENDIX,
   LUMI_DOCTRINE_OF_LOVE_APPENDIX,
 } from '../apps/wechat/wechatReplyOutputPrompt'
+import { OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX } from '../apps/wechat/dating/offlineDatingCoupleIntimacyPoseAppendix'
 import { OFFLINE_DATING_FASHION_STYLING_APPENDIX } from '../apps/wechat/dating/offlineDatingFashionStylingAppendix'
 import { OFFLINE_DATING_RICH_INNER_OS_APPENDIX } from '../apps/wechat/dating/offlineDatingRichInnerOsAppendix'
 import { PURE_RESTRAIN_LOVE_APPENDIX } from '../apps/wechat/pureRestrainLoveAppendix'
@@ -13,6 +14,7 @@ export type LoreArchiveBuiltinPresetId =
   | 'pureRestrainLove'
   | 'offlineRichInnerOs'
   | 'offlineFashionStyling'
+  | 'offlineCoupleIntimacyPoses'
 
 export type LoreArchiveBuiltinPresetToggles = Partial<Record<LoreArchiveBuiltinPresetId, boolean>>
 
@@ -53,6 +55,12 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
     description:
       '系统内置：拉开衣着描写层次（廓形、面料、剪裁、配饰与鞋履），禁止「深灰卫衣+黑运动裤+帆布鞋」等敷衍模板。开启后仅注入线下约会 AI，正文不可查看或编辑。',
   },
+  {
+    id: 'offlineCoupleIntimacyPoses',
+    title: '耳后三厘米经济特区',
+    description:
+      '系统内置：专治「人贴在一起时只会复读三个动词」。开启后仅注入线下约会 AI，正文不可查看或编辑。',
+  },
 ]
 
 export function resolveLoreArchiveBuiltinPresetToggles(
@@ -65,6 +73,7 @@ export function resolveLoreArchiveBuiltinPresetToggles(
     pureRestrainLove: raw?.pureRestrainLove === true,
     offlineRichInnerOs: raw?.offlineRichInnerOs === true,
     offlineFashionStyling: raw?.offlineFashionStyling === true,
+    offlineCoupleIntimacyPoses: raw?.offlineCoupleIntimacyPoses === true,
   }
 }
 
@@ -141,5 +150,45 @@ ${OFFLINE_DATING_RICH_INNER_OS_APPENDIX}`)
 以下规则为本轮线下约会衣着描写的**硬性约束**；须在思维链中避开敷衍三件套，再写正文：
 ${OFFLINE_DATING_FASHION_STYLING_APPENDIX}`)
   }
+  if (resolved.offlineCoupleIntimacyPoses) {
+    parts.push(`【耳后三厘米经济特区】
+写亲密时用下面菜单：具体姿势 + 脸上的反应 + 嘴里的短句；禁空词（很动情/电流）、禁跳过前戏、禁哑巴动作、禁羞辱伴侣。关系阶段仍听其他设定：
+${OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX}`)
+  }
   return parts.join('\n\n')
+}
+
+/** 线上私聊/群聊会注入的内置预设 */
+const BUILTIN_PRESETS_ONLINE: LoreArchiveBuiltinPresetId[] = [
+  'lumiDoctrineOfLove',
+  'activeConfession',
+  'pureRestrainLove',
+]
+
+/** 仅线下约会 / VN 额外注入的内置预设 */
+const BUILTIN_PRESETS_OFFLINE_ONLY: LoreArchiveBuiltinPresetId[] = [
+  'offlineRichInnerOs',
+  'offlineFashionStyling',
+  'offlineCoupleIntimacyPoses',
+]
+
+/**
+ * 思维溯源：当前开启且对本轮板块生效的系统内置世界书名称。
+ * `plate` 为 offline_plot / vn 时含线下专属；否则仅线上恋爱类。
+ * `plate === null` 时列出全部已开启（面板回退展示用）。
+ */
+export function listEnabledBuiltinPresetTitlesForTrace(
+  toggles: LoreArchiveBuiltinPresetToggles | null | undefined,
+  plate?: 'private_chat' | 'group_chat' | 'offline_plot' | 'vn' | null,
+): Array<{ type: 'global'; title: string }> {
+  const resolved = resolveLoreArchiveBuiltinPresetToggles(toggles)
+  const includeOffline = plate == null || plate === 'offline_plot' || plate === 'vn'
+  const ids = new Set<LoreArchiveBuiltinPresetId>([
+    ...BUILTIN_PRESETS_ONLINE,
+    ...(includeOffline ? BUILTIN_PRESETS_OFFLINE_ONLY : []),
+  ])
+  return LORE_ARCHIVE_BUILTIN_PRESETS.filter((p) => ids.has(p.id) && resolved[p.id]).map((p) => ({
+    type: 'global' as const,
+    title: p.title,
+  }))
 }
