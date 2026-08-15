@@ -8641,7 +8641,6 @@ export class PersonaDb {
     let taggedGroupHits = keywordCandGroup
     let vecExtraPrivate: CharacterMemory[] = []
     let vecExtraGroup: CharacterMemory[] = []
-    let vectorUsed = false
     if (opts && isMemoryVectorRecallEnabled(memorySettings, opts)) {
       const rawHay = String(relevanceText || '').trim()
       if (rawHay.length >= 10) {
@@ -8690,7 +8689,6 @@ export class PersonaDb {
               minSim: MEMORY_VECTOR_MIN_SIM,
               excludeIds: exclP,
             })
-            if (vecExtraPrivate.length) vectorUsed = true
 
             const exclG = new Set<string>([...alwaysGroup, ...taggedGroupHits].map((m) => m.id))
             vecExtraGroup = pickMemoriesByVectorSimilarity({
@@ -8700,7 +8698,6 @@ export class PersonaDb {
               minSim: MEMORY_VECTOR_MIN_SIM,
               excludeIds: exclG,
             })
-            if (vecExtraGroup.length) vectorUsed = true
           }
         } catch {
           /* 仅关键词 */
