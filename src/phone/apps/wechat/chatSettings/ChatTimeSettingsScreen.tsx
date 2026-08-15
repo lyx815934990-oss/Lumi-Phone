@@ -11,6 +11,7 @@ import {
   formatStoryTimeClockFromMs,
   isPreferSystemClockDespiteStoryFloor,
   isWeChatClockAlignedWithStoryFloor,
+  looksLikeRealWallClockMs,
   resetOnlineClockToSystemTime,
   resolveCharacterChatMessageTimeFloor,
   resolveCharacterStoryTimeFloor,
@@ -328,24 +329,50 @@ export function ChatTimeSettingsScreen({
         customBaseTime: config.customBaseTime,
       })
       if (!aligned) {
-        // 有剧情锚点时，线上「现在」须落在剧情日历上（默认=锚点）；不能拿真实墙钟 Math.max 糊弄
-        config = normalizeWeChatTimeConfig({
-          ...config,
-          mode: 'custom',
-          customBaseTime: floor.floorMs,
-          customAnchorRealTime: Date.now(),
-        })
-        await applyOnlineChatTimeFusion({
-          characterId: cid,
-          chosenTimeMs: floor.floorMs,
-          timeMultiplier: config.timeMultiplier,
-          timePerceptionEnabled: true,
-          mode: 'custom',
-        })
-        hint = '已按剧情时间点对齐线上当前时间，可再往后调'
-        // 推进后 floor 标签可能同步更新
-        const nextFloor = await resolveCharacterStoryTimeFloor(cid)
-        setStoryFloor(nextFloor.hasFloor ? nextFloor : floor)
+        const intentionalAdvance =
+          config.mode === 'custom' &&
+          Number.isFinite(config.customBaseTime) &&
+          config.customBaseTime > floor.floorMs &&
+          !looksLikeRealWallClockMs(config.customBaseTime) &&
+          live - floor.floorMs <= 5 * 365 * 86_400_000
+
+        if (intentionalAdvance) {
+          // 用户已把线上时钟推到更远的故事日（如 26→27）：写入剧情轴，勿打回旧锚点
+          config = normalizeWeChatTimeConfig({
+            ...config,
+            mode: 'custom',
+            customBaseTime: live,
+            customAnchorRealTime: Date.now(),
+          })
+          await applyOnlineChatTimeFusion({
+            characterId: cid,
+            chosenTimeMs: live,
+            timeMultiplier: config.timeMultiplier,
+            timePerceptionEnabled: true,
+            mode: 'custom',
+          })
+          hint = '已将剧情轴「当前锚点」同步到线上时间'
+          const nextFloor = await resolveCharacterStoryTimeFloor(cid)
+          setStoryFloor(nextFloor.hasFloor ? nextFloor : floor)
+        } else {
+          // 有剧情锚点时，线上「现在」须落在剧情日历上（默认=锚点）；不能拿真实墙钟 Math.max 糊弄
+          config = normalizeWeChatTimeConfig({
+            ...config,
+            mode: 'custom',
+            customBaseTime: floor.floorMs,
+            customAnchorRealTime: Date.now(),
+          })
+          await applyOnlineChatTimeFusion({
+            characterId: cid,
+            chosenTimeMs: floor.floorMs,
+            timeMultiplier: config.timeMultiplier,
+            timePerceptionEnabled: true,
+            mode: 'custom',
+          })
+          hint = '已按剧情时间点对齐线上当前时间，可再往后调'
+          const nextFloor = await resolveCharacterStoryTimeFloor(cid)
+          setStoryFloor(nextFloor.hasFloor ? nextFloor : floor)
+        }
       } else if (config.customBaseTime < floor.floorMs) {
         config = normalizeWeChatTimeConfig({
           ...config,

@@ -32,9 +32,9 @@ type Props = {
   onApplyPack: (pack: LumiWeChatBubblePack) => void | Promise<void>
   /** 确认植入后滚到气泡预览区 */
   onScrollToPreview?: () => void
-  /** wechat=微信主题气泡页；studio=主题制作机 */
+  /** wechat=微信主题气泡页；studio=预留独立制作台 */
   surface?: 'wechat' | 'studio'
-  /** 默认两项都显示；主题制作机可只挂头像装饰 */
+  /** 默认两项都显示；studio 可只挂头像装饰 */
   sections?: Array<'chrome' | 'assist'>
 }
 
@@ -473,8 +473,8 @@ export function WeChatBubbleMakerExtrasPanel({
         </p>
         <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
           {surface === 'studio'
-            ? '直接描述你想要的效果即可自由生成，无需选预设模版；确认「植入」后写入微信主题并跳到上方舞台。'
-            : '直接描述想要的效果即可自由生成；确认「植入预览」只写入主题制作机舞台，不会改聊天室。真机请到「微信 → 外观 → 聊天气泡」上传气泡文件。'}
+            ? '直接描述你想要的效果即可自由生成，无需选预设模版；确认后只写入制作台预览。'
+            : '直接描述想要的效果即可自由生成；确认「植入」后写入当前聊天气泡主题，并滚到上方预览。'}
         </p>
         <textarea
           value={assistText}
@@ -592,15 +592,15 @@ export function WeChatBubbleMakerExtrasPanel({
               <p className="text-[12px]" style={{ color: 'var(--wx-text)' }}>
                 {lastImplantedId === pendingPack.meta.id
                   ? surface === 'studio'
-                    ? '已写入制作机预览。聊天室不变；真机请到「外观 → 聊天气泡」上传。'
+                    ? '已写入制作台预览。'
                     : '已植入当前主题。可继续改稿，或再次确认跳到预览。'
                   : surface === 'studio'
-                    ? '是否写入制作机预览查看效果？'
+                    ? '是否写入制作台预览查看效果？'
                     : '是否现在植入并查看效果？'}
               </p>
               <p className="mt-1 text-[10px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
                 {surface === 'studio'
-                  ? '确认后只更新主题制作机预览，不会同步到聊天室。'
+                  ? '确认后只更新制作台预览，不会同步到聊天室。'
                   : '确认后写入微信聊天气泡主题，并滚到上方「预览」面板。'}
               </p>
               <div className="mt-2 flex flex-wrap gap-2">

@@ -1,6 +1,9 @@
 /** 头像 data URL 写入本地存储前的上限（与资料页一致） */
 export const MAX_AVATAR_DATA_URL_LEN = 350_000
 
+/** 聊天背景 data URL 上限（高于头像，仍压缩以免 IDB 读写拖慢触发会话设置竞态） */
+export const MAX_CHAT_BG_DATA_URL_LEN = 650_000
+
 const AVATAR_MAX_SIDE = 1080
 
 export async function compressAvatarDataUrl(src: string, maxLen: number): Promise<string> {

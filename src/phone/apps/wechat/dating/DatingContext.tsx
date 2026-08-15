@@ -119,7 +119,6 @@ import {
 import {
   clampDatingLengthTargetChars,
   parsePlotDimensionLengthTarget,
-  resolveDatingPlotMaxOutputTokens,
   DATING_AI_HISTORY_PROMPT_MAX,
   DATING_AI_OFFLINE_UNSUMMARIZED_CHAR_CAP,
   DATING_AI_REFERENCE_SECTION_CHAR_CAP,
@@ -910,8 +909,6 @@ async function requestDatingPlotCompletion(params: {
   /** 重新生成时略抬高随机度，降低复读旧稿概率 */
   isRegenerate?: boolean
   thinkingChainEnabled?: boolean
-  /** 限制输出长度，避免无限生成拖到超时 */
-  maxTokens?: number
 }): Promise<string> {
   const thinkingOn = params.thinkingChainEnabled !== false
   const retryUser = expandCharUserPlaceholders(
@@ -939,7 +936,7 @@ async function requestDatingPlotCompletion(params: {
       const raw = await Promise.race([
         openAiCompatibleChatLenient(params.apiConfig as any, msgs, {
           temperature: params.isRegenerate ? 0.84 : 0.68,
-          ...(params.maxTokens != null ? { max_tokens: params.maxTokens } : {}),
+          // max_tokens 由 API 设置页「最大 Token」决定；留空则系统默认 12800
         }),
         params.timeoutPromise,
       ])
@@ -1619,7 +1616,10 @@ function buildPlayerIdentityPromptBlock(
     `指代规则：玩家台词里的「你/你的」默认指向约会对象（${datingCharacterName}）一方；「我/我的」指玩家本人。` +
     '禁止把「你的经纪人/你的同事」误写成玩家职业。'
   if (!identity) {
-    return `【用户身份卡】未绑定。称呼玩家时默认用「你」，不要编造姓名、职业或头衔。${deixisRule}`
+    return (
+      `【用户身份卡】未绑定。称呼玩家时默认用「你」，不要编造姓名、职业或头衔。` +
+      `亦**禁止**臆造 {{user}} 的体质/忌口/口味（如胃不好、不能吃辣）；无明文依据时勿写成永久设定。${deixisRule}`
+    )
   }
   const name = identity.name?.trim()
   const role = identity.identity?.trim()
@@ -1635,10 +1635,15 @@ function buildPlayerIdentityPromptBlock(
   const occupationIronRule = role
     ? `【玩家身份铁律·最高优先级】凡描写**玩家本人（{{user}}）**的社会身份、职业、称谓、与 ${datingCharacterName}/NPC 的关系（如同事/员工/练习生/学生），**必须以本卡「职业/身份：${role}」及下方【用户身份·世界书】为准**。**禁止**擅自改写成公司员工、正式职员、打工人、办公室同事等与本卡矛盾的设定；**禁止**因 ${datingCharacterName} 的世界书、人脉网或长期记忆里出现模糊「上班/工作」字样，就把 {{user}} 默认当成 ${datingCharacterName} 的同事或下属——除非玩家身份卡或玩家世界书**明确**如此。\n`
     : `【玩家身份铁律】凡涉及**玩家本人（{{user}}）**的身份与职业，须以本卡与【用户身份·世界书】为准；无写明的职务**禁止**臆造（尤其禁止默认写成 ${datingCharacterName} 的公司员工）。\n`
+  const playerFactIronRule =
+    `【玩家事实铁律·最高优先级】{{user}} 的体质/健康（胃不好、体弱、过敏等）、忌口与口味（不能吃辣、不喝冰等）、习惯癖好、家庭/过往细节：` +
+    `**仅可**使用本卡、【用户身份·世界书】、本轮玩家输入、或近期剧情/记忆中**明文已出现**的内容。` +
+    `**禁止**为写「体贴恋人」套模板臆造上述设定（尤禁默认「胃不好不能吃辣」）；无依据时改写为当场询问、或只写通用关心（天气、早点睡），勿落成永久人设。\n`
   return (
     `【用户身份卡 · 须完整参考（高于约会对象档案中对玩家的模糊猜测）】` +
     `身份与**玩家侧**世界书条目均描述**玩家本人**；与约会对象「${datingCharacterName}」的人设、世界书勿混写。${head}${occ}\n` +
     `${occupationIronRule}` +
+    `${playerFactIronRule}` +
     `若当轮 user 里的「约会对象·世界书」或 system 档案室条目中，写明**玩家本人**的在校社团职务、职级等，且与本卡已知信息无矛盾，**一律以该条文为准**；**禁止**因本卡「职业/身份」栏未写而忽略，也**禁止**把条文里归玩家一方的职务改写到约会对象「${datingCharacterName}」头上；**若约会对象侧条文与本卡冲突，以本【用户身份卡】为准**。\n` +
     `${deixisRule}` +
     detailCard +
@@ -2414,7 +2419,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     }每条方括号前缀：**有剧情时间则优先用剧情时间**，否则才是设备落库钟点；**全部须承接**，跨日更早禁止写成此刻刚聊）：\n${unsPrivClipped || '（暂无）'}\n\n` +
     `未总结·群聊（**尚未写入长期记忆的线上原文**｜末尾最新优先）：\n${unsGrpClipped || '（暂无）'}\n\n` +
     `未总结·线下剧情（落库先后；末尾最新优先）：\n${unsOffClipped || '（暂无）'}\n\n` +
-    `【历史摘录·文风隔离】下条「最近剧情」**只**供提取事实、关系、未收束点与空间关系；**禁止**模仿旧稿措辞/网文腔；须按 system 文风与禁词表落笔。\n` +
+    `【历史摘录·文风隔离】下条「最近剧情」**只**供提取事实、关系、未收束点与空间关系；**禁止**模仿旧稿措辞/网文腔（含泥潭/深渊/潮气/凝固/近乎等抽象氛围句）；须按 system「本轮必扫·抽象隐喻黑名单」与禁词表落笔。\n` +
     `${godHistoryIsolationNote}` +
     `${mainCharacterOffstageHistoryNote}` +
     `${sideStageKnowledgeIsolationNote}` +
@@ -2472,14 +2477,6 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       content: expandCharUserPlaceholders(userPromptRaw, charUserNames),
     },
   ]
-  const syncTranslateEnabled =
-    langSettings.dialogueTranslationSyncEnabled === true ||
-    langSettings.innerOsTranslationSyncEnabled === true
-  const maxTokens = resolveDatingPlotMaxOutputTokens({
-    targetChars,
-    thinkingChainEnabled,
-    syncTranslateEnabled,
-  })
   const timeoutMs = DATING_PLOT_COMPLETION_TIMEOUT_MS
   const timeoutPromise = new Promise<string>((_, reject) => {
     window.setTimeout(
@@ -2517,7 +2514,6 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     charUserNames,
     isRegenerate: datingExtras?.regeneratingWorldBookBaseline === true,
     thinkingChainEnabled,
-    maxTokens,
   })
   const trimmed = expandCharUserPlaceholders(out.trim(), charUserNames)
   const wbExtract = extractWorldBookAfterPatchBlock(trimmed)

@@ -1,7 +1,6 @@
 import { emitWeChatStorageChanged, personaDb } from '../newFriendsPersona/idb'
 import type { WeChatListenTrackSharePayload } from '../newFriendsPersona/types'
-import { resolveAccountScopedPrivateConversationKey } from '../wechatAccountPrivateChatStorage'
-import { findAccountById, loadAccountsBundle, resolveAccountSessionIdentityId } from '../wechatAccountPersistence'
+import { resolveListenTogetherPrivateChatTarget } from '../wechatAccountPrivateChatStorage'
 import { enrichListenTrackSharePayload } from './listenShareAiContext'
 
 export type SendListenTrackShareInput = {
@@ -23,25 +22,11 @@ async function sendOneListenTrackShare(
   characterId: string,
   input: SendListenTrackShareInput,
 ): Promise<string> {
-  const bundle = await loadAccountsBundle()
-  if (!bundle) throw new Error('请先登录微信账号')
-  const account = findAccountById(bundle, bundle.currentAccountId)
-  if (!account) throw new Error('请先登录微信账号')
+  const { playerIdentityId, conversationKey, timestamp, storyDay, storyTime, storyTimeLabel } =
+    await resolveListenTogetherPrivateChatTarget(characterId)
 
-  const playerIdentityId = resolveAccountSessionIdentityId(account).trim()
-  if (!playerIdentityId || playerIdentityId === '__none__') {
-    throw new Error('请先设置玩家身份')
-  }
-
-  const conversationKey = await resolveAccountScopedPrivateConversationKey({
-    wechatAccountId: account.accountId,
-    characterId,
-    appSessionPlayerIdentityId: playerIdentityId,
-  })
-
-  const nowMs = Date.now()
-  const shareId = `lts-${nowMs}-${Math.random().toString(36).slice(2, 8)}`
-  const messageId = `wxm-${nowMs}-lts-${Math.random().toString(36).slice(2, 8)}`
+  const shareId = `lts-${timestamp}-${Math.random().toString(36).slice(2, 8)}`
+  const messageId = `wxm-${timestamp}-lts-${Math.random().toString(36).slice(2, 8)}`
   const content = input.targetType === 'song' ? '[分享单曲]' : '[分享歌单]'
 
   const listenTrackShare: WeChatListenTrackSharePayload = await enrichListenTrackSharePayload(
@@ -56,7 +41,10 @@ async function sendOneListenTrackShare(
     type: 'player',
     content,
     listenTrackShare,
-    timestamp: nowMs,
+    timestamp,
+    ...(storyDay ? { storyDay } : {}),
+    ...(storyTime ? { storyTime } : {}),
+    ...(storyTimeLabel ? { storyTimeLabel } : {}),
     isRead: true,
     conversationKey,
   })

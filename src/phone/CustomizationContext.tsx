@@ -17,6 +17,22 @@ import {
   emptyWeChatAvatarChrome,
   normalizeWeChatAvatarChrome,
 } from './apps/wechat/wechatAvatarChrome'
+import {
+  emptyBubbleEdgeStickers,
+  normalizeBubbleEdgeStickers,
+} from './apps/wechat/bubbleEdgeStickers'
+import {
+  emptyBubbleFrames,
+  normalizeBubbleFrames,
+} from './apps/wechat/bubbleFrame'
+import {
+  emptyAvatarStickers,
+  normalizeAvatarStickers,
+} from './apps/wechat/avatarStickers'
+import {
+  emptyBubbleBadges,
+  normalizeBubbleBadges,
+} from './apps/wechat/bubbleBadge'
 import { bumpWeChatPersonaContactsUserMutation } from './apps/wechat/wechatPersonaContactsUserMutation'
 import {
   readEnableSplashScreenSync,
@@ -27,6 +43,8 @@ import {
   DEFAULT_PERSONAL_CARD_BG_PATH,
   DEFAULT_PERSONAL_CARD_PROFILE,
   DEFAULT_WECHAT_CHAT_ROOM_BG,
+  DEFAULT_WECHAT_CHAT_WALLPAPER_PATH,
+  DEFAULT_WECHAT_UI_FONT_FAMILY,
   PHONE_NUM_FONT_FAMILY,
   DEFAULT_PUBLIC_AVATAR_PATH,
   DEFAULT_WECHAT_MIRROR_PROFILE,
@@ -72,6 +90,14 @@ const LEGACY_STORY_FONT =
   '"Noto Serif SC", "Noto Sans SC", "PingFang SC", "PingFang TC", "Hiragino Sans GB", "STSong", "STKaiti", "FangSong", "KaiTi", "Georgia", "Garamond", "Times New Roman", serif'
 const LEGACY_WECHAT_FONT_INTER =
   '"Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif'
+/** 旧默认：Inter 抢在系统 UI 之前，安卓/鸿蒙也吃不到系统字体 */
+const LEGACY_WECHAT_FONT_INTER_UNQUOTED =
+  'Inter, "PingFang SC", "PingFang TC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif'
+/** 上一版默认把苹方放最前，英文会被吃进苹方拉丁字形；迁到系统优先栈 */
+const LEGACY_WECHAT_FONT_PINGFANG_FIRST =
+  '"PingFang SC", "PingFang TC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system, "SF Pro Text", "Segoe UI", "Noto Sans SC", sans-serif'
+const LEGACY_WECHAT_FONT_SYSTEM_FIRST =
+  'system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "PingFang TC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans SC", Arial, sans-serif'
 const LEGACY_WECHAT_TABBAR_BG = 'rgba(255, 255, 255, 0.88)'
 
 function normalizeMusicPlayMode(v: unknown): MusicPlayMode {
@@ -135,6 +161,22 @@ function syncBubbleByRoleWithNewGlobal(
         role.avatarRadiusPx === prevGlobal.avatarRadiusPx ? nextGlobal.avatarRadiusPx : role.avatarRadiusPx,
       showBubbleTail:
         role.showBubbleTail === prevGlobal.showBubbleTail ? nextGlobal.showBubbleTail : role.showBubbleTail,
+      showBubbleTailSelf:
+        role.showBubbleTailSelf === prevGlobal.showBubbleTailSelf
+          ? nextGlobal.showBubbleTailSelf
+          : role.showBubbleTailSelf,
+      showBubbleTailOther:
+        role.showBubbleTailOther === prevGlobal.showBubbleTailOther
+          ? nextGlobal.showBubbleTailOther
+          : role.showBubbleTailOther,
+      glassBubbleStyleSelf:
+        role.glassBubbleStyleSelf === prevGlobal.glassBubbleStyleSelf
+          ? nextGlobal.glassBubbleStyleSelf
+          : role.glassBubbleStyleSelf,
+      glassBubbleStyleOther:
+        role.glassBubbleStyleOther === prevGlobal.glassBubbleStyleOther
+          ? nextGlobal.glassBubbleStyleOther
+          : role.glassBubbleStyleOther,
       mergeConsecutiveAvatarGroup:
         role.mergeConsecutiveAvatarGroup === prevGlobal.mergeConsecutiveAvatarGroup
           ? nextGlobal.mergeConsecutiveAvatarGroup
@@ -279,9 +321,17 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
       ? raw.timestampStyle
       : base.timestampStyle
 
-  // 迁移：历史默认 Inter 视作“未覆盖”，改为跟随全局字体
-  const rawFont = typeof raw.fontFamily === 'string' ? raw.fontFamily : ''
-  const normalizedFont = rawFont === LEGACY_WECHAT_FONT_INTER ? '' : rawFont
+  // 迁移：历史 Inter / 苹方 / 系统 UI 默认栈 → 空字符串（跟随手机全局 --phone-font）
+  const rawFont = typeof raw.fontFamily === 'string' ? raw.fontFamily : base.fontFamily
+  const normalizedFont =
+    !rawFont.trim() ||
+    rawFont === DEFAULT_WECHAT_UI_FONT_FAMILY ||
+    rawFont === LEGACY_WECHAT_FONT_INTER ||
+    rawFont === LEGACY_WECHAT_FONT_INTER_UNQUOTED ||
+    rawFont === LEGACY_WECHAT_FONT_PINGFANG_FIRST ||
+    rawFont === LEGACY_WECHAT_FONT_SYSTEM_FIRST
+      ? ''
+      : rawFont
 
   const normalizeFill = (f: unknown, fallback: WxFillStyle): WxFillStyle => {
     if (!f || typeof f !== 'object') return fallback
@@ -365,8 +415,14 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
       selfBubbleRadiusPx: clamp(r.selfBubbleRadiusPx, 4, 28, fallback.selfBubbleRadiusPx),
       otherBubbleRadiusPx: clamp(r.otherBubbleRadiusPx, 4, 28, fallback.otherBubbleRadiusPx),
       showAvatar: bool(r.showAvatar, fallback.showAvatar),
+      ...(typeof r.showAvatarSelf === 'boolean' ? { showAvatarSelf: r.showAvatarSelf } : {}),
+      ...(typeof r.showAvatarOther === 'boolean' ? { showAvatarOther: r.showAvatarOther } : {}),
       avatarRadiusPx: clamp(r.avatarRadiusPx, 0, 18, fallback.avatarRadiusPx),
       showBubbleTail: bool(r.showBubbleTail, fallback.showBubbleTail),
+      ...(typeof r.showBubbleTailSelf === 'boolean' ? { showBubbleTailSelf: r.showBubbleTailSelf } : {}),
+      ...(typeof r.showBubbleTailOther === 'boolean' ? { showBubbleTailOther: r.showBubbleTailOther } : {}),
+      ...(typeof r.glassBubbleStyleSelf === 'boolean' ? { glassBubbleStyleSelf: r.glassBubbleStyleSelf } : {}),
+      ...(typeof r.glassBubbleStyleOther === 'boolean' ? { glassBubbleStyleOther: r.glassBubbleStyleOther } : {}),
       bubbleTailStyle:
         r.bubbleTailStyle === 'imessage' ||
         r.bubbleTailStyle === 'telegram' ||
@@ -375,6 +431,16 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
           ? r.bubbleTailStyle
           : fallback.bubbleTailStyle,
       mergeConsecutiveAvatarGroup: bool(r.mergeConsecutiveAvatarGroup, fallback.mergeConsecutiveAvatarGroup),
+      ...(r.avatarClusterSelf === 'every' ||
+      r.avatarClusterSelf === 'first' ||
+      r.avatarClusterSelf === 'last'
+        ? { avatarClusterSelf: r.avatarClusterSelf }
+        : {}),
+      ...(r.avatarClusterOther === 'every' ||
+      r.avatarClusterOther === 'first' ||
+      r.avatarClusterOther === 'last'
+        ? { avatarClusterOther: r.avatarClusterOther }
+        : {}),
       selfFont: normalizeWeChatBubbleSideFont(r.selfFont, fallback.selfFont ?? null),
       otherFont: normalizeWeChatBubbleSideFont(r.otherFont, fallback.otherFont ?? null),
     }
@@ -425,12 +491,15 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
     }
   }
 
-  /** 迁移：mode 为 image 但 imageUrl 为空时补默认壁纸，避免 Tab 页只剩纯色底 */
-  const defaultTabBgImage = base.pageBgGlobal.imageUrl?.trim() ?? ''
+  /** 迁移：旧默认把 Tab 页底图设成聊天壁纸；改为纯色纸感，自定义底图保留 */
+  const isLegacyDefaultWallpaper = (url: string) =>
+    !url ||
+    url === DEFAULT_WECHAT_CHAT_WALLPAPER_PATH ||
+    url.includes('聊天壁纸默认')
   const repairPageBgImage = (f: WxFillStyle): WxFillStyle => {
     if (f.mode !== 'image') return f
-    if (f.imageUrl?.trim() || !defaultTabBgImage) return f
-    return { ...f, imageUrl: defaultTabBgImage }
+    if (!isLegacyDefaultWallpaper(f.imageUrl?.trim() ?? '')) return f
+    return { ...base.pageBgGlobal }
   }
   pageBgGlobal = repairPageBgImage(pageBgGlobal)
   for (const k of Object.keys(pageBgByTab)) {
@@ -526,10 +595,31 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
     chatSkinOverrides: normalizeChatSkinOverrides(raw.chatSkinOverrides),
     chatSkinScopedCss:
       typeof raw.chatSkinScopedCss === 'string' ? raw.chatSkinScopedCss : '',
+    // 刷新后必须保留；若历史脏数据丢了 engine，用液态玻璃 CSS 标记回填
+    chatSkinEngine: (() => {
+      if (raw.chatSkinEngine === 'css' || raw.chatSkinEngine === 'structured') {
+        return raw.chatSkinEngine
+      }
+      const css = typeof raw.chatSkinScopedCss === 'string' ? raw.chatSkinScopedCss : ''
+      if (css.includes('lumi-liquid-glass')) return 'css' as const
+      return base.chatSkinEngine ?? 'structured'
+    })(),
     avatarChrome: normalizeWeChatAvatarChrome(
       raw.avatarChrome,
       base.avatarChrome ?? emptyWeChatAvatarChrome(),
     ),
+    bubbleEdgeStickers: raw.bubbleEdgeStickers
+      ? normalizeBubbleEdgeStickers(raw.bubbleEdgeStickers)
+      : emptyBubbleEdgeStickers(),
+    bubbleFrames: raw.bubbleFrames
+      ? normalizeBubbleFrames(raw.bubbleFrames)
+      : emptyBubbleFrames(),
+    avatarStickers: raw.avatarStickers
+      ? normalizeAvatarStickers(raw.avatarStickers)
+      : emptyAvatarStickers(),
+    bubbleBadges: raw.bubbleBadges
+      ? normalizeBubbleBadges(raw.bubbleBadges)
+      : emptyBubbleBadges(),
   }
 }
 
@@ -538,12 +628,24 @@ function normalizeAppPageStyles(parsed: unknown): CustomizationState['appPageSty
   if (!parsed || typeof parsed !== 'object') return def
   const record = parsed as Record<string, Partial<AppPageStyle>>
   const wechatMerged = { ...def.wechat, ...record.wechat }
+  // 旧默认把微信页背景强制回填聊天壁纸；现改为可空纯色纸感
   if (
     typeof wechatMerged.pageBgImageUrl === 'string' &&
-    !wechatMerged.pageBgImageUrl.trim() &&
-    def.wechat.pageBgImageUrl
+    (wechatMerged.pageBgImageUrl === DEFAULT_WECHAT_CHAT_WALLPAPER_PATH ||
+      wechatMerged.pageBgImageUrl.includes('聊天壁纸默认'))
   ) {
-    wechatMerged.pageBgImageUrl = def.wechat.pageBgImageUrl
+    wechatMerged.pageBgImageUrl = ''
+  }
+  // 旧默认把微信页字锁成系统 UI；改为空 = 跟随全局
+  if (
+    typeof wechatMerged.fontFamily === 'string' &&
+    (wechatMerged.fontFamily === DEFAULT_WECHAT_UI_FONT_FAMILY ||
+      wechatMerged.fontFamily === LEGACY_WECHAT_FONT_INTER ||
+      wechatMerged.fontFamily === LEGACY_WECHAT_FONT_INTER_UNQUOTED ||
+      wechatMerged.fontFamily === LEGACY_WECHAT_FONT_PINGFANG_FIRST ||
+      wechatMerged.fontFamily === LEGACY_WECHAT_FONT_SYSTEM_FIRST)
+  ) {
+    wechatMerged.fontFamily = ''
   }
   const appearanceMerged = { ...def.appearance, ...record.appearance }
   if (

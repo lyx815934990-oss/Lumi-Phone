@@ -82,8 +82,8 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
             const pct = 82 + Math.round(p.ratio * 16)
             markBootProgress(Math.min(pct, 98), p.label)
           }),
-          // 给足弱网时间；真超时再进桌面，剩余由后台补暖
-          sleep(300_000),
+          // 微信失败也不要卡死开屏；剩余资源进桌面后后台补暖
+          sleep(mobile ? 95_000 : 110_000),
         ])
         if (sealedRef.current) return
 

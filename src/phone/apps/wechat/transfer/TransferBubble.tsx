@@ -131,9 +131,9 @@ export function TransferBubbleFace({
     <div
       data-wx-msg-kind="transfer"
       data-wx-special-status={status}
-      className={`select-none text-left transition-opacity duration-150 ease-out ${
-        pending ? 'w-[min(240px,72vw)] max-w-full shrink-0' : 'max-w-[min(280px,72vw)]'
-      } ${accepted ? 'opacity-60' : 'opacity-100'}`}
+      className={`w-[min(240px,72vw)] max-w-full shrink-0 select-none text-left transition-opacity duration-150 ease-out ${
+        accepted ? 'opacity-60' : 'opacity-100'
+      }`}
     >
       <div
         data-wx-special-card

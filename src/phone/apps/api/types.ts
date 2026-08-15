@@ -39,7 +39,7 @@ export type ApiConfig = {
   temperature?: number
   /** nucleus sampling 0～1；未设置则不传 top_p */
   topP?: number
-  /** 单次补全最大 token；未设置则不限制（或由调用方指定） */
+  /** 单次补全最大 token；未设置则用系统默认 12800（调用方 options 仍可覆盖） */
   maxTokens?: number
   /** frequency_penalty -2～2 */
   frequencyPenalty?: number

@@ -100,6 +100,7 @@ import {
   resolveStoryCalendarAnchorFromPlots,
   buildStoryTimelineCalendarContextBlock,
 } from './memory/storyTimelineCalendarContext'
+import { buildMemorySummaryIdentityRosterBlock } from './memory/memorySummaryContentNormalize'
 import {
   applyEpiloguePatchesFromAutoSummary,
   finalizeWorldBookAfterAutoSummaryPhase,
@@ -1964,6 +1965,31 @@ export async function buildPrivateChatPerRoundMemoryAppendixForTurn(params: {
     storyCalendarAnchor: resolveStoryCalendarAnchorFromPlots(gather.offlinePlotsPrior),
   })
 
+  const identityRosterBlock = buildMemorySummaryIdentityRosterBlock({
+    charDisplayName: params.characterRealName,
+    userDisplayName: await (async () => {
+      try {
+        const pid = params.sessionPlayerIdentityId?.trim()
+        if (pid && pid !== '__none__') {
+          const iden = await personaDb.getPlayerIdentity(pid)
+          const n =
+            String(iden?.wechatNickname ?? '').trim() ||
+            String(iden?.name ?? '').trim() ||
+            String(iden?.remark ?? '').trim()
+          if (n) return n
+        }
+        const cur = await personaDb.getCurrentIdentity()
+        return (
+          String(cur?.wechatNickname ?? '').trim() ||
+          String(cur?.name ?? '').trim() ||
+          String(cur?.remark ?? '').trim()
+        )
+      } catch {
+        return ''
+      }
+    })(),
+  })
+
   return buildDatingCombinedMemoryUserAppendix({
     onlineTranscript: gather.onlineTranscript,
     peerLabel: params.characterRealName.trim() || '对方',
@@ -1973,6 +1999,7 @@ export async function buildPrivateChatPerRoundMemoryAppendixForTurn(params: {
     eligibleLinkedNpcRoster: roster,
     summaryRoundDue: false,
     calendarContextBlock,
+    identityRosterBlock,
   })
 }
 

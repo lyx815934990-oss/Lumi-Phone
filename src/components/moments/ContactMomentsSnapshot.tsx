@@ -25,11 +25,17 @@ function SnapshotImageCell({ src }: { src: string }) {
   const displaySrc = resolved[0]?.trim() ?? ''
 
   return (
-    <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-gray-100 shadow-[inset_0_0_10px_rgba(0,0,0,0.02)]">
+    <div
+      className="relative size-[58px] shrink-0 overflow-hidden rounded-[14px]"
+      style={{
+        background: 'rgba(16,16,18,0.04)',
+        boxShadow: 'inset 0 0 0 1px rgba(16,16,18,0.04)',
+      }}
+    >
       {displaySrc ? (
         <img src={displaySrc} alt="" className="size-full object-cover" />
       ) : (
-        <div className="size-full animate-pulse bg-gray-100" />
+        <div className="size-full animate-pulse" style={{ background: 'rgba(16,16,18,0.05)' }} />
       )}
     </div>
   )
@@ -41,10 +47,13 @@ function SnapshotCell({ cell }: { cell: ContactMomentSnapshotCell }) {
   }
 
   return (
-    <div className="flex size-16 shrink-0 items-center justify-center rounded-lg bg-gray-50 px-1.5 shadow-[inset_0_0_10px_rgba(0,0,0,0.02)]">
+    <div
+      className="flex size-[58px] shrink-0 items-center justify-center rounded-[14px] px-1.5"
+      style={{ background: 'rgba(16,16,18,0.035)' }}
+    >
       <MomentBodyText
         text={cell.preview}
-        className="line-clamp-2 text-center text-[10px] leading-relaxed text-gray-600"
+        className="line-clamp-2 text-center text-[10px] leading-relaxed text-[#6B6B70]"
       />
     </div>
   )
@@ -90,27 +99,31 @@ export function ContactMomentsSnapshot({
     <Pressable
       type="button"
       onClick={onOpenArchive}
-      className="w-full border-t border-b border-dashed border-gray-100 bg-white py-5 px-6 text-left transition-colors active:bg-gray-50/60"
+      className="w-full px-4 py-4 text-left transition-colors active:bg-black/[0.02]"
     >
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3.5">
         <div className="shrink-0">
-          <p className="text-[15px] font-medium text-[#111827]">朋友圈</p>
-          <p className="mt-0.5 text-[9px] tracking-[0.22em] text-gray-400">MOMENTS</p>
+          <p className="text-[14px] font-medium text-[#101012]">朋友圈</p>
+          <p className="mt-0.5 text-[9px] font-medium tracking-[0.18em] text-[#8B8B8F]">MOMENTS</p>
         </div>
 
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {loading ? (
               Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="size-16 shrink-0 animate-pulse rounded-lg bg-gray-100" />
+                <div
+                  key={i}
+                  className="size-[58px] shrink-0 animate-pulse rounded-[14px]"
+                  style={{ background: 'rgba(16,16,18,0.05)' }}
+                />
               ))
             ) : cells.length ? (
               cells.map((cell) => <SnapshotCell key={cell.id} cell={cell} />)
             ) : (
-              <p className="py-4 text-[12px] text-gray-400">暂无可见动态</p>
+              <p className="py-3.5 text-[12px] text-[#8B8B8F]">暂无可见动态</p>
             )}
           </div>
-          <ChevronRight className="size-4 shrink-0 text-gray-300" strokeWidth={1.5} aria-hidden />
+          <ChevronRight className="size-4 shrink-0 text-[#C4C4C6]" strokeWidth={1.5} aria-hidden />
         </div>
       </div>
     </Pressable>

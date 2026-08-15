@@ -1,8 +1,11 @@
+import type { ReactNode } from 'react'
+
 import type { WeChatBubbleTheme } from '../../../types'
 import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
 } from '../group/ChatGroupSpeakerAvatarWrap'
+import { useSpecialChatCardLongPress } from '../hooks/useSpecialChatCardLongPress'
 import { WeChatAvatarChromeWrap } from '../WeChatAvatarChromeWrap'
 import type { WeChatTakeoutOrderPayload } from '../newFriendsPersona/types'
 import { TakeoutOrderMessageCard } from './TakeoutOrderMessageCard'
@@ -21,6 +24,9 @@ type Props = {
   chatSelfAvatarRankBadge?: 'owner' | 'admin' | null
   groupRankShowBesideNickname?: boolean
   onOpen?: () => void
+  multiSelectAvatar?: ReactNode
+  selected?: boolean
+  onLongPress?: (anchorRect: DOMRect) => void
 }
 
 export function TakeoutOrderChatRow({
@@ -37,9 +43,22 @@ export function TakeoutOrderChatRow({
   chatSelfAvatarRankBadge: _chatSelfAvatarRankBadge = null,
   groupRankShowBesideNickname = true,
   onOpen,
+  multiSelectAvatar,
+  selected = false,
+  onLongPress,
 }: Props) {
   const avatarPx = 40
-  const card = <TakeoutOrderMessageCard data={data} onOpen={onOpen} />
+  const { anchorRef, bind, pressStyle } = useSpecialChatCardLongPress(onLongPress, selected)
+  const card = (
+    <div
+      ref={anchorRef}
+      className="relative inline-block select-none transition-[transform,opacity] duration-150 ease-out"
+      style={pressStyle}
+      {...bind}
+    >
+      <TakeoutOrderMessageCard data={data} onOpen={onOpen} />
+    </div>
+  )
   const showAvatarVisual = showAvatar && showAvatarColumn
   const reserveAvatarGutter = showAvatar
   const rankBeside = groupRankShowBesideNickname !== false
@@ -60,30 +79,32 @@ export function TakeoutOrderChatRow({
     return (
       <div className="w-[100vw] max-w-[100vw] shrink-0 overflow-x-visible" data-wx-msg-id={id}>
         <div className="ml-auto mr-[24px] flex max-w-full flex-row-reverse items-start gap-[12px]">
-          {showAvatarVisual ? (
-            chatSelfAvatarUrl?.trim() ? (
-              <img
-                src={chatSelfAvatarUrl.trim()}
-                alt=""
-                width={avatarPx}
-                height={avatarPx}
-                className="h-10 w-10 shrink-0 object-cover"
-                style={{
-                  borderRadius: `${bubble.avatarRadiusPx}px`,
-                  border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                }}
-                aria-hidden
-              />
-            ) : (
-              <div
-                className="h-10 w-10 shrink-0"
-                style={{
-                  borderRadius: `${bubble.avatarRadiusPx}px`,
-                  background: 'rgba(0,0,0,0.06)',
-                  border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                }}
-                aria-hidden
-              />
+          {showAvatarVisual || multiSelectAvatar ? (
+            multiSelectAvatar ?? (
+              chatSelfAvatarUrl?.trim() ? (
+                <img
+                  src={chatSelfAvatarUrl.trim()}
+                  alt=""
+                  width={avatarPx}
+                  height={avatarPx}
+                  className="h-10 w-10 shrink-0 object-cover"
+                  style={{
+                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                  }}
+                  aria-hidden
+                />
+              ) : (
+                <div
+                  className="h-10 w-10 shrink-0"
+                  style={{
+                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    background: 'rgba(0,0,0,0.06)',
+                    border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                  }}
+                  aria-hidden
+                />
+              )
             )
           ) : reserveAvatarGutter ? (
             avatarGutter
@@ -97,58 +118,60 @@ export function TakeoutOrderChatRow({
   return (
     <div className="w-[100vw] max-w-[100vw] shrink-0 overflow-x-visible" data-wx-msg-id={id}>
       <div className="ml-[24px] mr-auto flex max-w-full items-start gap-[12px]">
-        {showAvatarVisual ? (
-          <div className="relative shrink-0">
-            {!rankBeside ? (
-              <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge}>
-                {chatOtherAvatarUrl?.trim() ? (
-                  <img
-                    src={chatOtherAvatarUrl.trim()}
-                    alt=""
-                    width={avatarPx}
-                    height={avatarPx}
-                    className="h-10 w-10 shrink-0 object-cover"
-                    style={{
-                      borderRadius: `${bubble.avatarRadiusPx}px`,
-                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                    }}
-                    aria-hidden
-                  />
-                ) : (
-                  otherAvatarFallback
-                )}
-              </ChatGroupSpeakerRankOnAvatar>
-            ) : (
-              <WeChatAvatarChromeWrap side="other">
-                {chatOtherAvatarUrl?.trim() ? (
-                  <img
-                    src={chatOtherAvatarUrl.trim()}
-                    alt=""
-                    width={avatarPx}
-                    height={avatarPx}
-                    className="h-10 w-10 shrink-0 object-cover"
-                    style={{
-                      borderRadius: `${bubble.avatarRadiusPx}px`,
-                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                    }}
-                    aria-hidden
-                  />
-                ) : (
-                  otherAvatarFallback
-                )}
-              </WeChatAvatarChromeWrap>
-            )}
-          </div>
+        {showAvatarVisual || multiSelectAvatar ? (
+          multiSelectAvatar ?? (
+            <div className="relative shrink-0">
+              {!rankBeside ? (
+                <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge}>
+                  {chatOtherAvatarUrl?.trim() ? (
+                    <img
+                      src={chatOtherAvatarUrl.trim()}
+                      alt=""
+                      width={avatarPx}
+                      height={avatarPx}
+                      className="h-10 w-10 shrink-0 object-cover"
+                      style={{
+                        borderRadius: `${bubble.avatarRadiusPx}px`,
+                        border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                      }}
+                      aria-hidden
+                    />
+                  ) : (
+                    otherAvatarFallback
+                  )}
+                </ChatGroupSpeakerRankOnAvatar>
+              ) : (
+                <WeChatAvatarChromeWrap side="other">
+                  {chatOtherAvatarUrl?.trim() ? (
+                    <img
+                      src={chatOtherAvatarUrl.trim()}
+                      alt=""
+                      width={avatarPx}
+                      height={avatarPx}
+                      className="h-10 w-10 shrink-0 object-cover"
+                      style={{
+                        borderRadius: `${bubble.avatarRadiusPx}px`,
+                        border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                      }}
+                      aria-hidden
+                    />
+                  ) : (
+                    otherAvatarFallback
+                  )}
+                </WeChatAvatarChromeWrap>
+              )}
+            </div>
+          )
         ) : reserveAvatarGutter ? (
-          avatarGutter
+          multiSelectAvatar ?? avatarGutter
         ) : null}
         <div className="min-w-0 max-w-[calc(100vw-96px)]">
-          {rankBeside && chatOtherSenderNickname ? (
+          {!multiSelectAvatar && rankBeside && chatOtherSenderNickname ? (
             <ChatGroupSenderNicknameWithRank
               nickname={chatOtherSenderNickname}
               rankBadge={chatOtherAvatarRankBadge}
             />
-          ) : chatOtherSenderNickname ? (
+          ) : !multiSelectAvatar && chatOtherSenderNickname ? (
             <p className="mb-1 text-[12px] text-[#888888]">{chatOtherSenderNickname}</p>
           ) : null}
           {card}

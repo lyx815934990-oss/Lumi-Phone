@@ -39,6 +39,7 @@ import {
   buildCharacterWechatProfileStateBlock,
   stripAndApplyCharacterWechatProfileUpdates,
 } from './wechatCharacterProfileUpdateApply'
+import { loadPeerPresenceThoughtPromptBlock } from './chatRoom/peerPresenceThoughtStorage'
 import {
   isWechatGroupConversationKey,
   parsePrivateWeChatConversationCharacterAndSession,
@@ -350,6 +351,7 @@ async function fireProactiveMessage(row: ChatConversationSettingsRow): Promise<v
     const characterWechatProfileBlock = [
       buildCharacterWechatProfileStateBlock(character),
       buildCharacterProfileImageCatalogBlock(character),
+      await loadPeerPresenceThoughtPromptBlock(characterId),
     ]
       .filter((x) => x.trim())
       .join('\n\n')

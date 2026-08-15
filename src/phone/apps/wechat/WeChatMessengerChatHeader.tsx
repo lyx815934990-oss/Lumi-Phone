@@ -85,6 +85,8 @@ export type WeChatMessengerChatHeaderProps = {
   onCenterClick?: () => void
   /** Messenger 模版聊天气泡字体栈；不传则继承全局 --wx-font */
   fontFamily?: string
+  /** 备注名后方：在线状态圆点等 */
+  titleAfterName?: ReactNode
 }
 
 function TalkmakerMonitorIcon({ className }: { className?: string }) {
@@ -143,6 +145,7 @@ export function WeChatMessengerChatHeader({
   customRight,
   onCenterClick,
   fontFamily,
+  titleAfterName,
 }: WeChatMessengerChatHeaderProps) {
   if (variant === 'wechat') {
     return (
@@ -190,6 +193,7 @@ export function WeChatMessengerChatHeader({
               pendingCount={pendingCount}
               forceTyping={showTyping}
               typingText={typingText}
+              titleAfterName={titleAfterName}
             />
           </Pressable>
 
@@ -261,6 +265,7 @@ export function WeChatMessengerChatHeader({
               forceTyping={showTyping}
               typingText={typingText}
               idleText="在线"
+              titleAfterName={titleAfterName}
             />
           </Pressable>
 
@@ -322,7 +327,10 @@ export function WeChatMessengerChatHeader({
           >
             <HeaderAvatar url={avatarUrl} name={title} sizePx={40} />
             <div className="min-w-0 flex-1">
-              <span className="block truncate text-[17px] font-medium leading-tight text-black">{title}</span>
+              <span className="flex max-w-full items-center gap-0.5 truncate text-[17px] font-medium leading-tight text-black">
+                <span className="truncate">{title}</span>
+                {titleAfterName}
+              </span>
               <ChatHeaderStatusOnly
                 pendingCount={pendingCount}
                 forceTyping={showTyping}
@@ -425,6 +433,7 @@ export function WeChatMessengerChatHeader({
               className="truncate text-[10px] font-semibold leading-none tracking-tight text-black"
               typingClassName="truncate text-[10px] font-semibold leading-none tracking-tight text-[#8e8e93]"
             />
+            {titleAfterName}
             {showImessageChevron ? (
               <svg className="h-[7px] w-[7px] shrink-0 text-[#8e8e93]" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
                 <path

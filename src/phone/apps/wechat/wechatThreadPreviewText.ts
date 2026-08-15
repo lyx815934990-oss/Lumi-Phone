@@ -15,7 +15,13 @@ export function isWeChatStickerPreviewContent(content: string): boolean {
   const pc = stripGroupEventNoticePrefixLocal(String(content ?? '').trim()).trim()
   if (!pc) return false
   const firstLine = (pc.split(/\r?\n/)[0] ?? '').trim()
-  return firstLine.startsWith('[表情包]') || firstLine.startsWith('[表情]')
+  return (
+    firstLine.startsWith('[表情包]') ||
+    firstLine.startsWith('【表情包】') ||
+    firstLine.startsWith('[动画表情]') ||
+    /^表情包(?:\s|[:：])/.test(firstLine) ||
+    firstLine.startsWith('[表情]')
+  )
 }
 
 /**

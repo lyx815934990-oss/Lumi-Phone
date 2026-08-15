@@ -1,12 +1,15 @@
 import type { ChatThemePatch } from './ChatThemeContext'
 import { DEFAULT_CHAT_THEME, type ChatTheme } from './chatTheme/types'
-import { wechatChatRoomBgEqual } from './wechatChatRoomBg'
 import type { WeChatBubbleTheme, WeChatChatRoomBg, WeChatTheme } from '../../types'
 import {
   DEFAULT_CUSTOMIZATION,
   DEFAULT_WECHAT_CHAT_WALLPAPER_PATH,
   wechatBubbleThemesEqual,
 } from '../../types'
+import {
+  LIQUID_GLASS_MINIMAL_BUBBLE_PRESET,
+  isLiquidGlassMinimalPackActive,
+} from './bubblePack/liquidGlassMinimalPack'
 
 export type WeChatBubblePreset = {
   id: string
@@ -179,7 +182,7 @@ export const TELEGRAM_BUBBLE_PRESET: WeChatBubblePreset = {
 export const WECHAT_APP_DEFAULT_BUBBLE_PRESET: WeChatBubblePreset = {
   id: 'wechat-app-default',
   name: '简约灰蓝',
-  description: '低饱和灰蓝己方 + 浅灰对方，无三角；恢复默认聊天壁纸（不改 Tab 页背景）。',
+  description: '低饱和灰蓝己方 + 浅灰对方，无三角；不改聊天室背景图。',
   bubble: {
     ...DEFAULT_CUSTOMIZATION.wechatTheme.bubbleGlobal,
   },
@@ -278,7 +281,15 @@ export const WECHAT_BUBBLE_PRESETS: WeChatBubblePreset[] = [
   IMESSAGE_BUBBLE_PRESET,
   TELEGRAM_BUBBLE_PRESET,
   TALKMAKER_BUBBLE_PRESET,
+  LIQUID_GLASS_MINIMAL_BUBBLE_PRESET,
 ]
+
+/** 需走气泡包（CSS 皮肤）套用的内置模版 id，勿用会清空 scopedCss 的 applyBubblePreset */
+export const WECHAT_BUBBLE_PRESET_CSS_PACK_IDS = ['lumi-liquid-glass'] as const
+
+export function isWeChatBubblePresetCssPackId(id: string): boolean {
+  return (WECHAT_BUBBLE_PRESET_CSS_PACK_IDS as readonly string[]).includes(id)
+}
 
 export function resolveInputBarLayoutForBubble(
   bubble: WeChatBubbleTheme,
@@ -300,7 +311,23 @@ function bubblePresetByTailStyle(tail: WeChatBubbleTheme['bubbleTailStyle']): We
 export function resolveEffectiveChatInputBarForBubble(
   inputBar: ChatTheme['inputBar'],
   bubble: WeChatBubbleTheme,
+  wechatTheme?: WeChatTheme,
 ): ChatTheme['inputBar'] {
+  // CSS 液态玻璃等：保留已写入的透明毛玻璃输入栏，不要打回简约灰蓝默认
+  if (wechatTheme && isLiquidGlassMinimalPackActive(wechatTheme)) {
+    const packInput = LIQUID_GLASS_MINIMAL_BUBBLE_PRESET.chatThemePatch?.inputBar
+    return {
+      ...inputBar,
+      layout: 'lumi',
+      borderRadius: packInput?.borderRadius ?? 999,
+      borderColor: packInput?.borderColor ?? 'transparent',
+      backgroundColor: packInput?.backgroundColor ?? 'transparent',
+      buttonColor: packInput?.buttonColor ?? inputBar.buttonColor,
+      buttonSize: packInput?.buttonSize ?? inputBar.buttonSize,
+      sendButtonColor: undefined,
+    }
+  }
+
   const effectiveBubble = migrateMislabeledLumiDefaultBubble(bubble)
   const layout = resolveInputBarLayoutForBubble(effectiveBubble)
   const presetInput = bubblePresetByTailStyle(effectiveBubble.bubbleTailStyle)?.chatThemePatch?.inputBar
@@ -326,6 +353,12 @@ export function resolvePreviewWechatThemeForBubble(
   wechatTheme: WeChatTheme,
   bubble: WeChatBubbleTheme,
 ): WeChatTheme {
+  if (isLiquidGlassMinimalPackActive(wechatTheme)) {
+    return {
+      ...wechatTheme,
+      ...(LIQUID_GLASS_MINIMAL_BUBBLE_PRESET.wechatThemePatch ?? {}),
+    }
+  }
   const effectiveBubble = migrateMislabeledLumiDefaultBubble(bubble)
   if (!effectiveBubble.bubbleTailStyle) {
     return {
@@ -344,8 +377,12 @@ export function wechatBubblePresetMatchesActive(
   selfBubbleText: string,
   otherBubbleText: string,
   wechatTheme?: WeChatTheme,
-  bubbleScope: 'global' | 'role' = 'global',
+  _bubbleScope: 'global' | 'role' = 'global',
 ): boolean {
+  // 液态玻璃等 CSS 皮肤：以 CSS 标记为准
+  if (preset.id === 'lumi-liquid-glass' && wechatTheme) {
+    return Boolean(wechatTheme.chatSkinScopedCss?.includes('lumi-liquid-glass'))
+  }
   if (
     !wechatBubbleThemesEqual(preset.bubble, activeBubble) ||
     preset.selfBubbleText !== selfBubbleText ||
@@ -353,8 +390,6 @@ export function wechatBubblePresetMatchesActive(
   ) {
     return false
   }
-  if (bubbleScope !== 'global' || !preset.wechatThemePatch?.chatRoomDefaultBg || !wechatTheme) {
-    return true
-  }
-  return wechatChatRoomBgEqual(preset.wechatThemePatch.chatRoomDefaultBg, wechatTheme.chatRoomDefaultBg)
+  // 套用模版不再改聊天室背景，匹配时也不再要求背景一致
+  return true
 }

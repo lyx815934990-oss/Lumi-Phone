@@ -2,6 +2,9 @@ import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, typ
 import { AnimatePresence, motion } from 'framer-motion'
 
 import type { WeChatBubbleTheme } from '../../types'
+import { useCustomization } from '../../CustomizationContext'
+import { BubbleEdgeStickers } from './bubbleEdgeStickers'
+import { BubbleFaceLayer, BubbleFrameLayer } from './bubbleFrame'
 import {
   formatTelegramBubbleTime,
   TelegramBubbleMeta,
@@ -24,7 +27,7 @@ import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
 } from './group/ChatGroupSpeakerAvatarWrap'
-import { WeChatAvatarChromeWrap } from './WeChatAvatarChromeWrap'
+import { WeChatAvatarChromeWrap, WeChatAvatarSizeGutter } from './WeChatAvatarChromeWrap'
 import { useWeChatLongPress } from './hooks/useWeChatLongPress'
 import { useChatSkinEngine } from './WeChatChatSkinEngineContext'
 import { composeMultiSelectLeading } from './chatHistory/MultiSelectAvatarSlot'
@@ -32,8 +35,13 @@ import {
   CHAT_BUBBLE_ENTER_ANIMATE,
   CHAT_BUBBLE_ENTER_INITIAL,
   CHAT_BUBBLE_ENTER_SPRING,
+  LIQUID_GLASS_BUBBLE_ENTER_ANIMATE,
+  LIQUID_GLASS_BUBBLE_ENTER_INITIAL,
+  LIQUID_GLASS_BUBBLE_ENTER_SPRING,
   chatBubbleTransformOrigin,
 } from './chatBubbleEnterMotion'
+import { isLiquidGlassMinimalPackActive } from './bubblePack/liquidGlassMinimalPack'
+import { normalizeBubbleBadge } from './bubbleBadge'
 
 /** 聊天气泡最大宽：100vw - 左右基准线 24px×2 - 头像列预留 80px（40 头像 + 12 间距 + 28 冗余） */
 const CHAT_BUBBLE_MAX = 'max-w-[calc(100vw-24px-24px-80px)]'
@@ -93,19 +101,25 @@ function ChatBubbleReplyPreview({
     </span>
   )
   const shellCls =
-    'mb-1.5 block w-full max-w-full rounded-[4px] px-2 py-1 text-left'
+    'mb-1.5 block w-full max-w-full rounded-[999px] px-3 py-1.5 text-left'
   const shellStyle: CSSProperties = insetStyle ?? {
     background: isSelf ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.06)',
   }
   if (preview.onClick) {
     return (
-      <button type="button" onClick={preview.onClick} className={shellCls} style={shellStyle}>
+      <button
+        type="button"
+        data-wx-bubble-reply
+        onClick={preview.onClick}
+        className={shellCls}
+        style={shellStyle}
+      >
         {inner}
       </button>
     )
   }
   return (
-    <div className={shellCls} style={shellStyle}>
+    <div data-wx-bubble-reply className={shellCls} style={shellStyle}>
       {inner}
     </div>
   )
@@ -316,21 +330,42 @@ export function WeChatMessageBubbleRow({
   translationExpanded = false,
   onTranslationToggle,
 }: WeChatMessageBubbleRowProps) {
+  const { state: customizationState } = useCustomization()
+  const liquidGlassEnter = isLiquidGlassMinimalPackActive(customizationState.wechatTheme)
+  const bubbleEnterInitial = liquidGlassEnter ? LIQUID_GLASS_BUBBLE_ENTER_INITIAL : CHAT_BUBBLE_ENTER_INITIAL
+  const bubbleEnterAnimate = liquidGlassEnter ? LIQUID_GLASS_BUBBLE_ENTER_ANIMATE : CHAT_BUBBLE_ENTER_ANIMATE
+  const bubbleEnterSpring = liquidGlassEnter ? LIQUID_GLASS_BUBBLE_ENTER_SPRING : CHAT_BUBBLE_ENTER_SPRING
+  const edgeStickers =
+    customizationState.wechatTheme.bubbleEdgeStickers?.[isSelf ? 'self' : 'other'] ?? []
+  const bubbleFrame =
+    customizationState.wechatTheme.bubbleFrames?.[isSelf ? 'self' : 'other'] ?? null
+  const bubbleBadge = normalizeBubbleBadge(
+    customizationState.wechatTheme.bubbleBadges?.[isSelf ? 'self' : 'other'],
+  )
+  const showBubbleBadge = Boolean(bubbleBadge?.enabled && bubbleBadge.text.trim())
   const contentRef = useRef<HTMLDivElement>(null)
   const singleLine = useMessageBubbleSingleLine(contentRef, messageText)
   /** 聊天 40px；预览同尺寸以对齐规则一致 */
   const avatarPx = variant === 'chat' ? 40 : 40
   /** css 引擎：清空微信/iMessage/Telegram/Talkmaker 主题尾巴与排版差异，只留原始壳给 scopedCss */
   const cssSkin = useChatSkinEngine() === 'css'
+  const liquidGlassCssTail = cssSkin && Boolean(showBubbleTail)
   const tailStyle = cssSkin ? undefined : bubble.bubbleTailStyle
   const templateFont = Boolean(tailStyle)
   const sideHasCustomFont = bubbleSideHasCustomFont(bubble, isSelf ? 'self' : 'other')
   const useFullStackFont = templateFont || sideHasCustomFont
   const sideFontFamilyCss = sideHasCustomFont ? bubbleSideFontFamilyCss(isSelf ? 'self' : 'other') : undefined
-  const isWechatTail = !cssSkin && tailStyle === 'wechat'
   const isImessageTail = !cssSkin && tailStyle === 'imessage'
   const isTelegramTail = !cssSkin && tailStyle === 'telegram'
   const isTalkmakerTail = !cssSkin && tailStyle === 'talkmaker'
+  /** 微信 App 预设，或气泡包显式 showBubbleTail 且未选其它 Messenger 尾巴（外观工坊）；液态玻璃几何尖角 */
+  const isWechatTail =
+    liquidGlassCssTail ||
+    (!cssSkin &&
+      !isImessageTail &&
+      !isTelegramTail &&
+      !isTalkmakerTail &&
+      (tailStyle === 'wechat' || (Boolean(showBubbleTail) && !tailStyle)))
   const showAvatarVisual = showAvatar && showAvatarColumn
   /** 合并组内无头像行仍占头像+间距宽，与首条气泡对齐 */
   const reserveAvatarGutter = showAvatar
@@ -342,7 +377,6 @@ export function WeChatMessageBubbleRow({
   )
   const isAltMessengerTail = isImessageTail || isTelegramTail || isTalkmakerTail
   const showTail =
-    !cssSkin &&
     showBubbleTail &&
     !multiSelectAvatar &&
     (isAltMessengerTail || isWechatTail ? true : showAvatarVisual)
@@ -456,9 +490,11 @@ export function WeChatMessageBubbleRow({
       ? cssSkin
         ? { backgroundColor: 'transparent' }
         : {}
-      : {
-          backgroundColor: variant === 'chat' ? bubbleBgChatResolved : bubbleBgPreview,
-        }),
+      : bubbleFrame
+        ? { backgroundColor: 'transparent' }
+        : {
+            backgroundColor: variant === 'chat' ? bubbleBgChatResolved : bubbleBgPreview,
+          }),
     color: variant === 'chat' ? bubbleTextResolved : bubbleTextPreview,
     borderRadius: translationOpen
       ? `${bubbleRadiusPx}px ${bubbleRadiusPx}px 0 0`
@@ -482,7 +518,33 @@ export function WeChatMessageBubbleRow({
           ? { border: `1px solid ${chatBubbleBorderColor}` }
           : {}),
     ...chatBubbleSurfaceStyle,
+    // 有边框时底色交给 face 层，防止盖住边框
+    ...(bubbleFrame ? { backgroundColor: 'transparent', backgroundImage: 'none' } : null),
   }
+
+  const bubbleFaceStyle: CSSProperties | null = bubbleFrame
+    ? {
+        borderRadius: translationOpen
+          ? `${bubbleRadiusPx}px ${bubbleRadiusPx}px 0 0`
+          : bubbleRadius,
+        backgroundColor:
+          cssSkin || chatBubbleSurfaceStyle?.background
+            ? undefined
+            : variant === 'chat'
+              ? bubbleBgChatResolved
+              : bubbleBgPreview,
+        ...(chatBubbleSurfaceStyle?.background
+          ? {
+              background: chatBubbleSurfaceStyle.background as string,
+              backgroundImage: chatBubbleSurfaceStyle.backgroundImage as string | undefined,
+              backgroundSize: chatBubbleSurfaceStyle.backgroundSize as string | undefined,
+              backgroundPosition: chatBubbleSurfaceStyle.backgroundPosition as
+                | string
+                | undefined,
+            }
+          : null),
+      }
+    : null
 
   const bubbleInner = (
     <>
@@ -587,42 +649,67 @@ export function WeChatMessageBubbleRow({
         <div className={`flex items-start gap-1.5 ${isSelf ? 'flex-row-reverse' : 'flex-row'}`}>
           <div className={`flex min-w-0 flex-col ${isSelf ? 'items-end' : 'items-start'}`}>
             {variant === 'chat' ? (
-              <motion.div
-                ref={contentRef}
-                data-wx-bubble-content
-                className={`relative z-[2] inline-block max-w-full overflow-visible ${bubblePadCls} leading-[1.4] select-none ${textCls} ${bubbleContentClassName}`}
-                style={{
-                  ...bubbleSurfaceStyle,
-                  ...chatBubbleTransformOrigin(isSelf, tailStyle),
-                }}
-                initial={CHAT_BUBBLE_ENTER_INITIAL}
-                animate={CHAT_BUBBLE_ENTER_ANIMATE}
-                transition={CHAT_BUBBLE_ENTER_SPRING}
-                whileTap={onBubbleLongPress ? { scale: 0.98, opacity: 0.9 } : undefined}
-                {...bind}
-              >
-                {isImessageTail && showTail ? (
-                  <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
-                ) : null}
+              <div className="relative inline-block max-w-full overflow-visible">
                 {isWechatTail && showTail ? (
                   <WechatBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
                 ) : null}
-                {bubbleInner}
-              </motion.div>
+                {isImessageTail && showTail ? (
+                  <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
+                ) : null}
+                <motion.div
+                  ref={contentRef}
+                  data-wx-bubble-content
+                  className={`relative z-[1] inline-block max-w-full overflow-visible ${bubblePadCls} leading-[1.4] select-none ${textCls} ${bubbleContentClassName}`}
+                  style={{
+                    ...bubbleSurfaceStyle,
+                    ...chatBubbleTransformOrigin(isSelf, tailStyle),
+                  }}
+                  initial={bubbleEnterInitial}
+                  animate={bubbleEnterAnimate}
+                  transition={bubbleEnterSpring}
+                  whileTap={onBubbleLongPress ? { scale: 0.97, opacity: 0.92 } : undefined}
+                  {...bind}
+                >
+                  {/* 图层：气泡底(face) < 边框 < 贴纸 < 文字 */}
+                  {bubbleFaceStyle ? <BubbleFaceLayer style={bubbleFaceStyle} /> : null}
+                  <BubbleFrameLayer frame={bubbleFrame} />
+                  <BubbleEdgeStickers stickers={edgeStickers} />
+                  <span data-wx-bubble-text="" className="relative z-[3]">
+                    {bubbleInner}
+                  </span>
+                </motion.div>
+                {showBubbleBadge ? (
+                  <span data-wx-bubble-badge={isSelf ? 'self' : 'other'} aria-hidden>
+                    {bubbleBadge!.text}
+                  </span>
+                ) : null}
+              </div>
             ) : (
-              <div
-                ref={contentRef}
-                data-wx-bubble-content
-                className={`relative z-[2] inline-block max-w-full overflow-visible ${bubblePadCls} leading-[1.4] select-none transition-[transform,opacity,background-color] duration-150 ease-out ${textCls} ${bubbleContentClassName}`}
-                style={bubbleSurfaceStyle}
-              >
-                {isImessageTail && showTail ? (
-                  <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
-                ) : null}
+              <div className="relative inline-block max-w-full overflow-visible">
                 {isWechatTail && showTail ? (
                   <WechatBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
                 ) : null}
-                {bubbleInner}
+                {isImessageTail && showTail ? (
+                  <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
+                ) : null}
+                <div
+                  ref={contentRef}
+                  data-wx-bubble-content
+                  className={`relative z-[1] inline-block max-w-full overflow-visible ${bubblePadCls} leading-[1.4] select-none transition-[transform,opacity,background-color] duration-150 ease-out ${textCls} ${bubbleContentClassName}`}
+                  style={bubbleSurfaceStyle}
+                >
+                  {bubbleFaceStyle ? <BubbleFaceLayer style={bubbleFaceStyle} /> : null}
+                  <BubbleFrameLayer frame={bubbleFrame} />
+                  <BubbleEdgeStickers stickers={edgeStickers} />
+                  <span data-wx-bubble-text="" className="relative z-[3]">
+                    {bubbleInner}
+                  </span>
+                </div>
+                {showBubbleBadge ? (
+                  <span data-wx-bubble-badge={isSelf ? 'self' : 'other'} aria-hidden>
+                    {bubbleBadge!.text}
+                  </span>
+                ) : null}
               </div>
             )}
             {translationPanel}
@@ -648,7 +735,7 @@ export function WeChatMessageBubbleRow({
   if (variant === 'chat') {
     if (!isSelf) {
       return (
-        <div className={`w-full max-w-full shrink-0 overflow-x-visible ${rowClassName}`}>
+        <div className={`w-full max-w-full shrink-0 overflow-visible ${rowClassName}`}>
           {!showAvatar && !multiSelectAvatar ? (
             <div className="ml-[24px] mr-auto min-w-0">{renderedBubble}</div>
           ) : showAvatarVisual || multiSelectAvatar ? (
@@ -743,7 +830,7 @@ export function WeChatMessageBubbleRow({
               {composeMultiSelectLeading(
                 multiSelectAvatar,
                 rankBeside || !chatOtherAvatarRankBadge ? (
-                  <div className="h-10 w-10 shrink-0" aria-hidden />
+                  <WeChatAvatarSizeGutter side="other" />
                 ) : (
                   <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge}>
                     <div className="h-10 w-10 shrink-0" aria-hidden />
@@ -768,7 +855,7 @@ export function WeChatMessageBubbleRow({
     if (isTalkmakerTail) {
       return (
         <div
-          className={`flex w-full max-w-full shrink-0 items-end justify-end gap-[4px] overflow-x-visible ${rowClassName}`}
+          className={`flex w-full max-w-full shrink-0 items-end justify-end gap-[4px] overflow-visible ${rowClassName}`}
         >
           {chatAccessory}
           <div className="mr-[24px] ml-auto min-w-0">{renderedBubble}</div>
@@ -778,7 +865,7 @@ export function WeChatMessageBubbleRow({
 
     return (
       <div
-        className={`flex w-full max-w-full shrink-0 items-end justify-end gap-[4px] overflow-x-visible ${rowClassName}`}
+        className={`flex w-full max-w-full shrink-0 items-end justify-end gap-[4px] overflow-visible ${rowClassName}`}
       >
         {chatAccessory}
         {!showAvatar && !multiSelectAvatar ? (
@@ -850,7 +937,7 @@ export function WeChatMessageBubbleRow({
             {composeMultiSelectLeading(
               multiSelectAvatar,
               rankBeside || !chatSelfAvatarRankBadge ? (
-                <div className="h-10 w-10 shrink-0" aria-hidden />
+                <WeChatAvatarSizeGutter side="self" />
               ) : (
                 <ChatGroupSpeakerRankOnAvatar chromeSide="self" rankBadge={chatSelfAvatarRankBadge}>
                   <div className="h-10 w-10 shrink-0" aria-hidden />
@@ -888,7 +975,7 @@ export function WeChatMessageBubbleRow({
           </div>
         ) : reserveAvatarGutter ? (
           <div className={`ml-[24px] mr-auto flex max-w-full flex-row ${rowAlign} gap-[12px]`}>
-            <div className="h-10 w-10 shrink-0" aria-hidden />
+            <WeChatAvatarSizeGutter side="other" />
             {bubbleBlock}
           </div>
         ) : (
@@ -919,7 +1006,7 @@ export function WeChatMessageBubbleRow({
       ) : reserveAvatarGutter ? (
         <div className={`mr-[24px] ml-auto flex max-w-full flex-row ${rowAlign} gap-[12px]`}>
           {bubbleBlock}
-          <div className="h-10 w-10 shrink-0" aria-hidden />
+          <WeChatAvatarSizeGutter side="self" />
         </div>
       ) : (
         <div className="mr-[24px] ml-auto min-w-0">{bubbleBlock}</div>

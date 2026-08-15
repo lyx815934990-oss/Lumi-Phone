@@ -187,7 +187,6 @@ async function askModelMarkupWithRetry<T>(
   baseSystem: string,
   userTask: string,
   parse: (raw: string) => T | null,
-  maxTokens: number,
   maxRetry = 3,
 ): Promise<T> {
   let lastRaw = ''
@@ -198,7 +197,7 @@ async function askModelMarkupWithRetry<T>(
         { role: 'system', content: baseSystem },
         { role: 'user', content: userTask },
       ],
-      { temperature: 0.72, max_tokens: maxTokens },
+      { temperature: 0.72 },
     )
     lastRaw = raw
     const parsed = parse(raw)
@@ -310,7 +309,6 @@ ${boundNpcSeedText}
 ${SPY_PROFILE_CONTACTS_FORMAT}
 `.trim(),
     parseSpyProfileContactsMarkup,
-    2200,
   )
 
   const normalizedProfile: SpyWechatGeneratedData['profile'] = {
@@ -353,7 +351,6 @@ ${SPY_PROFILE_CONTACTS_FORMAT}
 ${SPY_CHAT_FORMAT}
 `.trim(),
       parseSpyChatMarkup,
-      1800,
     )
     messagesByContact.set(cidOne, payload.messages || [])
   }
@@ -371,7 +368,6 @@ ${SPY_CHAT_FORMAT}
 ${SPY_MOMENTS_FORMAT}
 `.trim(),
     parseSpyMomentsMarkup,
-    1800,
   )
 
   const financialPayload = await askModelMarkupWithRetry(
@@ -385,7 +381,6 @@ ${SPY_MOMENTS_FORMAT}
 ${SPY_FINANCIAL_FORMAT}
 `.trim(),
     parseSpyFinancialMarkup,
-    1600,
   )
 
   const mergedContactsRaw: SpyWechatGeneratedData['contacts'] = (profileAndContacts.contacts || []).map((c) => ({

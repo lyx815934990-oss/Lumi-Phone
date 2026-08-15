@@ -1,7 +1,11 @@
 import type { Character, WeChatChatMessage, WeChatImageMime, WeChatVoicePayload, WeChatMusicSyncInvitePayload, WeChatLocationPayload, WeChatTakeoutOrderPayload } from './newFriendsPersona/types'
 import { personaDb } from './newFriendsPersona/idb'
 import type { ProactiveMessageRevealBubble } from './proactiveMessageRevealBridge'
-import { parseCharacterStickerLine, ensureStickerStoreHydrated } from './stickers/stickerStore'
+import {
+  parseCharacterStickerLine,
+  looksLikeCharacterStickerProtocolLine,
+  ensureStickerStoreHydrated,
+} from './stickers/stickerStore'
 import {
   formatStickerTranscriptLine,
   wasCharacterStickerRefUsedRecently,
@@ -242,6 +246,8 @@ async function planProactiveBubbleLineAsync(
       return null
     }
   }
+  // 协议行但未匹配资源：丢弃，勿落成「表情包 xxx」纯文字
+  if (looksLikeCharacterStickerProtocolLine(trimmed)) return null
 
   const seg = sanitizeVoiceControlForTextBubble(trimmed) || trimmed
   if (!seg.trim()) return null
@@ -372,13 +378,15 @@ export function repairStoredVoiceMessageRow(m: WeChatChatMessage): WeChatChatMes
   }
 }
 
-/** 修复落库时未带 images 的 `[表情包]` 行，避免气泡显示引用名原文。 */
+/** 修复落库时未带 images 的表情包协议行，避免气泡显示「表情包 xxx」原文。 */
 export async function repairStoredStickerMessageRow(m: WeChatChatMessage): Promise<WeChatChatMessage> {
   if (m.images?.length) return m
   const content = String(m.content ?? '').trim()
-  if (!content.startsWith('[表情包]')) return m
-  const charSticker = parseCharacterStickerLine(content)
+  const charSticker =
+    parseCharacterStickerLine(content) ||
+    (m.stickerRef?.trim() ? parseCharacterStickerLine(`表情包 ${m.stickerRef.trim()}`) : null)
   if (!charSticker) return m
+  if (!looksLikeCharacterStickerProtocolLine(content) && !m.stickerRef?.trim()) return m
   try {
     const payloadSticker = await stickerUrlToImagePayload(charSticker.url)
     return {

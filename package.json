@@ -4,15 +4,19 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/sync-vn-bgm-manifest.mjs && vite",
-    "dev:mobile": "node scripts/sync-vn-bgm-manifest.mjs && vite --mode mobile",
+    "postinstall": "node scripts/patch-wechat-emojis.mjs",
+    "dev": "node scripts/patch-wechat-emojis.mjs && node scripts/sync-vn-bgm-manifest.mjs && vite",
+    "dev:mobile": "node scripts/patch-wechat-emojis.mjs && node scripts/sync-vn-bgm-manifest.mjs && vite --mode mobile",
     "ncm:local": "npx NeteaseCloudMusicApi@4.28.0",
-    "build": "node scripts/sync-vn-bgm-manifest.mjs && tsc -b && node scripts/vite-build.mjs",
+    "build": "node scripts/patch-wechat-emojis.mjs && node scripts/sync-vn-bgm-manifest.mjs && tsc -b && node scripts/vite-build.mjs",
     "deploy:cf": "node scripts/deploy-cloudflare-pages.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "axios": "^1.15.2",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.7.0",

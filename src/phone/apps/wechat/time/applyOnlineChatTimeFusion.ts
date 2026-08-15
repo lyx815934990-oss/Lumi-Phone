@@ -25,6 +25,10 @@ export type StoryTimeFloorInfo = {
 
 const WALL_CLOCK_SLACK_MS = 3 * 60_000
 const STORY_AHEAD_OF_FLOOR_SLACK_MS = 2 * 60_000
+/** 故事内故意跨年/大跨度推进（非墙钟污染）上限 */
+const STORY_INTENTIONAL_ADVANCE_MAX_MS = 5 * 365 * 86_400_000
+/** 年末自然跨到次年的小跨度 */
+const STORY_CROSS_YEAR_SMALL_MS = 180 * 86_400_000
 
 /** 是否仍紧贴真实墙钟（用于识别「未按剧情对齐的系统时间」） */
 export function looksLikeRealWallClockMs(
@@ -39,6 +43,7 @@ export function looksLikeRealWallClockMs(
 /**
  * 自定义时钟是否已落在「剧情锚点往后」的故事日历上。
  * 系统墙钟即使数值大于剧情日（含同年：真实 2026-08-04 vs 剧情 2026-08-03），也不算对齐。
+ * 用户用自定义时间故意推到次年/更远（且不像墙钟）视为已对齐，应同步写入剧情轴。
  */
 export function isWeChatClockAlignedWithStoryFloor(
   liveMs: number,
@@ -72,11 +77,18 @@ export function isWeChatClockAlignedWithStoryFloor(
     return false
   }
 
+  const span = liveMs - floorMs
   const floorY = new Date(floorMs).getFullYear()
   const liveY = new Date(liveMs).getFullYear()
   if (liveY === floorY) return true
-  // 允许跨年推进（如年末→次日清晨），但限制在锚点后 180 天内
-  if (liveY === floorY + 1 && liveMs - floorMs <= 180 * 86_400_000) return true
+
+  // 故意设定的故事时钟（不是墙钟）：允许跨年与较大时间跳（如 26→27）
+  const intentionalStoryBase =
+    base != null && !looksLikeRealWallClockMs(base, now) && base >= floorMs
+  if (intentionalStoryBase && span <= STORY_INTENTIONAL_ADVANCE_MAX_MS) return true
+
+  // 年末自然跨到次年的小跨度
+  if (liveY === floorY + 1 && span <= STORY_CROSS_YEAR_SMALL_MS) return true
   return false
 }
 

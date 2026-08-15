@@ -1,7 +1,7 @@
 /** 首开预热 / 缓存：排除剧本杀与超大媒体 */
 
 import { importNamedWithRetry } from '../lazyWithRetry'
-import { loadWeChatAppDefault } from './wechatAppModule'
+import { loadWeChatAppDefault, resetWeChatAppModuleCache } from './wechatAppModule'
 
 const SKIP_URL_RE =
   /JBSGameFlow|jubensha|Jubensha|jbsChat|剧本杀|\.mp4(?:$|\?)|聊天室背景/i
@@ -188,30 +188,53 @@ async function runPreloadQueue(
 }
 
 /**
- * 微信：在时限内反复等同一 Promise，绝不把超时当成成功。
+ * 微信：在时限内反复等同一 Promise；失败会清缓存并用 lazyWithRetry 的 cache-bust 再拉。
+ * 超时/失败返回 false，开屏应继续进桌面，勿死等。
  */
 async function preloadWeChatUntilReady(
   onProgress?: (p: BootPreloadProgress) => void,
-  budgetMs = 300_000,
+  budgetMs = 50_000,
 ): Promise<boolean> {
   const started = Date.now()
+  let attempt = 0
   onProgress?.({ done: 0, total: 1, ratio: 0, label: '正在准备微信…' })
 
   while (Date.now() - started < budgetMs) {
+    attempt += 1
     try {
-      const remain = Math.max(5_000, budgetMs - (Date.now() - started))
-      // 直接拉 lazy 用的 default Promise，保证开屏完成 = 点开可同步用
-      const result = await withTimeout(loadWeChatAppDefault(), Math.min(remain, 90_000))
+      const remain = Math.max(4_000, budgetMs - (Date.now() - started))
+      const slice = Math.min(remain, attempt === 1 ? 28_000 : 16_000)
+      const result = await withTimeout(loadWeChatAppDefault(), slice)
       if (result !== 'timeout') {
         onProgress?.({ done: 1, total: 1, ratio: 1, label: '微信已就绪' })
         return true
       }
-      onProgress?.({ done: 0, total: 1, ratio: 0.15, label: '微信仍在下载…' })
+      // 超时：丢掉可能半挂起的 Promise，下一轮带 cache-bust 重下
+      resetWeChatAppModuleCache()
+      onProgress?.({
+        done: 0,
+        total: 1,
+        ratio: Math.min(0.45, 0.12 + attempt * 0.06),
+        label: '微信仍在下载…',
+      })
     } catch {
-      onProgress?.({ done: 0, total: 1, ratio: 0.05, label: '微信下载受阻，重试中…' })
-      await sleep(1200)
+      resetWeChatAppModuleCache()
+      onProgress?.({
+        done: 0,
+        total: 1,
+        ratio: Math.min(0.4, 0.08 + attempt * 0.05),
+        label: '微信下载受阻，重试中…',
+      })
+      await sleep(800 + Math.min(attempt, 4) * 400)
     }
   }
+
+  onProgress?.({
+    done: 0,
+    total: 1,
+    ratio: 0.5,
+    label: '微信稍后再载，先进入桌面…',
+  })
   return false
 }
 
@@ -243,14 +266,14 @@ export async function preloadAllNonJubenshaBootResources(
     })
   }
 
-  const wechatOk = await preloadWeChatUntilReady((p) => mapProgress(p, 0), 180_000)
+  const wechatOk = await preloadWeChatUntilReady((p) => mapProgress(p, 0), mobile ? 45_000 : 55_000)
   finished = wechatOk ? 1 : 0
 
   if (rest.length) {
     await runPreloadQueue(rest, (p) => mapProgress(p, finished), {
       concurrency: mobile ? 2 : 3,
-      overallTimeoutMs: wechatOk ? 120_000 : 60_000,
-      perTaskTimeoutMs: mobile ? 30_000 : 40_000,
+      overallTimeoutMs: wechatOk ? 75_000 : 40_000,
+      perTaskTimeoutMs: mobile ? 22_000 : 30_000,
       strict: true,
     })
   }
@@ -275,7 +298,7 @@ export function scheduleBackgroundAppWarm(): void {
 
   const run = () => {
     void (async () => {
-      await preloadWeChatUntilReady(undefined, 180_000)
+      await preloadWeChatUntilReady(undefined, 90_000)
       await runPreloadQueue(
         tasks.filter((t) => t.label !== '微信'),
         undefined,

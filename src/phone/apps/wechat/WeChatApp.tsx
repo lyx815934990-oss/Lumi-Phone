@@ -1,5 +1,5 @@
-import { animate, AnimatePresence, motion, Reorder, useDragControls, useMotionValue } from 'framer-motion'
-import { Activity, BellOff, EyeOff, MoreHorizontal, Pin, PinOff, Plus, Trash2, CircleDot } from 'lucide-react'
+import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion'
+import { Activity, BellOff, MoreHorizontal, Plus } from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type PointerEvent as ReactPointerEvent,
   type ComponentProps,
   type CSSProperties,
   type ReactNode,
@@ -30,7 +29,10 @@ import {
 } from './wechatFocusChatNavigation'
 import { wxFillToStyle } from './wechatThemeFillStyle'
 import { resolvePublicImageUrl } from '../../../publicAssetUrl'
-import { WeChatTitleUnreadText, WeChatThreadPreviewText, WeChatThreadTimeText, WeChatUnreadBadgeText } from './wechatUnreadCountText'
+import { WeChatTitleUnreadText } from './wechatUnreadCountText'
+import { MessagesTab, type MessagesThreadRow } from './MessagesTab'
+import { WeChatLiquidTabBar } from './WeChatLiquidTabBar'
+import { formatWeChatDraftPreview, loadWeChatComposerDraft } from './wechatComposerDraft'
 import { Pressable } from '../../components/Pressable'
 import {
   DEFAULT_CUSTOMIZATION,
@@ -145,10 +147,13 @@ import { applyWechatContactRemovalDataClear } from './wechatContactRemoval'
 import { resolveCharacterAvatarUrl, resolveWeChatContactAvatarUrl } from '../../utils/characterAvatarUrl'
 import { WeChatMessengerChatHeader } from './WeChatMessengerChatHeader'
 import { ChatHeader } from './chatRoom/ChatHeader'
+import { ChatPeerPresenceDot } from './chatRoom/ChatPeerPresenceDot'
+import { loadShowChatPresenceDot } from './chatRoom/chatPresenceDotStorage'
 import { WeChatBubblePresetCards } from './WeChatBubblePresetCards'
 import {
   WECHAT_BUBBLE_PRESETS,
   type WeChatBubblePreset,
+  isWeChatBubblePresetCssPackId,
   migrateMislabeledLumiDefaultBubble,
   resolveEffectiveChatInputBarForBubble,
   resolvePreviewWechatThemeForBubble,
@@ -160,9 +165,12 @@ import {
   applyBubblePack,
   bubblePackDownloadFilename,
   buildBubblePackFromCurrent,
+  isLiquidGlassMinimalPackActive,
+  liquidGlassBubblePackForPresetId,
   parseLumiBubblePack,
   parseLumiBubblePackFile,
   serializeLumiBubblePack,
+  wrapWeChatChatSkinScopedCss,
 } from './bubblePack'
 import {
   resolveChatDisplayFontFamily,
@@ -291,6 +299,7 @@ type WxRedPacketDetailPayload = {
 
 type WxContactProfileReturnTo =
   | { mode: 'tabs-contacts' }
+  | { mode: 'tabs-messages' }
   | { mode: 'chat'; chat: WxActiveChat; reopenChatSettings: boolean }
   | { mode: 'moments-feed' }
   | {
@@ -672,25 +681,6 @@ async function copyTextToClipboard(text: string) {
   await navigator.clipboard.writeText(text)
 }
 
-function Icon({ path, active }: { path: string; active: boolean }) {
-  return (
-    <svg
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      style={{ opacity: active ? 1 : 0.92 }}
-      aria-hidden
-    >
-      <path d={path} />
-    </svg>
-  )
-}
-
 function Header({
   title,
   titleSub,
@@ -721,6 +711,12 @@ function Header({
   titleCenterAbsolute = false,
   /** 私聊：返回键旁打开线上时间设置 */
   onOpenTimeSettings,
+  /** 聊天室：标题区可选角色头像（外观工坊皮肤可显示） */
+  titleAvatarUrl,
+  /** 气泡包开启标题栏角色头像 */
+  showTitleAvatar = false,
+  /** 备注名后：在线状态圆点等 */
+  titleAfterName,
 }: {
   title: string
   /** 第二行：备注/说明（灰色小字），与微信昵称主行搭配 */
@@ -745,12 +741,58 @@ function Header({
   showAppearanceGuide?: boolean
   onDismissAppearanceGuide?: () => void
   onOpenTimeSettings?: () => void
+  titleAvatarUrl?: string
+  showTitleAvatar?: boolean
+  titleAfterName?: ReactNode
 }) {
   const effectivePendingCount =
     pendingQueueCount > 0 ? pendingQueueCount : titleTypingAlternate ? 1 : 0
 
+  const titleAvatarSrc = titleAvatarUrl?.trim()
+    ? resolveCharacterAvatarUrl({ avatarUrl: titleAvatarUrl }) || titleAvatarUrl
+    : ''
+
   const center = (
-    <div className="flex min-h-[36px] min-w-0 flex-1 justify-center px-1">
+    <div
+      data-wx-chat-header-title-wrap
+      className="flex min-h-[36px] min-w-0 flex-1 items-center justify-center gap-2 px-1"
+    >
+      {showTitleAvatar ? (
+        titleAvatarSrc ? (
+          <img
+            data-wx-chat-header-avatar
+            src={titleAvatarSrc}
+            alt=""
+            className="relative z-[21] h-7 w-7 shrink-0 object-cover"
+            style={{
+              display: 'block',
+              width: 'var(--wx-chat-header-avatar-size, 28px)',
+              height: 'var(--wx-chat-header-avatar-size, 28px)',
+              borderRadius: 'var(--wx-chat-header-avatar-radius, 14px)',
+            }}
+            draggable={false}
+          />
+        ) : (
+          <span
+            data-wx-chat-header-avatar
+            className="relative z-[21] inline-flex shrink-0 items-center justify-center"
+            style={{
+              display: 'flex',
+              width: 'var(--wx-chat-header-avatar-size, 28px)',
+              height: 'var(--wx-chat-header-avatar-size, 28px)',
+              borderRadius: 'var(--wx-chat-header-avatar-radius, 14px)',
+              background: '#9ca3af',
+              color: '#fff',
+              fontSize: 9,
+              fontWeight: 500,
+              lineHeight: 1,
+            }}
+            aria-hidden
+          >
+            头像
+          </span>
+        )
+      ) : null}
       <ChatHeader
         contactName={title}
         contactSub={titleSub}
@@ -760,6 +802,7 @@ function Header({
         titleTrailing={titleTrailing}
         titleTrailingInteractive={titleTrailingInteractive}
         titleUnreadCount={titleUnreadCount}
+        titleAfterName={titleAfterName}
         renderUnread={(count) => (
           <WeChatTitleUnreadText
             count={count}
@@ -772,24 +815,52 @@ function Header({
 
   const balancedSideSlot =
     customRight || onOpenTimeSettings ? 'min-w-[76px]' : 'w-10'
+  const btnColor = 'var(--wx-chat-header-btn, var(--wx-chat-header-text, var(--wx-text)))'
 
   return (
     <header
       data-wx-chat-header
-      className="relative flex shrink-0 items-center justify-between gap-2 border-b px-3 pb-2"
+      className="relative flex shrink-0 items-center justify-between gap-2 overflow-hidden border-b px-3 pb-2"
       style={{
         paddingTop: 'max(0px, env(safe-area-inset-top, 0px))',
+        height: 'var(--wx-chat-header-height, auto)',
+        minHeight: 'var(--wx-chat-header-height, unset)',
+        boxSizing: 'border-box',
         borderColor: 'var(--wx-chat-header-border, var(--wx-border))',
-        background: 'var(--wx-chat-header-bg, var(--wx-surface))',
+        backgroundColor: 'var(--wx-chat-header-bg, var(--wx-surface))',
+        // 背景图走下层 DOM（勿写在 header 自身：scopedCss 常带 background-image:none !important）
         color: 'var(--wx-chat-header-text, var(--wx-text))',
       }}
     >
+      <div
+        aria-hidden
+        data-wx-chat-header-surface="image"
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          backgroundImage: 'var(--wx-chat-header-bg-image, none)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          filter: 'blur(var(--wx-chat-header-bg-image-blur, 0px))',
+          transform: 'scale(1.12)',
+        }}
+      />
+      <div
+        aria-hidden
+        data-wx-chat-header-surface="overlay"
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          backgroundColor: 'var(--wx-chat-header-bg-overlay, transparent)',
+          opacity: 'var(--wx-chat-header-bg-overlay-opacity, 0)',
+        }}
+      />
       <div className={`relative z-20 flex ${balancedSideSlot} shrink-0 items-center justify-start gap-0.5`}>
         {showBack ? (
           <Pressable
+            data-wx-chat-header-btn="back"
             onClick={onBack}
             className="flex h-9 w-9 items-center justify-center rounded-full"
-            style={{ color: 'var(--wx-text)' }}
+            style={{ color: btnColor }}
             aria-label="返回"
           >
             <svg
@@ -806,9 +877,10 @@ function Header({
           </Pressable>
         ) : showHome ? (
           <Pressable
+            data-wx-chat-header-btn="back"
             onClick={onHome}
             className="flex h-9 w-9 items-center justify-center rounded-full"
-            style={{ color: 'var(--wx-text)' }}
+            style={{ color: btnColor }}
             aria-label="返回桌面"
           >
             <svg
@@ -830,9 +902,10 @@ function Header({
         ) : null}
         {showBack && onOpenTimeSettings ? (
           <Pressable
+            data-wx-chat-header-btn="time"
             onClick={onOpenTimeSettings}
             className="flex h-9 w-9 items-center justify-center rounded-full"
-            style={{ color: 'var(--wx-text)' }}
+            style={{ color: btnColor }}
             aria-label="线上时间设置"
           >
             <svg
@@ -862,9 +935,10 @@ function Header({
               <div className="relative z-[2] flex items-center justify-end">{customRight}</div>
             ) : (
               <Pressable
+                data-wx-chat-header-btn="more"
                 onClick={onOpenTheme}
                 className="relative z-[2] flex h-9 w-9 items-center justify-center rounded-full"
-                style={{ color: 'var(--wx-text)' }}
+                style={{ color: btnColor }}
                 aria-label={rightMode === 'chat-room-settings' ? '当前聊天设置' : '外观与主题'}
               >
                 {rightMode === 'chat-room-settings' ? (
@@ -936,168 +1010,6 @@ function Header({
   )
 }
 
-function TabBar({
-  active,
-  onChange,
-  messagesUnreadCount = 0,
-  contactsUnreadCount = 0,
-  discoverUnreadCount = 0,
-}: {
-  active: TabId
-  onChange: (id: TabId) => void
-  /** 「信息」Tab 未读数（微信外或会话列表外展示） */
-  messagesUnreadCount?: number
-  /** 「通讯录」Tab 未读数（新的朋友） */
-  contactsUnreadCount?: number
-  /** 「发现」Tab 未读数（朋友圈互动消息） */
-  discoverUnreadCount?: number
-}) {
-  const { state } = useCustomization()
-  const { wechatTheme } = state
-  const builtin: Record<TabId, string> = {
-    messages: 'M7 7h10a3 3 0 0 1 3 3v4.6a3 3 0 0 1-3 3H12l-3 3v-3H7a3 3 0 0 1-3-3V10a3 3 0 0 1 3-3z',
-    contacts: 'M16 19a4 4 0 0 0-8 0 M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
-    dates: 'M12 21s-7-4.6-7-10a4 4 0 0 1 7-2 4 4 0 0 1 7 2c0 5.4-7 10-7 10z',
-    discover: 'M12 2l3.2 6.5L22 12l-6.8 3.5L12 22l-3.2-6.5L2 12l6.8-3.5L12 2z',
-    profile: 'M20 21c0-4.2-3.6-7-8-7s-8 2.8-8 7 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
-  }
-
-  return (
-    <nav
-      className="relative shrink-0 overflow-hidden"
-      style={{
-        paddingBottom: 'max(10px, env(safe-area-inset-bottom, 0px))',
-        borderTop: '1px solid var(--wx-border)',
-      }}
-    >
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{ ...fillToStyle(wechatTheme.tabBarStyle), opacity: fillLayerOpacity(wechatTheme.tabBarStyle) }}
-        aria-hidden
-      />
-      <div className="pointer-events-none absolute inset-0" style={glassStyle(wechatTheme.tabBarStyle)} aria-hidden />
-
-      <div className="relative mx-auto grid max-w-[420px] grid-cols-5 px-2 pt-1.5">
-        {wechatTheme.tabBarItems.map((it) => {
-          const isActive = it.id === active
-          const labelColor = isActive
-            ? it.labelActiveColor?.trim() || wechatTheme.tabBarLabelActive
-            : it.labelInactiveColor?.trim() || wechatTheme.tabBarLabelInactive
-          const badgeCount =
-            it.id === 'messages'
-              ? messagesUnreadCount
-              : it.id === 'contacts'
-                ? contactsUnreadCount
-                : it.id === 'discover'
-                  ? discoverUnreadCount
-                  : 0
-          const showBadge = badgeCount > 0
-          const iconNode = it.iconUrl?.trim() ? (
-            <img
-              src={it.iconUrl}
-              alt=""
-              className="h-[22px] w-[22px] rounded-[6px] object-cover"
-              aria-hidden
-            />
-          ) : (
-            <Icon path={builtin[it.id]} active={isActive} />
-          )
-          return (
-            <Pressable
-              key={it.id}
-              onClick={() => onChange(it.id)}
-              className="relative flex h-[54px] flex-col items-center justify-center gap-0.5 rounded-[14px]"
-              style={{
-                color: isActive ? 'var(--wx-tabbar-active)' : 'var(--wx-tabbar-inactive)',
-              }}
-              aria-label={showBadge ? `${it.label}，未读 ${badgeCount} 条` : it.label}
-            >
-              {showBadge ? (
-                <span className="relative inline-flex shrink-0">
-                  {iconNode}
-                  <span
-                    className="pointer-events-none absolute -right-1 -top-1 z-[1] flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full px-[5px] text-[10px] leading-none text-white"
-                    style={{
-                      background: '#fa5151',
-                      boxShadow: '0 0 0 1.5px var(--wx-surface, #fff)',
-                    }}
-                  >
-                    <WeChatUnreadBadgeText count={badgeCount} />
-                  </span>
-                </span>
-              ) : (
-                iconNode
-              )}
-              <div className="leading-none">
-                <div className="text-[12px] font-medium tracking-[0.2px]" style={{ color: labelColor }}>
-                  {it.label}
-                </div>
-                <div className="mt-[1px] text-[10px] tracking-[0.14em] opacity-70" style={{ color: labelColor }}>
-                  {it.en}
-                </div>
-              </div>
-            </Pressable>
-          )
-        })}
-      </div>
-    </nav>
-  )
-}
-
-type MessagesThreadRow =
-  | {
-      key: 'lumi'
-      kind: 'lumi'
-      conversationKey: string
-      peerCharacterId: string
-      isPinned: boolean
-      name: string
-      time: string
-      preview: string
-      avatarUrl: string
-      unread: number
-    }
-  | {
-      key: 'self'
-      kind: 'self'
-      conversationKey: string
-      peerCharacterId: string
-      isPinned: boolean
-      name: string
-      time: string
-      preview: string
-      avatarUrl: string
-      unread: number
-    }
-  | {
-      key: string
-      kind: 'persona'
-      conversationKey: string
-      peerCharacterId: string
-      characterId: string
-      isPinned: boolean
-      name: string
-      time: string
-      preview: string
-      avatarUrl?: string
-      unread: number
-    }
-  | {
-      key: string
-      kind: 'group'
-      groupId: string
-      conversationKey: string
-      peerCharacterId: string
-      isPinned: boolean
-      name: string
-      time: string
-      preview: string
-      avatarUrl?: string
-      unread: number
-    }
-
-const PIN_ROW_EST_PX = 76
-
 type ActiveChatUnreadExclude = {
   conversationKey: string | null
   characterId: string | null
@@ -1115,661 +1027,12 @@ function isMessageThreadForActiveChat(t: MessagesThreadRow, active: ActiveChatUn
   return false
 }
 
-/** 信息页会话卡片左滑露出的操作区宽度（4 个横向操作） */
-const MSG_THREAD_SWIPE_ACTION_W = 232
-const MSG_THREAD_SWIPE_SPRING = { type: 'spring' as const, stiffness: 520, damping: 38, mass: 0.85 }
-const MSG_THREAD_SWIPE_DRAG_THRESHOLD = 7
-const MSG_THREAD_SWIPE_COMMIT_RATIO = 0.22
-const MSG_THREAD_SWIPE_FLING_PX_PER_SEC = 520
-
-function MessageThreadListItem({
-  t,
-  isPinnedSection,
-  muted,
-  onOpenChat,
-  onLongPress,
-  swipeOpen,
-  onSwipeOpenChange,
-  playerIdentityId,
-  onListDataMutated,
-  onThreadHidden,
-  onRequestDelete,
-}: {
-  t: MessagesThreadRow
-  isPinnedSection: boolean
-  muted: boolean
-  onOpenChat: (chat: WxActiveChat) => void
-  onLongPress: (t: MessagesThreadRow, e: ReactPointerEvent) => void
-  swipeOpen: boolean
-  onSwipeOpenChange: (open: boolean) => void
-  playerIdentityId: string | null
-  onListDataMutated: () => void
-  /** 左滑「不显示」：立刻从列表移除（全量刷新前先反馈） */
-  onThreadHidden?: (conversationKey: string) => void
-  onRequestDelete: (t: MessagesThreadRow) => void
-}) {
-  const { state } = useCustomization()
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const longPressFiredRef = useRef(false)
-  const x = useMotionValue(0)
-  const pointerIdRef = useRef<number | null>(null)
-  const swipeDraggingRef = useRef(false)
-  const swipeStartClientXRef = useRef(0)
-  const swipeStartClientYRef = useRef(0)
-  const swipeStartXRef = useRef(0)
-  const swipeStartOpenRef = useRef(false)
-  const pointerSamplesRef = useRef<Array<{ t: number; clientX: number }>>([])
-
-  useEffect(() => {
-    void animate(x, swipeOpen ? -MSG_THREAD_SWIPE_ACTION_W : 0, MSG_THREAD_SWIPE_SPRING)
-  }, [swipeOpen, x])
-
-  const clearTimer = () => {
-    if (longPressTimerRef.current != null) {
-      clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-  }
-
-  const endSwipeDrag = () => {
-    swipeDraggingRef.current = false
-    const cur = x.get()
-    // 和聊天室翻页一致：位移比例 + 快速轻扫双通道判定
-    const samples = pointerSamplesRef.current
-    let vx = 0
-    if (samples.length >= 2) {
-      const a = samples[samples.length - 2]!
-      const b = samples[samples.length - 1]!
-      const dt = Math.max(1, b.t - a.t)
-      vx = ((b.clientX - a.clientX) / dt) * 1000
-    }
-    const startOpen = swipeStartOpenRef.current
-    let shouldOpen = startOpen
-    if (!startOpen) {
-      if (cur <= -MSG_THREAD_SWIPE_ACTION_W * MSG_THREAD_SWIPE_COMMIT_RATIO || vx < -MSG_THREAD_SWIPE_FLING_PX_PER_SEC) {
-        shouldOpen = true
-      }
-    } else {
-      if (
-        cur >= -MSG_THREAD_SWIPE_ACTION_W * (1 - MSG_THREAD_SWIPE_COMMIT_RATIO) ||
-        vx > MSG_THREAD_SWIPE_FLING_PX_PER_SEC
-      ) {
-        shouldOpen = false
-      }
-    }
-    onSwipeOpenChange(shouldOpen)
-    void animate(x, shouldOpen ? -MSG_THREAD_SWIPE_ACTION_W : 0, MSG_THREAD_SWIPE_SPRING)
-    pointerSamplesRef.current = []
-  }
-
-  const runPin = async () => {
-    if (!playerIdentityId) return
-    await personaDb.updatePinnedStatus({
-      conversationKey: t.conversationKey,
-      peerCharacterId: t.peerCharacterId,
-      playerIdentityId,
-      isPinned: !t.isPinned,
-    })
-    onSwipeOpenChange(false)
-    void animate(x, 0, MSG_THREAD_SWIPE_SPRING)
-    onListDataMutated()
-  }
-
-  const runMarkUnread = async () => {
-    await personaDb.markWeChatConversationUnread(t.conversationKey)
-    onSwipeOpenChange(false)
-    void animate(x, 0, MSG_THREAD_SWIPE_SPRING)
-    onListDataMutated()
-  }
-
-  const runHide = async () => {
-    const existing = await personaDb.getChatConversationSettings(t.conversationKey)
-    const pid = playerIdentityId?.trim() || existing?.playerIdentityId?.trim()
-    if (!pid) return
-    // 先从列表摘掉，避免全量刷新慢时以为「不显示」没生效
-    onThreadHidden?.(t.conversationKey)
-    onSwipeOpenChange(false)
-    void animate(x, 0, MSG_THREAD_SWIPE_SPRING)
-    ;(document.activeElement as HTMLElement | null)?.blur?.()
-    await personaDb.upsertChatConversationSettings({
-      conversationKey: t.conversationKey,
-      peerCharacterId: t.peerCharacterId,
-      playerIdentityId: pid,
-      hiddenFromMessageList: true,
-    })
-  }
-
-  const runDelete = () => {
-    onSwipeOpenChange(false)
-    void animate(x, 0, MSG_THREAD_SWIPE_SPRING)
-    onRequestDelete(t)
-  }
-
-  const swipeActionBtnClass =
-    'flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-1 border-l border-black/10 px-1 py-1 text-[11px] font-medium leading-tight text-[#333] transition-colors active:bg-black/10'
-
-  return (
-    <div
-      data-swipe-row-root
-      className={`relative overflow-hidden ${isPinnedSection ? '' : 'rounded-[18px]'}`}
-      style={isPinnedSection ? undefined : { borderColor: 'var(--wx-border)' }}
-    >
-      <div className="absolute inset-y-0 right-0 z-0 flex bg-[#e6e6e6]" style={{ width: MSG_THREAD_SWIPE_ACTION_W }} aria-hidden={!swipeOpen}>
-        <button
-          type="button"
-          data-swipe-action
-          tabIndex={swipeOpen ? 0 : -1}
-          className={`${swipeActionBtnClass} border-l-0`}
-          onClick={() => void runPin()}
-        >
-          <Pin className="size-4 shrink-0" strokeWidth={2} aria-hidden />
-          <span>{t.isPinned ? '取消置顶' : '置顶'}</span>
-        </button>
-        <button
-          type="button"
-          data-swipe-action
-          tabIndex={swipeOpen ? 0 : -1}
-          className={swipeActionBtnClass}
-          onClick={() => void runMarkUnread()}
-        >
-          <CircleDot className="size-4 shrink-0" strokeWidth={2} aria-hidden />
-          <span>标为未读</span>
-        </button>
-        <button
-          type="button"
-          data-swipe-action
-          tabIndex={swipeOpen ? 0 : -1}
-          className={swipeActionBtnClass}
-          onClick={() => void runHide()}
-        >
-          <EyeOff className="size-4 shrink-0" strokeWidth={2} aria-hidden />
-          <span>不显示</span>
-        </button>
-        <button
-          type="button"
-          data-swipe-action
-          tabIndex={swipeOpen ? 0 : -1}
-          className={`${swipeActionBtnClass} text-[#fa5151]`}
-          onClick={runDelete}
-        >
-          <Trash2 className="size-4 shrink-0" strokeWidth={2} aria-hidden />
-          <span>删除</span>
-        </button>
-      </div>
-
-      <motion.div
-        className="relative z-[1] touch-pan-y"
-        style={{ x }}
-        onPointerDownCapture={(e) => {
-          if ((e.target as HTMLElement).closest('[data-swipe-action]')) return
-          pointerIdRef.current = e.pointerId
-          swipeDraggingRef.current = false
-          swipeStartClientXRef.current = e.clientX
-          swipeStartClientYRef.current = e.clientY
-          swipeStartXRef.current = x.get()
-          swipeStartOpenRef.current = swipeOpen
-          pointerSamplesRef.current = [{ t: performance.now(), clientX: e.clientX }]
-          longPressFiredRef.current = false
-          clearTimer()
-          longPressTimerRef.current = window.setTimeout(() => {
-            longPressFiredRef.current = true
-            onLongPress(t, e)
-          }, 520)
-        }}
-        onPointerMoveCapture={(e) => {
-          if (pointerIdRef.current !== e.pointerId) return
-          const dx = e.clientX - swipeStartClientXRef.current
-          const dy = e.clientY - swipeStartClientYRef.current
-          if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) clearTimer()
-          if (!swipeDraggingRef.current) {
-            if (Math.abs(dx) < MSG_THREAD_SWIPE_DRAG_THRESHOLD || Math.abs(dx) <= Math.abs(dy)) return
-            swipeDraggingRef.current = true
-            try {
-              ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-            } catch {
-              /* ignore */
-            }
-          }
-          // 横向滑动已生效后，锁住页面纵向滚动，避免“边滑边上下跑”
-          e.preventDefault()
-          const now = performance.now()
-          const samples = pointerSamplesRef.current
-          samples.push({ t: now, clientX: e.clientX })
-          if (samples.length > 6) samples.splice(0, samples.length - 6)
-          let next = swipeStartXRef.current + dx
-          const min = -MSG_THREAD_SWIPE_ACTION_W
-          const max = 0
-          const rubber = 0.22
-          if (next > max) next = max + (next - max) * rubber
-          else if (next < min) next = min + (next - min) * rubber
-          x.set(next)
-        }}
-        onPointerUpCapture={(e) => {
-          if (pointerIdRef.current !== e.pointerId) return
-          pointerIdRef.current = null
-          clearTimer()
-          try {
-            ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
-          } catch {
-            /* ignore */
-          }
-          if (swipeDraggingRef.current) endSwipeDrag()
-        }}
-        onPointerCancelCapture={(e) => {
-          if (pointerIdRef.current !== e.pointerId) return
-          pointerIdRef.current = null
-          clearTimer()
-          try {
-            ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
-          } catch {
-            /* ignore */
-          }
-          if (swipeDraggingRef.current) endSwipeDrag()
-        }}
-      >
-        <Pressable
-          onPointerUp={clearTimer}
-          onPointerCancel={clearTimer}
-          onPointerLeave={clearTimer}
-          onClick={() => {
-            if (longPressFiredRef.current) {
-              longPressFiredRef.current = false
-              return
-            }
-            if (swipeOpen) {
-              onSwipeOpenChange(false)
-              void animate(x, 0, MSG_THREAD_SWIPE_SPRING)
-              return
-            }
-            onOpenChat(
-              t.kind === 'lumi'
-                ? { kind: 'lumi' }
-                : t.kind === 'self'
-                  ? { kind: 'self' }
-                  : t.kind === 'group'
-                    ? { kind: 'group', groupId: t.groupId }
-                    : { kind: 'persona', characterId: t.characterId },
-            )
-          }}
-          onContextMenu={(e) => e.preventDefault()}
-          className={
-            isPinnedSection
-              ? 'flex w-full items-stretch gap-3 bg-[#f5f5f5] px-4 py-3 text-left transition-[background-color] duration-200'
-              : 'flex w-full items-stretch gap-3 rounded-[18px] border border-[var(--wx-border)] px-4 py-3 text-left transition-[border-color,box-shadow] duration-200'
-          }
-          style={
-            isPinnedSection
-              ? { boxShadow: 'none' }
-              : {
-                  ...fillToStyle(state.wechatTheme.conversationCard),
-                  boxShadow: 'var(--wx-shadow)',
-                }
-          }
-        >
-          <span className="relative inline-flex h-10 w-10 shrink-0">
-            {t.avatarUrl ? (
-              <img
-                src={resolveCharacterAvatarUrl({ avatarUrl: t.avatarUrl }) || t.avatarUrl}
-                alt=""
-                width={40}
-                height={40}
-                className="h-10 w-10 shrink-0 border object-cover transition-opacity duration-200"
-                style={{
-                  borderRadius: 'var(--wx-avatar-radius)',
-                  borderColor: 'var(--wx-border)',
-                }}
-              />
-            ) : (
-              <div
-                className="h-10 w-10 shrink-0 transition-opacity duration-200"
-                style={{
-                  borderRadius: 'var(--wx-avatar-radius)',
-                  background: 'rgba(0,0,0,0.06)',
-                }}
-              />
-            )}
-            {t.unread > 0 ? (
-              <span
-                className={`pointer-events-none absolute right-0 top-0 flex items-center justify-center rounded-full text-[10px] font-bold leading-none text-white transition-opacity duration-200 ${
-                  muted
-                    ? 'h-[10px] w-[10px] translate-x-[38%] -translate-y-[38%]'
-                    : 'min-h-[18px] min-w-[18px] -translate-y-[38%] translate-x-[45%] px-[5px]'
-                }`}
-                style={{ background: '#fa5151', boxShadow: '0 0 0 1.5px rgba(255,255,255,0.95)' }}
-                title={`未读 ${t.unread} 条`}
-                aria-label={`未读 ${t.unread} 条`}
-              >
-                {muted ? null : <WeChatUnreadBadgeText count={t.unread} />}
-              </span>
-            ) : null}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <p className="truncate text-[16px] font-normal text-black transition-opacity duration-200">{t.name}</p>
-              <span className="shrink-0 text-[12px] leading-none transition-opacity duration-200" style={{ color: '#b2b2b2' }}>
-                <WeChatThreadTimeText text={t.time} />
-              </span>
-            </div>
-            <div className="mt-1 flex items-center justify-between gap-2">
-              <p className="min-w-0 flex-1 truncate text-[14px] leading-snug transition-opacity duration-200" style={{ color: '#666666' }}>
-                <WeChatThreadPreviewText text={t.preview} />
-              </p>
-              <div className="flex shrink-0 flex-row items-center gap-2">
-                {muted ? (
-                  <BellOff
-                    className="shrink-0 transition-opacity duration-200"
-                    width={12}
-                    height={12}
-                    strokeWidth={2}
-                    color="#666666"
-                    aria-hidden
-                  />
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </Pressable>
-      </motion.div>
-    </div>
-  )
-}
-
-function MessagesTab({
-  threads,
-  pinnedExpanded,
-  onPinnedExpandedChange,
-  isConversationMuted,
-  onOpenChat,
-  playerIdentityId,
-  onListDataMutated,
-  onThreadHidden,
-}: {
-  threads: MessagesThreadRow[]
-  pinnedExpanded: boolean
-  onPinnedExpandedChange: (v: boolean) => void
-  isConversationMuted: (conversationKey: string) => boolean
-  onOpenChat: (chat: WxActiveChat) => void
-  playerIdentityId: string | null
-  onListDataMutated: () => void
-  onThreadHidden?: (conversationKey: string) => void
-}) {
-  const [swipeOpenThreadKey, setSwipeOpenThreadKey] = useState<string | null>(null)
-  const [deleteConfirmThread, setDeleteConfirmThread] = useState<MessagesThreadRow | null>(null)
-  const [pinActionSheet, setPinActionSheet] = useState<{
-    thread: MessagesThreadRow
-    x: number
-    y: number
-  } | null>(null)
-
-  const pinnedThreads = useMemo(() => threads.filter((t) => t.isPinned), [threads])
-  const normalThreads = useMemo(() => threads.filter((t) => !t.isPinned), [threads])
-
-  const pinTotal = pinnedThreads.length
-  const needsFold = pinTotal >= 4
-  const visiblePinned = needsFold && !pinnedExpanded ? pinnedThreads.slice(0, 3) : pinnedThreads
-  const foldRestCount = pinTotal - 3
-
-  const outerMaxHeightPx = !needsFold
-    ? pinTotal * PIN_ROW_EST_PX
-    : pinnedExpanded
-      ? pinTotal * PIN_ROW_EST_PX + 44
-      : 3 * PIN_ROW_EST_PX + 44
-
-  const showPinnedBlock = pinTotal > 0
-  const showMidDivider = showPinnedBlock && normalThreads.length > 0
-
-  const onLongPressRow = useCallback((t: MessagesThreadRow, e: ReactPointerEvent) => {
-    setPinActionSheet({ thread: t, x: e.clientX, y: e.clientY })
-  }, [])
-
-  const applyPinToggle = useCallback(
-    async (t: MessagesThreadRow, nextPinned: boolean) => {
-      if (!playerIdentityId) return
-      await personaDb.updatePinnedStatus({
-        conversationKey: t.conversationKey,
-        peerCharacterId: t.peerCharacterId,
-        playerIdentityId,
-        isPinned: nextPinned,
-      })
-      setPinActionSheet(null)
-    },
-    [playerIdentityId],
-  )
-
-  const applyDeleteThread = useCallback(
-    async (mode: 'hard' | 'soft') => {
-      if (!deleteConfirmThread) return
-      if (deleteConfirmThread.kind === 'group') {
-        const pid = playerIdentityId?.trim()
-        if (pid) await personaDb.leaveGroupChat(deleteConfirmThread.groupId, pid)
-      } else if (mode === 'soft') {
-        await personaDb.hideWeChatConversationHistoryFromUiKeepAiContext(deleteConfirmThread.conversationKey)
-      } else {
-        await personaDb.deleteAllWeChatMessagesForConversation(deleteConfirmThread.conversationKey)
-      }
-      setDeleteConfirmThread(null)
-      setSwipeOpenThreadKey(null)
-      onListDataMutated()
-    },
-    [deleteConfirmThread, onListDataMutated, playerIdentityId],
-  )
-
-  return (
-    <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
-      <div
-        className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain [scrollbar-width:thin] [-webkit-overflow-scrolling:touch] px-4 pb-[max(16px,env(safe-area-inset-bottom,0px))] pt-4"
-        onPointerDownCapture={(e) => {
-          if (!swipeOpenThreadKey) return
-          const el = e.target as HTMLElement
-          if (!el.closest('[data-swipe-row-root]')) setSwipeOpenThreadKey(null)
-        }}
-      >
-        <div className="mx-auto w-full max-w-[520px]">
-        <div className="mb-3 flex items-center justify-between">
-          <p
-            className="text-[12px] font-medium uppercase tracking-[0.18em] transition-opacity duration-200"
-            style={{ color: 'var(--wx-text-muted)' }}
-          >
-            会话
-          </p>
-        </div>
-
-        {threads.length === 0 ? (
-          <p className="py-12 text-center text-[14px]" style={{ color: 'var(--wx-text-muted)' }}>
-            暂无会话
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {showPinnedBlock ? (
-              <div
-                className="overflow-hidden rounded-[18px] border transition-[max-height] duration-200 ease-out"
-                style={{
-                  borderColor: '#e5e5e5',
-                  maxHeight: `${outerMaxHeightPx}px`,
-                }}
-              >
-                <div className="flex flex-col">
-                  {visiblePinned.map((t, idx) => {
-                    const muted = isConversationMuted(t.conversationKey)
-                    const showDivider = idx < visiblePinned.length - 1
-                    return (
-                      <div key={t.key} className={showDivider ? 'border-b border-[#e5e5e5]' : ''}>
-                        <MessageThreadListItem
-                          t={t}
-                          isPinnedSection
-                          muted={muted}
-                          onOpenChat={onOpenChat}
-                          onLongPress={onLongPressRow}
-                          swipeOpen={swipeOpenThreadKey === t.key}
-                          onSwipeOpenChange={(open) => setSwipeOpenThreadKey(open ? t.key : null)}
-                          playerIdentityId={playerIdentityId}
-                          onListDataMutated={onListDataMutated}
-                          onThreadHidden={onThreadHidden}
-                          onRequestDelete={setDeleteConfirmThread}
-                        />
-                      </div>
-                    )
-                  })}
-                  {needsFold ? (
-                    <button
-                      type="button"
-                      className="flex h-11 w-full shrink-0 items-center justify-center border-t border-[#e5e5e5] bg-[#f5f5f5] text-[14px] text-[#666666] transition-colors duration-200"
-                      onClick={() => onPinnedExpandedChange(!pinnedExpanded)}
-                    >
-                      {pinnedExpanded ? '收起置顶聊天' : `展开${foldRestCount}条置顶聊天`}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-
-            {showMidDivider ? <div className="mx-4 h-px shrink-0 bg-[#e5e5e5]" aria-hidden /> : null}
-
-            <div className="flex flex-col gap-2">
-              {normalThreads.map((t) => {
-                const muted = isConversationMuted(t.conversationKey)
-                return (
-                  <MessageThreadListItem
-                    key={t.key}
-                    t={t}
-                    isPinnedSection={false}
-                    muted={muted}
-                    onOpenChat={onOpenChat}
-                    onLongPress={onLongPressRow}
-                    swipeOpen={swipeOpenThreadKey === t.key}
-                    onSwipeOpenChange={(open) => setSwipeOpenThreadKey(open ? t.key : null)}
-                    playerIdentityId={playerIdentityId}
-                    onListDataMutated={onListDataMutated}
-                    onThreadHidden={onThreadHidden}
-                    onRequestDelete={setDeleteConfirmThread}
-                  />
-                )
-              })}
-            </div>
-          </div>
-        )}
-        </div>
-      </div>
-
-      {pinActionSheet ? (
-        <div className="fixed inset-0 z-[280]" role="presentation">
-          <button
-            type="button"
-            aria-label="关闭"
-            className="absolute inset-0 bg-black/20"
-            onClick={() => setPinActionSheet(null)}
-          />
-          <div
-            className="absolute min-w-[200px] overflow-hidden rounded-[12px] border bg-white shadow-lg"
-            style={{
-              borderColor: '#e5e5e5',
-              left: Math.min(pinActionSheet.x, typeof window !== 'undefined' ? window.innerWidth - 220 : pinActionSheet.x),
-              top: Math.min(pinActionSheet.y, typeof window !== 'undefined' ? window.innerHeight - 120 : pinActionSheet.y),
-            }}
-          >
-            <Pressable
-              type="button"
-              className="flex w-full items-center gap-2 px-4 py-3.5 text-left text-[16px] text-black"
-              style={{ borderBottom: '1px solid #e5e5e5', borderRadius: 0, background: '#fff' }}
-              onClick={() => void applyPinToggle(pinActionSheet.thread, !pinActionSheet.thread.isPinned)}
-            >
-              {pinActionSheet.thread.isPinned ? (
-                <>
-                  <PinOff className="size-4 shrink-0 text-black" strokeWidth={2} aria-hidden />
-                  <span>取消置顶</span>
-                </>
-              ) : (
-                <>
-                  <Pin className="size-4 shrink-0 text-black" strokeWidth={2} aria-hidden />
-                  <span>置顶聊天</span>
-                </>
-              )}
-            </Pressable>
-            <Pressable
-              type="button"
-              className="w-full px-4 py-3.5 text-left text-[16px] text-black"
-              style={{ borderRadius: 0, background: '#fff' }}
-              onClick={() => setPinActionSheet(null)}
-            >
-              取消
-            </Pressable>
-          </div>
-        </div>
-      ) : null}
-
-      {deleteConfirmThread ? (
-        <div className="fixed inset-0 z-[285] flex items-center justify-center px-5" role="presentation">
-          <button
-            type="button"
-            aria-label="关闭删除确认"
-            className="absolute inset-0 bg-black/35"
-            onClick={() => setDeleteConfirmThread(null)}
-          />
-          <div
-            className="relative z-[1] w-full max-w-[320px] overflow-hidden rounded-[14px] border bg-white"
-            style={{ borderColor: '#e5e5e5', boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}
-          >
-            <div className="px-5 py-4">
-              <h3 className="text-[17px] font-medium text-black">
-                {deleteConfirmThread.kind === 'group' ? '确认删除并退出群聊？' : '确认删除聊天？'}
-              </h3>
-              <p className="mt-2 text-[13px] leading-6 text-[#666666]">
-                {deleteConfirmThread.kind === 'group'
-                  ? `将退出群聊「${deleteConfirmThread.name}」并清空本会话在本地的全部记录（含回收站归档），此操作不可仅隐藏界面。提示：可在手机桌面「回收站」查看条目并在保留期内尝试恢复聊天记录。`
-                  : `与「${deleteConfirmThread.name}」的会话：可选择只清空聊天界面（本地消息仍保留，角色回复仍会参考完整记录），或彻底删除本地消息并在桌面「回收站」保留至多约 5 日可尝试恢复；后者会清除模型上下文中的历史参考。会话会从信息列表隐藏，直至再次发来消息。若只想在列表里不显示但保留入口，请用左滑「不显示」。提示：两种清空都会在桌面「回收站」生成快照（限期保留），需要时可前往尝试恢复聊天记录。`}
-              </p>
-            </div>
-            {deleteConfirmThread.kind === 'group' ? (
-              <div className="flex border-t border-[#e5e5e5]">
-                <button
-                  type="button"
-                  className="h-11 flex-1 text-[16px] text-[#666666] transition-colors active:bg-[#f2f2f2]"
-                  onClick={() => setDeleteConfirmThread(null)}
-                >
-                  取消
-                </button>
-                <div className="h-11 w-px bg-[#e5e5e5]" aria-hidden />
-                <button
-                  type="button"
-                  className="h-11 flex-1 text-[16px] font-medium text-[#fa5151] transition-colors active:bg-[#fff1f1]"
-                  onClick={() => void applyDeleteThread('hard')}
-                >
-                  删除并退出
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col border-t border-[#e5e5e5]">
-                <button
-                  type="button"
-                  className="h-11 w-full text-[16px] font-medium text-[#fa5151] transition-colors active:bg-[#fff1f1]"
-                  onClick={() => void applyDeleteThread('hard')}
-                >
-                  彻底删除（清除上下文参考）
-                </button>
-                <div className="h-px w-full bg-[#e5e5e5]" aria-hidden />
-                <button
-                  type="button"
-                  className="h-11 w-full text-[16px] text-[#576b95] transition-colors active:bg-[#f2f2f2]"
-                  onClick={() => void applyDeleteThread('soft')}
-                >
-                  仅清空界面（保留 AI 参考）
-                </button>
-                <div className="h-px w-full bg-[#e5e5e5]" aria-hidden />
-                <button
-                  type="button"
-                  className="h-11 w-full text-[16px] text-[#666666] transition-colors active:bg-[#f2f2f2]"
-                  onClick={() => setDeleteConfirmThread(null)}
-                >
-                  取消
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  )
-}
+/** 信息页会话卡片左滑露出的操作区宽度（4 个横向操作） — 逻辑已迁至 MessagesTab，保留注释供对照 */
+// const MSG_THREAD_SWIPE_ACTION_W = 232
+// const MSG_THREAD_SWIPE_SPRING = { type: 'spring' as const, stiffness: 520, damping: 38, mass: 0.85 }
+// const MSG_THREAD_SWIPE_DRAG_THRESHOLD = 7
+// const MSG_THREAD_SWIPE_COMMIT_RATIO = 0.22
+// const MSG_THREAD_SWIPE_FLING_PX_PER_SEC = 520
 
 type ThemePanelBoot = {
   /** 从聊天室进入时：打开后直达「聊天气泡 → 按角色覆盖」并选中该会话角色 id */
@@ -1845,53 +1108,7 @@ function ThemePanel({
   }, [bubbleScope, bubbleRole, wechatTheme])
   const activeBubbleTailStyle = activeBubble.bubbleTailStyle
 
-  const applyBubblePreset = useCallback(
-    (preset: WeChatBubblePreset) => {
-      if (preset.chatThemePatch) {
-        if (preset.id === 'wechat-app-default') {
-          updateChatTheme({
-            ...preset.chatThemePatch,
-            inputBar: {
-              ...preset.chatThemePatch.inputBar,
-              layout: 'lumi',
-              sendButtonColor: undefined,
-            },
-          })
-        } else {
-          updateChatTheme(preset.chatThemePatch)
-        }
-      }
-      // 套用模版时保留用户已导入的单侧字体；清空气泡包覆盖以免残留
-      const nextBubble: WeChatBubbleTheme = {
-        ...preset.bubble,
-        selfFont: activeBubble.selfFont ?? null,
-        otherFont: activeBubble.otherFont ?? null,
-      }
-      if (bubbleScope === 'global') {
-        setWeChatTheme({
-          bubbleGlobal: nextBubble,
-          selfBubbleText: preset.selfBubbleText,
-          otherBubbleText: preset.otherBubbleText,
-          ...(preset.wechatThemePatch ?? {}),
-          chatSkinOverrides: {},
-          chatSkinScopedCss: '',
-          chatSkinEngine: 'structured',
-        })
-        return
-      }
-      setWeChatTheme({
-        bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: nextBubble },
-        selfBubbleText: preset.selfBubbleText,
-        otherBubbleText: preset.otherBubbleText,
-        chatSkinOverrides: {},
-        chatSkinScopedCss: '',
-        chatSkinEngine: 'structured',
-      })
-    },
-    [activeBubble.otherFont, activeBubble.selfFont, bubbleRole, bubbleScope, setWeChatTheme, updateChatTheme, wechatTheme.bubbleByRole],
-  )
-
-  /** 真机聊天室：仅由此路径套用气泡包（主题制作机预览不走这里） */
+  /** 真机聊天室：由此路径套用气泡包 */
   const applyImportedBubblePack = useCallback(
     async (pack: Parameters<typeof applyBubblePack>[0]['pack']) => {
       await applyBubblePack({
@@ -1914,6 +1131,71 @@ function ThemePanel({
     ],
   )
 
+  const applyBubblePreset = useCallback(
+    (preset: WeChatBubblePreset) => {
+      // 液态玻璃等 CSS 皮肤：走气泡包路径，保留 scopedCss
+      if (isWeChatBubblePresetCssPackId(preset.id)) {
+        const pack = liquidGlassBubblePackForPresetId(preset.id)
+        if (pack) {
+          void applyImportedBubblePack(pack)
+          return
+        }
+      }
+      if (preset.chatThemePatch) {
+        if (preset.id === 'wechat-app-default') {
+          updateChatTheme({
+            ...preset.chatThemePatch,
+            inputBar: {
+              ...preset.chatThemePatch.inputBar,
+              layout: 'lumi',
+              sendButtonColor: undefined,
+            },
+          })
+        } else {
+          updateChatTheme(preset.chatThemePatch)
+        }
+      }
+      // 套用模版时保留用户已导入的单侧字体；清空气泡包覆盖以免残留
+      const nextBubble: WeChatBubbleTheme = {
+        ...preset.bubble,
+        selfFont: activeBubble.selfFont ?? null,
+        otherFont: activeBubble.otherFont ?? null,
+      }
+      if (bubbleScope === 'global') {
+        const rawPatch = preset.wechatThemePatch ?? {}
+        const { chatRoomDefaultBg: _ignoreRoomBg, ...themePatchSansRoom } = rawPatch
+        setWeChatTheme({
+          bubbleGlobal: nextBubble,
+          selfBubbleText: preset.selfBubbleText,
+          otherBubbleText: preset.otherBubbleText,
+          ...themePatchSansRoom,
+          chatSkinOverrides: {},
+          chatSkinScopedCss: '',
+          chatSkinEngine: 'structured',
+        })
+        return
+      }
+      setWeChatTheme({
+        bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: nextBubble },
+        selfBubbleText: preset.selfBubbleText,
+        otherBubbleText: preset.otherBubbleText,
+        chatSkinOverrides: {},
+        chatSkinScopedCss: '',
+        chatSkinEngine: 'structured',
+      })
+    },
+    [
+      activeBubble.otherFont,
+      activeBubble.selfFont,
+      applyImportedBubblePack,
+      bubbleRole,
+      bubbleScope,
+      setWeChatTheme,
+      updateChatTheme,
+      wechatTheme.bubbleByRole,
+    ],
+  )
+
   const bubblePreviewBgStyle = useMemo(
     () => wechatChatRoomBgToStyle(wechatTheme.chatRoomDefaultBg, resolvePublicImageUrl),
     [wechatTheme.chatRoomDefaultBg],
@@ -1925,8 +1207,8 @@ function ThemePanel({
   )
 
   const previewInputBar = useMemo(
-    () => resolveEffectiveChatInputBarForBubble(chatTheme.inputBar, activeBubble),
-    [activeBubble, chatTheme.inputBar],
+    () => resolveEffectiveChatInputBarForBubble(chatTheme.inputBar, activeBubble, wechatTheme),
+    [activeBubble, chatTheme.inputBar, wechatTheme],
   )
 
   const previewChatTheme = useMemo(
@@ -3109,7 +2391,7 @@ function ThemePanel({
                       上传气泡文件
                     </p>
                     <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
-                      将主题制作机导出的 `.lumiBubblePack` / JSON，或纯 `.css` / scopedCss 应用到当前配置范围。只有这里上传才会改聊天室；制作机预览不会同步。纯 CSS 会按 `skinEngine:css` 导入。
+                      将 `.lumiBubblePack` / JSON，或纯 `.css` / scopedCss 应用到当前配置范围。只有这里上传才会改聊天室。纯 CSS 会按 `skinEngine:css` 导入。
                     </p>
                     <input
                       ref={bubblePackFileRef}
@@ -3227,8 +2509,7 @@ function ThemePanel({
                       预览
                     </p>
                     <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
-                      对照本页已应用的聊天气泡（含上传的气泡包）。主题制作机舞台预览与此处分开；AI
-                      写气泡请到桌面「主题制作机 → 气泡助手」，导出后再在上方上传。
+                      对照本页已应用的聊天气泡（含上传的气泡包）。也可在本页用 AI 写气泡，或上传导出的气泡文件。
                     </p>
                     <WeChatChatSkinPreviewPanel
                       wechatTheme={previewWechatTheme}
@@ -3462,41 +2743,195 @@ function ThemePanel({
                       指向三角
                     </p>
                     <p className="mt-1 text-[11px] leading-snug" style={{ color: 'var(--wx-text-muted)' }}>
-                      开启后在朝头像一侧显示小三角，竖直方向与头像水平中线对齐（需开启「显示头像」）。
+                      {isLiquidGlassMinimalPackActive(wechatTheme)
+                        ? '液态玻璃模版固定无尾巴；切换其他气泡模版后可再开启指向三角。'
+                        : '开启后在朝头像一侧显示小三角，竖直方向与头像水平中线对齐（需开启「显示头像」）。'}
                     </p>
-                    <div className="mt-2 flex gap-2">
+                    {isLiquidGlassMinimalPackActive(wechatTheme) ? null : (
+                      <>
+                        <div className="mt-2 flex gap-2">
+                          <Pressable
+                            onClick={() => {
+                              const next = { ...activeBubble, showBubbleTail: true }
+                              if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
+                              else
+                                setWeChatTheme({
+                                  bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
+                                })
+                            }}
+                            className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
+                            style={{
+                              borderColor: 'var(--wx-border)',
+                              background: activeBubble.showBubbleTail ? 'rgba(0,0,0,0.06)' : 'transparent',
+                              color: 'var(--wx-text)',
+                            }}
+                          >
+                            开
+                          </Pressable>
+                          <Pressable
+                            onClick={() => {
+                              const next = { ...activeBubble, showBubbleTail: false }
+                              if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
+                              else
+                                setWeChatTheme({
+                                  bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
+                                })
+                            }}
+                            className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
+                            style={{
+                              borderColor: 'var(--wx-border)',
+                              background: !activeBubble.showBubbleTail ? 'rgba(0,0,0,0.06)' : 'transparent',
+                              color: 'var(--wx-text)',
+                            }}
+                          >
+                            关
+                          </Pressable>
+                        </div>
+                        {activeBubble.showBubbleTail ? (
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <Pressable
+                              onClick={() => {
+                                const next = {
+                                  ...activeBubble,
+                                  showBubbleTailOther: activeBubble.showBubbleTailOther === false,
+                                }
+                                if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
+                                else
+                                  setWeChatTheme({
+                                    bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
+                                  })
+                              }}
+                              className="rounded-[14px] border px-3 py-2 text-[12px]"
+                              style={{
+                                borderColor: 'var(--wx-border)',
+                                background:
+                                  activeBubble.showBubbleTailOther !== false
+                                    ? 'rgba(0,0,0,0.06)'
+                                    : 'transparent',
+                                color: 'var(--wx-text)',
+                              }}
+                            >
+                              角色侧尾巴
+                            </Pressable>
+                            <Pressable
+                              onClick={() => {
+                                const next = {
+                                  ...activeBubble,
+                                  showBubbleTailSelf: activeBubble.showBubbleTailSelf === false,
+                                }
+                                if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
+                                else
+                                  setWeChatTheme({
+                                    bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
+                                  })
+                              }}
+                              className="rounded-[14px] border px-3 py-2 text-[12px]"
+                              style={{
+                                borderColor: 'var(--wx-border)',
+                                background:
+                                  activeBubble.showBubbleTailSelf !== false
+                                    ? 'rgba(0,0,0,0.06)'
+                                    : 'transparent',
+                                color: 'var(--wx-text)',
+                              }}
+                            >
+                              自己侧尾巴
+                            </Pressable>
+                          </div>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+
+                  {isLiquidGlassMinimalPackActive(wechatTheme) ? (
+                    <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
+                      <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
+                        玻璃气泡作用侧
+                      </p>
+                      <p className="mt-1 text-[11px] leading-snug" style={{ color: 'var(--wx-text-muted)' }}>
+                        可分别决定角色侧 / 自己侧是否使用液态玻璃气泡表面；关闭的一侧改为实心浅底。
+                      </p>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <Pressable
+                          onClick={() => {
+                            const next = {
+                              ...activeBubble,
+                              glassBubbleStyleOther: activeBubble.glassBubbleStyleOther === false,
+                            }
+                            if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
+                            else
+                              setWeChatTheme({
+                                bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
+                              })
+                          }}
+                          className="rounded-[14px] border px-3 py-2 text-[12px]"
+                          style={{
+                            borderColor: 'var(--wx-border)',
+                            background:
+                              activeBubble.glassBubbleStyleOther !== false
+                                ? 'rgba(0,0,0,0.06)'
+                                : 'transparent',
+                            color: 'var(--wx-text)',
+                          }}
+                        >
+                          角色侧玻璃
+                        </Pressable>
+                        <Pressable
+                          onClick={() => {
+                            const next = {
+                              ...activeBubble,
+                              glassBubbleStyleSelf: activeBubble.glassBubbleStyleSelf === false,
+                            }
+                            if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
+                            else
+                              setWeChatTheme({
+                                bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
+                              })
+                          }}
+                          className="rounded-[14px] border px-3 py-2 text-[12px]"
+                          style={{
+                            borderColor: 'var(--wx-border)',
+                            background:
+                              activeBubble.glassBubbleStyleSelf !== false
+                                ? 'rgba(0,0,0,0.06)'
+                                : 'transparent',
+                            color: 'var(--wx-text)',
+                          }}
+                        >
+                          自己侧玻璃
+                        </Pressable>
+                      </div>
                       <Pressable
                         onClick={() => {
-                          const next = { ...activeBubble, showBubbleTail: true }
+                          const bothOn =
+                            activeBubble.glassBubbleStyleSelf !== false &&
+                            activeBubble.glassBubbleStyleOther !== false
+                          const next = {
+                            ...activeBubble,
+                            glassBubbleStyleSelf: !bothOn,
+                            glassBubbleStyleOther: !bothOn,
+                          }
                           if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
-                          else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
+                          else
+                            setWeChatTheme({
+                              bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
+                            })
                         }}
-                        className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
+                        className="mt-2 w-full rounded-[14px] border px-3 py-2 text-[12px]"
                         style={{
                           borderColor: 'var(--wx-border)',
-                          background: activeBubble.showBubbleTail ? 'rgba(0,0,0,0.06)' : 'transparent',
+                          background:
+                            activeBubble.glassBubbleStyleSelf !== false &&
+                            activeBubble.glassBubbleStyleOther !== false
+                              ? 'rgba(0,0,0,0.06)'
+                              : 'transparent',
                           color: 'var(--wx-text)',
                         }}
                       >
-                        开
-                      </Pressable>
-                      <Pressable
-                        onClick={() => {
-                          const next = { ...activeBubble, showBubbleTail: false }
-                          if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
-                          else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
-                        }}
-                        className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
-                        style={{
-                          borderColor: 'var(--wx-border)',
-                          background: !activeBubble.showBubbleTail ? 'rgba(0,0,0,0.06)' : 'transparent',
-                          color: 'var(--wx-text)',
-                        }}
-                      >
-                        关
+                        两侧同样使用玻璃样式
                       </Pressable>
                     </div>
-                  </div>
+                  ) : null}
 
                   <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
                     <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
@@ -4125,15 +3560,20 @@ function WeChatAppInner({ onBack }: Props) {
       }
     }
     const row = state.wechatPersonaContacts.find((c) => c.characterId === chat.characterId)
+    const resolved = orphanPeerNames[chat.characterId]?.trim()
     if (!row) {
-      const fallback = orphanPeerNames[chat.characterId]?.trim()
       return {
         id: `persona-${chat.characterId}`,
-        remarkName: fallback || '聊天',
+        remarkName: resolved || '聊天',
         avatarUrl: undefined as string | undefined,
       }
     }
-    return { id: row.id, remarkName: row.remarkName, avatarUrl: row.avatarUrl }
+    return {
+      id: row.id,
+      /** 优先角色卡备注 / 解析缓存，避免通讯录仍是真实姓名 */
+      remarkName: resolved || row.remarkName,
+      avatarUrl: row.avatarUrl,
+    }
   }, [wxDockChat, activeGroupRow, orphanPeerNames, weChatMergedContacts, weChatSelfAccountContact, state.wechatPersonaContacts])
 
   useEffect(() => {
@@ -4141,18 +3581,24 @@ function WeChatAppInner({ onBack }: Props) {
     if (!chat || chat.kind !== 'persona') return
     const cid = chat.characterId.trim()
     if (!cid) return
-    if (state.wechatPersonaContacts.some((c) => c.characterId === cid)) return
-    if (orphanPeerNames[cid]) return
     let cancelled = false
     void personaDb.getCharacter(cid).then((ch) => {
       if (cancelled || !ch) return
-      const name = ch.wechatNickname?.trim() || ch.name?.trim() || '聊天'
-      setOrphanPeerNames((prev) => (prev[cid] ? prev : { ...prev, [cid]: name }))
+      const contactRemark = state.wechatPersonaContacts
+        .find((c) => c.characterId === cid)
+        ?.remarkName?.trim()
+      const name =
+        ch.remark?.trim() ||
+        contactRemark ||
+        ch.wechatNickname?.trim() ||
+        ch.name?.trim() ||
+        '聊天'
+      setOrphanPeerNames((prev) => (prev[cid] === name ? prev : { ...prev, [cid]: name }))
     })
     return () => {
       cancelled = true
     }
-  }, [orphanPeerNames, state.wechatPersonaContacts, wxDockChat])
+  }, [state.wechatPersonaContacts, wxDockChat])
 
   const chatHeaderShowPsycheRadar =
     route.name === 'chat' && wxDockChat?.kind !== 'group' && wxDockChat?.kind !== 'self'
@@ -4524,10 +3970,12 @@ function WeChatAppInner({ onBack }: Props) {
       }
       const st = settingsByKey.get(conversationKey) ?? null
       const isPinned = st?.isPinned ?? false
-      const [unread, last] = await Promise.all([
+      const [unread, last, draftRaw] = await Promise.all([
         personaDb.countUnreadWeChatCharacterMessages(conversationKey),
         personaDb.peekLatestWeChatChatMessage(conversationKey),
+        loadWeChatComposerDraft(conversationKey),
       ])
+      const draftPreview = formatWeChatDraftPreview(draftRaw) || undefined
       let preview =
         kind === 'lumi'
           ? '点击开始与 Lumi 聊天'
@@ -4559,6 +4007,7 @@ function WeChatAppInner({ onBack }: Props) {
           preview,
           avatarUrl: LUMI_ASSISTANT_AVATAR_URL,
           unread,
+          draftPreview,
           sortTs,
         }
       }
@@ -4578,6 +4027,7 @@ function WeChatAppInner({ onBack }: Props) {
           preview,
           avatarUrl: selfAvatar,
           unread,
+          draftPreview,
           sortTs,
         }
       }
@@ -4593,6 +4043,7 @@ function WeChatAppInner({ onBack }: Props) {
         preview,
         avatarUrl,
         unread,
+        draftPreview,
         sortTs,
       }
     }
@@ -4659,10 +4110,12 @@ function WeChatAppInner({ onBack }: Props) {
           if (settingsByKey.get(conversationKey)?.hiddenFromMessageList) return null
           const st = settingsByKey.get(conversationKey) ?? null
           const isPinned = st?.isPinned ?? false
-          const [unread, last] = await Promise.all([
+          const [unread, last, draftRaw] = await Promise.all([
             personaDb.countUnreadWeChatCharacterMessages(conversationKey),
             personaDb.peekLatestWeChatChatMessage(conversationKey),
+            loadWeChatComposerDraft(conversationKey),
           ])
+          const draftPreview = formatWeChatDraftPreview(draftRaw) || undefined
           let preview = '点击开始群聊'
           let time = '—'
           const sortTs = resolveSessionListSortTs({
@@ -4691,6 +4144,7 @@ function WeChatAppInner({ onBack }: Props) {
             preview,
             avatarUrl,
             unread,
+            draftPreview,
             sortTs,
           }
         }),
@@ -4788,6 +4242,30 @@ function WeChatAppInner({ onBack }: Props) {
       cancelled = true
     }
   }, [wxDockChat, currentAccountId, playerIdentityId, chatRouteIdentityId, activeConversationCharacterId])
+
+  const [showChatPresenceDot, setShowChatPresenceDot] = useState(false)
+  useEffect(() => {
+    if (route.name !== 'chat' || wxDockChat?.kind !== 'persona' || !activeConversationKey?.trim()) {
+      setShowChatPresenceDot(false)
+      return
+    }
+    let cancelled = false
+    void loadShowChatPresenceDot(activeConversationKey).then((on) => {
+      if (!cancelled) setShowChatPresenceDot(on)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [route.name, wxDockChat?.kind, activeConversationKey])
+
+  const chatPeerPresenceDot =
+    showChatPresenceDot && route.name === 'chat' && wxDockChat?.kind === 'persona' ? (
+      <ChatPeerPresenceDot
+        characterId={wxDockChat.characterId}
+        name={chatPeerContact?.remarkName ?? '对方'}
+        avatarUrl={chatPeerContact?.avatarUrl}
+      />
+    ) : null
 
   /** 切换聊天对象时从会话级 pipeline 恢复顶栏输入态（各会话独立，互不抢占） */
   useEffect(() => {
@@ -5122,9 +4600,12 @@ function WeChatAppInner({ onBack }: Props) {
     }
     const key = activeConversationKey
     let cancelled = false
+    /** 忽略过期的 get：wechat-storage-changed 很密，旧请求晚返回会把刚保存的聊天背景盖回空/旧值 */
+    let loadSeq = 0
     const load = () => {
+      const mySeq = ++loadSeq
       void personaDb.getChatConversationSettings(key).then((s) => {
-        if (cancelled) return
+        if (cancelled || mySeq !== loadSeq) return
         const next = {
           danmaku: s?.isDanmakuMode ?? false,
           thinkingChain: s?.showThinkingChain === true,
@@ -5341,6 +4822,7 @@ function WeChatAppInner({ onBack }: Props) {
     (route.name === 'contacts-group-chats' && newGroupFromMessagesOpen) ||
     route.name === 'user-moments-archive'
   const hideWeChatHeader =
+    (route.name === 'tabs' && route.tab === 'messages') ||
     route.name === 'new-friends-persona' ||
     route.name === 'contacts-group-chats' ||
     route.name === 'player-identities' ||
@@ -6218,25 +5700,65 @@ function WeChatAppInner({ onBack }: Props) {
     ],
   )
 
+  /** 顶栏在 ChatRoom 皮肤作用域外：仅在聊天室（及同顶栏会话页）把 skin 挂到微信根，避免污染「信息」会话列表等 Tab */
+  const chatSkinRootOverrides = useMemo(() => {
+    const overrides = wechatTheme.chatSkinOverrides
+    if (!overrides) return null
+    const out: Record<string, string> = {}
+    for (const [cssVar, val] of Object.entries(overrides)) {
+      if (!cssVar.startsWith('--wx-chat-') && !cssVar.startsWith('--wx-special-')) continue
+      if (!val?.trim()) continue
+      out[cssVar] = val.trim()
+    }
+    return Object.keys(out).length ? out : null
+  }, [wechatTheme.chatSkinOverrides])
+
+  const chatRoomSkinOnAppChrome = route.name === 'chat'
+  const liquidGlassChrome = chatRoomSkinOnAppChrome && isLiquidGlassMinimalPackActive(wechatTheme)
+  const chatSkinScopedCssOnRoot = chatRoomSkinOnAppChrome
+    ? wechatTheme.chatSkinScopedCss?.trim() || ''
+    : ''
+  const chatSkinScopeOnRoot =
+    chatRoomSkinOnAppChrome && (!!chatSkinScopedCssOnRoot || !!chatSkinRootOverrides)
+  const chatSkinScopedCssWrapped = useMemo(
+    () => (chatSkinScopedCssOnRoot ? wrapWeChatChatSkinScopedCss(chatSkinScopedCssOnRoot) : ''),
+    [chatSkinScopedCssOnRoot],
+  )
+
   return (
     <div
       className="relative flex h-full min-h-0 flex-col"
       data-phone-page="wechat"
       data-app-id="wechat"
+      {...(chatSkinScopeOnRoot ? { 'data-wx-chat-skin-scope': '' } : {})}
+      {...(liquidGlassChrome ? { 'data-wx-liquid-glass': '' } : {})}
       style={{
         ...wechatThemeStyle,
+        ...(chatRoomSkinOnAppChrome ? (chatSkinRootOverrides ?? {}) : {}),
         fontFamily: 'var(--wx-font)',
         fontSize: 'var(--wx-font-size)',
         color: 'var(--wx-text)',
       }}
     >
+      {/* 顶栏在 ChatRoom 外：皮肤 CSS 挂在微信根，才能命中标题栏 */}
+      {chatSkinScopedCssWrapped ? (
+        <style dangerouslySetInnerHTML={{ __html: chatSkinScopedCssWrapped }} />
+      ) : null}
       <div
         className="pointer-events-none absolute inset-0 z-0"
         aria-hidden
         style={wechatPageBackdropStyle}
       />
       <div className="relative z-[1] flex min-h-0 flex-1 flex-col">
-      <WeChatWelcomeRevealLayer slot="header" className="shrink-0">
+      <WeChatWelcomeRevealLayer
+        slot="header"
+        className={
+          liquidGlassChrome
+            ? 'pointer-events-none absolute inset-x-0 top-0 z-[45] [&_[data-wx-chat-header]]:pointer-events-auto'
+            : 'shrink-0'
+        }
+      >
+      {liquidGlassChrome ? <div data-wx-liquid-header-fade aria-hidden /> : null}
       {hideTabChrome || hideWeChatHeader ? null : chatMessengerHeaderVariant ? (
         <WeChatMessengerChatHeader
           variant={chatMessengerHeaderVariant}
@@ -6257,6 +5779,7 @@ function WeChatAppInner({ onBack }: Props) {
           pendingCount={chatPendingQueueCount}
           typingText={route.name === 'chat' && route.chat.kind === 'group' ? '成员正在输入…' : '对方正在输入…'}
           onCenterClick={() => setChatSettingsOpen(true)}
+          titleAfterName={chatPeerPresenceDot}
           customRight={
             chatMultiSelectActive ? (
               <Pressable
@@ -6278,15 +5801,27 @@ function WeChatAppInner({ onBack }: Props) {
       ) : (
         <Header
           title={route.name === 'chat' && chatPeerContact ? chatPeerContact.remarkName : title}
-          titleSub={route.name === 'chat' && chatPeerContact?.tag ? chatPeerContact.tag : undefined}
+          titleSub={
+            route.name === 'chat'
+              ? (wechatTheme.chatSkinOverrides?.['--wx-chat-header-typing-text'] ?? '').trim() ||
+                chatPeerContact?.tag ||
+                undefined
+              : undefined
+          }
+          titleAvatarUrl={route.name === 'chat' ? chatPeerContact?.avatarUrl : undefined}
+          showTitleAvatar={
+            route.name === 'chat' &&
+            (wechatTheme.chatSkinOverrides?.['--wx-chat-header-show-avatar'] ?? '').trim() === '1'
+          }
           showTyping={route.name === 'chat' && chatOtherTyping}
           pendingQueueCount={route.name === 'chat' ? chatPendingQueueCount : 0}
           titleTypingAlternate={
             route.name === 'chat' && chatOpponentRevealPending && !chatOtherTyping && chatPendingQueueCount === 0
           }
-          titleCenterAbsolute={route.name === 'chat'}
+          titleCenterAbsolute={route.name === 'chat' && !liquidGlassChrome}
           typingText={
-            route.name === 'chat' && route.chat.kind === 'group' ? '成员正在输入…' : '对方正在输入…'
+            (wechatTheme.chatSkinOverrides?.['--wx-chat-header-typing-text'] ?? '').trim() ||
+            (route.name === 'chat' && route.chat.kind === 'group' ? '成员正在输入…' : '对方正在输入…')
           }
           onOpenTimeSettings={
             route.name === 'chat' && wxDockChat?.kind === 'persona'
@@ -6350,17 +5885,21 @@ function WeChatAppInner({ onBack }: Props) {
               <div className="flex items-center justify-end gap-0.5">
                 <Pressable
                   type="button"
+                  data-wx-chat-header-btn="psyche"
                   aria-label="体征与心理监测"
                   onClick={() => setPsycheRadarOpen(true)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-[#111827]"
+                  className="flex h-9 w-9 items-center justify-center rounded-full"
+                  style={{ color: 'var(--wx-chat-header-btn, var(--wx-chat-header-text, #111827))' }}
                 >
                   <Activity size={20} strokeWidth={1.75} aria-hidden />
                 </Pressable>
                 <Pressable
                   type="button"
+                  data-wx-chat-header-btn="more"
                   aria-label="当前聊天设置"
                   onClick={() => setChatSettingsOpen(true)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-[#111827]"
+                  className="flex h-9 w-9 items-center justify-center rounded-full"
+                  style={{ color: 'var(--wx-chat-header-btn, var(--wx-chat-header-text, #111827))' }}
                 >
                   <MoreHorizontal size={22} strokeWidth={2} aria-hidden />
                 </Pressable>
@@ -6419,6 +5958,7 @@ function WeChatAppInner({ onBack }: Props) {
           }
           titleTrailing={chatHeaderMuteTrailing}
           titleTrailingInteractive={route.name === 'chat' && chatHeaderBusyOn}
+          titleAfterName={chatPeerPresenceDot}
         />
       )}
       </WeChatWelcomeRevealLayer>
@@ -6609,10 +6149,32 @@ function WeChatAppInner({ onBack }: Props) {
                     playerIdentityId={playerIdentityId}
                     onListDataMutated={() => void refreshMessageThreadsMeta()}
                     onThreadHidden={hideMessageThreadFromList}
+                    onNewGroup={() => setNewGroupFromMessagesOpen(true)}
+                    onAddFriend={() => setRoute({ name: 'add-friend' })}
+                    pulseContacts={state.wechatPersonaContacts.map((c) => ({
+                      characterId: c.characterId,
+                      remarkName: c.remarkName,
+                      avatarUrl: resolveCharacterAvatarUrl({ avatarUrl: c.avatarUrl }) || undefined,
+                    }))}
+                    pulseSelfName={weChatSelfAccountContact.remarkName}
+                    pulseSelfAvatarUrl={
+                      resolveCharacterAvatarUrl({ avatarUrl: weChatSelfAccountContact.avatarUrl }) ||
+                      undefined
+                    }
+                    onOpenPulseFriend={(characterId) => {
+                      const row = state.wechatPersonaContacts.find((c) => c.characterId === characterId)
+                      setRoute({
+                        name: 'contact-profile',
+                        target: { kind: 'persona', characterId },
+                        remarkName: row?.remarkName ?? '聊天',
+                        avatarUrl: row?.avatarUrl,
+                        returnTo: { mode: 'tabs-messages' },
+                      })
+                    }}
                   />
                 </div>
               ) : route.tab === 'contacts' ? (
-                <div className="min-h-0 flex-1">
+                <div className="min-h-0 h-full flex-1 overflow-hidden">
                   <WeChatContactsInstagram
                     contacts={weChatMergedContacts}
                     newFriendsBadgeCount={newFriendsUnreadCount}
@@ -6661,14 +6223,14 @@ function WeChatAppInner({ onBack }: Props) {
                   />
                 </div>
               ) : route.tab === 'dates' ? (
-                <div className="min-h-0 flex-1">
+                <div className="min-h-0 h-full flex-1 overflow-hidden">
                   <DatingSystem
                     onVnChromeChange={setHideDatingChrome}
                     onOpenPersonaManager={() => setRoute({ name: 'new-friends-persona', source: 'dating' })}
                   />
                 </div>
               ) : route.tab === 'discover' ? (
-                <div className="min-h-0 flex-1">
+                <div className="min-h-0 h-full flex-1 overflow-hidden">
                   <WeChatDiscoverInstagram
                     onImmersiveViewChange={setDiscoverMomentsOpen}
                     restoreView={discoverRestoreView}
@@ -6687,7 +6249,7 @@ function WeChatAppInner({ onBack }: Props) {
                   />
                 </div>
               ) : (
-                <div className="min-h-0 flex-1">
+                <div className="min-h-0 h-full flex-1 overflow-hidden">
                   <WeChatMeInstagramProfile
                     nickname={wechatAccountProfile?.nickname ?? state.profile.displayName}
                     signature={wechatAccountProfile?.signature ?? state.profile.signature}
@@ -6994,6 +6556,10 @@ function WeChatAppInner({ onBack }: Props) {
                 onBack={() => {
                   if (route.returnTo.mode === 'tabs-contacts') {
                     setRoute({ name: 'tabs', tab: 'contacts' })
+                    return
+                  }
+                  if (route.returnTo.mode === 'tabs-messages') {
+                    setRoute({ name: 'tabs', tab: 'messages' })
                     return
                   }
                   if (route.returnTo.mode === 'moments-feed') {
@@ -7670,6 +7236,7 @@ function WeChatAppInner({ onBack }: Props) {
                     setRoute({ name: 'chat', chat: { kind: 'group', groupId } })
                   }}
                   onClose={() => setChatSettingsOpen(false)}
+                  onShowPresenceDotChange={setShowChatPresenceDot}
                   onHistoryCleared={() => {
                     setChatSettingsOpen(false)
                     setChatHistoryRefreshSignal((n) => n + 1)
@@ -7768,9 +7335,10 @@ function WeChatAppInner({ onBack }: Props) {
       </div>
       </WeChatWelcomeRevealLayer>
 
-      <WeChatWelcomeRevealLayer slot="tabbar" className="shrink-0">
+      {/* 悬浮底栏：全屏透明叠层，不占布局高度，内容可滚到栏下 */}
+      <WeChatWelcomeRevealLayer slot="tabbar" className="pointer-events-none absolute inset-0 z-[40]">
       {route.name === 'tabs' && !hideTabChrome ? (
-        <TabBar
+        <WeChatLiquidTabBar
           active={activeTab}
           onChange={(id) => setRoute({ name: 'tabs', tab: id })}
           messagesUnreadCount={messagesTabUnreadTotal}

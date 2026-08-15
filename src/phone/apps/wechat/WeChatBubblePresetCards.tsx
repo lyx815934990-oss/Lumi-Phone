@@ -87,8 +87,16 @@ export function WeChatBubblePresetCards({
             aria-pressed={active}
           >
             <MiniBubbleSwatch
-              selfBg={preset.bubble.selfBubbleBg}
-              otherBg={preset.bubble.otherBubbleBg}
+              selfBg={
+                preset.id === 'lumi-liquid-glass'
+                  ? 'rgba(255,255,255,0.42)'
+                  : preset.bubble.selfBubbleBg
+              }
+              otherBg={
+                preset.id === 'lumi-liquid-glass'
+                  ? 'rgba(255,255,255,0.32)'
+                  : preset.bubble.otherBubbleBg
+              }
               chatRoomDefaultBg={preset.chatRoomDefaultBg}
               fontFamily={
                 preset.bubble.bubbleTailStyle

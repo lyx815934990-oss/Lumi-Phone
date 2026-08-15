@@ -5,6 +5,7 @@ import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
 } from '../group/ChatGroupSpeakerAvatarWrap'
+import { useSpecialChatCardLongPress } from '../hooks/useSpecialChatCardLongPress'
 import type { WeChatSharedRecordPayload } from '../newFriendsPersona/types'
 import { SharedRecordCard } from './SharedRecordCard'
 
@@ -22,6 +23,8 @@ type Props = {
   chatSelfAvatarRankBadge?: 'owner' | 'admin' | null
   groupRankShowBesideNickname?: boolean
   multiSelectAvatar?: ReactNode
+  selected?: boolean
+  onLongPress?: (anchorRect: DOMRect) => void
   personaContacts?: readonly WeChatPersonaContact[]
   playerDisplayName?: string
 }
@@ -41,16 +44,26 @@ export function SharedRecordChatRow({
   chatSelfAvatarRankBadge: _chatSelfAvatarRankBadge = null,
   groupRankShowBesideNickname = true,
   multiSelectAvatar,
+  selected = false,
+  onLongPress,
   personaContacts,
   playerDisplayName,
 }: Props) {
   const avatarPx = 40
+  const { anchorRef, bind, pressStyle } = useSpecialChatCardLongPress(onLongPress, selected)
   const card = (
-    <SharedRecordCard
-      data={data}
-      personaContacts={personaContacts}
-      playerDisplayName={playerDisplayName}
-    />
+    <div
+      ref={anchorRef}
+      className="relative inline-block select-none transition-[transform,opacity] duration-150 ease-out"
+      style={pressStyle}
+      {...bind}
+    >
+      <SharedRecordCard
+        data={data}
+        personaContacts={personaContacts}
+        playerDisplayName={playerDisplayName}
+      />
+    </div>
   )
   const showAvatarVisual = showAvatar && showAvatarColumn
   const reserveAvatarGutter = showAvatar
@@ -110,7 +123,7 @@ export function SharedRecordChatRow({
 
   return (
     <div className="w-[100vw] max-w-[100vw] shrink-0 overflow-x-visible" data-wx-msg-id={id}>
-      {!showAvatar ? (
+      {!showAvatar && !multiSelectAvatar ? (
         <div className="ml-[24px] mr-auto min-w-0">{card}</div>
       ) : showAvatarVisual || multiSelectAvatar ? (
         <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">

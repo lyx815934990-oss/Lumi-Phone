@@ -1,9 +1,8 @@
+import { emitWeChatStorageChanged, personaDb } from '../newFriendsPersona/idb'
+import { resolveListenTogetherPrivateChatTarget } from '../wechatAccountPrivateChatStorage'
+import { resolveSongLyricsExcerpt } from './listenShareAiContext'
 import type { MusicTrack } from '../../../../stores/useMusicStore'
 import { loadNeteaseCookie } from '../../../../components/discoverListen/neteaseApiClient'
-import { emitWeChatStorageChanged, personaDb } from '../newFriendsPersona/idb'
-import { resolveAccountScopedPrivateConversationKey } from '../wechatAccountPrivateChatStorage'
-import { findAccountById, loadAccountsBundle, resolveAccountSessionIdentityId } from '../wechatAccountPersistence'
-import { resolveSongLyricsExcerpt } from './listenShareAiContext'
 
 export type SendMusicSyncInviteParams = {
   characterId: string
@@ -24,30 +23,19 @@ export async function sendMusicSyncInvite(
   const characterId = params.characterId.trim()
   if (!characterId) throw new Error('invalid character')
 
-  const bundle = await loadAccountsBundle()
-  if (!bundle) throw new Error('no active wechat account')
-  const account = findAccountById(bundle, bundle.currentAccountId)
-  if (!account) throw new Error('no active wechat account')
+  const target = await resolveListenTogetherPrivateChatTarget(characterId)
+  const { playerIdentityId, conversationKey, timestamp, storyDay, storyTime, storyTimeLabel } = target
 
-  const playerIdentityId = resolveAccountSessionIdentityId(account).trim()
-  if (!playerIdentityId || playerIdentityId === '__none__') {
-    throw new Error('no player identity')
-  }
-
-  const conversationKey = await resolveAccountScopedPrivateConversationKey({
-    wechatAccountId: account.accountId,
-    characterId,
-    appSessionPlayerIdentityId: playerIdentityId,
-  })
-
-  const nowMs = Date.now()
-  const inviteId = `msi-${nowMs}-${Math.random().toString(36).slice(2, 8)}`
-  const messageId = `wxm-${nowMs}-msi-${Math.random().toString(36).slice(2, 8)}`
+  const inviteId = `msi-${timestamp}-${Math.random().toString(36).slice(2, 8)}`
+  const messageId = `wxm-${timestamp}-msi-${Math.random().toString(36).slice(2, 8)}`
 
   const cookie = loadNeteaseCookie().trim()
-  const lyricsExcerpt = params.track.id
-    ? await resolveSongLyricsExcerpt(params.track.id, cookie)
-    : ''
+  const trackId = Number(params.track.id)
+  if (!Number.isFinite(trackId) || !params.track.title?.trim()) {
+    throw new Error('invalid track')
+  }
+  const lyricsExcerpt =
+    trackId > 0 ? await resolveSongLyricsExcerpt(trackId, cookie) : ''
 
   await personaDb.appendWeChatChatMessage({
     id: messageId,
@@ -58,13 +46,16 @@ export async function sendMusicSyncInvite(
     musicSync: {
       kind: 'music_invite',
       inviteId,
-      trackId: params.track.id,
-      trackTitle: params.track.title,
-      trackArtist: params.track.artist,
-      coverUrl: params.track.cover,
+      trackId: Math.floor(trackId),
+      trackTitle: params.track.title.trim(),
+      trackArtist: params.track.artist?.trim() || '',
+      coverUrl: params.track.cover?.trim() || '',
       ...(lyricsExcerpt ? { lyricsExcerpt } : {}),
     },
-    timestamp: nowMs,
+    timestamp,
+    ...(storyDay ? { storyDay } : {}),
+    ...(storyTime ? { storyTime } : {}),
+    ...(storyTimeLabel ? { storyTimeLabel } : {}),
     isRead: true,
     conversationKey,
   })

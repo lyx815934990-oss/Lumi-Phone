@@ -2,6 +2,7 @@ import {
   IMESSAGE_BUBBLE_PRESET,
   WECHAT_APP_CLASSIC_BUBBLE_PRESET,
 } from '../wechatBubblePresets'
+import { LIQUID_GLASS_MINIMAL_BUBBLE_PACK } from './liquidGlassMinimalPack'
 import { LUMI_BUBBLE_PACK_FORMAT, LUMI_BUBBLE_PACK_VERSION, type LumiWeChatBubblePack } from './types'
 
 export function bubblePackFromPreset(
@@ -40,4 +41,5 @@ export const SAMPLE_IMESSAGE_BUBBLE_PACK = bubblePackFromPreset(IMESSAGE_BUBBLE_
 export const OFFICIAL_BUBBLE_PACK_SAMPLES: LumiWeChatBubblePack[] = [
   SAMPLE_WECHAT_CLASSIC_BUBBLE_PACK,
   SAMPLE_IMESSAGE_BUBBLE_PACK,
+  LIQUID_GLASS_MINIMAL_BUBBLE_PACK,
 ]

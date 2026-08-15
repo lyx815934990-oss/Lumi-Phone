@@ -267,8 +267,7 @@
             showRetry('加载过慢或失败，请点下方重试')
             return
           }
-          // React 已接管：给足时间拉齐非剧本杀资源，由 BootResourceGate 正常收尾；
-          // 仅在极端卡住时才强制进桌面（勿再用短 8s 打断预加载）。
+          // React 已接管：尽量等 BootResourceGate 收尾；极端卡住再强制进桌面
           window.setTimeout(function () {
             if (hidden) return
             try {
@@ -279,7 +278,7 @@
                   } catch (_) {}
                 })
             } catch (_) {}
-          }, 300000)
+          }, 120000)
         }, 16000)
       })()
     </script>

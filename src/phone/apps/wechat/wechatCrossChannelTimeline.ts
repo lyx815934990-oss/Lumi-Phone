@@ -24,8 +24,11 @@ export function resolveMessageSystemRecordedAtMs(msg: Pick<WeChatChatMessage, 't
 }
 
 export function resolvePlotSystemRecordedAtMs(
-  plot: Pick<DatingPlotSnapshotItem, 'timestamp'>,
+  plot: Pick<DatingPlotSnapshotItem, 'timestamp'> & { systemRecordedAt?: number },
 ): number {
+  if (typeof plot.systemRecordedAt === 'number' && Number.isFinite(plot.systemRecordedAt)) {
+    return plot.systemRecordedAt
+  }
   const ts = typeof plot.timestamp === 'number' && Number.isFinite(plot.timestamp) ? plot.timestamp : Date.now()
   return ts
 }

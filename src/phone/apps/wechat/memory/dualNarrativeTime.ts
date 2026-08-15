@@ -1,7 +1,7 @@
 /**
  * 双时间约定：
- * - 系统落库时间（systemRecordedAt / recordedAt / Date.now）：仅后台时序，不对用户展示
- * - 剧情时间（storyDay / storyTime / storyTimeLabel）：前端与记忆摘要展示用
+ * - 系统落库时间（systemRecordedAt / recordedAt / Date.now）：真实生成/落库钟点（卡片「生成」）
+ * - 剧情时间（storyDay / storyTime / storyTimeLabel）：故事内时刻（卡片「剧情」结尾）
  */
 
 import type { StoryTimelineSummaryDelta } from './storyTimelineTypes'

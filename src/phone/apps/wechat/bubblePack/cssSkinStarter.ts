@@ -12,7 +12,8 @@ export const LUMI_CSS_SKIN_STARTER_SCOPED_CSS = `/* lumi css-skin blank canvas â
 [data-wx-msg-kind="location"][data-wx-special-card],
 [data-wx-msg-kind="favorite"][data-wx-special-card],
 [data-wx-msg-kind="voice"][data-wx-special-card],
-[data-wx-msg-kind="voice-call"][data-wx-special-card] {
+[data-wx-msg-kind="voice-call"][data-wx-special-card],
+[data-wx-msg-kind="listen-together"][data-wx-special-card] {
   position: relative !important;
   box-sizing: border-box !important;
 }

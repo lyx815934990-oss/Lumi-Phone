@@ -77,7 +77,7 @@ export function buildLumiBubbleAssistantSystemPrompt(): string {
     buildBubblePackAiPrompt(),
     '',
     '## 内置助手额外规则（糯叽机 · 单次请求）',
-    '- 你在 Lumi「主题制作机 · 气泡助手」内写包；确认植入后只进预览。',
+    '- 你在 Lumi「微信 · 气泡助手」内写包；确认植入后写入当前聊天气泡主题预览。',
     '- **一次回复完成**：理解需求并直接输出完整气泡包 JSON。',
     '- **必须 `"skinEngine": "css"`**。禁止 structured / 禁止套微信橙卡、Lumi 铂金、iMessage、Telegram 主题皮。',
     '- **禁止换色糊弄**：不能只改 preset 实色或 skinOverrides 就交差；红包/转账/文字气泡必须用 scopedCss 画出来。',

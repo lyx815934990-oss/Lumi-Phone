@@ -3,6 +3,7 @@ import {
   AlignLeft,
   ArrowUpRight,
   HeartPulse,
+  Home,
   Pause,
   Play,
   Repeat,
@@ -25,7 +26,7 @@ import {
   type ListenTogetherToastInput,
 } from './listenShareToast'
 import { listenTogetherPlayerEngine } from './listenTogetherPlayerEngine'
-import { navigateToListenTogetherFullscreen } from './listenTogetherNavigation'
+import { navigateToListenTogetherFullscreen, openListenTogetherApp } from './listenTogetherNavigation'
 import { SyncCapsule } from './SyncCapsule'
 import type { InviteableContact } from './useInviteableWeChatContacts'
 import { useListenTogetherUserAvatar } from './useListenTogetherUserAvatar'
@@ -152,8 +153,42 @@ export function MiniPlayerPopover({
             }
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="relative px-4 pb-4 pt-3.5">
-              <div className="absolute right-3 top-3 flex items-center gap-0.5">
+            <div className="relative px-4 pb-4 pt-3">
+              <div className="mb-2.5 flex items-center justify-end gap-1.5">
+                <div
+                  className="flex items-center rounded-full bg-white/75 p-0.5 shadow-[0_2px_10px_rgba(255,192,203,0.12)] ring-1 ring-rose-100/80"
+                  role="group"
+                  aria-label="听一听入口"
+                >
+                  <button
+                    type="button"
+                    aria-label="打开听一听主页"
+                    title="听一听主页"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onClose()
+                      openListenTogetherApp()
+                    }}
+                    className="flex h-7 items-center gap-1 rounded-full px-2.5 text-stone-500 transition-colors hover:bg-[#FFF0F3]/95 hover:text-[#2D2422]"
+                  >
+                    <Home className="size-3.5 shrink-0" strokeWidth={1.85} />
+                    <span className="text-[11px] font-medium tracking-wide">听一听</span>
+                  </button>
+                  <span className="mx-0.5 h-3.5 w-px shrink-0 bg-rose-100/90" aria-hidden />
+                  <button
+                    type="button"
+                    aria-label="打开听一听全屏播放"
+                    title="全屏播放"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onClose()
+                      void navigateToListenTogetherFullscreen()
+                    }}
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-stone-500 transition-colors hover:bg-[#FFF0F3]/95 hover:text-[#2D2422]"
+                  >
+                    <ArrowUpRight className="size-3.5" strokeWidth={1.85} />
+                  </button>
+                </div>
                 <button
                   type="button"
                   aria-label="隐藏悬浮球"
@@ -163,22 +198,9 @@ export function MiniPlayerPopover({
                     dismissFloatingOrb()
                     onClose()
                   }}
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition-colors hover:bg-rose-50/80 hover:text-stone-600"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/55 text-stone-400 ring-1 ring-rose-100/70 transition-colors hover:bg-rose-50/90 hover:text-stone-600"
                 >
-                  <X className="size-3.5" strokeWidth={1.75} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="打开听一听全屏播放"
-                  title="全屏播放"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onClose()
-                    void navigateToListenTogetherFullscreen()
-                  }}
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition-colors hover:bg-rose-50/80 hover:text-stone-600"
-                >
-                  <ArrowUpRight className="size-3.5" strokeWidth={1.75} />
+                  <X className="size-3.5" strokeWidth={1.85} />
                 </button>
               </div>
 
@@ -189,7 +211,7 @@ export function MiniPlayerPopover({
                 onInviteClick={() => setInviteDrawerOpen(true)}
               />
 
-              <div className="flex items-center gap-3 pr-16">
+              <div className="flex items-center gap-3">
                 {track.cover ? (
                   <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl ring-1 ring-rose-100/80 shadow-sm">
                     <img src={track.cover} alt="" className="h-full w-full object-cover" />

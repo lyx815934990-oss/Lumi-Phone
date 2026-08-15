@@ -1,11 +1,12 @@
 import { personaDb } from './newFriendsPersona/idb'
 import { normalizeAccountsBundle, WECHAT_ACCOUNTS_BUNDLE_KV_KEY } from './wechatAccountTypes'
-import { resolveAccountSessionIdentityId } from './wechatAccountPersistence'
+import { findAccountById, loadAccountsBundle, resolveAccountSessionIdentityId } from './wechatAccountPersistence'
 import {
   arePlayerIdentitiesBasicsEquivalent,
   collectWechatAccountPlayerIdentityIds,
   getCharacterBoundPlayerIdentityId,
   isWechatAccountSessionSlotIdentityId,
+  resolveActivePrivateChatSessionPlayerIdentityId,
 } from './wechatCharacterPlayerIdentity'
 import {
   isWechatAccountGroupConversationKey,
@@ -18,7 +19,8 @@ import {
   wechatAccountPrivateConversationKey,
   wechatConversationKey,
 } from './wechatConversationKey'
-import { resolveActivePrivateChatSessionPlayerIdentityId } from './wechatCharacterPlayerIdentity'
+import { resolveCurrentStoryFieldsForCharacter } from './memory/stampChatMessagesStoryTime'
+import { normalizeWeChatTimeConfig, resolveWeChatCurrentTimeMs } from './time/wechatTimeUtils'
 
 const LEGACY_GROUP_CONV_PREFIX = 'wxgrp:'
 
@@ -553,6 +555,75 @@ export async function resolvePrivateChatMessageStorageKey(params: {
     })
   }
   return resolvePrivateWeChatStorageConversationKey(cid, null, pid)
+}
+
+/**
+ * 听一听共听邀约 / 分享卡写入私聊：会话身份与 ChatRoom 一致，
+ * 时间戳用该角色微信/剧情时钟（勿用墙钟 Date.now，否则线下剧情推得很远时卡片会沉到历史外）。
+ */
+export async function resolveListenTogetherPrivateChatTarget(characterId: string): Promise<{
+  wechatAccountId: string
+  playerIdentityId: string
+  conversationKey: string
+  /** 与聊天室发送一致的应用内时间 */
+  timestamp: number
+  storyDay?: string
+  storyTime?: string
+  storyTimeLabel?: string
+}> {
+  const cid = characterId.trim()
+  if (!cid) throw new Error('invalid character')
+
+  const bundle = await loadAccountsBundle()
+  if (!bundle) throw new Error('no active wechat account')
+  const account = findAccountById(bundle, bundle.currentAccountId)
+  if (!account) throw new Error('no active wechat account')
+
+  const appPid = resolveAccountSessionIdentityId(account).trim()
+  if (!appPid || appPid === '__none__') throw new Error('no player identity')
+
+  const playerIdentityId = (
+    await resolveActivePrivateChatSessionPlayerIdentityId({
+      characterId: cid,
+      wechatAccountId: account.accountId,
+      appPlayerIdentityId: appPid,
+    })
+  ).trim()
+  if (!playerIdentityId || playerIdentityId === '__none__') {
+    throw new Error('no player identity')
+  }
+
+  const conversationKey = await resolveAccountScopedPrivateConversationKey({
+    wechatAccountId: account.accountId,
+    characterId: cid,
+    appSessionPlayerIdentityId: playerIdentityId,
+  })
+
+  const gs = await personaDb.getGlobalSettings()
+  const roleTime = await personaDb.getCharacterTimeSettings(cid)
+  let timestamp = resolveWeChatCurrentTimeMs(
+    normalizeWeChatTimeConfig(roleTime?.config ?? gs.globalTimeConfig),
+  )
+  try {
+    const latest = await personaDb.peekLatestWeChatChatMessage(conversationKey)
+    const latestTs =
+      typeof latest?.timestamp === 'number' && Number.isFinite(latest.timestamp) ? latest.timestamp : 0
+    if (latestTs > 0 && timestamp <= latestTs) {
+      timestamp = latestTs + 1
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const story = await resolveCurrentStoryFieldsForCharacter(cid)
+
+  return {
+    wechatAccountId: account.accountId,
+    playerIdentityId,
+    conversationKey,
+    timestamp,
+    ...story,
+  }
 }
 
 /** 红包/转账/亲情卡等从聊天子页写入消息时的会话键（私聊 / 群聊）。 */

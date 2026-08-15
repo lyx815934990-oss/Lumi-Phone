@@ -2,9 +2,16 @@
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import {
   normalizeArchiveEntryPartial,
+  normalizeLoreArchiveTag,
+  normalizeLoreArchiveTagCatalog,
+  normalizeTagIds,
   type LoreArchiveStoreShapeV2,
   type LoreArchiveStoreShapeV3,
+  type LoreArchiveTag,
+  type LoreArchiveTagColorKey,
   type LoreEntry,
+  LORE_ARCHIVE_TAGS_CAP,
+  LORE_ARCHIVE_TAG_NAME_MAX,
 } from './loreArchiveTypes'
 import {
   type LoreArchiveBuiltinPresetId,
@@ -17,12 +24,14 @@ export const LUMI_LORE_ARCHIVE_KV_KEY = 'lumi-lore-archive-v1'
 
 type Snap = {
   entries: LoreEntry[]
+  tags: LoreArchiveTag[]
   hydrated: boolean
   builtinPresets: Record<LoreArchiveBuiltinPresetId, boolean>
 }
 
 let snap: Snap = {
   entries: [],
+  tags: [],
   hydrated: false,
   builtinPresets: resolveLoreArchiveBuiltinPresetToggles(null),
 }
@@ -37,6 +46,7 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null
     const parsed = parseStore(JSON.parse(raw) as unknown)
     snap = {
       entries: parsed.entries,
+      tags: parsed.tags,
       hydrated: false,
       builtinPresets: resolveLoreArchiveBuiltinPresetToggles(parsed.builtinPresets),
     }
@@ -123,9 +133,25 @@ function migrateV2ToUnified(v2: LoreArchiveStoreShapeV2): LoreEntry[] {
   return out
 }
 
-function parseStore(raw: unknown): { entries: LoreEntry[]; builtinPresets: LoreArchiveBuiltinPresetToggles } {
+function pruneEntryTagIds(entries: LoreEntry[], validTagIds: Set<string>): LoreEntry[] {
+  return entries.map((e) => {
+    const nextIds = normalizeTagIds(e.tagIds).filter((id) => validTagIds.has(id))
+    const prev = normalizeTagIds(e.tagIds)
+    if (nextIds.length === prev.length && nextIds.every((id, i) => id === prev[i])) return e
+    const next: LoreEntry = { ...e }
+    if (nextIds.length) next.tagIds = nextIds
+    else delete next.tagIds
+    return next
+  })
+}
+
+function parseStore(raw: unknown): {
+  entries: LoreEntry[]
+  tags: LoreArchiveTag[]
+  builtinPresets: LoreArchiveBuiltinPresetToggles
+} {
   if (!raw || typeof raw !== 'object') {
-    return { entries: [], builtinPresets: {} }
+    return { entries: [], tags: [], builtinPresets: {} }
   }
   const rec = raw as Record<string, unknown>
   const ver = rec.version
@@ -133,17 +159,27 @@ function parseStore(raw: unknown): { entries: LoreEntry[]; builtinPresets: LoreA
     rec.builtinPresets && typeof rec.builtinPresets === 'object'
       ? (rec.builtinPresets as LoreArchiveBuiltinPresetToggles)
       : {}
+  const tags = normalizeLoreArchiveTagCatalog(rec.tags)
+  const validTagIds = new Set(tags.map((t) => t.id))
 
   if (ver === 3) {
     const v3 = rec as LoreArchiveStoreShapeV3
-    return { entries: parseArchiveEntriesArray(v3.entries), builtinPresets }
+    return {
+      entries: pruneEntryTagIds(parseArchiveEntriesArray(v3.entries), validTagIds),
+      tags,
+      builtinPresets,
+    }
   }
 
   if (ver === 2) {
-    return { entries: migrateV2ToUnified(rec as unknown as LoreArchiveStoreShapeV2), builtinPresets }
+    return {
+      entries: migrateV2ToUnified(rec as unknown as LoreArchiveStoreShapeV2),
+      tags,
+      builtinPresets,
+    }
   }
 
-  return { entries: parseLegacyLoreFlat(raw), builtinPresets }
+  return { entries: parseLegacyLoreFlat(raw), tags, builtinPresets }
 }
 
 function schedulePersist() {
@@ -153,11 +189,13 @@ function schedulePersist() {
     const payload: LoreArchiveStoreShapeV3 = {
       version: 3,
       entries: snap.entries,
+      tags: snap.tags,
       builtinPresets: {
         lumiDoctrineOfLove: snap.builtinPresets.lumiDoctrineOfLove,
         activeConfession: snap.builtinPresets.activeConfession,
         pureRestrainLove: snap.builtinPresets.pureRestrainLove,
         offlineRichInnerOs: snap.builtinPresets.offlineRichInnerOs,
+        offlineFashionStyling: snap.builtinPresets.offlineFashionStyling,
       },
       weibo: { _reserved: true },
     }
@@ -174,6 +212,10 @@ export function getWorldbookLoreEntriesSnapshot(): LoreEntry[] {
   return snap.entries
 }
 
+export function getLoreArchiveTagsSnapshot(): LoreArchiveTag[] {
+  return snap.tags
+}
+
 export function subscribeWorldbookLore(listener: () => void) {
   listeners.add(listener)
   return () => listeners.delete(listener)
@@ -184,6 +226,8 @@ function getSnap(): Snap {
 }
 
 export function upsertLoreEntry(entry: LoreEntry) {
+  const validTagIds = new Set(snap.tags.map((t) => t.id))
+  const tagIds = normalizeTagIds(entry.tagIds).filter((id) => validTagIds.has(id))
   const normalized =
     normalizeArchiveEntryPartial({
       id: entry.id,
@@ -192,6 +236,7 @@ export function upsertLoreEntry(entry: LoreEntry) {
       enabled: entry.enabled !== false,
       plateScope: entry.plateScope,
       characterScope: entry.characterScope,
+      tagIds,
       updatedAt: entry.updatedAt,
     }) ?? entry
   const next = [...snap.entries.filter((e) => e.id !== normalized.id), normalized].sort(
@@ -207,6 +252,72 @@ export function removeLoreEntry(id: string) {
   if (!tid) return
   const next = snap.entries.filter((e) => e.id !== tid)
   snap = { ...snap, entries: next }
+  emit()
+  schedulePersist()
+}
+
+export function upsertLoreArchiveTag(input: {
+  id?: string
+  name: string
+  colorKey?: LoreArchiveTagColorKey
+}): LoreArchiveTag | null {
+  const name = String(input.name ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, LORE_ARCHIVE_TAG_NAME_MAX)
+  if (!name) return null
+
+  const now = Date.now()
+  const existingId = String(input.id ?? '').trim()
+  if (existingId) {
+    const prev = snap.tags.find((t) => t.id === existingId)
+    if (!prev) return null
+    const dupName = snap.tags.some(
+      (t) => t.id !== existingId && t.name.toLowerCase() === name.toLowerCase(),
+    )
+    if (dupName) return null
+    const nextTag: LoreArchiveTag = {
+      ...prev,
+      name,
+      colorKey: input.colorKey ?? prev.colorKey ?? 'sand',
+      updatedAt: now,
+    }
+    snap = {
+      ...snap,
+      tags: snap.tags.map((t) => (t.id === existingId ? nextTag : t)),
+    }
+    emit()
+    schedulePersist()
+    return nextTag
+  }
+
+  if (snap.tags.length >= LORE_ARCHIVE_TAGS_CAP) return null
+  const dupName = snap.tags.some((t) => t.name.toLowerCase() === name.toLowerCase())
+  if (dupName) return null
+  const created: LoreArchiveTag = {
+    id: crypto.randomUUID(),
+    name,
+    colorKey: input.colorKey ?? 'sand',
+    updatedAt: now,
+  }
+  const normalized = normalizeLoreArchiveTag(created)
+  if (!normalized) return null
+  snap = { ...snap, tags: [...snap.tags, normalized] }
+  emit()
+  schedulePersist()
+  return normalized
+}
+
+export function removeLoreArchiveTag(id: string) {
+  const tid = String(id || '').trim()
+  if (!tid) return
+  const nextTags = snap.tags.filter((t) => t.id !== tid)
+  const valid = new Set(nextTags.map((t) => t.id))
+  snap = {
+    ...snap,
+    tags: nextTags,
+    entries: pruneEntryTagIds(snap.entries, valid),
+  }
   emit()
   schedulePersist()
 }
@@ -231,6 +342,7 @@ export function setLoreArchiveBuiltinPresetEnabled(id: LoreArchiveBuiltinPresetI
 export function resetWorldbookLoreArchiveAfterWeChatErase(): void {
   snap = {
     entries: [],
+    tags: [],
     hydrated: true,
     builtinPresets: resolveLoreArchiveBuiltinPresetToggles(null),
   }
@@ -253,6 +365,7 @@ export function WorldbookLoreProvider({ children }: { children: ReactNode }) {
         const parsed = parseStore(raw)
         snap = {
           entries: parsed.entries,
+          tags: parsed.tags,
           hydrated: true,
           builtinPresets: resolveLoreArchiveBuiltinPresetToggles(parsed.builtinPresets),
         }
@@ -278,11 +391,14 @@ export function useWorldbookStore() {
     () => ({
       hydrated: state.hydrated,
       entries: state.entries,
+      tags: state.tags,
       builtinPresets: state.builtinPresets,
       upsertEntry: upsertLoreEntry,
       removeEntry: removeLoreEntry,
+      upsertTag: upsertLoreArchiveTag,
+      removeTag: removeLoreArchiveTag,
       setBuiltinPresetEnabled: setLoreArchiveBuiltinPresetEnabled,
     }),
-    [state.entries, state.hydrated, state.builtinPresets],
+    [state.entries, state.tags, state.hydrated, state.builtinPresets],
   )
 }

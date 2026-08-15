@@ -12,14 +12,14 @@ const COMPOSER_TEXT_CLASS =
 const COMPOSER_HOLD_CLASS =
   'select-none flex min-h-[24px] min-w-0 flex-1 items-center justify-start bg-transparent text-[16px] leading-6 text-[#8E8E93]'
 
-function SendPlaneIcon({ color }: { color: string }) {
+function SendPlaneIcon({ color }: { color?: string }) {
   return (
     <svg
       width={20}
       height={20}
       viewBox="0 0 24 24"
       fill="none"
-      stroke={color}
+      stroke={color || 'currentColor'}
       strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -484,12 +484,18 @@ export function ChatInputBar({
     <div className="flex w-full max-w-full items-end gap-2">
       <Pressable
         type="button"
+        data-wx-chat-input-btn="voice"
+        data-wx-chat-input-icon={inputMode === 'voice' ? 'keyboard' : 'mic'}
         aria-label={inputMode === 'text' ? '切换为语音输入' : '切换为文字输入'}
         onClick={onToggleInputMode}
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
         style={{ color: btnColor }}
       >
-        <Mic size={btnPx} strokeWidth={2} aria-hidden />
+        {inputMode === 'voice' ? (
+          <Keyboard size={btnPx} strokeWidth={2} aria-hidden />
+        ) : (
+          <Mic size={btnPx} strokeWidth={2} aria-hidden />
+        )}
       </Pressable>
 
       {inputMode === 'voice' ? (
@@ -538,6 +544,8 @@ export function ChatInputBar({
 
       <Pressable
         type="button"
+        data-wx-chat-input-btn="emoji"
+        data-wx-chat-input-icon={emojiPanelOpen ? 'keyboard' : 'emoji'}
         aria-label={emojiPanelOpen ? '键盘' : '表情'}
         onClick={onEmojiOrKeyboardClick}
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
@@ -551,6 +559,7 @@ export function ChatInputBar({
       </Pressable>
       <Pressable
         type="button"
+        data-wx-chat-input-btn="plus"
         aria-label={plusMenuOpen ? '收起更多功能' : '更多功能'}
         onClick={onTogglePlus}
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
@@ -564,12 +573,15 @@ export function ChatInputBar({
       </Pressable>
       <Pressable
         type="button"
+        data-wx-chat-input-btn="send"
+        data-wx-send-ready={planeCanAct && !sendBusy ? '1' : '0'}
         onClick={onSend}
         disabled={sendBusy || !planeCanAct}
-        className="mb-[2px] flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-40"
+        className="mb-[2px] flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-[opacity,transform,box-shadow] active:scale-95 disabled:opacity-40"
+        style={{ color: !planeCanAct || sendBusy ? '#a3a3a3' : btnColor }}
         aria-label={hasDraft ? '发送并请求回复' : '请求 AI 回复'}
       >
-        <SendPlaneIcon color={!planeCanAct || sendBusy ? '#a3a3a3' : btnColor} />
+        <SendPlaneIcon />
       </Pressable>
     </div>
   )

@@ -1,0 +1,252 @@
+/* Lumi机 · 系统电话 — iOS 极简 / 毛玻璃 */
+
+.phone-app {
+  --ph-bg: #f5f5f7;
+  --ph-ink: #1c1c1e;
+  --ph-ink-2: #636366;
+  --ph-card: #ffffff;
+  --ph-mist: #8e8e93;
+  --ph-line: rgba(60, 60, 67, 0.12);
+  --ph-fog: #5e6c84;
+  --ph-danger: #d9534f;
+  --ph-gold: #d4af37;
+  --ph-shadow: 0 4px 24px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --ph-radius: 16px;
+  --ph-sans: 'SF Pro Text', 'PingFang SC', 'Noto Sans SC', -apple-system, system-ui, sans-serif;
+  --ph-mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  position: absolute;
+  inset: 0;
+  z-index: 1408;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--ph-bg);
+  color: var(--ph-ink);
+  font-family: var(--ph-sans);
+  -webkit-font-smoothing: antialiased;
+  padding-top: max(44px, env(safe-area-inset-top, 0px));
+  box-sizing: border-box;
+}
+
+.phone-app * {
+  box-sizing: border-box;
+}
+
+.phone-glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(25px) saturate(180%);
+  -webkit-backdrop-filter: blur(25px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.phone-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.phone-mono {
+  font-family: var(--ph-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.phone-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #6e6e73;
+  font-weight: 600;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #d8d8dc;
+}
+
+.phone-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.phone-avatar--blocked {
+  filter: grayscale(1) blur(1.2px);
+  opacity: 0.72;
+}
+
+.phone-tabbar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  z-index: 30;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  height: 58px;
+  border-radius: 999px;
+  box-shadow: var(--ph-shadow);
+  padding: 4px 6px;
+}
+
+.phone-tabbar-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 999px;
+  color: var(--ph-mist);
+  font-size: 10px;
+}
+
+.phone-tabbar-item[data-active='true'] {
+  color: var(--ph-fog);
+  font-weight: 600;
+}
+
+.phone-segment {
+  display: flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(118, 118, 128, 0.12);
+}
+
+.phone-segment button {
+  flex: 1;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ph-ink);
+  font-weight: 500;
+}
+
+.phone-segment button[data-active='true'] {
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.phone-missed {
+  color: var(--ph-danger) !important;
+}
+
+.phone-gold {
+  color: var(--ph-gold) !important;
+}
+
+.phone-card {
+  background: var(--ph-card);
+  border-radius: var(--ph-radius);
+  box-shadow: var(--ph-shadow);
+}
+
+.phone-action-disabled {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.phone-swipe-actions {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+}
+
+.phone-swipe-actions button {
+  width: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #fff;
+  font-weight: 500;
+}
+
+.phone-sheet {
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--ph-shadow);
+  overflow: hidden;
+}
+
+.phone-dir-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--ph-card);
+  background: #fff;
+  color: var(--ph-fog);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.phone-dir-badge[data-dir='incoming'] {
+  color: #34c759;
+  background: #eaf8ee;
+}
+
+.phone-dir-badge[data-dir='outgoing'] {
+  color: var(--ph-fog);
+  background: #eef1f5;
+}
+
+.phone-dir-badge[data-dir='missed'] {
+  color: var(--ph-danger);
+  background: #fdeeee;
+}
+
+.phone-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: rgba(94, 108, 132, 0.12);
+  color: var(--ph-fog);
+}
+
+.phone-sticky-letter {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 4px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ph-mist);
+  background: rgba(245, 245, 247, 0.92);
+  backdrop-filter: blur(12px);
+}
+
+.phone-index-rail {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 4px 2px;
+}
+
+.phone-index-rail button {
+  width: 16px;
+  height: 14px;
+  font-size: 9px;
+  line-height: 14px;
+  color: var(--ph-fog);
+  font-weight: 600;
+}
+
+.phone-index-rail button[data-active='true'] {
+  color: var(--ph-ink);
+}

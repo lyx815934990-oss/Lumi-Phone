@@ -4,6 +4,7 @@ import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
 } from '../group/ChatGroupSpeakerAvatarWrap'
+import { useSpecialChatCardLongPress } from '../hooks/useSpecialChatCardLongPress'
 import type { WeChatChatHistoryPayload } from '../newFriendsPersona/types'
 import { ChatHistoryCard } from './ChatHistoryCard'
 
@@ -22,6 +23,8 @@ type Props = {
   groupRankShowBesideNickname?: boolean
   onOpen?: () => void
   multiSelectAvatar?: ReactNode
+  selected?: boolean
+  onLongPress?: (anchorRect: DOMRect) => void
   recipientCharacterId?: string
   userDisplayName?: string
   personaContacts?: readonly import('../../../types').WeChatPersonaContact[]
@@ -44,21 +47,31 @@ export function ChatHistoryChatRow({
   groupRankShowBesideNickname = true,
   onOpen,
   multiSelectAvatar,
+  selected = false,
+  onLongPress,
   recipientCharacterId,
   userDisplayName,
   personaContacts,
   cardSenderCharacterId,
 }: Props) {
   const avatarPx = 40
+  const { anchorRef, bind, pressStyle } = useSpecialChatCardLongPress(onLongPress, selected)
   const card = (
-    <ChatHistoryCard
-      data={data}
-      onOpen={onOpen}
-      recipientCharacterId={recipientCharacterId}
-      userDisplayName={userDisplayName}
-      personaContacts={personaContacts}
-      cardSenderCharacterId={cardSenderCharacterId}
-    />
+    <div
+      ref={anchorRef}
+      className="relative inline-block select-none transition-[transform,opacity] duration-150 ease-out"
+      style={pressStyle}
+      {...bind}
+    >
+      <ChatHistoryCard
+        data={data}
+        onOpen={onOpen}
+        recipientCharacterId={recipientCharacterId}
+        userDisplayName={userDisplayName}
+        personaContacts={personaContacts}
+        cardSenderCharacterId={cardSenderCharacterId}
+      />
+    </div>
   )
   const showAvatarVisual = showAvatar && showAvatarColumn
   const reserveAvatarGutter = showAvatar
@@ -118,7 +131,7 @@ export function ChatHistoryChatRow({
 
   return (
     <div className="w-[100vw] max-w-[100vw] shrink-0 overflow-x-visible" data-wx-msg-id={id}>
-      {!showAvatar ? (
+      {!showAvatar && !multiSelectAvatar ? (
         <div className="ml-[24px] mr-auto min-w-0">{card}</div>
       ) : showAvatarVisual || multiSelectAvatar ? (
         <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">

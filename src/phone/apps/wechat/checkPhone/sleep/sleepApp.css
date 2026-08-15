@@ -1,0 +1,218 @@
+/* 睡眠监测 App —— 夜间私密风设计 token（可日间切换） */
+
+.sleep-app {
+  --sleep-radius: 24px;
+  --sleep-radius-sm: 16px;
+  --sleep-font: inherit;
+  --sleep-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas, monospace;
+  --sleep-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: dark;
+}
+
+.sleep-app[data-theme='night'] {
+  --sleep-bg: #1c1d24;
+  --sleep-bg-glow: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(90, 100, 140, 0.22), transparent 55%),
+    radial-gradient(ellipse 40% 30% at 85% 20%, rgba(70, 60, 100, 0.12), transparent 50%),
+    radial-gradient(ellipse 35% 25% at 12% 40%, rgba(50, 70, 90, 0.1), transparent 45%);
+  --sleep-card: rgba(255, 255, 255, 0.06);
+  --sleep-card-border: rgba(255, 255, 255, 0.08);
+  --sleep-card-glow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 12px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --sleep-text: #e8e8ec;
+  --sleep-text-bright: #f4f4f7;
+  --sleep-muted: rgba(232, 232, 236, 0.48);
+  --sleep-muted-2: rgba(232, 232, 236, 0.28);
+  --sleep-accent: #a8b0c4;
+  --sleep-nav-bg: rgba(28, 29, 36, 0.78);
+  --sleep-stage-deep: #3a3548;
+  --sleep-stage-light: #6a6d7a;
+  --sleep-stage-rem: #8a95a8;
+  --sleep-stage-awake: rgba(244, 244, 247, 0.55);
+  --sleep-hr: #9aa3b5;
+  --sleep-hr-fill: rgba(154, 163, 181, 0.18);
+  --sleep-ring-from: #2a2e3a;
+  --sleep-ring-to: #b8c0d0;
+  --sleep-chip: rgba(255, 255, 255, 0.06);
+  --sleep-chip-border: rgba(255, 255, 255, 0.1);
+}
+
+.sleep-app[data-theme='day'] {
+  color-scheme: light;
+  --sleep-bg: #f4f4f6;
+  --sleep-bg-glow: radial-gradient(ellipse 70% 40% at 50% -5%, rgba(180, 190, 210, 0.35), transparent 55%);
+  --sleep-card: rgba(255, 255, 255, 0.82);
+  --sleep-card-border: rgba(0, 0, 0, 0.06);
+  --sleep-card-glow: 0 8px 28px rgba(30, 32, 40, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --sleep-text: #2a2b32;
+  --sleep-text-bright: #16171c;
+  --sleep-muted: rgba(42, 43, 50, 0.5);
+  --sleep-muted-2: rgba(42, 43, 50, 0.28);
+  --sleep-accent: #5c6478;
+  --sleep-nav-bg: rgba(244, 244, 246, 0.86);
+  --sleep-stage-deep: #3d3a4a;
+  --sleep-stage-light: #8a8e9a;
+  --sleep-stage-rem: #a8b4c4;
+  --sleep-stage-awake: #e8e9ee;
+  --sleep-hr: #6a7388;
+  --sleep-hr-fill: rgba(106, 115, 136, 0.14);
+  --sleep-ring-from: #4a5060;
+  --sleep-ring-to: #c4cad6;
+  --sleep-chip: rgba(255, 255, 255, 0.9);
+  --sleep-chip-border: rgba(0, 0, 0, 0.08);
+}
+
+.sleep-app {
+  background: var(--sleep-bg);
+  color: var(--sleep-text);
+  font-family: var(--sleep-font);
+}
+
+.sleep-app__bg {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: var(--sleep-bg-glow);
+  z-index: 0;
+}
+
+.sleep-card {
+  position: relative;
+  border-radius: var(--sleep-radius);
+  background: var(--sleep-card);
+  border: 1px solid var(--sleep-card-border);
+  box-shadow: var(--sleep-card-glow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.sleep-card--hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(circle 2px at 18% 28%, rgba(255, 255, 255, 0.22), transparent 3px),
+    radial-gradient(circle 1.5px at 72% 22%, rgba(255, 255, 255, 0.16), transparent 3px),
+    radial-gradient(circle 1.5px at 42% 68%, rgba(255, 255, 255, 0.12), transparent 3px),
+    radial-gradient(circle 2px at 88% 58%, rgba(255, 255, 255, 0.1), transparent 3px),
+    radial-gradient(ellipse 60% 40% at 70% 10%, rgba(120, 130, 170, 0.12), transparent 60%);
+  opacity: 0.85;
+}
+
+.sleep-app[data-theme='day'] .sleep-card--hero::before {
+  opacity: 0.35;
+}
+
+.sleep-num {
+  font-family: var(--sleep-mono);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes sleep-hr-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.sleep-hr-breathe {
+  animation: sleep-hr-breathe 4.8s var(--sleep-ease) infinite;
+}
+
+.sleep-history-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+}
+
+.sleep-history-item {
+  scroll-snap-align: center;
+}
+
+/* —— 交互浮层：夜色毛玻璃 —— */
+.sleep-tooltip-bubble {
+  border-radius: 14px;
+  background: rgba(36, 38, 48, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: var(--sleep-text);
+}
+
+.sleep-app[data-theme='day'] .sleep-tooltip-bubble {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 24px rgba(30, 32, 40, 0.1);
+}
+
+.sleep-tooltip-arrow {
+  position: absolute;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  border: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.sleep-tooltip-arrow--down {
+  bottom: -4px;
+  border-top: none;
+  border-left: none;
+}
+
+.sleep-tooltip-arrow--up {
+  top: -4px;
+  border-bottom: none;
+  border-right: none;
+}
+
+.sleep-scrub-line {
+  background: linear-gradient(180deg, rgba(244, 244, 247, 0.85), rgba(244, 244, 247, 0.25));
+  box-shadow: 0 0 8px rgba(200, 205, 220, 0.35);
+}
+
+.sleep-app[data-theme='day'] .sleep-scrub-line {
+  background: linear-gradient(180deg, rgba(42, 43, 50, 0.7), rgba(42, 43, 50, 0.2));
+  box-shadow: none;
+}
+
+.sleep-scrub-handle {
+  background: rgba(244, 244, 247, 0.92);
+  box-shadow: 0 0 0 3px rgba(180, 185, 205, 0.28), 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.sleep-app[data-theme='day'] .sleep-scrub-handle {
+  background: #2a2b32;
+  box-shadow: 0 0 0 3px rgba(90, 100, 120, 0.18);
+}
+
+.sleep-stage-seg--active {
+  box-shadow: 0 0 0 1.5px rgba(232, 232, 236, 0.55), 0 0 14px rgba(180, 185, 210, 0.35);
+  z-index: 2;
+}
+
+.sleep-app[data-theme='day'] .sleep-stage-seg--active {
+  box-shadow: 0 0 0 1.5px rgba(42, 43, 50, 0.35), 0 0 10px rgba(90, 100, 120, 0.2);
+}
+
+.sleep-stats-card {
+  transition: transform 0.18s cubic-bezier(0.25, 0.1, 0.25, 1);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sleep-stats-card--pressed {
+  transform: scale(0.97);
+}
+
+.sleep-stats-accordion {
+  overflow: hidden;
+}

@@ -169,7 +169,7 @@ export async function requestWeChatUserReplyDraftBubbles(params: {
     })
     .join('\n')
 
-  // 与线上角色一轮回复一致：不传 max_tokens，由模型/线路自行决定输出长度
+  // 与线上角色一轮回复一致：max_tokens 由 API 设置 / 系统默认 12800 控制
   const raw = await openAiCompatibleChat(
     cfg,
     [

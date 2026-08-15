@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { Activity, MoreHorizontal } from 'lucide-react'
 
 import type { WeChatBubbleTheme, WeChatTheme } from '../../types'
 import type { ChatTheme } from './chatTheme/types'
@@ -54,6 +55,10 @@ function previewBubbleTail(
   if (tailStyle === 'telegram' || tailStyle === 'talkmaker') {
     return groupPosition === 'first' || groupPosition === 'only'
   }
+  // 微信 App / 外观工坊几何尖角：按 showBubbleTail，不绑头像
+  if (tailStyle === 'wechat' || !tailStyle) {
+    return true
+  }
   return bubble.showBubbleTail && bubble.showAvatar
 }
 
@@ -76,7 +81,7 @@ function PreviewChatMessageRow({
         className="h-10 w-10 shrink-0"
         style={{
           borderRadius: `${bubble.avatarRadiusPx}px`,
-          background: isSelf ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.06)',
+          background: isSelf ? '#E5E5E5' : '#D4D4D4',
         }}
         aria-hidden
       />
@@ -137,8 +142,8 @@ export function WeChatChatSkinPreviewPanel({
   const textareaRef = useRef<HTMLDivElement>(null)
   const effectiveBubble = useMemo(() => migrateMislabeledLumiDefaultBubble(bubble), [bubble])
   const inputBar = useMemo(
-    () => resolveEffectiveChatInputBarForBubble(chatTheme.inputBar, effectiveBubble),
-    [chatTheme.inputBar, effectiveBubble],
+    () => resolveEffectiveChatInputBarForBubble(chatTheme.inputBar, effectiveBubble, wechatTheme),
+    [chatTheme.inputBar, effectiveBubble, wechatTheme],
   )
   const previewChatTheme = useMemo(
     () => ({ ...chatTheme, inputBar }),
@@ -195,19 +200,170 @@ export function WeChatChatSkinPreviewPanel({
       ) : null}
       <header
         data-wx-chat-header
-        className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2"
+        className="relative shrink-0 overflow-hidden border-b"
         style={{
+          height: 'var(--wx-chat-header-height, 56px)',
+          minHeight: 'var(--wx-chat-header-height, 56px)',
+          maxHeight: 'var(--wx-chat-header-height, none)',
+          boxSizing: 'border-box',
           borderColor: 'var(--wx-chat-header-border, var(--wx-border))',
-          background: 'var(--wx-chat-header-bg, var(--wx-surface))',
+          backgroundColor: 'var(--wx-chat-header-bg, var(--wx-surface))',
           color: 'var(--wx-chat-header-text, var(--wx-text))',
         }}
       >
-        <span className="text-[13px] opacity-70" aria-hidden>
-          ‹
+        <div
+          aria-hidden
+          data-wx-chat-header-surface="image"
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{
+            backgroundImage: 'var(--wx-chat-header-bg-image, none)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            filter: 'blur(var(--wx-chat-header-bg-image-blur, 0px))',
+            transform: 'scale(1.12)',
+          }}
+        />
+        <div
+          aria-hidden
+          data-wx-chat-header-surface="overlay"
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{
+            backgroundColor: 'var(--wx-chat-header-bg-overlay, transparent)',
+            opacity: 'var(--wx-chat-header-bg-overlay-opacity, 0)',
+          }}
+        />
+        {/*
+          与外观工坊 LivePreview 同构：顶栏元素均为相对 header 的绝对定位。
+          皮肤 scopedCss（!important）会覆盖下方 fallback 坐标。
+        */}
+        <div
+          data-wx-chat-header-title-wrap
+          className="pointer-events-none absolute inset-0 z-[1]"
+          aria-hidden
+        />
+        <span
+          data-wx-chat-header-btn="back"
+          className="absolute z-20 flex items-center justify-center rounded-full"
+          style={{
+            left: '7%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 36,
+            height: 36,
+            color: 'var(--wx-chat-header-btn, var(--wx-chat-header-text, var(--wx-text)))',
+          }}
+          aria-hidden
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
         </span>
-        <span className="truncate text-[14px] font-semibold">预览</span>
-        <span className="text-[13px] opacity-70" aria-hidden>
-          ⋯
+        <span
+          data-wx-chat-header-btn="time"
+          className="absolute z-20 flex items-center justify-center rounded-full"
+          style={{
+            left: '18%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 36,
+            height: 36,
+            color: 'var(--wx-chat-header-btn, var(--wx-chat-header-text, var(--wx-text)))',
+          }}
+          aria-label="线上时间设置"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+        </span>
+        <span
+          data-wx-chat-header-avatar
+          className="absolute z-[21] inline-flex items-center justify-center overflow-hidden"
+          style={{
+            left: '36%',
+            top: '40%',
+            transform: 'translate(-50%, -50%)',
+            display: 'var(--wx-chat-header-avatar-display, flex)',
+            width: 'var(--wx-chat-header-avatar-size, 28px)',
+            height: 'var(--wx-chat-header-avatar-size, 28px)',
+            borderRadius: 'var(--wx-chat-header-avatar-radius, 14px)',
+            background: '#9ca3af',
+            color: '#fff',
+            fontSize: 9,
+            fontWeight: 500,
+            lineHeight: 1,
+          }}
+          aria-hidden
+        >
+          头像
+        </span>
+        <h1
+          data-wx-chat-header-title
+          className="absolute z-30 max-w-[70%] truncate text-center text-[17px] font-semibold tracking-[0.2px]"
+          style={{
+            left: '50%',
+            top: '40%',
+            transform: 'translate(-50%, -50%)',
+            margin: 0,
+            color: 'var(--wx-chat-header-text, var(--wx-text))',
+          }}
+        >
+          预览对象
+        </h1>
+        <p
+          data-wx-chat-header-sub
+          className="absolute z-30 max-w-[70%] truncate text-center text-[11px] font-normal"
+          style={{
+            left: '50%',
+            top: '68%',
+            transform: 'translate(-50%, -50%)',
+            margin: 0,
+            color: 'var(--wx-chat-header-muted, var(--wx-text-muted))',
+          }}
+        >
+          {(wechatTheme.chatSkinOverrides?.['--wx-chat-header-typing-text'] ?? '').trim() ||
+            '对方正在输入…'}
+        </p>
+        <span
+          data-wx-chat-header-btn="psyche"
+          className="absolute z-20 flex items-center justify-center rounded-full"
+          style={{
+            left: '82%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 36,
+            height: 36,
+            color: 'var(--wx-chat-header-btn, var(--wx-chat-header-text, var(--wx-text)))',
+          }}
+          aria-label="体征与心理监测"
+        >
+          <Activity size={20} strokeWidth={1.75} aria-hidden />
+        </span>
+        <span
+          data-wx-chat-header-btn="more"
+          className="absolute z-20 flex items-center justify-center rounded-full"
+          style={{
+            left: '93%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 36,
+            height: 36,
+            color: 'var(--wx-chat-header-btn, var(--wx-chat-header-text, var(--wx-text)))',
+          }}
+          aria-label="当前聊天设置"
+        >
+          <MoreHorizontal size={22} strokeWidth={2} aria-hidden />
         </span>
       </header>
 
@@ -371,6 +527,7 @@ export function WeChatChatSkinPreviewPanel({
           showAvatarColumn
           showBubbleTail={bubbleTail('only')}
           bubbleTailMaskColor={tailMaskColor}
+          variant="preview"
         />
         <LocationChatRow
           id="skin-preview-loc-self"
@@ -381,6 +538,7 @@ export function WeChatChatSkinPreviewPanel({
           showAvatarColumn
           showBubbleTail={bubbleTail('only')}
           bubbleTailMaskColor={tailMaskColor}
+          variant="preview"
         />
       </div>
 
@@ -389,6 +547,10 @@ export function WeChatChatSkinPreviewPanel({
         className="border-t px-2 py-2"
         style={{
           backgroundColor: 'var(--wx-chat-input-bar-bg, var(--wx-input-bg))',
+          backgroundImage: 'var(--wx-chat-input-bar-bg-image, none)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
           borderTopColor: 'var(--wx-chat-input-bar-border, #e5e5e5)',
         }}
       >

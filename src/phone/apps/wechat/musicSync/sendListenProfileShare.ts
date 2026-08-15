@@ -1,7 +1,6 @@
 import { emitWeChatStorageChanged, personaDb } from '../newFriendsPersona/idb'
 import type { WeChatListenProfileSharePayload } from '../newFriendsPersona/types'
-import { resolveAccountScopedPrivateConversationKey } from '../wechatAccountPrivateChatStorage'
-import { findAccountById, loadAccountsBundle, resolveAccountSessionIdentityId } from '../wechatAccountPersistence'
+import { resolveListenTogetherPrivateChatTarget } from '../wechatAccountPrivateChatStorage'
 import { enrichListenProfileSharePayload } from './listenShareAiContext'
 
 export type SendListenProfileShareInput = {
@@ -21,25 +20,11 @@ async function sendOneListenProfileShare(
   characterId: string,
   input: SendListenProfileShareInput,
 ): Promise<string> {
-  const bundle = await loadAccountsBundle()
-  if (!bundle) throw new Error('请先登录微信账号')
-  const account = findAccountById(bundle, bundle.currentAccountId)
-  if (!account) throw new Error('请先登录微信账号')
+  const { playerIdentityId, conversationKey, timestamp, storyDay, storyTime, storyTimeLabel } =
+    await resolveListenTogetherPrivateChatTarget(characterId)
 
-  const playerIdentityId = resolveAccountSessionIdentityId(account).trim()
-  if (!playerIdentityId || playerIdentityId === '__none__') {
-    throw new Error('请先设置玩家身份')
-  }
-
-  const conversationKey = await resolveAccountScopedPrivateConversationKey({
-    wechatAccountId: account.accountId,
-    characterId,
-    appSessionPlayerIdentityId: playerIdentityId,
-  })
-
-  const nowMs = Date.now()
-  const shareId = `lps-${nowMs}-${Math.random().toString(36).slice(2, 8)}`
-  const messageId = `wxm-${nowMs}-lps-${Math.random().toString(36).slice(2, 8)}`
+  const shareId = `lps-${timestamp}-${Math.random().toString(36).slice(2, 8)}`
+  const messageId = `wxm-${timestamp}-lps-${Math.random().toString(36).slice(2, 8)}`
 
   const listenProfileShare: WeChatListenProfileSharePayload = await enrichListenProfileSharePayload(
     input,
@@ -53,7 +38,10 @@ async function sendOneListenProfileShare(
     type: 'player',
     content: '[分享主页]',
     listenProfileShare,
-    timestamp: nowMs,
+    timestamp,
+    ...(storyDay ? { storyDay } : {}),
+    ...(storyTime ? { storyTime } : {}),
+    ...(storyTimeLabel ? { storyTimeLabel } : {}),
     isRead: true,
     conversationKey,
   })

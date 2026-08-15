@@ -14,6 +14,22 @@ import type { WeChatBubbleTheme, WeChatTheme } from '../../../types'
 import { ensureFrostedBubbleCss, extractBubbleBackdropBlurPx, normalizeBubblePackScopedCss } from './scopedCss'
 import { ensureCssSkinSpecialRules } from './cssSkinStarter'
 import {
+  emptyBubbleEdgeStickers,
+  normalizeBubbleEdgeStickers,
+} from '../bubbleEdgeStickers'
+import {
+  emptyBubbleFrames,
+  normalizeBubbleFrames,
+} from '../bubbleFrame'
+import {
+  emptyAvatarStickers,
+  normalizeAvatarStickers,
+} from '../avatarStickers'
+import {
+  emptyBubbleBadges,
+  normalizeBubbleBadges,
+} from '../bubbleBadge'
+import {
   LUMI_BUBBLE_PACK_FORMAT,
   LUMI_BUBBLE_PACK_VERSION,
   isCssSkinEngine,
@@ -78,10 +94,18 @@ export async function applyBubblePack(args: ApplyBubblePackArgs): Promise<void> 
     ...preset.bubble,
     ...(cssEngine
       ? {
-          // 纯 CSS 空白画布：透明底 + 清掉主题尾巴，避免套微信/iMessage 皮
+          // 纯 CSS 空白画布：透明底；液态玻璃固定无尾巴
           otherBubbleBg: 'transparent',
           selfBubbleBg: 'transparent',
           showBubbleTail: false,
+          showBubbleTailSelf: true,
+          showBubbleTailOther: true,
+          ...(typeof preset.bubble.glassBubbleStyleSelf === 'boolean'
+            ? { glassBubbleStyleSelf: preset.bubble.glassBubbleStyleSelf }
+            : { glassBubbleStyleSelf: true }),
+          ...(typeof preset.bubble.glassBubbleStyleOther === 'boolean'
+            ? { glassBubbleStyleOther: preset.bubble.glassBubbleStyleOther }
+            : { glassBubbleStyleOther: true }),
         }
       : blurPx != null
         ? {
@@ -104,18 +128,30 @@ export async function applyBubblePack(args: ApplyBubblePackArgs): Promise<void> 
     chatSkinEngine: cssEngine ? 'css' : 'structured',
   }
 
-  // 背景优先 wechatThemePatch（可含 gradient），再叠 skin
-  const roomFromPatch = preset.wechatThemePatch?.chatRoomDefaultBg
-  const wechatPatch = {
-    ...(preset.wechatThemePatch ?? {}),
-    ...(roomFromPatch ? { chatRoomDefaultBg: roomFromPatch } : {}),
-  }
+  // 套用皮肤时永不覆盖用户聊天室背景图 / 默认壁纸
+  const rawThemePatch = preset.wechatThemePatch ?? {}
+  const { chatRoomDefaultBg: _ignoreRoomBg, ...themePatchSansRoom } = rawThemePatch
+  const wechatPatch = { ...themePatchSansRoom }
 
   if (pack.avatarChrome) {
     skinPatch.avatarChrome = { ...emptyWeChatAvatarChrome(), ...pack.avatarChrome }
   } else if (clearAvatarChromeIfAbsent) {
     skinPatch.avatarChrome = emptyWeChatAvatarChrome()
   }
+
+  // 始终写入：无贴纸/框的包应清空旧数据，避免残留
+  skinPatch.bubbleEdgeStickers = pack.bubbleEdgeStickers
+    ? normalizeBubbleEdgeStickers(pack.bubbleEdgeStickers)
+    : emptyBubbleEdgeStickers()
+  skinPatch.bubbleFrames = pack.bubbleFrames
+    ? normalizeBubbleFrames(pack.bubbleFrames)
+    : emptyBubbleFrames()
+  skinPatch.avatarStickers = pack.avatarStickers
+    ? normalizeAvatarStickers(pack.avatarStickers)
+    : emptyAvatarStickers()
+  skinPatch.bubbleBadges = pack.bubbleBadges
+    ? normalizeBubbleBadges(pack.bubbleBadges)
+    : emptyBubbleBadges()
 
   if (bubbleScope === 'global') {
     setWeChatTheme({
@@ -233,6 +269,42 @@ export async function buildBubblePackFromCurrent(
         }
       }
       if (Object.keys(assets).length) pack.assets = assets
+    }
+  }
+
+  const edge = wechatTheme.bubbleEdgeStickers
+  if (edge && (edge.self.length || edge.other.length)) {
+    pack.bubbleEdgeStickers = {
+      self: [...edge.self],
+      other: [...edge.other],
+    }
+  }
+
+  const frames = wechatTheme.bubbleFrames
+  if (frames && (frames.self || frames.other)) {
+    pack.bubbleFrames = {
+      self: frames.self,
+      other: frames.other,
+    }
+  }
+
+  const avatarStickers = wechatTheme.avatarStickers
+  if (avatarStickers && (avatarStickers.self.length || avatarStickers.other.length)) {
+    pack.avatarStickers = {
+      self: [...avatarStickers.self],
+      other: [...avatarStickers.other],
+    }
+  }
+
+  const bubbleBadges = wechatTheme.bubbleBadges
+  if (
+    bubbleBadges &&
+    ((bubbleBadges.self?.enabled && bubbleBadges.self.text.trim()) ||
+      (bubbleBadges.other?.enabled && bubbleBadges.other.text.trim()))
+  ) {
+    pack.bubbleBadges = {
+      self: bubbleBadges.self,
+      other: bubbleBadges.other,
     }
   }
 

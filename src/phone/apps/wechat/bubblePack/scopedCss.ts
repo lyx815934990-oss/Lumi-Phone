@@ -24,14 +24,13 @@ export function normalizeBubblePackScopedCss(css: string | undefined | null): st
   return body
 }
 
-/** 从 scopedCss 里读出气泡 blur 强度（px）；没有则 null */
+/** 从 scopedCss 里读出「气泡面」blur 强度（px）；没有则 null（勿误判顶栏/输入栏毛玻璃） */
 export function extractBubbleBackdropBlurPx(css: string | undefined | null): number | null {
   const body = String(css ?? '')
   if (!/backdrop-filter/i.test(body)) return null
   const m =
-    /\[data-wx-bubble-content\][^{]*\{[^}]*backdrop-filter:\s*blur\(([\d.]+)px\)/i.exec(body) ||
-    /backdrop-filter:\s*blur\(([\d.]+)px\)/i.exec(body)
-  if (!m) return 10
+    /\[data-wx-bubble-content\][^{]*\{[^}]*backdrop-filter:\s*blur\(([\d.]+)px\)/i.exec(body)
+  if (!m) return null
   const n = Number(m[1])
   return Number.isFinite(n) ? Math.max(2, Math.min(40, Math.round(n))) : 10
 }
@@ -39,19 +38,30 @@ export function extractBubbleBackdropBlurPx(css: string | undefined | null): num
 /**
  * 糯叽机同款：毛玻璃规则落到气泡面，并用 !important 压过 React inline 的 transparent border。
  * 若原文已有 bubble-content 规则则补强；否则按检测到的 blur 补一条完整规则。
+ * 若草稿/包已显式写了 border，则不再强行盖成半透明白边。
  */
 export function ensureFrostedBubbleCss(css: string | undefined | null): string {
   const body = normalizeBubblePackScopedCss(css)
   if (!body) return ''
   if (body.includes('lumi frosted boost')) return body
+  if (body.includes('lumi glass-edge-blur')) {
+    // 外观工坊边缘模糊：禁止再强塞硬白描边
+    return body
+  }
   const blurPx = extractBubbleBackdropBlurPx(body)
   if (blurPx == null) return body
+
+  const alreadyHasBubbleBorder =
+    /\[data-wx-bubble-content\][^{]*\{[^}]*\bborder(?:-width|-color|-style)?\s*:/i.test(body) ||
+    /\[data-wx-bubble-side[^\]]*\][^{]*\{[^}]*\bborder(?:-width|-color|-style)?\s*:/i.test(body)
 
   const boost = [
     `[data-wx-bubble-content] {`,
     `  -webkit-backdrop-filter: blur(${blurPx}px) saturate(160%) !important;`,
     `  backdrop-filter: blur(${blurPx}px) saturate(160%) !important;`,
-    `  border: 1px solid rgba(255,255,255,0.55) !important;`,
+    alreadyHasBubbleBorder
+      ? ''
+      : `  border: 1px solid rgba(255,255,255,0.55) !important;`,
     `  box-shadow: 0 4px 14px rgba(180,160,135,0.16) !important;`,
     `}`,
     `[data-wx-chat-header], [data-wx-chat-input-bar] {`,
@@ -72,14 +82,22 @@ export function ensureFrostedBubbleCss(css: string | undefined | null): string {
     `  -webkit-backdrop-filter: blur(${blurPx}px) saturate(160%) !important;`,
     `  backdrop-filter: blur(${blurPx}px) saturate(160%) !important;`,
     `}`,
-  ].join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   return `${body}\n\n/* lumi frosted boost (nuojiji-parity) */\n${boost}`
 }
 
-/** 将气泡包 scopedCss 限制在聊天皮肤根节点内 */
+/** 将气泡包 scopedCss 限制在聊天皮肤根节点内（@font-face 提到 @scope 外） */
 export function wrapWeChatChatSkinScopedCss(css: string | undefined | null): string {
   const body = ensureFrostedBubbleCss(css)
   if (!body) return ''
-  return `@scope ([data-wx-chat-skin-scope]) {\n${body}\n}`
+  const fontFaces: string[] = []
+  const withoutFaces = body.replace(/@font-face\s*\{[\s\S]*?\}\s*/gi, (block) => {
+    fontFaces.push(block.trim())
+    return ''
+  })
+  const scoped = `@scope ([data-wx-chat-skin-scope]) {\n${withoutFaces.trim()}\n}`
+  return fontFaces.length ? `${fontFaces.join('\n\n')}\n\n${scoped}` : scoped
 }

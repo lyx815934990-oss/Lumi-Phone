@@ -35,6 +35,22 @@ export function buildMemorySummaryCharGenderDirective(gender: Gender | null | un
   )
 }
 
+/** 线下摘要 / 时间轴：把 {{char}}/{{user}} 与档案显示名钉死，减少主客体写反。 */
+export function buildMemorySummaryIdentityRosterBlock(params: {
+  charDisplayName?: string | null
+  userDisplayName?: string | null
+}): string {
+  const charName = String(params.charDisplayName ?? '').trim() || '（对方角色）'
+  const userName = String(params.userDisplayName ?? '').trim() || '（玩家）'
+  return (
+    `【身份对照表·必读】\n` +
+    `- {{char}} = ${charName}（对方角色 / 本条线下摘要挂载对象；不是玩家）\n` +
+    `- {{user}} = ${userName}（玩家；不是对方角色）\n` +
+    `- 材料里的「你」通常指 {{user}}；材料里对方角色本人 = {{char}}。\n` +
+    `- 摔倒/受伤/伤口/疼痛等身体遭遇：按材料主语挂到正确占位符，禁止把 {{char}} 的伤写成 {{user}} 的伤。`
+  )
+}
+
 export function normalizeMemorySummaryBodyAfterModel(content: string): string {
   return convertPlayerFirstPersonToUserPlaceholder(String(content ?? '').trim())
 }

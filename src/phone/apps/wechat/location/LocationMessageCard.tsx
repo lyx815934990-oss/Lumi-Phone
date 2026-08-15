@@ -82,7 +82,7 @@ export function LocationMessageCard({
     <motion.div
       data-wx-msg-kind="location"
       className={`overflow-hidden rounded-[12px] border-[0.5px] text-left shadow-[0_2px_15px_rgba(0,0,0,0.03)] ${
-        compact ? 'w-full' : 'w-[min(280px,calc(100vw-120px))]'
+        compact ? 'w-full' : 'w-[min(280px,calc(100vw-120px))] max-w-full'
       }`}
       style={{
         background: 'var(--wx-special-loc-bg, #ffffff)',

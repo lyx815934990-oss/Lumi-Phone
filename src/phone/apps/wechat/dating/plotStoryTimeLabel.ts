@@ -44,6 +44,40 @@ export function resolvePlotStoryCalendarLabel(
   return null
 }
 
+/**
+ * 卡片展示用：本轮剧情**结尾**的故事内时间。
+ * 优先当前版本 timeline；否则回落落库时的 storyDay/storyTime / storyTimeLabel。
+ */
+export function resolvePlotStoryEndDisplayLabel(plot: PlotItem): string | null {
+  if (plot.type !== 'ai') return null
+  const fromDelta = resolvePlotStoryCalendarLabel(plot)
+  if (fromDelta) return fromDelta
+  const day = String(plot.storyDay ?? '').trim()
+  const time = String(plot.storyTime ?? '').trim()
+  if (day) return time ? `${day} ${time}` : day
+  const label = String(plot.storyTimeLabel ?? '').trim()
+  if (!label) return null
+  const parts = label.split(/\s*-\s*/)
+  return (parts[parts.length - 1] ?? parts[0] ?? '').trim() || null
+}
+
+/** 卡片展示用：本条系统生成/落库时刻（完整公历） */
+export function formatPlotGenerationTimeLabel(plot: PlotItem): string {
+  return formatSystemRecordTime(resolvePlotSystemRecordedAtMs(plot))
+}
+
+/** 卡片脚注：更短的生成时间，如 `8/15 02:27` */
+export function formatPlotGenerationTimeCompact(plot: PlotItem): string {
+  const ts = resolvePlotSystemRecordedAtMs(plot)
+  const d = new Date(ts)
+  if (!Number.isFinite(d.getTime())) return '—'
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${m}/${day} ${hh}:${mm}`
+}
+
 /** prompt / 思维溯源前缀：优先故事内公历，无锚点则回退系统落库时刻 */
 export function formatPlotPromptTimeBracket(
   plot: PlotStoryTimeRef | PlotItem,

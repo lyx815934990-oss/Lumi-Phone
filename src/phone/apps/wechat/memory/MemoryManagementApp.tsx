@@ -26,11 +26,11 @@ import { MEMORY_ARCHIVE_DETAIL_OPEN_TUTORIAL_EVENT } from './memoryArchiveDetail
 import { dispatchMemoryTabCoachForHubTab } from './useMemoryTabCoach'
 
 const MEMORY_ARCHIVE_TABS = [
-  { id: 'config' as const, label: '记忆配置' },
-  { id: 'memories' as const, label: '角色总结' },
-  { id: 'epilogue' as const, label: '尾声延展' },
-  { id: 'progress' as const, label: '线上总结进度' },
-  { id: 'retry' as const, label: '补全总结' },
+  { id: 'config' as const, label: '配置', full: '记忆配置' },
+  { id: 'memories' as const, label: '角色', full: '角色总结' },
+  { id: 'epilogue' as const, label: '尾声', full: '尾声延展' },
+  { id: 'progress' as const, label: '进度', full: '线上总结进度' },
+  { id: 'retry' as const, label: '补全', full: '补全总结' },
 ] as const
 
 type MemoryArchiveTabId = (typeof MEMORY_ARCHIVE_TABS)[number]['id']
@@ -53,29 +53,29 @@ function TopBar({
 }) {
   return (
     <div
-      className="sticky top-0 z-30 shrink-0 border-b border-gray-200/60"
+      className="sticky top-0 z-30 shrink-0"
       style={{
         background: ARCHIVE_BG,
-        paddingTop: 'max(10px, env(safe-area-inset-top,0px))',
+        paddingTop: 'max(8px, env(safe-area-inset-top,0px))',
       }}
     >
-      <div className="flex items-center gap-1 px-3 py-3">
+      <div className="flex items-center gap-1 px-2.5 pb-2 pt-1">
         <Pressable
           onClick={onBack}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] transition-all duration-200 ease-out hover:bg-gray-50"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full active:bg-black/[0.04]"
           aria-label={backLabel}
         >
-          <ArrowLeft className="size-5 text-gray-900" strokeWidth={1.75} />
+          <ArrowLeft className="size-5 text-[#111]" strokeWidth={1.6} />
         </Pressable>
 
         <div className="min-w-0 flex-1 px-1 text-center">
-          <p className="truncate text-[17px] font-semibold tracking-tight text-gray-900">{title}</p>
+          <p className="truncate text-[16px] font-semibold tracking-tight text-[#111]">{title}</p>
           {subtitle ? (
-            <p className="mt-0.5 truncate text-[11px] text-gray-400">
+            <p className="mt-0.5 truncate text-[11px] text-[#8A8A8E]">
               <ListenNumericText text={subtitle} />
             </p>
-          ) : title === '记忆档案馆' ? (
-            <p className="mt-0.5 truncate text-[11px] text-gray-400">微信长期记忆管理</p>
+          ) : title === '记忆' ? (
+            <p className="mt-0.5 truncate text-[11px] tracking-wide text-[#8A8A8E]">长期记忆 · ARCHIVE</p>
           ) : null}
         </div>
 
@@ -166,7 +166,7 @@ export function MemoryManagementApp({
     if (activeTab === 'memories' && characterPage) {
       return `${characterPage.displayName}的角色总结`
     }
-    return '记忆档案馆'
+    return '记忆'
   })()
 
   const reloadRetryCount = useCallback(async () => {
@@ -245,7 +245,7 @@ export function MemoryManagementApp({
         <MemoryTutorialModal
           open={hubTutorialOpen}
           onClose={() => setHubTutorialOpen(false)}
-          title="记忆档案馆 · 五个标签"
+          title="记忆 · 五个分区"
           subtitle="先认入口，再进各页细看"
           sections={MEMORY_HUB_TUTORIAL_SECTIONS}
           onStartLiveCoach={() => {
@@ -270,11 +270,11 @@ export function MemoryManagementApp({
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {!onCharacterPage ? (
-          <div className="shrink-0 px-4 pb-2 pt-1.5" style={{ background: ARCHIVE_BG }}>
+          <div className="shrink-0 px-4 pb-1" style={{ background: ARCHIVE_BG }}>
             <nav
-              className="mx-auto flex max-w-xl gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-[0_4px_20px_rgba(0,0,0,0.03)] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="mx-auto grid w-full max-w-xl grid-cols-5 border-b border-black/[0.06]"
               role="tablist"
-              aria-label="记忆档案馆分区"
+              aria-label="记忆分区"
             >
               {MEMORY_ARCHIVE_TABS.map((tab) => {
                 const active = activeTab === tab.id
@@ -285,19 +285,31 @@ export function MemoryManagementApp({
                     type="button"
                     role="tab"
                     aria-selected={active}
+                    aria-label={tab.full}
+                    title={tab.full}
                     data-memory-coach={`hub-tab-${tab.id}`}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`relative shrink-0 rounded-xl px-3.5 py-2 text-[12px] font-semibold whitespace-nowrap transition-colors ${
-                      active
-                        ? 'bg-gray-900 text-white shadow-[0_2px_8px_rgba(0,0,0,0.12)]'
-                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
-                    }`}
+                    className="relative flex w-full flex-col items-center justify-end px-0.5 pb-2.5 pt-1"
                   >
-                    {tab.label}
+                    <span
+                      className="block w-full truncate text-center text-[13px] transition-colors"
+                      style={{
+                        color: active ? '#111' : '#8A8A8E',
+                        fontWeight: active ? 600 : 450,
+                      }}
+                    >
+                      {tab.label}
+                    </span>
                     {showRetryBadge ? (
-                      <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-gray-700 px-1 text-[10px] font-bold text-white ring-2 ring-white">
+                      <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#111] px-1 text-[9px] font-bold text-white">
                         {retryCount > 9 ? '9+' : retryCount}
                       </span>
+                    ) : null}
+                    {active ? (
+                      <span
+                        className="absolute bottom-0 left-1/2 h-[2px] w-8 -translate-x-1/2 rounded-full bg-[#111]"
+                        aria-hidden
+                      />
                     ) : null}
                   </Pressable>
                 )

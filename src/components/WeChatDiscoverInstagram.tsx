@@ -16,6 +16,11 @@ import { lazyWithRetry } from '../phone/lazyWithRetry'
 
 import type { AnonymousQaWechatContext } from './anonymousQa/buildAnonymousQaPersonaContext'
 import type { MockContact } from './anonymousQa/types'
+import {
+  LUMI_LIQUID_NAV_CONTENT_PAD_BOTTOM,
+  LUMI_SHELL,
+  LUMI_SHELL_FONT,
+} from '../phone/apps/wechat/lumiShellTheme'
 import { LISTEN_TOGETHER_NAVIGATE_EVENT, consumePendingOpenListenTogether } from './discoverListen/listenTogetherNavigation'
 import { LISTEN_TOGETHER_SHARE_TO_MOMENTS_EVENT } from './discoverListen/listenTogetherMomentShareNavigation'
 import {
@@ -302,15 +307,38 @@ export function WeChatDiscoverInstagram({
   return (
     <div
       className={`h-full min-h-0 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${className}`}
+      style={{ fontFamily: LUMI_SHELL_FONT }}
     >
-      <div className="mx-auto max-w-[560px] px-4 pb-8 pt-4">
+      <div
+        className="mx-auto flex w-full max-w-[520px] flex-col px-4 pt-3"
+        style={{ gap: 24, paddingBottom: LUMI_LIQUID_NAV_CONTENT_PAD_BOTTOM }}
+      >
+        <div className="px-0.5">
+          <p
+            className="text-[22px] font-semibold tracking-tight"
+            style={{ color: LUMI_SHELL.ink, letterSpacing: '-0.02em' }}
+          >
+            发现
+          </p>
+          <p className="mt-1 text-[13px] leading-relaxed" style={{ color: LUMI_SHELL.mist }}>
+            朋友圈、听一听与更多入口
+          </p>
+        </div>
+
         <section
-          className="overflow-hidden rounded-[12px] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
           aria-label="发现核心功能"
+          style={{
+            background: LUMI_SHELL.card,
+            borderRadius: LUMI_SHELL.cardRadiusPx,
+            border: `1px solid ${LUMI_SHELL.hairline}`,
+            boxShadow: '0 8px 28px rgba(16,16,18,0.045)',
+            overflow: 'hidden',
+          }}
         >
-          <ul className="divide-y divide-[#dbdbdb]">
-            {DISCOVER_ACTIONS.map((item) => {
+          <ul>
+            {DISCOVER_ACTIONS.map((item, idx) => {
               const Icon = item.icon
+              const isLast = idx === DISCOVER_ACTIONS.length - 1
               return (
                 <li key={item.id}>
                   <button
@@ -325,15 +353,25 @@ export function WeChatDiscoverInstagram({
                       if (item.id === 'subconscious-archives') setActiveView('subconscious-archives')
                       if (item.id === 'jubensha') setActiveView('jubensha')
                     }}
-                    className="flex w-full items-center px-4 py-4 text-left transition-colors duration-200 hover:bg-[#fafafa]"
+                    className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors"
+                    style={{
+                      borderBottom: isLast ? undefined : `1px solid ${LUMI_SHELL.hairline}`,
+                    }}
                   >
-                    <Icon className="size-5 text-[#262626]" strokeWidth={1.75} aria-hidden />
-                    <span className="ml-3 text-[16px] font-normal text-[#262626]">{item.label}</span>
+                    <span
+                      className="flex size-9 shrink-0 items-center justify-center rounded-full"
+                      style={{ background: 'rgba(16,16,18,0.04)', color: LUMI_SHELL.ink }}
+                    >
+                      <Icon className="size-[18px]" strokeWidth={1.75} aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1 text-[15px] font-medium" style={{ color: LUMI_SHELL.ink }}>
+                      {item.label}
+                    </span>
                     <div className="ml-auto flex shrink-0 items-center gap-2">
                       {item.id === 'moments' && momentsUnreadCount > 0 ? (
                         <span
                           className="flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full px-[5px] text-[10px] font-semibold leading-none tabular-nums text-white"
-                          style={{ background: '#fa5151' }}
+                          style={{ background: LUMI_SHELL.badgeRed }}
                           aria-label={`${momentsUnreadCount} 条未读互动消息`}
                         >
                           <MomentsSerifNumericText
@@ -341,7 +379,7 @@ export function WeChatDiscoverInstagram({
                           />
                         </span>
                       ) : null}
-                      <ChevronRight className="size-4 text-[#8e8e8e]" strokeWidth={1.75} aria-hidden />
+                      <ChevronRight className="size-4" strokeWidth={1.75} color={LUMI_SHELL.mist} aria-hidden />
                     </div>
                   </button>
                 </li>

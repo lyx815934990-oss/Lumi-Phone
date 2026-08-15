@@ -924,7 +924,7 @@ ${name ? `姓名：${name}\n` : ''}${persona.slice(0, 400)}
     ? `\n5. 上一轮疑似照抄、未译完或截断：本轮必须输出**完整**自然 ${target}，禁止原样交回原文，禁止停在逗号半截；仍须忠于原意，禁止换话题、禁止加括号舞台指示。`
     : ''
 
-  // 不传 max_tokens：由模型/线路自行决定输出长度（与剧情续写一致）
+  // max_tokens 由 API 设置 / 系统默认 12800 控制（与剧情续写一致）
   const out = await openAiCompatibleChat(
     params.apiConfig,
     [

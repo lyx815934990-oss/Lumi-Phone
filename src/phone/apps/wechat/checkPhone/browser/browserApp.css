@@ -1,0 +1,242 @@
+/* Lumi机·查手机浏览器 —— 设计 token（黑白 + 唯一雾川蓝） */
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+.browser-app {
+  --br-paper: #f7f6f4;
+  --br-ink: #101012;
+  --br-card: #ffffff;
+  --br-mist: #8b8b8f;
+  --br-hairline: #e6e4e0;
+  --br-fog: #5b6c7d;
+  --br-shadow: 0 2px 16px rgba(27, 27, 29, 0.05);
+  --br-radius-card: 14px;
+  --br-radius-pill: 999px;
+  --br-pad-x: 16px;
+  --br-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --br-sans: 'PingFang SC', 'Noto Sans SC', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --br-display: 'Inter Tight', Inter, 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif;
+  --br-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+
+  position: absolute;
+  inset: 0;
+  z-index: 1408;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--br-paper);
+  color: var(--br-ink);
+  font-family: var(--br-sans);
+  -webkit-font-smoothing: antialiased;
+  /* 顶部安全区：手机壳内 env 常为 0，保底预留状态栏高度 */
+  padding-top: max(44px, env(safe-area-inset-top, 0px));
+  box-sizing: border-box;
+}
+
+.browser-app[data-theme='dark'] {
+  --br-paper: #101012;
+  --br-ink: #f7f6f4;
+  --br-card: #1a1a1c;
+  --br-mist: #8b8b8f;
+  --br-hairline: #2a2a2e;
+  --br-fog: #8a9aab;
+  --br-shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
+}
+
+.browser-mono {
+  font-family: var(--br-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.browser-display {
+  font-family: var(--br-display);
+  font-weight: 600;
+}
+
+.browser-hairline {
+  border-color: var(--br-hairline);
+}
+
+.browser-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.browser-hl {
+  color: var(--br-fog);
+}
+
+/* Trace Rail —— 仅历史 / 收藏 */
+.browser-trace {
+  position: relative;
+  padding-left: 28px;
+}
+
+.browser-trace::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--br-hairline);
+}
+
+.browser-trace-dot {
+  position: absolute;
+  left: 8px;
+  top: 22px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--br-mist);
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.browser-trace-dot--solid {
+  background: var(--br-mist);
+  border-color: var(--br-mist);
+}
+
+.browser-trace-dot--enter {
+  animation: browser-trace-in 0.28s var(--br-ease) both;
+}
+
+@keyframes browser-trace-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.browser-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--br-radius-pill);
+  color: var(--br-ink);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.browser-toolbar-btn:active,
+.browser-toolbar-btn[data-active='true'] {
+  background: color-mix(in srgb, var(--br-fog) 10%, transparent);
+  color: var(--br-fog);
+}
+
+.browser-toolbar-btn:disabled {
+  opacity: 0.28;
+}
+
+.browser-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--br-radius-pill);
+  border: 1px solid var(--br-hairline);
+  background: transparent;
+  color: var(--br-ink);
+  font-size: 13px;
+  white-space:nowrap;
+}
+
+.browser-chip[data-active='true'] {
+  border-color: var(--br-fog);
+  color: var(--br-fog);
+}
+
+.browser-sheet {
+  border-radius: 16px;
+  background: var(--br-card);
+  border: 1px solid var(--br-hairline);
+  box-shadow: var(--br-shadow);
+}
+
+.browser-mark {
+  background: linear-gradient(transparent 60%, color-mix(in srgb, var(--br-fog) 28%, transparent) 60%);
+}
+
+/* 最近浏览等：白页模糊网页预览 */
+.browser-page-thumb {
+  background: #fbfbfa;
+}
+
+.browser-page-thumb__chrome {
+  border-bottom: 1px solid #eceae6;
+  background: #f3f2ef;
+}
+
+.browser-page-thumb__dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: #d4d2cd;
+}
+
+.browser-page-thumb__omnibox {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.browser-page-thumb__hero {
+  background: #e8e6e1;
+}
+
+.browser-page-thumb__title {
+  background: rgba(42, 42, 46, 0.82);
+}
+
+.browser-page-thumb__line {
+  background: rgba(42, 42, 46, 0.52);
+}
+
+.browser-page-thumb__blur {
+  filter: blur(1.15px);
+  transform: translateZ(0);
+  opacity: 0.94;
+}
+
+.browser-page-thumb__fade {
+  background: linear-gradient(to top, #fbfbfa, transparent);
+}
+
+.browser-app[data-theme='dark'] .browser-page-thumb {
+  background: #1c1c1e;
+}
+
+.browser-app[data-theme='dark'] .browser-page-thumb__chrome {
+  background: #252528;
+  border-bottom-color: #2e2e32;
+}
+
+.browser-app[data-theme='dark'] .browser-page-thumb__dot {
+  background: #4a4a50;
+}
+
+.browser-app[data-theme='dark'] .browser-page-thumb__omnibox {
+  background: rgba(40, 40, 44, 0.95);
+}
+
+.browser-app[data-theme='dark'] .browser-page-thumb__hero {
+  background: #2a2a2e;
+}
+
+.browser-app[data-theme='dark'] .browser-page-thumb__title {
+  background: rgba(232, 232, 236, 0.72);
+}
+
+.browser-app[data-theme='dark'] .browser-page-thumb__line {
+  background: rgba(232, 232, 236, 0.42);
+}
+
+.browser-app[data-theme='dark'] .browser-page-thumb__fade {
+  background: linear-gradient(to top, #1c1c1e, transparent);
+}

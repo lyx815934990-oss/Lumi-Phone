@@ -103,10 +103,10 @@ export function StoryFeed({
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.22 }}
             onClick={() => onTailVisibleCountChange(plots.length)}
-            className="mb-4 flex w-full max-w-full items-center justify-center gap-2 rounded-xl border border-stone-100/90 bg-stone-50/60 py-2.5 text-[11px] font-medium text-stone-400 shadow-sm backdrop-blur-sm transition-all hover:border-stone-200 hover:bg-white/70 hover:text-stone-600"
+            className="mb-5 flex w-full max-w-full items-center justify-center gap-2 rounded-full border border-black/[0.06] bg-white/80 py-2.5 text-[11px] font-medium text-[#8A8A8E] shadow-[0_4px_16px_rgba(16,16,18,0.04)] transition-all hover:border-black/10 hover:bg-white hover:text-[#333]"
           >
             <ChevronUp className="size-3.5 shrink-0 opacity-60" strokeWidth={1.75} />
-            <span>已隐藏 {hiddenPrefixCount} 条历史剧情，点击展开</span>
+            <span>已隐藏 {hiddenPrefixCount} 条历史 · 点击展开</span>
           </motion.button>
         ) : null}
       </AnimatePresence>

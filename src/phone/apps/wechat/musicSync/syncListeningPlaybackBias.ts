@@ -197,7 +197,7 @@ function buildSyncListeningRecentTracksBias(): string {
   if (!recent.length) return ''
 
   const lines = [
-    '[一起听·刚听过的歌] 用户若问「刚才那首」，参照下列（**不是**此刻在播的）：',
+    '[一起听·刚听过的歌] 用户若问「刚才那首」，参照下列（**不是**此刻在播的）；**未问勿主动翻旧账聊上一首歌词**。',
   ]
 
   recent.forEach((track, index) => {
@@ -205,11 +205,11 @@ function buildSyncListeningRecentTracksBias(): string {
       `${index + 1}. 《${track.title}》${track.artist ? ` — ${track.artist}` : ''}`,
     )
     if (track.lyricsExcerpt.trim()) {
-      lines.push(`   歌词节选：\n${track.lyricsExcerpt.trim()}`)
+      lines.push(`   歌词节选（仅用户提起时参考）：\n${track.lyricsExcerpt.trim()}`)
     }
   })
 
-  lines.push('提起上一首时自然接话即可，勿报切歌前的具体时间。')
+  lines.push('提起上一首时自然接话即可，勿报切歌前的具体时间，勿对旧歌词小题大作。')
   return lines.join('\n')
 }
 
@@ -236,16 +236,17 @@ export function buildSyncListeningLyricHumBias(
   if (options?.forProactive) return ''
   if (!isActiveSyncListeningWithCharacter(characterId)) return ''
 
+  const { isPlaying, currentTrack, currentTimeMs, durationMs, lyrics } = useMusicStore.getState()
+  const playingTitle = currentTrack?.title?.trim() || ''
+  if (!isPlaying || !playingTitle || playingTitle === '暂无播放') return ''
+
   const cleaned = extractUserMessageForLyricHum(userMessage)
   if (!cleaned) return ''
-
-  const { currentTrack, currentTimeMs, durationMs, lyrics } = useMusicStore.getState()
-  if (!currentTrack?.title?.trim()) return ''
 
   const match = detectLyricHumMatchWithRecents(cleaned, lyrics, currentTimeMs, durationMs)
   if (!match) return ''
 
-  const title = match.fromRecentTrack?.title.trim() ?? currentTrack.title.trim()
+  const title = match.fromRecentTrack?.title.trim() ?? playingTitle
   const ctx = match.fromRecentTrack
     ? lyricContextAtTime(
         match.fromRecentTrack.lyrics,
@@ -282,7 +283,7 @@ function buildLyricTimelineBias(
   const start = Math.max(0, idx - 8)
   const end = Math.min(lyrics.length - 1, idx + 14)
   const lines = [
-    '[一起听·歌词时间轴] 可用 [MUSIC_SEEK]{"lyric":"…"} 或 {"time":"mm:ss"} 拉回某句（对用户不可见；对白勿念时间码）：',
+    '[一起听·歌词时间轴] 仅供内部跳进度；别把下列句子当对白主线，勿小题大作：',
   ]
   for (let i = start; i <= end; i += 1) {
     const row = lyrics[i]!
@@ -309,37 +310,62 @@ export function buildSyncListeningPlaybackBias(
   if (!isActiveSyncListeningWithCharacter(characterId)) return ''
 
   const { currentTrack, currentTimeMs, durationMs, isPlaying, lyrics } = useMusicStore.getState()
-  if (!currentTrack?.title?.trim()) return ''
+  const title = currentTrack?.title?.trim() || ''
+  const trackAlive = Boolean(title && title !== '暂无播放')
 
-  const title = currentTrack.title.trim()
-  const artist = currentTrack.artist?.trim()
+  /** 曲目已清掉 / 播放器空闲：共听名义可能还在，但不再当作「正在一起听」 */
+  if (!trackAlive) {
+    return [
+      '[一起听·状态] 用户已停止播放（当前无在播曲目）。**不要**假装还在一起听、接唱或聊进度；可自然换话题。若用户仍想听歌，等其再开播放或你发 `共听邀请`。',
+      '禁止 `点歌` / `跳进度` / `切下一首` / `切上一首`，直至用户再次真正开始共听播放。',
+    ].join('\n')
+  }
+
+  const artist = currentTrack?.artist?.trim()
   const pos = formatLyricTime(currentTimeMs)
   const dur = durationMs > 0 ? formatLyricTime(durationMs) : '未知'
   const status = isPlaying ? '播放中' : '已暂停'
 
   const lines = [
-    '[一起听·背景] 你正与用户同步听同一首歌（以下为客户端参考，不是你真的听到声音；**勿在对白里报进度/时间码**）。',
+    isPlaying
+      ? '[一起听·背景] 你正与用户同步听同一首歌（以下为客户端参考，不是你真的听到声音；**勿在对白里报进度/时间码**）。'
+      : '[一起听·背景] 共听会话仍在，但用户**已暂停播放**（以下为客户端参考；**勿在对白里报进度/时间码**）。',
     `曲目：《${title}》${artist ? ` — ${artist}` : ''}`,
     `内部参考：${pos} / ${dur}（${status}）`,
   ]
 
-  const ctx = lyricContextAtTime(lyrics, currentTimeMs, durationMs)
-  if (ctx.current) {
-    lines.push(`附近歌词：「${ctx.current}」`)
-    if (ctx.prev) lines.push(`上一句：「${ctx.prev}」`)
-    if (ctx.next) lines.push(`下一句：「${ctx.next}」`)
-  }
+  if (isPlaying) {
+    const ctx = lyricContextAtTime(lyrics, currentTimeMs, durationMs)
+    if (ctx.current) {
+      lines.push(`内部·附近歌词（轻参考，勿小题大作）：「${ctx.current}」`)
+      if (ctx.prev) lines.push(`内部·上一句：「${ctx.prev}」`)
+      if (ctx.next) lines.push(`内部·下一句：「${ctx.next}」`)
+    }
 
-  const timeline = buildLyricTimelineBias(lyrics, currentTimeMs, durationMs)
-  if (timeline.trim()) {
-    lines.push(timeline)
-  }
+    const timeline = buildLyricTimelineBias(lyrics, currentTimeMs, durationMs)
+    if (timeline.trim()) {
+      lines.push(timeline)
+    }
 
-  lines.push(
-    '聊歌时结合歌词与歌感自然接话即可；用户没问进度就不要提听到哪一秒、哪一段副歌。',
-  )
-  if (options?.forProactive) {
-    lines.push('【主动开口】禁止报时；可聊歌感或歌词梗，勿空泛强调「正在听」。')
+    lines.push(
+      '【歌词分寸】歌词/时间轴是静默参考，别太当回事：勿每轮点评、勿因某句吃飞醋、勿引申成剧情审讯、勿叫用户跳过某段。',
+      '优先读**用户当下情绪与话题**（开心就轻快接、低落就温柔接、在吐槽就顺着聊），共听只是背景；歌词最多偶尔轻点氛围，点到为止。',
+      '用户没提歌词、也没哼唱时：不要大段引用或深挖歌词意思；若情绪正好对上歌感，可轻轻带一句氛围，仍以用户情绪为准。',
+      '用户明确聊歌词、哼唱接近歌词、或问进度时：再自然接歌词；仍禁止报时间码。',
+    )
+    if (options?.forProactive) {
+      lines.push(
+        '【主动开口】禁止报时；可按用户近期情绪轻开口，歌名/氛围点到为止，别把歌词当正经事深挖或吃醋。',
+      )
+    }
+  } else {
+    lines.push(
+      '用户已暂停：勿接唱、勿假装歌还在播、勿主动继续「接着聊这首/这句歌词」。',
+      '用户若自己还提这首歌，可简短接话；否则优先跟用户当前话题，不要把对话拉回听歌。',
+    )
+    if (options?.forProactive) {
+      lines.push('【主动开口】播放已暂停，不要因共听名义主动找用户聊歌。')
+    }
   }
 
   const recentBias = buildSyncListeningRecentTracksBias()

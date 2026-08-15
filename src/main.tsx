@@ -85,6 +85,9 @@ queueMicrotask(() => {
     void import('./components/moments/proactiveCharacterMomentEngine').then((m) => {
       m.installProactiveCharacterMomentEngine()
     })
+    void import('./phone/apps/wechat/messagesPulse/murmurProactiveEngine').then((m) => {
+      m.installMurmurProactivePublishEngine()
+    })
     void import('./phone/apps/takeout/tasteUserGiftDeliveryEngine').then((m) => {
       m.installTasteUserGiftDeliveryEngine()
     })

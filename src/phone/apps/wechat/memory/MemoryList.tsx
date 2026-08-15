@@ -19,13 +19,13 @@ export function MemoryList({
 }) {
   if (loading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
+      <div className="flex min-h-[32vh] items-center justify-center">
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="text-[12px] tracking-[0.2em] uppercase text-gray-400"
+          className="text-[12px] tracking-[0.16em] text-[#8A8A8E]"
         >
-          Loading archives
+          加载中…
         </motion.p>
       </div>
     )
@@ -37,12 +37,12 @@ export function MemoryList({
         data-memory-coach="list"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mx-auto max-w-md px-8 py-24 text-center"
+        className="mx-auto max-w-md px-8 py-16 text-center"
       >
-        <p className="text-[15px] font-medium text-gray-800">暂无匹配记忆</p>
-        <p className="mt-3 text-[13px] leading-relaxed text-gray-400">
+        <p className="text-[15px] font-semibold text-[#111]">暂无匹配记忆</p>
+        <p className="mt-2 text-[13px] leading-relaxed text-[#8A8A8E]">
           {emptyHint ??
-            '调整检索词、身份源或角色焦点；也可点右上角「+」新建一条记忆刻录。'}
+            '调整检索词或分类筛选；也可点上方「+」新建一条记忆。'}
         </p>
       </motion.div>
     )
@@ -52,12 +52,12 @@ export function MemoryList({
     <motion.ul
       data-memory-coach="list"
       layout
-      className={`mx-auto flex w-full max-w-xl flex-col ${inCharacterContext ? 'px-4 py-4' : 'px-5 py-6'}`}
+      className={`mx-auto flex w-full max-w-xl flex-col ${inCharacterContext ? 'px-4 py-3' : 'px-5 py-6'}`}
     >
       {inCharacterContext && entries.length ? (
-        <li className="mb-3 px-1">
-          <p className="text-[11px] font-medium tracking-wide text-gray-400">
-            记忆列表 · {entries.length} 条
+        <li className="mb-2 px-0.5">
+          <p className="text-[10px] font-medium tracking-[0.14em] text-[#8A8A8E]">
+            列表 · {entries.length}
           </p>
         </li>
       ) : null}

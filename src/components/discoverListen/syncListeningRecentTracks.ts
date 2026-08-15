@@ -60,7 +60,12 @@ export function clearSyncListeningRecentTracks(): void {
   recentTracks = []
 }
 
-/** 共听切歌时保留近期曲目，供微信 AI 回忆「刚才那首」 */
+function trackStillAlive(track: MusicTrack | null | undefined): boolean {
+  const title = track?.title?.trim() || ''
+  return Boolean(track && title && title !== '暂无播放')
+}
+
+/** 共听切歌时保留近期曲目，供微信 AI 回忆「刚才那首」；曲目清空时结束共听会话 */
 export function mountSyncListeningRecentTracksTracker(): () => void {
   const initial = useMusicStore.getState().syncListening
   sessionKey = initial ? companionSyncDurationKey(initial.companion) : null
@@ -87,6 +92,14 @@ export function mountSyncListeningRecentTracksTracker(): () => void {
     const nextTrackId = state.currentTrack?.id ?? 0
     if (prevTrackId > 0 && nextTrackId > 0 && prevTrackId !== nextTrackId && prev.currentTrack) {
       archiveTrack(prev.currentTrack, prev.currentTimeMs, prev.durationMs, prev.lyrics)
+    }
+
+    // 播放器曲目被清掉：结束共听，避免角色仍按「正在一起听」接话
+    if (trackStillAlive(prev.currentTrack) && !trackStillAlive(state.currentTrack)) {
+      if (prev.currentTrack) {
+        archiveTrack(prev.currentTrack, prev.currentTimeMs, prev.durationMs, prev.lyrics)
+      }
+      useMusicStore.getState().setSyncListening(null)
     }
   })
 

@@ -26,6 +26,7 @@ import { MBTI_OUTPUT_BAN_RULE } from '../mbtiOutputBan'
 import { splitDatingAssistantOutput } from './plotCoT'
 import { buildDatingStyleSystemAppend } from './datingStylePrompt'
 import { OFFLINE_DATING_RICH_INNER_OS_APPENDIX } from './offlineDatingRichInnerOsAppendix'
+import { OFFLINE_DATING_FASHION_STYLING_APPENDIX } from './offlineDatingFashionStylingAppendix'
 import {
   buildDatingLanguageAppendix,
   finalizeDatingPlotDialogueTranslations,
@@ -180,6 +181,9 @@ function buildDimensionSystemPrompt(
   const richOsBlock = resolvedPresets.offlineRichInnerOs
     ? `【档案室预设·多内心 OS·已开启】本段线下旁支同样适用（覆盖默认 OS 过短敷衍）：\n${OFFLINE_DATING_RICH_INNER_OS_APPENDIX}`
     : ''
+  const fashionBlock = resolvedPresets.offlineFashionStyling
+    ? `【档案室预设·穿搭造型·已开启】本段线下旁支同样适用（禁敷衍衣着三件套）：\n${OFFLINE_DATING_FASHION_STYLING_APPENDIX}`
+    : ''
   const styleAppend = buildDatingStyleSystemAppend(
     opts.styleGenOptions
       ? {
@@ -196,6 +200,7 @@ function buildDimensionSystemPrompt(
 ${archiveBlock ? `${archiveBlock}\n\n` : ''}${worldbookDuty}
 ${romanceBuiltinBlock ? `\n\n${romanceBuiltinBlock}` : ''}
 ${richOsBlock ? `\n\n${richOsBlock}` : ''}
+${fashionBlock ? `\n\n${fashionBlock}` : ''}
 
 你是线下约会「${PLOT_DIMENSION_LABELS[kind]}」写手：与主线约会**同一文风管线、同一档案室约束**，不是另一套模板腔助手。
 ${modeNote}

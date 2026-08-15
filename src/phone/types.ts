@@ -1,4 +1,8 @@
 import { publicAssetUrl } from '../publicAssetUrl'
+import type { BubbleEdgeSticker } from './apps/wechat/bubbleEdgeStickers'
+import type { BubbleFrame } from './apps/wechat/bubbleFrame'
+import type { AvatarSticker } from './apps/wechat/avatarStickers'
+import type { BubbleBadge } from './apps/wechat/bubbleBadge'
 import type { WeChatAvatarChrome } from './apps/wechat/wechatAvatarChrome'
 
 /** 全局数字字体栈（与朋友圈相册日期戳一致：宋体衬线数字） */
@@ -14,6 +18,13 @@ export const phoneNumStyle = {
 
 /** 全局拉丁字母字体栈（仅用于显式混排组件，如模型 id、聊天英文片段） */
 export const PHONE_LATIN_FONT_FAMILY = '"DejaVu Math TeX Gyre", "DejaVu Sans", sans-serif'
+
+/**
+ * 微信主题默认正文字体栈（仅作历史迁移对照 / 显式系统 UI 回退）。
+ * 产品默认改为空字符串：跟随手机全局 `--phone-font`。
+ */
+export const DEFAULT_WECHAT_UI_FONT_FAMILY =
+  'system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "PingFang TC", "HarmonyOS Sans SC", "HarmonyOS Sans", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif'
 
 export type PhoneTheme = {
   background: string
@@ -223,13 +234,38 @@ export type WeChatBubbleTheme = {
   avatarRadiusPx: number
   /** 在头像一侧显示指向三角，三角竖直方向与头像水平中线对齐（需开启头像） */
   showBubbleTail: boolean
+  /** 分侧：对方（角色）是否显示尾巴；缺省跟 showBubbleTail */
+  showBubbleTailOther?: boolean
+  /** 分侧：自己（用户）是否显示尾巴；缺省跟 showBubbleTail */
+  showBubbleTailSelf?: boolean
+  /**
+   * 液态玻璃等 CSS 皮肤：对方是否套用玻璃气泡表面；缺省 true。
+   * false 时该侧退回实心浅底（仍可用颜色/圆角控件）。
+   */
+  glassBubbleStyleOther?: boolean
+  /** 液态玻璃等 CSS 皮肤：自己是否套用玻璃气泡表面；缺省 true */
+  glassBubbleStyleSelf?: boolean
   /** 尾巴样式：wechat 三角；imessage 切角；telegram 鸟喙三角 */
   bubbleTailStyle?: 'wechat' | 'imessage' | 'telegram' | 'talkmaker'
   /**
+   * 特殊消息（转账/红包/语音等）渲染风格。
+   * 缺省时从 `bubbleTailStyle` 推导（兼容历史预设）。
+   * 外观工坊导出应显式写 `lumi`，避免文字尖角的 wechat 尾巴连带换成微信橙卡特殊消息。
+   */
+  messengerBubbleStyle?: 'lumi' | 'wechat' | 'imessage' | 'telegram' | 'talkmaker'
+  /**
    * 连续同侧消息仅首条显示头像列（与常见 IM 一致）；关闭则每条都占头像位。
    * 需 `showAvatar` 为 true 时才有视觉效果。
+   * 若设置了 avatarClusterSelf/Other，则以分侧为准。
    */
   mergeConsecutiveAvatarGroup: boolean
+  /** 分侧：对方是否显示头像；缺省跟 showAvatar */
+  showAvatarOther?: boolean
+  /** 分侧：自己是否显示头像；缺省跟 showAvatar */
+  showAvatarSelf?: boolean
+  /** 分侧连续发送头像策略；缺省由 mergeConsecutiveAvatarGroup 推导 */
+  avatarClusterOther?: 'every' | 'first' | 'last'
+  avatarClusterSelf?: 'every' | 'first' | 'last'
   /**
    * 用户侧（自己）气泡自定义字体元数据；文件 dataUrl 侧存 IndexedDB，不进 customization JSON。
    * null/缺省 = 跟随 --wx-chat-font / --wx-font
@@ -246,6 +282,52 @@ export type WeChatBubbleSideFont = {
   id: string
   family: string
   fileName: string
+}
+
+export function resolveBubbleShowAvatar(
+  bubble: WeChatBubbleTheme,
+  side: 'self' | 'other',
+): boolean {
+  if (side === 'self') return bubble.showAvatarSelf ?? bubble.showAvatar
+  return bubble.showAvatarOther ?? bubble.showAvatar
+}
+
+export function resolveBubbleShowTail(
+  bubble: WeChatBubbleTheme,
+  side: 'self' | 'other',
+): boolean {
+  if (!bubble.showBubbleTail) return false
+  if (side === 'self') return bubble.showBubbleTailSelf ?? true
+  return bubble.showBubbleTailOther ?? true
+}
+
+/** 液态玻璃等：该侧是否使用玻璃气泡表面（缺省开启） */
+export function resolveGlassBubbleStyle(
+  bubble: WeChatBubbleTheme,
+  side: 'self' | 'other',
+): boolean {
+  if (side === 'self') return bubble.glassBubbleStyleSelf !== false
+  return bubble.glassBubbleStyleOther !== false
+}
+
+export function resolveBubbleAvatarCluster(
+  bubble: WeChatBubbleTheme,
+  side: 'self' | 'other',
+): 'every' | 'first' | 'last' {
+  const explicit = side === 'self' ? bubble.avatarClusterSelf : bubble.avatarClusterOther
+  if (explicit === 'every' || explicit === 'first' || explicit === 'last') return explicit
+  return bubble.mergeConsecutiveAvatarGroup ? 'first' : 'every'
+}
+
+/** 连续簇内是否显示头像本体（非占位） */
+export function shouldShowAvatarInCluster(
+  cluster: 'every' | 'first' | 'last',
+  withPrev: boolean,
+  withNext: boolean,
+): boolean {
+  if (cluster === 'every') return true
+  if (cluster === 'first') return !withPrev
+  return !withNext
 }
 
 export function wechatBubbleSideFontsEqual(
@@ -270,10 +352,19 @@ export function wechatBubbleThemesEqual(a: WeChatBubbleTheme, b: WeChatBubbleThe
     a.selfBubbleRadiusPx === b.selfBubbleRadiusPx &&
     a.otherBubbleRadiusPx === b.otherBubbleRadiusPx &&
     a.showAvatar === b.showAvatar &&
+    a.showAvatarSelf === b.showAvatarSelf &&
+    a.showAvatarOther === b.showAvatarOther &&
     a.avatarRadiusPx === b.avatarRadiusPx &&
     a.showBubbleTail === b.showBubbleTail &&
+    a.showBubbleTailSelf === b.showBubbleTailSelf &&
+    a.showBubbleTailOther === b.showBubbleTailOther &&
+    a.glassBubbleStyleSelf === b.glassBubbleStyleSelf &&
+    a.glassBubbleStyleOther === b.glassBubbleStyleOther &&
     a.bubbleTailStyle === b.bubbleTailStyle &&
+    a.messengerBubbleStyle === b.messengerBubbleStyle &&
     a.mergeConsecutiveAvatarGroup === b.mergeConsecutiveAvatarGroup &&
+    a.avatarClusterSelf === b.avatarClusterSelf &&
+    a.avatarClusterOther === b.avatarClusterOther &&
     wechatBubbleSideFontsEqual(a.selfFont, b.selfFont) &&
     wechatBubbleSideFontsEqual(a.otherFont, b.otherFont)
   )
@@ -282,10 +373,19 @@ export function wechatBubbleThemesEqual(a: WeChatBubbleTheme, b: WeChatBubbleThe
 /** 气泡外观模版指纹：切换 wechat / telegram / imessage 等时用于强制消息行重绘 */
 export function wechatBubbleSkinKey(bubble: WeChatBubbleTheme): string {
   return [
-    bubble.bubbleTailStyle ?? 'lumi',
+    bubble.messengerBubbleStyle ?? bubble.bubbleTailStyle ?? 'lumi',
+    bubble.bubbleTailStyle ?? '',
     bubble.showAvatar ? 1 : 0,
+    bubble.showAvatarSelf === false ? 0 : bubble.showAvatarSelf === true ? 1 : 'd',
+    bubble.showAvatarOther === false ? 0 : bubble.showAvatarOther === true ? 1 : 'd',
     bubble.showBubbleTail ? 1 : 0,
+    bubble.showBubbleTailSelf === false ? 0 : bubble.showBubbleTailSelf === true ? 1 : 'd',
+    bubble.showBubbleTailOther === false ? 0 : bubble.showBubbleTailOther === true ? 1 : 'd',
+    bubble.glassBubbleStyleSelf === false ? 0 : bubble.glassBubbleStyleSelf === true ? 1 : 'd',
+    bubble.glassBubbleStyleOther === false ? 0 : bubble.glassBubbleStyleOther === true ? 1 : 'd',
     bubble.mergeConsecutiveAvatarGroup ? 1 : 0,
+    bubble.avatarClusterSelf ?? '',
+    bubble.avatarClusterOther ?? '',
     bubble.selfBubbleRadiusPx,
     bubble.otherBubbleRadiusPx,
     bubble.avatarRadiusPx,
@@ -326,6 +426,7 @@ export type WeChatTheme = {
   /**
    * 微信字体覆盖（空字符串代表“跟随全局字体”）
    * - 最终会映射到 CSS 变量 --wx-font
+   * - 产品默认空字符串；历史系统 UI 栈见 DEFAULT_WECHAT_UI_FONT_FAMILY
    */
   fontFamily: string
   /**
@@ -386,6 +487,34 @@ export type WeChatTheme = {
    * 头像框 / 角标（assetId 指向 phoneKv 侧存，不把 dataUrl 写入 customization JSON）
    */
   avatarChrome?: WeChatAvatarChrome
+  /**
+   * 文字气泡四边贴纸（外观工坊导出；按侧存储，含 imageDataUrl）
+   */
+  bubbleEdgeStickers?: {
+    self: BubbleEdgeSticker[]
+    other: BubbleEdgeSticker[]
+  }
+  /**
+   * 文字气泡九宫格拉伸框（外观工坊；null = 该侧未启用）
+   */
+  bubbleFrames?: {
+    self: BubbleFrame | null
+    other: BubbleFrame | null
+  }
+  /**
+   * 头像装饰贴纸（外观工坊；盖在头像上，可含 GIF）
+   */
+  avatarStickers?: {
+    self: AvatarSticker[]
+    other: AvatarSticker[]
+  }
+  /**
+   * 气泡外侧角标（外观工坊；自定义装饰文案）
+   */
+  bubbleBadges?: {
+    self: BubbleBadge | null
+    other: BubbleBadge | null
+  }
 }
 
 /** 布局与系统 UI（持久化到 IndexedDB `phoneKv`，玩家可切换） */
@@ -741,15 +870,15 @@ export function personalCardBottomFadeCss(
   }
 }
 
-/** 微信各 Tab 未单独覆盖时使用的默认页背景（与聊天壁纸一致） */
+/** 微信各 Tab 未单独覆盖时使用的默认页背景（Lumi 机 Paper） */
 export const DEFAULT_WECHAT_TAB_PAGE_BG: WxFillStyle = {
-  mode: 'image',
-  solidColor: '#F5F6F8',
-  gradientFrom: '#F5F6F8',
+  mode: 'solid',
+  solidColor: '#F7F6F4',
+  gradientFrom: '#F7F6F4',
   gradientTo: '#FFFFFF',
   gradientAngle: 180,
   gradientNaturalness: 50,
-  imageUrl: DEFAULT_WECHAT_CHAT_WALLPAPER_PATH,
+  imageUrl: '',
   layerOpacity: 100,
   glassEnabled: false,
   glassOpacity: 0,
@@ -858,8 +987,11 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
   appPageStyles: {
     wechat: {
       ...DEFAULT_APP_PAGE_STYLE,
-      pageBg: '#F5F6F8',
-      pageBgImageUrl: DEFAULT_WECHAT_CHAT_WALLPAPER_PATH,
+      pageBg: '#F7F6F4',
+      /** 不再默认挂聊天壁纸作 Tab 页底图 */
+      pageBgImageUrl: '',
+      /** 空 = 跟随全局 / 微信主题字 */
+      fontFamily: '',
     },
     takeout: {
       ...DEFAULT_APP_PAGE_STYLE,
@@ -920,45 +1052,45 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
     blur: 12,
   },
   wechatTheme: {
-    // 低饱和冷调：主色占比极低，仅用于强调/自身气泡
-    primary: '#7B8AA6',
-    background: '#F5F6F8',
+    // Lumi 机 Paper / Ink：安静承载入口，无品牌强调色
+    primary: '#101012',
+    background: '#F7F6F4',
     surface: '#FFFFFF',
-    text: '#1B1B1F',
-    textMuted: 'rgba(27, 27, 31, 0.55)',
-    border: 'rgba(0, 0, 0, 0.06)',
-    shadow: '0 10px 40px rgba(0, 0, 0, 0.06)',
-    // 默认：跟随全局字体（用户未覆盖时，随 theme.fontFamily 动态变化）
+    text: '#101012',
+    textMuted: '#8B8B8F',
+    border: '#E6E4E0',
+    shadow: '0 10px 30px rgba(16, 16, 18, 0.06)',
+    // 默认：空 = 跟随手机全局字体
     fontFamily: '',
-    // 默认：跟随微信字体（也就是跟随全局）
+    // 默认：跟随微信字体 / 全局字体
     numberFontFamily: '',
     fontSizeBasePx: 15,
     radiusPx: 16,
 
-    tabBarBg: '#FFFFFF',
+    tabBarBg: 'rgba(247, 246, 244, 0.55)',
     tabBarStyle: {
       mode: 'solid',
-      solidColor: '#FFFFFF',
-      gradientFrom: '#FFFFFF',
-      gradientTo: '#F3F4F6',
+      solidColor: 'rgba(247, 246, 244, 0.55)',
+      gradientFrom: '#F7F6F4',
+      gradientTo: '#FFFFFF',
       gradientAngle: 180,
       gradientNaturalness: 50,
       imageUrl: '',
       layerOpacity: 100,
-      glassEnabled: false,
-      glassOpacity: 18,
-      blurPx: 18,
+      glassEnabled: true,
+      glassOpacity: 55,
+      blurPx: 24,
     },
-    tabBarActive: '#1B1B1F',
-    tabBarInactive: 'rgba(27, 27, 31, 0.45)',
-    tabBarLabelActive: '#1B1B1F',
-    tabBarLabelInactive: 'rgba(27, 27, 31, 0.45)',
+    tabBarActive: '#101012',
+    tabBarInactive: '#8B8B8F',
+    tabBarLabelActive: '#101012',
+    tabBarLabelInactive: '#8B8B8F',
     tabBarItems: [
-      { id: 'messages', label: '信息', en: 'Messages', iconUrl: '', labelActiveColor: '', labelInactiveColor: '' },
+      { id: 'messages', label: '聊天', en: 'Chats', iconUrl: '', labelActiveColor: '', labelInactiveColor: '' },
       { id: 'contacts', label: '通讯录', en: 'Contacts', iconUrl: '', labelActiveColor: '', labelInactiveColor: '' },
       { id: 'dates', label: '约会', en: 'Dates', iconUrl: '', labelActiveColor: '', labelInactiveColor: '' },
       { id: 'discover', label: '发现', en: 'Discover', iconUrl: '', labelActiveColor: '', labelInactiveColor: '' },
-      { id: 'profile', label: '我', en: 'Profile', iconUrl: '', labelActiveColor: '', labelInactiveColor: '' },
+      { id: 'profile', label: '我', en: 'Me', iconUrl: '', labelActiveColor: '', labelInactiveColor: '' },
     ],
 
     chatInputBg: 'rgba(255, 255, 255, 0.92)',
@@ -1007,6 +1139,22 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
       otherFrameAssetId: null,
       selfBadge: null,
       otherBadge: null,
+    },
+    bubbleEdgeStickers: {
+      self: [],
+      other: [],
+    },
+    bubbleFrames: {
+      self: null,
+      other: null,
+    },
+    avatarStickers: {
+      self: [],
+      other: [],
+    },
+    bubbleBadges: {
+      self: null,
+      other: null,
     },
   },
   wechatPersonaContacts: [],

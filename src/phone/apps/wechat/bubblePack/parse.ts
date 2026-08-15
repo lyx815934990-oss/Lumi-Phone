@@ -4,6 +4,10 @@ import {
   normalizeWeChatAvatarChrome,
   type WeChatAvatarChrome,
 } from '../wechatAvatarChrome'
+import { normalizeBubbleEdgeStickers } from '../bubbleEdgeStickers'
+import { normalizeBubbleFrames } from '../bubbleFrame'
+import { normalizeAvatarStickers } from '../avatarStickers'
+import { normalizeBubbleBadges } from '../bubbleBadge'
 import type { WeChatBubbleTheme, WeChatChatRoomBg } from '../../../types'
 import {
   LUMI_BUBBLE_PACK_FORMAT,
@@ -178,7 +182,20 @@ function normalizeBubble(raw: unknown): WeChatBubbleTheme {
     tail === 'wechat' || tail === 'imessage' || tail === 'telegram' || tail === 'talkmaker'
       ? tail
       : undefined
+  const messengerRaw = raw.messengerBubbleStyle
+  const messengerBubbleStyle =
+    messengerRaw === 'lumi' ||
+    messengerRaw === 'wechat' ||
+    messengerRaw === 'imessage' ||
+    messengerRaw === 'telegram' ||
+    messengerRaw === 'talkmaker'
+      ? messengerRaw
+      : undefined
   const showBubbleTail = pickBool(raw.showBubbleTail, !!bubbleTailStyle)
+  const pickCluster = (v: unknown): 'every' | 'first' | 'last' | undefined =>
+    v === 'every' || v === 'first' || v === 'last' ? v : undefined
+  const avatarClusterOther = pickCluster(raw.avatarClusterOther)
+  const avatarClusterSelf = pickCluster(raw.avatarClusterSelf)
   const bubble: WeChatBubbleTheme = {
     selfBubbleBg: pickStr(raw.selfBubbleBg, '#95EC69') || '#95EC69',
     otherBubbleBg: pickStr(raw.otherBubbleBg, '#FFFFFF') || '#FFFFFF',
@@ -189,7 +206,12 @@ function normalizeBubble(raw: unknown): WeChatBubbleTheme {
     showBubbleTail,
     mergeConsecutiveAvatarGroup: pickBool(raw.mergeConsecutiveAvatarGroup, false),
   }
+  if (typeof raw.showAvatarOther === 'boolean') bubble.showAvatarOther = raw.showAvatarOther
+  if (typeof raw.showAvatarSelf === 'boolean') bubble.showAvatarSelf = raw.showAvatarSelf
+  if (avatarClusterOther) bubble.avatarClusterOther = avatarClusterOther
+  if (avatarClusterSelf) bubble.avatarClusterSelf = avatarClusterSelf
   if (bubbleTailStyle) bubble.bubbleTailStyle = bubbleTailStyle
+  if (messengerBubbleStyle) bubble.messengerBubbleStyle = messengerBubbleStyle
   return bubble
 }
 
@@ -422,8 +444,9 @@ export function bubblePackFromScopedCssOnly(
         selfBubbleRadiusPx: 12,
         showAvatar: true,
         avatarRadiusPx: 8,
-        showBubbleTail: true,
-        bubbleTailStyle: 'wechat',
+        // css 引擎会清空尾巴差异；勿写 bubbleTailStyle:'wechat' 污染微信 App 预设语义
+        showBubbleTail: false,
+        messengerBubbleStyle: 'lumi',
         mergeConsecutiveAvatarGroup: false,
       },
       selfBubbleText: '#191919',
@@ -467,6 +490,25 @@ function parseBubblePackObject(data: Record<string, unknown>): LumiWeChatBubbleP
   if (avatarChrome) pack.avatarChrome = avatarChrome
   const assets = normalizeAssets(data.assets)
   if (assets) pack.assets = assets
+  const bubbleEdgeStickers = normalizeBubbleEdgeStickers(data.bubbleEdgeStickers)
+  if (bubbleEdgeStickers.self.length || bubbleEdgeStickers.other.length) {
+    pack.bubbleEdgeStickers = bubbleEdgeStickers
+  }
+  const bubbleFrames = normalizeBubbleFrames(data.bubbleFrames)
+  if (bubbleFrames.self || bubbleFrames.other) {
+    pack.bubbleFrames = bubbleFrames
+  }
+  const avatarStickers = normalizeAvatarStickers(data.avatarStickers)
+  if (avatarStickers.self.length || avatarStickers.other.length) {
+    pack.avatarStickers = avatarStickers
+  }
+  const bubbleBadges = normalizeBubbleBadges(data.bubbleBadges)
+  if (
+    (bubbleBadges.self?.enabled && bubbleBadges.self.text.trim()) ||
+    (bubbleBadges.other?.enabled && bubbleBadges.other.text.trim())
+  ) {
+    pack.bubbleBadges = bubbleBadges
+  }
 
   return pack
 }

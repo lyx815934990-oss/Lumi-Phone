@@ -159,9 +159,9 @@ export function RedPacketBubble({
     <div
       data-wx-msg-kind="red-packet"
       data-wx-special-status={kind}
-      className={`select-none text-left transition-opacity duration-150 ease-out ${
-        kind === 'unclaimed' ? 'w-[min(220px,72vw)] max-w-full shrink-0' : 'max-w-[min(280px,72vw)]'
-      } ${isClaimed ? 'opacity-60' : 'opacity-100'}`}
+      className={`w-[min(220px,72vw)] max-w-full shrink-0 select-none text-left transition-opacity duration-150 ease-out ${
+        isClaimed ? 'opacity-60' : 'opacity-100'
+      }`}
       style={{ borderRadius: 14 }}
     >
       <div

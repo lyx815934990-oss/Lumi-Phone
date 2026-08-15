@@ -3273,33 +3273,34 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
         <div className="flex h-full min-h-0 flex-col">
           <header className="sticky top-0 z-20 shrink-0 bg-transparent px-4 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
             <div
-              className="relative rounded-2xl border border-stone-200/80 p-4 shadow-sm"
+              className="relative rounded-[18px] border border-black/[0.06] px-3 py-2.5 shadow-[0_8px_24px_rgba(16,16,18,0.04)]"
               style={{ color: cardTextColor }}
             >
               {/* 背景层（纯色/渐变/图片） */}
-              <div className="absolute inset-0 rounded-2xl" style={cardBgLayerStyle} />
+              <div className="absolute inset-0 rounded-[18px]" style={cardBgLayerStyle} />
               {/* 毛玻璃层：必须盖在背景层上，backdrop-blur 才能模糊到图片/渐变 */}
               {effectiveCardStyle.glass ? (
-                <div className="absolute inset-0 rounded-2xl" style={cardGlassLayerStyle} />
+                <div className="absolute inset-0 rounded-[18px]" style={cardGlassLayerStyle} />
               ) : null}
               <button
                 type="button"
                 onClick={onBackToSelect}
-                className="absolute left-3 top-3 transition-all duration-200 ease-out hover:opacity-80"
+                className="absolute left-2.5 top-1/2 z-[1] -translate-y-1/2 rounded-full p-1.5 transition-all duration-200 ease-out hover:bg-black/[0.04]"
+                aria-label="返回"
               >
-                <ArrowLeft className="size-5" />
+                <ArrowLeft className="size-[18px]" strokeWidth={1.7} />
               </button>
-              <div ref={floorsPanelRef} className="absolute right-3 top-3 z-10">
+              <div ref={floorsPanelRef} className="absolute right-2 top-1/2 z-10 -translate-y-1/2">
                 <div className="flex items-center gap-0.5">
                   <button
                     type="button"
                     title="隐藏历史楼层（仅视图）"
                     onClick={() => setFloorsPanelOpen((v) => !v)}
-                    className={`rounded-lg p-1 transition-all duration-200 ease-out hover:bg-black/[0.04] ${
-                      floorsPanelOpen ? 'bg-black/[0.06] text-stone-800' : 'hover:opacity-80'
+                    className={`rounded-full p-1.5 transition-all duration-200 ease-out hover:bg-black/[0.04] ${
+                      floorsPanelOpen ? 'bg-black/[0.06] text-stone-800' : ''
                     }`}
                   >
-                    <Layers className="size-5" strokeWidth={1.75} />
+                    <Layers className="size-[18px]" strokeWidth={1.7} />
                   </button>
                   <button
                     type="button"
@@ -3307,13 +3308,14 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                       setMenuOpen((v) => !v)
                       setFloorsPanelOpen(false)
                     }}
-                    className="rounded-lg p-1 transition-all duration-200 ease-out hover:opacity-80"
+                    className="rounded-full p-1.5 transition-all duration-200 ease-out hover:bg-black/[0.04]"
+                    aria-label="更多"
                   >
-                    <MoreHorizontal className="size-5" />
+                    <MoreHorizontal className="size-[18px]" strokeWidth={1.7} />
                   </button>
                 </div>
               {floorsPanelOpen ? (
-                <div className="absolute right-0 top-12 z-30 w-[232px] rounded-xl border border-stone-200/90 bg-white/90 p-3 shadow-lg backdrop-blur-xl">
+                <div className="absolute right-0 top-10 z-30 w-[232px] rounded-xl border border-stone-200/90 bg-white/90 p-3 shadow-lg backdrop-blur-xl">
                   <p className="text-[11px] font-medium text-stone-500">从尾部展示条数</p>
                   <p className="mt-0.5 text-[10px] leading-snug text-stone-400">
                     仅影响列表展示，不删除存档；范围 3～{floorsMax}。点列表顶「已隐藏…展开」可一次显示全部。
@@ -3345,78 +3347,86 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
               ) : null}
               </div>
               {effectiveCardStyle.showContent ? (
-                <div className="relative ml-8 mr-8 flex items-start gap-4">
+                <div className="relative flex items-center gap-3 pl-9 pr-16">
                   <img
                     src={displayAvatarUrl}
                     alt={currentCharacter.realName}
-                    className="h-[90px] w-[90px] rounded-full border-2 border-stone-200 object-cover"
+                    className="h-11 w-11 shrink-0 rounded-[14px] object-cover ring-1 ring-black/10"
                   />
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-[28px] font-bold leading-tight">{currentCharacter.realName}</h2>
-                    <div className="mt-2 grid grid-cols-2 text-[12px] leading-6 opacity-70">
-                      <p className="whitespace-nowrap">
-                        AGE <DatingNum className="ml-1 opacity-95">{currentCharacter.age}</DatingNum>
-                      </p>
-                      <p className="whitespace-nowrap">
-                        HEIGHT <DatingNum className="ml-1 opacity-95">{currentCharacter.heightCm}</DatingNum>
-                      </p>
-                      <p className="whitespace-nowrap">
-                        WEIGHT <DatingNum className="ml-1 opacity-95">{currentCharacter.weightKg}</DatingNum>
-                      </p>
-                      <p className="whitespace-nowrap text-[11px] tracking-[0.08em]">
-                        ZODIAC <span className="ml-1 opacity-95">{currentCharacter.zodiac}</span>
-                      </p>
-                      <p className="whitespace-nowrap text-[11px] tracking-[0.08em]">
-                        BIRTHDAY{' '}
-                        <AccountNumericText
-                          text={currentCharacter.birthdayMD}
-                          className="ml-1 inline opacity-95"
-                        />
+                  <div className="min-w-0 flex-1 py-0.5">
+                    <div className="flex min-w-0 items-baseline gap-2">
+                      <h2 className="truncate text-[17px] font-semibold tracking-tight leading-tight">
+                        {currentCharacter.realName}
+                      </h2>
+                      <p className="shrink-0 text-[11px] tabular-nums opacity-55">
+                        <DatingNum>{currentCharacter.age}</DatingNum>
+                        <span className="mx-1 opacity-40">·</span>
+                        {currentCharacter.zodiac}
                       </p>
                     </div>
-                    <p className="mt-2 text-[12px] leading-snug opacity-60">{currentCharacter.motto}</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {currentCharacter.identityTags.map((t) => {
-                        const parsed = parseIdentityTag(t)
-                        if (!parsed.text) return null
-                        if (parsed.isPainPoint) {
+                    {currentCharacter.motto?.trim() ? (
+                      <p className="mt-0.5 truncate text-[11px] leading-snug opacity-50">
+                        {currentCharacter.motto}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 truncate text-[11px] leading-snug opacity-40">
+                        <DatingNum>{currentCharacter.heightCm}</DatingNum>
+                        <span className="mx-1 opacity-40">cm</span>
+                        <span className="mx-0.5 opacity-30">·</span>
+                        <DatingNum>{currentCharacter.weightKg}</DatingNum>
+                        <span className="mx-1 opacity-40">kg</span>
+                        {currentCharacter.birthdayMD ? (
+                          <>
+                            <span className="mx-0.5 opacity-30">·</span>
+                            <AccountNumericText text={currentCharacter.birthdayMD} className="inline" />
+                          </>
+                        ) : null}
+                      </p>
+                    )}
+                    {currentCharacter.identityTags.some((t) => parseIdentityTag(t).text) ? (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {currentCharacter.identityTags.map((t) => {
+                          const parsed = parseIdentityTag(t)
+                          if (!parsed.text) return null
+                          if (parsed.isPainPoint) {
+                            return (
+                              <span
+                                key={t}
+                                className="px-2 py-0.5 text-[10px] font-medium"
+                                style={{
+                                  background: 'rgba(185,28,28,0.08)',
+                                  border: '1px solid rgba(185,28,28,0.18)',
+                                  color: '#b91c1c',
+                                  borderRadius: effectiveCardStyle.tagRadius,
+                                }}
+                              >
+                                {parsed.text}
+                              </span>
+                            )
+                          }
                           return (
                             <span
                               key={t}
-                              className="px-3 py-1 text-[12px] font-medium"
+                              className="px-2 py-0.5 text-[10px] font-medium"
                               style={{
-                                background: '#fee2e2',
-                                border: '1px solid #fecaca',
-                                color: '#b91c1c',
+                                ...tagBgStyle,
+                                color: effectiveCardStyle.tagTextColor,
                                 borderRadius: effectiveCardStyle.tagRadius,
                               }}
                             >
                               {parsed.text}
                             </span>
                           )
-                        }
-                        return (
-                          <span
-                            key={t}
-                            className="px-3 py-1 text-[12px] font-medium"
-                            style={{
-                              ...tagBgStyle,
-                              color: effectiveCardStyle.tagTextColor,
-                              borderRadius: effectiveCardStyle.tagRadius,
-                            }}
-                          >
-                            {parsed.text}
-                          </span>
-                        )
-                      })}
-                    </div>
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : (
-                <div className="relative ml-8 mr-8 h-[44px]" />
+                <div className="relative h-11 pl-9 pr-16" />
               )}
               {menuOpen ? (
-                <div className="absolute right-3 top-10 z-30 w-52 rounded-xl border border-stone-200 bg-white p-1 shadow-md">
+                <div className="absolute right-2 top-[calc(50%+22px)] z-30 w-52 rounded-xl border border-stone-200 bg-white p-1 shadow-md">
                   <button className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-[#262626] hover:bg-stone-50" onClick={() => setMode(isVn ? 'normal' : 'vn')}>
                     模式切换：{isVn ? '切到普通模式' : '切到VN模式'}
                   </button>
@@ -3503,7 +3513,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
               }
             >
             {currentArchive.plots.length ? (
-              <div className="rounded-2xl border border-stone-100 bg-white p-8 shadow-sm">
+              <div className="mx-auto w-full max-w-xl">
                 <StoryFeed
                   plots={currentArchive.plots}
                   timelineExpandCharacterId={currentCharacter.id}
@@ -3526,7 +3536,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
 
             <div
               ref={composerRef}
-              className="mt-4 scroll-mt-4 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
+              className="mx-auto mt-5 w-full max-w-xl scroll-mt-4 rounded-[20px] border border-black/[0.06] bg-white/95 p-4 shadow-[0_10px_32px_rgba(16,16,18,0.045)]"
             >
               <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
                 <label className="flex cursor-pointer items-center gap-2 text-[13px] text-[#262626]">

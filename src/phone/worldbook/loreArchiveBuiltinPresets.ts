@@ -2,6 +2,7 @@ import {
   CHARACTER_EMOTION_CONFESSION_ENGINE_APPENDIX,
   LUMI_DOCTRINE_OF_LOVE_APPENDIX,
 } from '../apps/wechat/wechatReplyOutputPrompt'
+import { OFFLINE_DATING_FASHION_STYLING_APPENDIX } from '../apps/wechat/dating/offlineDatingFashionStylingAppendix'
 import { OFFLINE_DATING_RICH_INNER_OS_APPENDIX } from '../apps/wechat/dating/offlineDatingRichInnerOsAppendix'
 import { PURE_RESTRAIN_LOVE_APPENDIX } from '../apps/wechat/pureRestrainLoveAppendix'
 
@@ -11,6 +12,7 @@ export type LoreArchiveBuiltinPresetId =
   | 'activeConfession'
   | 'pureRestrainLove'
   | 'offlineRichInnerOs'
+  | 'offlineFashionStyling'
 
 export type LoreArchiveBuiltinPresetToggles = Partial<Record<LoreArchiveBuiltinPresetId, boolean>>
 
@@ -37,13 +39,19 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
     id: 'pureRestrainLove',
     title: '纯爱克制',
     description:
-      '系统内置：纯爱番式相处——纯情害羞、成全型喜欢（希望对方更好/1+1＞2）、循序渐进；禁速通攻略、自恋追问、刚在一起就深亲密或同居；情侣亲密须生涩征得同意。开启后注入线上/线下 AI，正文不可查看或编辑。',
+      '系统内置：纯爱番式相处——纯情害羞、成全型喜欢（希望对方更好/1+1＞2）、循序渐进；禁速通攻略、自恋追问、刚在一起就深亲密或同居；情侣亲密须生涩征得同意。相处日久进入更深亲密戏时，可解锁纯情色气写法（直白/边做边夸等，仍禁强制爱）。开启后注入线上/线下 AI，正文不可查看或编辑。',
   },
   {
     id: 'offlineRichInnerOs',
     title: '线下约会·多内心 OS 描写',
     description:
       '系统内置：线下约会剧情中增加内心 OS 条数、句数与字数，并配合神态外化，减少「只会说话、没有心思」的木偶感。开启后仅注入线下约会 AI，正文不可查看或编辑。',
+  },
+  {
+    id: 'offlineFashionStyling',
+    title: '线下约会·穿搭造型描写',
+    description:
+      '系统内置：拉开衣着描写层次（廓形、面料、剪裁、配饰与鞋履），禁止「深灰卫衣+黑运动裤+帆布鞋」等敷衍模板。开启后仅注入线下约会 AI，正文不可查看或编辑。',
   },
 ]
 
@@ -56,6 +64,7 @@ export function resolveLoreArchiveBuiltinPresetToggles(
     activeConfession: raw?.activeConfession === true,
     pureRestrainLove: raw?.pureRestrainLove === true,
     offlineRichInnerOs: raw?.offlineRichInnerOs === true,
+    offlineFashionStyling: raw?.offlineFashionStyling === true,
   }
 }
 
@@ -95,7 +104,7 @@ export function buildWechatThinkingChainRomanceSteps(
   }
   if (resolved.pureRestrainLove) {
     steps.push(
-      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「纯爱克制」（先判阶段；循序渐进禁速通；成全型喜欢；禁强制爱/刚确立深亲密；条文在输出协议；禁复述）`,
+      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「纯爱克制」（先判阶段；循序渐进禁速通；成全型喜欢；禁强制爱/刚确立深亲密；仅相处日久更深亲密戏可解锁【五附】纯情色气；条文在输出协议；禁复述）`,
     )
     stepNo += 1
   }
@@ -119,13 +128,18 @@ ${CHARACTER_EMOTION_CONFESSION_ENGINE_APPENDIX}`)
   }
   if (resolved.pureRestrainLove) {
     parts.push(`【纯爱克制】
-纯爱最高设定之一（与人设/全局档案同级）。自检：先判阶段；循序渐进禁速通攻略；成全型喜欢（希望对方更好/1+1＞2）；纯情害羞生涩；直球不压迫、禁自恋追问；非情侣禁越级亲密；刚确立禁深亲密/同居；情侣先忍再问；禁强制爱。气质跟人设，硬底线不可破：
+纯爱最高设定之一（与人设/全局档案同级）。自检：先判阶段；循序渐进禁速通攻略；成全型喜欢（希望对方更好/1+1＞2）；纯情害羞生涩；直球不压迫、禁自恋追问；非情侣禁越级亲密；刚确立禁深亲密/同居；情侣先忍再问；禁强制爱。仅当「相处日久·更深亲密」且本轮亲密戏时启用【五附】纯情色气（直白/调情戳破/边做边夸）；未达阶段禁止预习。气质跟人设，硬底线不可破：
 ${PURE_RESTRAIN_LOVE_APPENDIX}`)
   }
   if (resolved.offlineRichInnerOs) {
     parts.push(`【线下约会·多内心 OS 描写引擎】
 以下规则为本轮线下约会内心 OS 的**硬性约束**；须在思维链中先规划 OS 分布与字数，再写正文；**覆盖**默认 OS 篇幅规则（单条不少于 40 汉字）：
 ${OFFLINE_DATING_RICH_INNER_OS_APPENDIX}`)
+  }
+  if (resolved.offlineFashionStyling) {
+    parts.push(`【线下约会·穿搭造型描写引擎】
+以下规则为本轮线下约会衣着描写的**硬性约束**；须在思维链中避开敷衍三件套，再写正文：
+${OFFLINE_DATING_FASHION_STYLING_APPENDIX}`)
   }
   return parts.join('\n\n')
 }

@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 public/BGM
+public/wechat-emojis
 *.local
 
 # Editor directories and files

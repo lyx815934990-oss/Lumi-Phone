@@ -376,7 +376,7 @@ export function ApiConfigBlock({
                 <ApiSamplingParamHelpButton helpKey="section" />
               </div>
               <p className="mt-1 text-[11px] leading-relaxed" style={{ color: apiTheme.subText }}>
-                未拖动为系统默认。调过「最大 Token」后，聊天 / 约会 / 起名 / 摘要 / 弹幕等走本配置的请求都会用它（覆盖功能内置上限）。点「？」看说明。
+                未拖动为系统默认（最大 Token 默认 12800）。调过「最大 Token」后，聊天 / 约会 / 起名 / 摘要 / 弹幕等走本配置的请求都会用它（覆盖功能内置上限）。点「？」看说明。
               </p>
               <div className="mt-3 space-y-2.5">
                 <SamplingSliderField
@@ -416,7 +416,7 @@ export function ApiConfigBlock({
                   max={128000}
                   step={256}
                   digits={0}
-                  defaultPreview={4096}
+                  defaultPreview={12800}
                   minLabel="256 短"
                   maxLabel="128k 长"
                   onCommit={(n) =>

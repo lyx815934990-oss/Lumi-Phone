@@ -1,5 +1,7 @@
 /** 微信 8.x 经典聊天气泡 / 卡片 UI 片段 */
 
+import { useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+
 export const WECHAT_CLASSIC = {
   chatBg: '#F3F3F3',
   headerBg: '#EDEDED',
@@ -13,11 +15,95 @@ export const WECHAT_CLASSIC = {
   tailTopPx: 14,
 } as const
 
-/** 聊天气泡最大宽：100vw − 左右 24px − 对方头像列 80px（40 头像 + 12 间距 + 28 冗余） */
+/** 聊天气泡最大宽：100vw − 左右 24px − 对方头像列 80px（40 头像 + 12 间距 + 28 缓冲） */
 export const WECHAT_CHAT_BUBBLE_MAX_CLASS = 'max-w-[calc(100vw-24px-24px-80px)]'
 
-const SELF_TAIL_PATH = 'M0,0 L6,5 L0,10 Z'
-const OTHER_TAIL_PATH = 'M6,0 L0,5 L6,10 Z'
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n))
+}
+
+function lerp(ax: number, ay: number, bx: number, by: number, t: number): [number, number] {
+  return [ax + (bx - ax) * t, ay + (by - ay) * t]
+}
+
+function dist(ax: number, ay: number, bx: number, by: number) {
+  return Math.hypot(bx - ax, by - ay)
+}
+
+export type BubbleTailGeom = {
+  width: number
+  height: number
+  path: string
+  viewBox: string
+}
+
+/**
+ * @param lengthPx 尖角横向长度（伸出气泡的距离）
+ * @param angleDeg 尖端开口夹角（度）；越大开口越宽
+ * @param roundPx 仅尖端小圆角（0=锋利三角，勿开太大）
+ */
+export function buildBubbleTailGeometry(opts: {
+  isSelf: boolean
+  lengthPx: number
+  angleDeg: number
+  roundPx: number
+}): BubbleTailGeom {
+  const width = clamp(Math.round(opts.lengthPx * 10) / 10, 4, 28)
+  const angleDeg = clamp(opts.angleDeg, 25, 100)
+  const tipRad = (angleDeg / 2) * (Math.PI / 180)
+  // 开口角 + 长度 → 竖直底边高度
+  const height = clamp(Math.round(2 * width * Math.tan(tipRad)), 6, 40)
+  const half = height / 2
+  // 圆尖只做尖端微调，避免整颗变成半圆
+  const round = clamp(opts.roundPx, 0, Math.min(width * 0.28, half * 0.28))
+
+  const path = opts.isSelf
+    ? pathSelfSharp(width, height, half, round)
+    : pathOtherSharp(width, height, half, round)
+
+  return {
+    width,
+    height,
+    path,
+    viewBox: `0 0 ${width} ${height}`,
+  }
+}
+
+/**
+ * 锋利三角尖角（对方侧）：贴边在 x=W，尖端在 x=0。
+ * 直边三角 + 可选尖端微圆，不再用大贝塞尔（会画成半圆）。
+ */
+function pathOtherSharp(W: number, H: number, mid: number, r: number): string {
+  const tipX = 0
+  const tipY = mid
+  const topX = W
+  const topY = 0
+  const botX = W
+  const botY = H
+  if (r < 0.05) return `M${topX},${topY} L${tipX},${tipY} L${botX},${botY} Z`
+  const tTop = clamp(r / Math.max(1, dist(tipX, tipY, topX, topY)), 0.02, 0.35)
+  const tBot = clamp(r / Math.max(1, dist(tipX, tipY, botX, botY)), 0.02, 0.35)
+  const [p1x, p1y] = lerp(tipX, tipY, topX, topY, tTop)
+  const [p2x, p2y] = lerp(tipX, tipY, botX, botY, tBot)
+  return `M${topX},${topY} L${p1x},${p1y} Q${tipX},${tipY} ${p2x},${p2y} L${botX},${botY} Z`
+}
+
+/** 锋利三角尖角（己方侧）：贴边在 x=0，尖端在 x=W */
+function pathSelfSharp(W: number, H: number, mid: number, r: number): string {
+  const tipX = W
+  const tipY = mid
+  const topX = 0
+  const topY = 0
+  const botX = 0
+  const botY = H
+  if (r < 0.05) return `M${topX},${topY} L${tipX},${tipY} L${botX},${botY} Z`
+  const tTop = clamp(r / Math.max(1, dist(tipX, tipY, topX, topY)), 0.02, 0.35)
+  const tBot = clamp(r / Math.max(1, dist(tipX, tipY, botX, botY)), 0.02, 0.35)
+  const [p1x, p1y] = lerp(tipX, tipY, topX, topY, tTop)
+  const [p2x, p2y] = lerp(tipX, tipY, botX, botY, tBot)
+  return `M${topX},${topY} L${p1x},${p1y} Q${tipX},${tipY} ${p2x},${p2y} L${botX},${botY} Z`
+}
+
 
 /**
  * 毛玻璃气泡底常是低透明 rgba，尾巴用 fill-current 几乎看不见。
@@ -40,20 +126,648 @@ export function opaqueCssColorForTail(color: string, alpha = 0.92): string {
   return c
 }
 
-export function WechatBubbleTail({ isSelf, bubbleColor }: { isSelf: boolean; bubbleColor: string }) {
+export type WechatBubbleTailProps = {
+  isSelf: boolean
+  bubbleColor: string
+  /** 横向长度（侧边）或向下伸出长度（底部） */
+  lengthPx?: number
+  /** 尖端开口夹角（度） */
+  angleDeg?: number
+  /** 尖端圆角 */
+  roundPx?: number
+  borderWidth?: number
+  borderColor?: string
+  /** @deprecated 用 offsetYPct；相对气泡顶边的 px */
+  topPx?: number
+  /** 侧边尖角垂直位置（相对气泡高度 0–100%）；yMode=pct 时用 */
+  offsetYPct?: number
+  /**
+   * 侧边垂直定位：pct=百分比；avatar=跟随头像中心。
+   * 也可读 `--wx-bubble-tail-y-mode`
+   */
+  yMode?: 'pct' | 'avatar'
+  /** 跟随头像时：头像边长；可读 `--wx-bubble-tail-avatar-size` */
+  avatarSizePx?: number
+  /** 跟随头像时：头像相对行高的垂直 %；可读 `--wx-bubble-tail-avatar-y` */
+  avatarBubbleYPct?: number
+  /** 贴边：侧边 / 底部 */
+  anchor?: 'side' | 'bottom'
+  /** 底部贴边：沿底边 0%=靠头像侧 … 100%=靠聊天中心 */
+  offsetXPct?: number
+  /** 侧边尖角横向偏移（px）：正=朝头像探出，负=塞进气泡 */
+  offsetXPx?: number
+  /** 尖角整体倾斜（度）：负=逆时针，正=顺时针；绕贴边旋转 */
+  tiltDeg?: number
+  /**
+   * 与气泡底同步：保留透明度/渐变，并可套同款毛玻璃。
+   * 也可由宿主 CSS `--wx-bubble-tail-match-surface: 1` 开启。
+   */
+  matchBubbleSurface?: boolean
+  /** 毛玻璃模糊；0 = 关。也可读 `--wx-bubble-tail-glass-blur` */
+  glassBlurPx?: number
+  glassSaturatePct?: number
+}
+
+type TailResolved = {
+  lengthPx: number
+  angleDeg: number
+  roundPx: number
+  borderWidth: number
+  borderColor: string
+  /** 侧边垂直：优先用 %，无则退回 topPx */
+  offsetYPct: number | null
+  topPx: number
+  yMode: 'pct' | 'avatar'
+  avatarSizePx: number
+  avatarBubbleYPct: number
+  anchor: 'side' | 'bottom'
+  offsetXPct: number
+  offsetXPx: number
+  tiltDeg: number
+  matchSurface: boolean
+  surfaceBg: string
+  glassBlurPx: number
+  glassSaturatePct: number
+}
+
+const TAIL_DEFAULTS: TailResolved = {
+  lengthPx: 6,
+  angleDeg: 55,
+  roundPx: 0,
+  borderWidth: 0,
+  borderColor: 'transparent',
+  offsetYPct: null,
+  topPx: WECHAT_CLASSIC.tailTopPx,
+  yMode: 'pct',
+  avatarSizePx: 40,
+  avatarBubbleYPct: 0,
+  anchor: 'side',
+  offsetXPct: 0,
+  offsetXPx: 0,
+  tiltDeg: 0,
+  matchSurface: false,
+  surfaceBg: '',
+  glassBlurPx: 0,
+  glassSaturatePct: 140,
+}
+
+/** 朝下的尖角几何（贴气泡底边） */
+export function buildBubbleTailGeometryDown(opts: {
+  lengthPx: number
+  angleDeg: number
+  roundPx: number
+}): BubbleTailGeom {
+  const height = clamp(Math.round(opts.lengthPx * 10) / 10, 4, 28)
+  const angleDeg = clamp(opts.angleDeg, 25, 100)
+  const tipRad = (angleDeg / 2) * (Math.PI / 180)
+  const width = clamp(Math.round(2 * height * Math.tan(tipRad)), 6, 40)
+  const mid = width / 2
+  const round = clamp(opts.roundPx, 0, Math.min(height * 0.42, mid * 0.42))
+  const tipX = mid
+  const tipY = height
+  const leftX = 0
+  const leftY = 0
+  const rightX = width
+  const rightY = 0
+  let path: string
+  if (round < 0.05) {
+    path = `M${leftX},${leftY} L${tipX},${tipY} L${rightX},${rightY} Z`
+  } else {
+    const tL = clamp(round / Math.max(1, dist(tipX, tipY, leftX, leftY)), 0.02, 0.45)
+    const tR = clamp(round / Math.max(1, dist(tipX, tipY, rightX, rightY)), 0.02, 0.45)
+    const [p1x, p1y] = lerp(tipX, tipY, leftX, leftY, tL)
+    const [p2x, p2y] = lerp(tipX, tipY, rightX, rightY, tR)
+    path = `M${leftX},${leftY} L${p1x},${p1y} Q${tipX},${tipY} ${p2x},${p2y} L${rightX},${rightY} Z`
+  }
+  return { width, height, path, viewBox: `0 0 ${width} ${height}` }
+}
+
+/** 微信 App 内置经典三角（6×10），勿用参数几何替代 */
+const CLASSIC_SELF_TAIL_PATH = 'M0,0 L6,5 L0,10 Z'
+const CLASSIC_OTHER_TAIL_PATH = 'M6,0 L0,5 L6,10 Z'
+
+function parseCssOffsetY(raw: string): { offsetYPct: number | null; topPx: number | undefined } {
+  const v = raw.trim()
+  if (!v) return { offsetYPct: null, topPx: undefined }
+  if (v.endsWith('%')) {
+    const n = Number.parseFloat(v)
+    return { offsetYPct: Number.isFinite(n) ? clamp(n, 0, 100) : null, topPx: undefined }
+  }
+  const n = Number.parseFloat(v)
+  return { offsetYPct: null, topPx: Number.isFinite(n) ? n : undefined }
+}
+
+function readTailFromCss(el: Element | null): Partial<TailResolved> {
+  if (!el || !(el instanceof HTMLElement)) return {}
+  const cs = getComputedStyle(el)
+  const num = (name: string) => {
+    const raw = cs.getPropertyValue(name).trim()
+    if (!raw) return undefined
+    const n = Number.parseFloat(raw)
+    return Number.isFinite(n) ? n : undefined
+  }
+  const color = cs.getPropertyValue('--wx-bubble-tail-border-color').trim()
+  const surfaceBg = cs.getPropertyValue('--wx-bubble-tail-bg').trim()
+  const matchRaw = cs.getPropertyValue('--wx-bubble-tail-match-surface').trim()
+  const anchorRaw = cs.getPropertyValue('--wx-bubble-tail-anchor').trim()
+  const yParsed = parseCssOffsetY(cs.getPropertyValue('--wx-bubble-tail-offset-y'))
+  const yModeRaw = cs.getPropertyValue('--wx-bubble-tail-y-mode').trim()
+  return {
+    lengthPx: num('--wx-bubble-tail-length') ?? num('--wx-bubble-tail-height'),
+    angleDeg: num('--wx-bubble-tail-angle'),
+    roundPx: num('--wx-bubble-tail-round'),
+    borderWidth: num('--wx-bubble-tail-border-width'),
+    borderColor: color || undefined,
+    offsetYPct: yParsed.offsetYPct,
+    topPx: yParsed.topPx,
+    yMode: yModeRaw === 'avatar' ? 'avatar' : yModeRaw === 'pct' ? 'pct' : undefined,
+    avatarSizePx: num('--wx-bubble-tail-avatar-size'),
+    avatarBubbleYPct: num('--wx-bubble-tail-avatar-y'),
+    offsetXPct: num('--wx-bubble-tail-offset-x-pct'),
+    offsetXPx: num('--wx-bubble-tail-offset-x'),
+    tiltDeg: num('--wx-bubble-tail-tilt'),
+    anchor: anchorRaw === 'bottom' ? 'bottom' : anchorRaw === 'side' ? 'side' : undefined,
+    matchSurface: matchRaw === '1' || matchRaw === 'true',
+    surfaceBg: surfaceBg || undefined,
+    glassBlurPx: num('--wx-bubble-tail-glass-blur'),
+    glassSaturatePct: num('--wx-bubble-tail-glass-saturate'),
+  }
+}
+
+/** 仅外观工坊 / 气泡包显式 CSS 变量时启用参数尖角；内置主题走经典路径 */
+function hasWorkshopTailCss(
+  css: Partial<TailResolved>,
+  props: {
+    lengthPx?: number
+    angleDeg?: number
+    roundPx?: number
+    borderWidth?: number
+    topPx?: number
+    offsetYPct?: number
+    yMode?: 'pct' | 'avatar'
+    avatarSizePx?: number
+    avatarBubbleYPct?: number
+    anchor?: 'side' | 'bottom'
+    offsetXPct?: number
+    offsetXPx?: number
+    tiltDeg?: number
+    matchBubbleSurface?: boolean
+    glassBlurPx?: number
+  },
+): boolean {
+  if (props.matchBubbleSurface === true) return true
+  if (typeof props.glassBlurPx === 'number' && props.glassBlurPx > 0) return true
+  if (props.lengthPx != null || props.angleDeg != null || props.roundPx != null) return true
+  if (props.borderWidth != null && props.borderWidth > 0) return true
+  if (props.yMode === 'avatar' || props.avatarSizePx != null || props.avatarBubbleYPct != null) {
+    return true
+  }
+  if (
+    props.topPx != null ||
+    props.offsetYPct != null ||
+    props.anchor != null ||
+    props.offsetXPct != null ||
+    props.offsetXPx != null ||
+    props.tiltDeg != null
+  ) {
+    return true
+  }
+  if (css.matchSurface === true) return true
+  if (typeof css.glassBlurPx === 'number' && css.glassBlurPx > 0) return true
+  if (css.lengthPx != null || css.angleDeg != null || css.roundPx != null) return true
+  if (css.borderWidth != null && css.borderWidth > 0) return true
+  if (css.yMode === 'avatar') return true
+  if (
+    css.topPx != null ||
+    css.offsetYPct != null ||
+    css.anchor != null ||
+    css.offsetXPct != null ||
+    css.offsetXPx != null ||
+    css.tiltDeg != null
+  ) {
+    return true
+  }
+  if ((css.surfaceBg || '').trim()) return true
+  return false
+}
+
+export function WechatBubbleTail({
+  isSelf,
+  bubbleColor,
+  lengthPx,
+  angleDeg,
+  roundPx,
+  borderWidth,
+  borderColor,
+  topPx,
+  offsetYPct,
+  yMode,
+  avatarSizePx,
+  avatarBubbleYPct,
+  anchor,
+  offsetXPct,
+  offsetXPx,
+  tiltDeg,
+  matchBubbleSurface,
+  glassBlurPx,
+  glassSaturatePct,
+}: WechatBubbleTailProps) {
+  const hostRef = useRef<Element | null>(null)
+  const [cssTail, setCssTail] = useState<Partial<TailResolved>>({})
+  /** 跟随头像：头像中心相对气泡盒顶边的 px（实测，避免公式与布局不一致） */
+  const [avatarMidPx, setAvatarMidPx] = useState<number | null>(null)
+  const clipId = useId().replace(/:/g, '')
+
+  const resolvedYModeEarly: 'pct' | 'avatar' =
+    yMode === 'avatar' || yMode === 'pct'
+      ? yMode
+      : cssTail.yMode === 'avatar' || cssTail.yMode === 'pct'
+        ? cssTail.yMode
+        : 'pct'
+  const resolvedAnchorEarly =
+    anchor ?? cssTail.anchor ?? ('side' as const)
+
+  useLayoutEffect(() => {
+    const el = hostRef.current
+    const host =
+      el?.closest('[data-wx-bubble-content]') ??
+      el?.closest('[data-wx-special-card]') ??
+      el?.parentElement?.querySelector?.('[data-wx-bubble-content]') ??
+      el?.parentElement ??
+      null
+    setCssTail(readTailFromCss(host instanceof Element ? host : null))
+  }, [
+    isSelf,
+    bubbleColor,
+    lengthPx,
+    angleDeg,
+    roundPx,
+    borderWidth,
+    borderColor,
+    topPx,
+    offsetYPct,
+    yMode,
+    avatarSizePx,
+    avatarBubbleYPct,
+    anchor,
+    offsetXPct,
+    offsetXPx,
+    tiltDeg,
+    matchBubbleSurface,
+    glassBlurPx,
+    glassSaturatePct,
+  ])
+
+  useLayoutEffect(() => {
+    if (resolvedYModeEarly !== 'avatar' || resolvedAnchorEarly === 'bottom') {
+      setAvatarMidPx(null)
+      return
+    }
+    const el = hostRef.current
+    if (!el) return
+    const sideEl = el.closest('[data-wx-bubble-side]') as HTMLElement | null
+    const alignRoot =
+      (el.closest('[data-wx-msg-align]') as HTMLElement | null) ??
+      (el.closest('.wx-chat-msg-row') as HTMLElement | null) ??
+      (sideEl?.parentElement as HTMLElement | null)
+    const sideKey = isSelf ? 'self' : 'other'
+    const avatarEl =
+      (alignRoot?.querySelector(
+        `[data-wx-avatar-chrome="${sideKey}"]`,
+      ) as HTMLElement | null) ??
+      (alignRoot?.querySelector('[data-wx-avatar-chrome]') as HTMLElement | null)
+
+    const measure = () => {
+      if (!sideEl || !avatarEl) {
+        setAvatarMidPx(null)
+        return
+      }
+      const cs = getComputedStyle(avatarEl)
+      if (cs.display === 'none' || cs.visibility === 'hidden') {
+        setAvatarMidPx(null)
+        return
+      }
+      const sr = sideEl.getBoundingClientRect()
+      const ar = avatarEl.getBoundingClientRect()
+      if (sr.height < 1 || ar.height < 1) {
+        setAvatarMidPx(null)
+        return
+      }
+      setAvatarMidPx(ar.top + ar.height / 2 - sr.top)
+    }
+
+    if (!sideEl) {
+      setAvatarMidPx(null)
+      return
+    }
+
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(sideEl)
+    if (avatarEl) ro.observe(avatarEl)
+    window.addEventListener('resize', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [
+    resolvedYModeEarly,
+    resolvedAnchorEarly,
+    isSelf,
+    lengthPx,
+    angleDeg,
+    roundPx,
+    avatarSizePx,
+    avatarBubbleYPct,
+    cssTail.yMode,
+    cssTail.avatarSizePx,
+    cssTail.avatarBubbleYPct,
+  ])
+
+  const customized = hasWorkshopTailCss(cssTail, {
+    lengthPx,
+    angleDeg,
+    roundPx,
+    borderWidth,
+    topPx,
+    offsetYPct,
+    yMode,
+    avatarSizePx,
+    avatarBubbleYPct,
+    anchor,
+    offsetXPct,
+    offsetXPx,
+    tiltDeg,
+    matchBubbleSurface,
+    glassBlurPx,
+  })
+
+  /** 内置「微信 App」：固定 6×10 三角 */
+  if (!customized) {
+    const fill = opaqueCssColorForTail(bubbleColor)
+    return (
+      <svg
+        ref={(node) => {
+          hostRef.current = node
+        }}
+        aria-hidden
+        data-wx-bubble-tail
+        data-wx-bubble-tail-anchor="side"
+        className="pointer-events-none absolute h-[10px] w-[6px] fill-current"
+        style={{
+          color: fill,
+          top: WECHAT_CLASSIC.tailTopPx,
+          zIndex: 0,
+          ...(isSelf ? { right: -5 } : { left: -5 }),
+        }}
+        viewBox="0 0 6 10"
+      >
+        <path d={isSelf ? CLASSIC_SELF_TAIL_PATH : CLASSIC_OTHER_TAIL_PATH} />
+      </svg>
+    )
+  }
+
+  const resolvedYPct =
+    offsetYPct ??
+    cssTail.offsetYPct ??
+    (typeof topPx === 'number' || typeof cssTail.topPx === 'number' ? null : 28)
+  const resolvedTopPx = topPx ?? cssTail.topPx ?? TAIL_DEFAULTS.topPx
+  const resolvedYMode: 'pct' | 'avatar' = resolvedYModeEarly
+
+  const resolved: TailResolved = {
+    lengthPx: lengthPx ?? cssTail.lengthPx ?? TAIL_DEFAULTS.lengthPx,
+    angleDeg: angleDeg ?? cssTail.angleDeg ?? TAIL_DEFAULTS.angleDeg,
+    roundPx: roundPx ?? cssTail.roundPx ?? TAIL_DEFAULTS.roundPx,
+    borderWidth: borderWidth ?? cssTail.borderWidth ?? TAIL_DEFAULTS.borderWidth,
+    borderColor: borderColor ?? cssTail.borderColor ?? TAIL_DEFAULTS.borderColor,
+    offsetYPct: resolvedYPct,
+    topPx: resolvedTopPx,
+    yMode: resolvedYMode,
+    avatarSizePx: clamp(
+      avatarSizePx ?? cssTail.avatarSizePx ?? TAIL_DEFAULTS.avatarSizePx,
+      24,
+      72,
+    ),
+    avatarBubbleYPct: clamp(
+      avatarBubbleYPct ?? cssTail.avatarBubbleYPct ?? TAIL_DEFAULTS.avatarBubbleYPct,
+      0,
+      100,
+    ),
+    anchor: anchor ?? cssTail.anchor ?? TAIL_DEFAULTS.anchor,
+    offsetXPct: offsetXPct ?? cssTail.offsetXPct ?? TAIL_DEFAULTS.offsetXPct,
+    offsetXPx: offsetXPx ?? cssTail.offsetXPx ?? TAIL_DEFAULTS.offsetXPx,
+    tiltDeg: clamp(tiltDeg ?? cssTail.tiltDeg ?? TAIL_DEFAULTS.tiltDeg, -60, 60),
+    matchSurface:
+      matchBubbleSurface === true ||
+      cssTail.matchSurface === true ||
+      (typeof glassBlurPx === 'number' && glassBlurPx > 0) ||
+      (typeof cssTail.glassBlurPx === 'number' && cssTail.glassBlurPx > 0),
+    // 外观工坊预览会显式传 matchBubbleSurface + bubbleColor（含独立尖角色）；
+    // 聊天室皮肤包则靠 CSS --wx-bubble-tail-bg（props 常为不透明主题色兜底）。
+    surfaceBg:
+      matchBubbleSurface === true
+        ? (bubbleColor || '').trim() || (cssTail.surfaceBg || '').trim()
+        : (cssTail.surfaceBg || '').trim() || bubbleColor,
+    glassBlurPx: glassBlurPx ?? cssTail.glassBlurPx ?? 0,
+    glassSaturatePct: glassSaturatePct ?? cssTail.glassSaturatePct ?? 140,
+  }
+
+  const isBottom = resolved.anchor === 'bottom'
+  const geom = isBottom
+    ? buildBubbleTailGeometryDown({
+        lengthPx: resolved.lengthPx,
+        angleDeg: resolved.angleDeg,
+        roundPx: resolved.roundPx,
+      })
+    : buildBubbleTailGeometry({
+        isSelf,
+        lengthPx: resolved.lengthPx,
+        angleDeg: resolved.angleDeg,
+        roundPx: resolved.roundPx,
+      })
+
+  const strokeW = Math.max(0, resolved.borderWidth)
+  const isGlassTail = resolved.matchSurface
+  /** 玻璃：整颗尖角在气泡外，避免半透明叠层成方条/梯形 */
+  const tuck = isGlassTail ? 0 : Math.max(3, strokeW + 3)
+  const xPct = clamp(resolved.offsetXPct, 0, 100)
+  const xNudge = clamp(resolved.offsetXPx, -40, 48)
+  const yPct = resolved.offsetYPct
+  const tilt = resolved.tiltDeg
+
+  /** 跟随头像：优先用实测头像中心；测不到再退回与 chrome 同公式 */
+  const sideTopStyle: CSSProperties =
+    !isBottom && resolved.yMode === 'avatar'
+      ? avatarMidPx != null
+        ? { top: avatarMidPx - geom.height / 2 }
+        : {
+            top: `calc((100% - ${resolved.avatarSizePx}px) * ${resolved.avatarBubbleYPct} / 100 + ${resolved.avatarSizePx / 2}px - ${geom.height / 2}px)`,
+          }
+      : yPct != null
+        ? { top: `calc(${clamp(yPct, 0, 100)}% - ${geom.height / 2}px)` }
+        : { top: resolved.topPx }
+
+  /** 绕贴边旋转：对方右缘 / 自己左缘 / 底部上缘 */
+  const tiltOrigin = isBottom
+    ? '50% 0%'
+    : isSelf
+      ? '0% 50%'
+      : '100% 50%'
+  const tiltStyle: CSSProperties =
+    Math.abs(tilt) > 0.05
+      ? { transform: `rotate(${tilt}deg)`, transformOrigin: tiltOrigin }
+      : {}
+
+  const posStyle: CSSProperties = isBottom
+    ? {
+        bottom: -(geom.height - tuck),
+        zIndex: 0,
+        width: geom.width,
+        height: geom.height,
+        overflow: 'visible',
+        ...tiltStyle,
+        ...(isSelf
+          ? { right: `calc(${xPct}% - ${geom.width / 2}px)`, left: 'auto' }
+          : { left: `calc(${xPct}% - ${geom.width / 2}px)`, right: 'auto' }),
+      }
+    : {
+        ...sideTopStyle,
+        zIndex: 0,
+        width: geom.width,
+        height: geom.height,
+        overflow: 'visible',
+        ...tiltStyle,
+        ...(isSelf
+          ? { right: -geom.width + tuck + xNudge, left: 'auto' }
+          : { left: -geom.width + tuck - xNudge, right: 'auto' }),
+      }
+
+  const blur = Math.min(40, Math.max(0, Math.round(resolved.glassBlurPx)))
+  const sat = Math.min(200, Math.max(100, Math.round(resolved.glassSaturatePct)))
+  const glassFilter = blur > 0 ? `blur(${blur}px) saturate(${sat}%)` : undefined
+  const surface = resolved.surfaceBg || bubbleColor
+  const triClip = `path(evenodd, "${geom.path}")`
+  const strokePath = geom.path.replace(/\s*Z\s*$/i, '')
+
+  /** 描边避开贴边内侧，减少接缝线 */
+  const strokeClipRect = isBottom
+    ? { x: -2, y: 1, width: geom.width + 4, height: Math.max(1, geom.height - 1) }
+    : isSelf
+      ? { x: 1, y: -2, width: Math.max(1, geom.width - 1), height: geom.height + 4 }
+      : { x: -2, y: -2, width: Math.max(1, geom.width - 1), height: geom.height + 4 }
+
+  if (resolved.matchSurface) {
+    return (
+      <span
+        ref={(node) => {
+          hostRef.current = node
+        }}
+        aria-hidden
+        data-wx-bubble-tail
+        data-wx-bubble-tail-surface="match"
+        data-wx-bubble-tail-anchor={resolved.anchor}
+        className="pointer-events-none absolute"
+        style={posStyle}
+      >
+        {/*
+          渐变/半透明必须走 CSS background：SVG fill 不认 linear-gradient，
+          非法 fill 会落到默认黑色（看起来像「凭空多出黑色尖角」）。
+        */}
+        <span
+          className="absolute inset-0 block"
+          style={{
+            background: surface,
+            WebkitClipPath: triClip,
+            clipPath: triClip,
+          }}
+        />
+        {strokeW > 0 ? (
+          <svg
+            aria-hidden
+            className="pointer-events-none absolute inset-0 overflow-visible"
+            width={geom.width}
+            height={geom.height}
+            viewBox={geom.viewBox}
+          >
+            <defs>
+              <clipPath id={`wx-tail-stroke-${clipId}`}>
+                <rect
+                  x={strokeClipRect.x}
+                  y={strokeClipRect.y}
+                  width={strokeClipRect.width}
+                  height={strokeClipRect.height}
+                />
+              </clipPath>
+            </defs>
+            <path
+              d={strokePath}
+              fill="none"
+              stroke={resolved.borderColor}
+              strokeWidth={strokeW}
+              strokeLinejoin={resolved.roundPx > 0.05 ? 'round' : 'miter'}
+              strokeLinecap="butt"
+              clipPath={`url(#wx-tail-stroke-${clipId})`}
+            />
+          </svg>
+        ) : null}
+        {blur > 0 ? (
+          <span
+            className="absolute inset-0 block"
+            style={{
+              WebkitBackdropFilter: glassFilter,
+              backdropFilter: glassFilter,
+              WebkitClipPath: triClip,
+              clipPath: triClip,
+            }}
+          />
+        ) : null}
+      </span>
+    )
+  }
+
+  const fill = opaqueCssColorForTail(bubbleColor)
+
   return (
-    <svg
-      aria-hidden
-      className="pointer-events-none absolute z-[3] h-[10px] w-[6px] fill-current"
-      style={{
-        color: opaqueCssColorForTail(bubbleColor),
-        top: WECHAT_CLASSIC.tailTopPx,
-        ...(isSelf ? { right: -6 } : { left: -6 }),
+    <span
+      ref={(node) => {
+        hostRef.current = node
       }}
-      viewBox="0 0 6 10"
+      aria-hidden
+      data-wx-bubble-tail
+      data-wx-bubble-tail-anchor={resolved.anchor}
+      className="pointer-events-none absolute"
+      style={posStyle}
     >
-      <path d={isSelf ? SELF_TAIL_PATH : OTHER_TAIL_PATH} />
-    </svg>
+      <svg
+        className="pointer-events-none absolute inset-0 overflow-visible"
+        width={geom.width}
+        height={geom.height}
+        viewBox={geom.viewBox}
+      >
+        <defs>
+          <clipPath id={`wx-tail-stroke-${clipId}`}>
+            <rect
+              x={strokeClipRect.x}
+              y={strokeClipRect.y}
+              width={strokeClipRect.width}
+              height={strokeClipRect.height}
+            />
+          </clipPath>
+        </defs>
+        <path d={geom.path} fill={fill} />
+        {strokeW > 0 ? (
+          <path
+            d={strokePath}
+            fill="none"
+            stroke={resolved.borderColor}
+            strokeWidth={strokeW}
+            strokeLinejoin={resolved.roundPx > 0.05 ? 'round' : 'miter'}
+            strokeLinecap="butt"
+            clipPath={`url(#wx-tail-stroke-${clipId})`}
+          />
+        ) : null}
+      </svg>
+    </span>
   )
 }
 
@@ -62,11 +776,12 @@ export function WechatCardTail({ color, topPx = WECHAT_CLASSIC.tailTopPx }: { co
   return (
     <svg
       aria-hidden
-      className="pointer-events-none absolute z-[3] h-[10px] w-[6px] fill-current"
-      style={{ color, top: topPx, left: -6 }}
+      data-wx-bubble-tail
+      className="pointer-events-none absolute h-[10px] w-[6px] fill-current"
+      style={{ color, top: topPx, left: -5, zIndex: 0 }}
       viewBox="0 0 6 10"
     >
-      <path d={OTHER_TAIL_PATH} />
+      <path d={CLASSIC_OTHER_TAIL_PATH} />
     </svg>
   )
 }
@@ -162,7 +877,7 @@ export function WechatRedPacketBubbleFace({
       data-wx-msg-kind="red-packet"
       data-wx-special-card
       data-wx-special-status={kind}
-      className="relative w-[min(240px,72vw)] max-w-full shrink-0 select-none overflow-hidden rounded-lg text-white shadow-sm"
+      className="relative w-[min(240px,72vw)] max-w-full shrink-0 select-none overflow-visible rounded-lg text-white shadow-sm"
       style={{ backgroundColor: bg }}
     >
       <WechatBubbleTail isSelf={isSelf} bubbleColor={bg} />
@@ -250,7 +965,7 @@ export function WechatTransferBubbleFace({
       data-wx-msg-kind="transfer"
       data-wx-special-card
       data-wx-special-status={status}
-      className="relative w-[min(230px,72vw)] max-w-full shrink-0 select-none overflow-hidden rounded-[4px] shadow-sm"
+      className="relative w-[min(230px,72vw)] max-w-full shrink-0 select-none overflow-visible rounded-[4px] shadow-sm"
       style={{ backgroundColor: bg, height: 90 }}
     >
       <WechatBubbleTail isSelf={outgoing} bubbleColor={bg} />

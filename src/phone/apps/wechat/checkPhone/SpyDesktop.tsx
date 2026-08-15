@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronLeft, Globe, Map, MessageCircle, Music2, NotebookPen, PhoneCall, ShoppingBag, UtensilsCrossed } from 'lucide-react'
+import { Activity, ChevronLeft, Clapperboard, Clock, Globe, Map, MessageCircle, Moon, Music2, NotebookPen, PhoneCall, ShoppingBag, Ticket, UtensilsCrossed } from 'lucide-react'
 
 import { AppIcon } from './AppIcon'
 import './spyDesktop.css'
@@ -8,6 +8,13 @@ import { getOrInitSpyWallpaperUrl } from './spyWallpaper'
 import { Pressable } from '../../../components/Pressable'
 import { NotesApp } from './notes/NotesApp'
 import { MirrorWeChatApp } from './mirrorWechat/MirrorWeChatApp'
+import { SleepApp } from './sleep/SleepApp'
+import { BrowserApp } from './browser/BrowserApp'
+import { PhoneApp } from './calls/PhoneApp'
+import { BingeApp } from './binge/BingeApp'
+import { MarketApp } from './market/MarketApp'
+import { HealthApp } from './health/HealthApp'
+import { CheckPhoneAppErrorBoundary } from './CheckPhoneAppErrorBoundary'
 import { SpyTutorial } from './SpyTutorial'
 import { personaDb } from '../newFriendsPersona/idb'
 
@@ -17,7 +24,7 @@ type DesktopApp = {
   Icon: typeof MessageCircle
 }
 
-type ActiveSpyApp = 'notes' | 'wechat' | null
+type ActiveSpyApp = 'notes' | 'wechat' | 'sleep' | 'browser' | 'calls' | 'binge' | 'market' | 'health' | null
 const SPY_TUTORIAL_SEEN_KEY = 'checkPhone.spyTutorialSeen.v1'
 const SPY_TUTORIAL_STEPS = [
   {
@@ -31,17 +38,34 @@ const SPY_TUTORIAL_STEPS = [
       '系统每 60 秒会发起一次扫描，扫描持续 10 秒。\n扫描期间禁止触碰屏幕；任何点击都会被立即判定抓包并强制退出。',
   },
   {
-    title: '计时器可长按拖动',
+    title: '时钟可拖动',
     text:
-      '长按右上角计时器约 0.2 秒即可拖动位置。\n将它移动到不遮挡按钮的区域，方便持续观察扫描倒计时。',
+      '右上角时钟图标显示扫描倒计时。\n按住并拖动即可在手机壳内移动位置，避免挡住操作按钮。',
   },
 ] as const
+
+function getPhoneShellBounds() {
+  const shell = document.querySelector('[data-phone-shell="true"]') as HTMLElement | null
+  if (shell) {
+    const r = shell.getBoundingClientRect()
+    if (r.width > 0 && r.height > 0) {
+      return { left: r.left, top: r.top, width: r.width, height: r.height }
+    }
+  }
+  return {
+    left: 0,
+    top: 0,
+    width: typeof window !== 'undefined' ? window.innerWidth : 390,
+    height: typeof window !== 'undefined' ? window.innerHeight : 844,
+  }
+}
 
 export function SpyDesktop({
   characterId,
   characterName,
   playerIdentityId,
   playerDisplayName,
+  playerWechatAvatarUrl,
   useLumiProjectAssistantPrompt,
   onToast,
   onExit,
@@ -50,6 +74,7 @@ export function SpyDesktop({
   characterName: string
   playerIdentityId: string
   playerDisplayName: string
+  playerWechatAvatarUrl?: string
   useLumiProjectAssistantPrompt: boolean
   onToast: (msg: string) => void
   onExit: () => void
@@ -66,12 +91,13 @@ export function SpyDesktop({
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [tutorialStep, setTutorialStep] = useState(0)
   const [tutorialTargetEl, setTutorialTargetEl] = useState<HTMLElement | null>(null)
-  const timerDragStartRef = useRef<{ pointerId: number; dx: number; dy: number } | null>(null)
+  const timerDragStartRef = useRef<{ pointerId: number; dx: number; dy: number; startX: number; startY: number } | null>(null)
   const timerLongPressRef = useRef<number | null>(null)
   const prevBodyUserSelectRef = useRef<string>('')
   const prevBodyWebkitUserSelectRef = useRef<string>('')
   const backButtonRef = useRef<HTMLButtonElement | null>(null)
   const timerRef = useRef<HTMLDivElement | null>(null)
+  const shellRootRef = useRef<HTMLDivElement | null>(null)
   const onExitRef = useRef(onExit)
   useEffect(() => {
     onExitRef.current = onExit
@@ -81,10 +107,14 @@ export function SpyDesktop({
     () => [
       { id: 'wechat', label: '微信', Icon: MessageCircle },
       { id: 'notes', label: '备忘录', Icon: NotebookPen },
+      { id: 'sleep', label: '睡眠', Icon: Moon },
       { id: 'shopping', label: '网购', Icon: ShoppingBag },
       { id: 'takeout', label: '外卖', Icon: UtensilsCrossed },
       { id: 'browser', label: '浏览器', Icon: Globe },
       { id: 'calls', label: '通话', Icon: PhoneCall },
+      { id: 'binge', label: '追剧馆', Icon: Clapperboard },
+      { id: 'market', label: '团购', Icon: Ticket },
+      { id: 'health', label: '健康', Icon: Activity },
       { id: 'music', label: '音乐', Icon: Music2 },
       { id: 'maps', label: '地图', Icon: Map },
     ],
@@ -193,12 +223,42 @@ export function SpyDesktop({
     : Math.max(0, Math.ceil((nextScanAtMs - now.getTime()) / 1000))
 
   const timerAutoStyle = activeApp
-    ? ({ right: 16, bottom: 14 } as const)
-    : ({ right: 16, top: 14 } as const)
+    ? ({ right: 14, bottom: 14 } as const)
+    : ({ right: 14, top: 14 } as const)
 
   const closeTutorial = () => {
     setTutorialOpen(false)
     void personaDb.setPhoneKv(`${SPY_TUTORIAL_SEEN_KEY}:${characterId}`, true)
+  }
+
+  const clampTimerPos = (clientX: number, clientY: number, dx: number, dy: number) => {
+    const root = shellRootRef.current
+    const rootRect = root?.getBoundingClientRect() ?? {
+      left: 0,
+      top: 0,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }
+    const shell = getPhoneShellBounds()
+    const el = timerRef.current
+    const w = el?.offsetWidth || 44
+    const h = el?.offsetHeight || 44
+    const pad = 6
+
+    let vx = clientX - dx
+    let vy = clientY - dy
+    const minX = Math.max(shell.left, rootRect.left) + pad
+    const minY = Math.max(shell.top, rootRect.top) + pad
+    const maxX = Math.min(shell.left + shell.width, rootRect.left + rootRect.width) - w - pad
+    const maxY = Math.min(shell.top + shell.height, rootRect.top + rootRect.height) - h - pad
+
+    vx = Math.min(Math.max(minX, vx), Math.max(minX, maxX))
+    vy = Math.min(Math.max(minY, vy), Math.max(minY, maxY))
+
+    return {
+      x: vx - rootRect.left,
+      y: vy - rootRect.top,
+    }
   }
 
   const onTimerPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -208,31 +268,33 @@ export function SpyDesktop({
     const rect = e.currentTarget.getBoundingClientRect()
     const dx = e.clientX - rect.left
     const dy = e.clientY - rect.top
-    timerDragStartRef.current = { pointerId: e.pointerId, dx, dy }
+    timerDragStartRef.current = { pointerId: e.pointerId, dx, dy, startX: e.clientX, startY: e.clientY }
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    // 短按即进入拖动，移动超过阈值后真正改坐标
     timerLongPressRef.current = window.setTimeout(() => {
       setTimerDragging(true)
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId)
-      } catch {
-        /* ignore */
-      }
-    }, 220)
+    }, 80)
   }
 
   const onTimerPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const s = timerDragStartRef.current
-    if (!s || !timerDragging || s.pointerId !== e.pointerId) return
+    if (!s || s.pointerId !== e.pointerId) return
+    const moved = Math.hypot(e.clientX - s.startX, e.clientY - s.startY)
+    if (!timerDragging) {
+      if (moved < 4) return
+      setTimerDragging(true)
+      if (timerLongPressRef.current != null) {
+        window.clearTimeout(timerLongPressRef.current)
+        timerLongPressRef.current = null
+      }
+    }
     e.preventDefault()
     e.stopPropagation()
-    const w = 164
-    const h = 34
-    const minX = 8
-    const minY = 8
-    const maxX = window.innerWidth - w - 8
-    const maxY = window.innerHeight - h - 8
-    const x = Math.min(maxX, Math.max(minX, e.clientX - s.dx))
-    const y = Math.min(maxY, Math.max(minY, e.clientY - s.dy))
-    setTimerManualPos({ x, y })
+    setTimerManualPos(clampTimerPos(e.clientX, e.clientY, s.dx, s.dy))
   }
 
   const stopTimerDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -244,12 +306,10 @@ export function SpyDesktop({
       window.clearTimeout(timerLongPressRef.current)
       timerLongPressRef.current = null
     }
-    if (timerDragging) {
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId)
-      } catch {
-        /* ignore */
-      }
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
     }
     setTimerDragging(false)
     timerDragStartRef.current = null
@@ -257,7 +317,8 @@ export function SpyDesktop({
 
   return (
     <motion.div
-      className="fixed inset-0 z-[1400] overflow-hidden bg-[#070707] text-white"
+      ref={shellRootRef}
+      className="absolute inset-0 z-[1400] overflow-hidden bg-[#070707] text-white"
       style={
         wallpaperUrl
           ? {
@@ -277,17 +338,19 @@ export function SpyDesktop({
       }}
     >
       <div className="pointer-events-none absolute inset-0 bg-black/55" />
-      <div className="pointer-events-none fixed inset-0 z-[1409] spy-red-vignette" />
+      <div className="pointer-events-none absolute inset-0 z-[1409] spy-red-vignette" />
       <div
         ref={timerRef}
-        className={`fixed z-[1412] rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-white/85 backdrop-blur-sm select-none ${
-          timerDragging ? 'cursor-grabbing' : 'cursor-grab'
-        }`}
+        className={`absolute z-[1412] flex h-11 w-11 flex-col items-center justify-center rounded-full border border-white/20 bg-black/45 text-white/85 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur-sm select-none ${
+          timerDragging ? 'cursor-grabbing scale-[1.04]' : 'cursor-grab'
+        } ${scanActive ? 'border-red-300/40' : ''}`}
         style={
           timerManualPos
             ? {
                 left: timerManualPos.x,
                 top: timerManualPos.y,
+                right: 'auto',
+                bottom: 'auto',
                 userSelect: 'none',
                 WebkitUserSelect: 'none',
                 WebkitTouchCallout: 'none',
@@ -308,9 +371,21 @@ export function SpyDesktop({
         onPointerUp={stopTimerDrag}
         onPointerCancel={stopTimerDrag}
         onContextMenu={(e) => e.preventDefault()}
+        aria-label={scanActive ? `系统扫描中 ${scanCountdownSec} 秒` : `下次扫描 ${scanCountdownSec} 秒`}
+        title={scanActive ? `扫描中 ${scanCountdownSec}s` : `下次扫描 ${scanCountdownSec}s`}
       >
-        <span className={`text-[11px] tracking-[0.08em] ${scanActive ? 'text-red-200' : 'text-white/75'}`}>
-          {scanActive ? `系统扫描中 ${scanCountdownSec}s` : `下次扫描 ${scanCountdownSec}s`}
+        <Clock
+          size={16}
+          strokeWidth={1.8}
+          className={scanActive ? 'text-red-200' : 'text-[#e8d9b6]'}
+          aria-hidden
+        />
+        <span
+          className={`mt-0.5 font-mono text-[9px] leading-none tracking-tight ${
+            scanActive ? 'text-red-200/90' : 'text-white/70'
+          }`}
+        >
+          {scanCountdownSec}s
         </span>
       </div>
 
@@ -353,6 +428,30 @@ export function SpyDesktop({
                   setActiveApp('notes')
                   return
                 }
+                if (id === 'sleep') {
+                  setActiveApp('sleep')
+                  return
+                }
+                if (id === 'browser') {
+                  setActiveApp('browser')
+                  return
+                }
+                if (id === 'calls') {
+                  setActiveApp('calls')
+                  return
+                }
+                if (id === 'binge') {
+                  setActiveApp('binge')
+                  return
+                }
+                if (id === 'market') {
+                  setActiveApp('market')
+                  return
+                }
+                if (id === 'health') {
+                  setActiveApp('health')
+                  return
+                }
                 onToast('即将揭秘')
               }}
               icon={<Icon size={26} strokeWidth={1.6} className="text-[#e8d9b6]" aria-hidden />}
@@ -383,9 +482,83 @@ export function SpyDesktop({
           />
         ) : null}
 
+        {activeApp === 'sleep' ? (
+          <SleepApp
+            onClose={() => setActiveApp(null)}
+            characterId={characterId}
+            characterName={characterName}
+            playerIdentityId={playerIdentityId}
+            playerDisplayName={playerDisplayName}
+            useLumiProjectAssistantPrompt={useLumiProjectAssistantPrompt}
+          />
+        ) : null}
+
+        {activeApp === 'browser' ? (
+          <BrowserApp
+            onClose={() => setActiveApp(null)}
+            characterId={characterId}
+            characterName={characterName}
+            playerIdentityId={playerIdentityId}
+            playerDisplayName={playerDisplayName}
+            useLumiProjectAssistantPrompt={useLumiProjectAssistantPrompt}
+            onToast={onToast}
+          />
+        ) : null}
+
+        {activeApp === 'calls' ? (
+          <PhoneApp
+            onClose={() => setActiveApp(null)}
+            characterId={characterId}
+            characterName={characterName}
+            playerIdentityId={playerIdentityId}
+            playerDisplayName={playerDisplayName}
+            playerWechatAvatarUrl={playerWechatAvatarUrl}
+            useLumiProjectAssistantPrompt={useLumiProjectAssistantPrompt}
+            onToast={onToast}
+          />
+        ) : null}
+
+        {activeApp === 'binge' ? (
+          <BingeApp
+            onClose={() => setActiveApp(null)}
+            characterId={characterId}
+            characterName={characterName}
+            playerIdentityId={playerIdentityId}
+            playerDisplayName={playerDisplayName}
+            useLumiProjectAssistantPrompt={useLumiProjectAssistantPrompt}
+            onToast={onToast}
+          />
+        ) : null}
+
+        {activeApp === 'market' ? (
+          <MarketApp
+            onClose={() => setActiveApp(null)}
+            characterId={characterId}
+            characterName={characterName}
+            playerIdentityId={playerIdentityId}
+            playerDisplayName={playerDisplayName}
+            useLumiProjectAssistantPrompt={useLumiProjectAssistantPrompt}
+            onToast={onToast}
+          />
+        ) : null}
+
+        {activeApp === 'health' ? (
+          <CheckPhoneAppErrorBoundary label="健康" onClose={() => setActiveApp(null)}>
+            <HealthApp
+              onClose={() => setActiveApp(null)}
+              characterId={characterId}
+              characterName={characterName}
+              playerIdentityId={playerIdentityId}
+              playerDisplayName={playerDisplayName}
+              useLumiProjectAssistantPrompt={useLumiProjectAssistantPrompt}
+              onToast={onToast}
+            />
+          </CheckPhoneAppErrorBoundary>
+        ) : null}
+
         {scanActive && !caughtOpen ? (
           <motion.div
-            className="pointer-events-none fixed inset-0 z-[1413] flex items-center justify-center"
+            className="pointer-events-none absolute inset-0 z-[1413] flex items-center justify-center"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -401,7 +574,7 @@ export function SpyDesktop({
 
         {caughtOpen ? (
           <motion.div
-            className="fixed inset-0 z-[1415]"
+            className="absolute inset-0 z-[1415]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

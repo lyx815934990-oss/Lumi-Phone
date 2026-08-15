@@ -9,6 +9,7 @@ import { ListenTogetherTrackOverlayHost } from '../../components/discoverListen/
 import { ListenTogetherPlayModeToastHost } from '../../components/discoverListen/ListenTogetherPlayModeToastHost'
 import { WechatMemorySummaryToastHost } from '../apps/wechat/memory/WechatMemorySummaryToastHost'
 import { WechatEpiloguePerRoundToastHost } from '../apps/wechat/memory/WechatEpiloguePerRoundToastHost'
+import { PeerPresenceThoughtToastHost } from '../apps/wechat/chatRoom/PeerPresenceThoughtToastHost'
 import { WechatStoryTimelinePerRoundToastHost } from '../apps/wechat/memory/WechatStoryTimelinePerRoundToastHost'
 import { LinkPreviewQuotaToastHost } from '../apps/wechat/linkPreview/LinkPreviewQuotaToastHost'
 import { useCustomization } from '../CustomizationContext'
@@ -134,6 +135,7 @@ export function PhoneShell({ children }: Props) {
       <ListenTogetherPlayModeToastHost />
       <WechatMemorySummaryToastHost />
       <WechatEpiloguePerRoundToastHost />
+      <PeerPresenceThoughtToastHost />
       <WechatStoryTimelinePerRoundToastHost />
       <LinkPreviewQuotaToastHost />
       <FloatingMusicOrb />

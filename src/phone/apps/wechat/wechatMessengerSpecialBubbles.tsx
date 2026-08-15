@@ -39,6 +39,16 @@ export function resolveMessengerBubbleStyle(
   chatSkinEngine?: 'structured' | 'css' | null,
 ): MessengerBubbleStyle {
   if (chatSkinEngine === 'css') return 'css'
+  const explicit = bubble.messengerBubbleStyle
+  if (
+    explicit === 'lumi' ||
+    explicit === 'wechat' ||
+    explicit === 'imessage' ||
+    explicit === 'telegram' ||
+    explicit === 'talkmaker'
+  ) {
+    return explicit
+  }
   const tail = bubble.bubbleTailStyle
   if (tail === 'imessage') return 'imessage'
   if (tail === 'telegram') return 'telegram'

@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion'
 import { ConsentModal } from './ConsentModal'
 import { SpyInfiltrationAnimation } from './SpyInfiltrationAnimation'
 import { SpyDesktop } from './SpyDesktop'
+import { useCheckPhonePeerLabel } from './useCheckPhonePeerLabel'
 
 type FlowStage = 'consent' | 'infiltrate' | 'desktop'
 
@@ -13,6 +14,7 @@ export function CheckPhoneFlow({
   characterName,
   playerIdentityId,
   playerDisplayName,
+  playerWechatAvatarUrl,
   useLumiProjectAssistantPrompt,
   onClose,
   onToast,
@@ -22,11 +24,15 @@ export function CheckPhoneFlow({
   characterName: string
   playerIdentityId: string
   playerDisplayName: string
+  /** 本聊天单独头像优先，否则全局微信头像（与气泡己方头像同源） */
+  playerWechatAvatarUrl?: string
   useLumiProjectAssistantPrompt: boolean
   onClose: () => void
   onToast: (msg: string) => void
 }) {
   const [stage, setStage] = useState<FlowStage>('consent')
+  /** 桌面与各 App 标题一律用通讯录备注，不用角色真实名 */
+  const peerLabel = useCheckPhonePeerLabel(characterId, characterName)
 
   const resetAndClose = useCallback(() => {
     setStage('consent')
@@ -66,9 +72,10 @@ export function CheckPhoneFlow({
           {stage === 'desktop' ? (
             <SpyDesktop
               characterId={characterId}
-              characterName={characterName}
+              characterName={peerLabel}
               playerIdentityId={playerIdentityId}
               playerDisplayName={playerDisplayName}
+              playerWechatAvatarUrl={playerWechatAvatarUrl}
               useLumiProjectAssistantPrompt={useLumiProjectAssistantPrompt}
               onToast={onToast}
               onExit={resetAndClose}

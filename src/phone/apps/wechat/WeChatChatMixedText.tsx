@@ -1,18 +1,15 @@
 import type { CSSProperties } from 'react'
 
-import {
-  isPhoneDigitTextToken,
-  isPhoneLatinTextToken,
-  splitPhoneMixedLatinNumText,
-} from '../../phoneMixedLatinNumText'
 import { getWechatClassicEmojiUrlByName } from './stickers/wechatClassicStickerPack'
 
-/** 聊天室英文与数字：Corbel Light（Windows 系统字体，其他平台回退 Corbel / sans-serif） */
-export const WECHAT_CHAT_LATIN_NUM_FONT_FAMILY = '"Corbel Light", Corbel, sans-serif'
+/**
+ * 聊天室英文/数字：跟随微信主题字体（--wx-font / 系统 UI），不再拆成 Corbel Light。
+ * 保留导出名以免外部引用断裂。
+ */
+export const WECHAT_CHAT_LATIN_NUM_FONT_FAMILY = 'var(--wx-chat-font, var(--wx-font))'
 
 export const WECHAT_CHAT_LATIN_NUM_STYLE: CSSProperties = {
   fontFamily: WECHAT_CHAT_LATIN_NUM_FONT_FAMILY,
-  fontWeight: 300,
 }
 
 const URL_INLINE_RE = /https?:\/\/[^\s<>"')\]}，。；、]+/gi
@@ -49,7 +46,6 @@ function splitTextWithWechatClassicEmojis(text: string): MixedSegment[] {
 }
 
 const URL_SPAN_STYLE: CSSProperties = {
-  ...WECHAT_CHAT_LATIN_NUM_STYLE,
   wordBreak: 'break-all',
   overflowWrap: 'anywhere',
 }
@@ -69,20 +65,6 @@ function splitTextAndUrls(text: string): TextSegment[] {
   return out
 }
 
-function renderMixedChunk(chunk: string, keyPrefix: string) {
-  const parts = splitPhoneMixedLatinNumText(chunk)
-  return parts.map((part, index) => {
-    if (isPhoneDigitTextToken(part) || isPhoneLatinTextToken(part)) {
-      return (
-        <span key={`${keyPrefix}-${index}`} style={WECHAT_CHAT_LATIN_NUM_STYLE}>
-          {part}
-        </span>
-      )
-    }
-    return <span key={`${keyPrefix}-${index}`}>{part}</span>
-  })
-}
-
 function renderTextWithClassicEmojis(text: string, keyPrefix: string) {
   return splitTextWithWechatClassicEmojis(text).map((seg, index) => {
     if (seg.kind === 'emoji' && seg.emojiUrl) {
@@ -96,16 +78,17 @@ function renderTextWithClassicEmojis(text: string, keyPrefix: string) {
         />
       )
     }
-    return <span key={`${keyPrefix}-txt-${index}`}>{renderMixedChunk(seg.value, `${keyPrefix}-${index}`)}</span>
+    // 中英数统一继承气泡字体，不再对拉丁强制细体
+    return <span key={`${keyPrefix}-txt-${index}`}>{seg.value}</span>
   })
 }
 
-/** 原生输入框：Messenger 模版走 --wx-chat-font；默认 Lumi 气泡仍用 Corbel 数字 + 全局衬线 */
+/** 原生输入框：跟随气泡/微信主题字体（系统 UI） */
 export const wechatChatComposerFontStyle: CSSProperties = {
-  fontFamily: 'var(--wx-chat-font, "WeChatChatComposerDigits", var(--wx-font))',
+  fontFamily: 'var(--wx-chat-font, var(--wx-font))',
 }
 
-/** 混排文案：Messenger 模版统一走 --wx-chat-font；默认 Lumi 气泡拉丁/数字 → Corbel Light */
+/** 混排文案：中英数与表情同字体；仅拆 URL / 经典表情 */
 export function WeChatChatMixedText({
   text,
   className,
@@ -115,31 +98,15 @@ export function WeChatChatMixedText({
   text: string
   className?: string
   style?: CSSProperties
-  /** true：使用当前气泡模版字体栈，不做 Corbel 拆字 */
+  /** true：显式使用当前气泡模版字体栈 */
   templateFont?: boolean
 }) {
   const segments = splitTextAndUrls(String(text ?? ''))
-  if (templateFont) {
-    return (
-      <span
-        className={className}
-        style={{ fontFamily: 'var(--wx-chat-font)', ...style }}
-      >
-        {segments.map((seg, index) => {
-          if (seg.kind === 'url') {
-            return (
-              <span key={`url-${index}`} style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
-                {seg.value}
-              </span>
-            )
-          }
-          return <span key={`txt-${index}`}>{renderTextWithClassicEmojis(seg.value, `txt-${index}`)}</span>
-        })}
-      </span>
-    )
-  }
   return (
-    <span className={className} style={style}>
+    <span
+      className={className}
+      style={templateFont ? { fontFamily: 'var(--wx-chat-font)', ...style } : style}
+    >
       {segments.map((seg, index) => {
         if (seg.kind === 'url') {
           return (

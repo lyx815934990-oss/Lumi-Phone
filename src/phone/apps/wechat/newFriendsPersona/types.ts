@@ -843,6 +843,8 @@ export type WeChatMusicSyncInvitePayload = {
   lyricsExcerpt?: string
   /** 角色主动邀约：用户点选接受/拒绝后的状态 */
   userResponded?: 'accepted' | 'declined'
+  /** 用户发出的邀约：角色已输出接受/拒绝后的状态（删掉接受卡后仍避免反复催同意） */
+  charResponded?: 'accepted' | 'declined'
 }
 
 export type WeChatMusicSyncAcceptPayload = {

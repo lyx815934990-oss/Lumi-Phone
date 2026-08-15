@@ -1,36 +1,40 @@
-import { AnimatePresence, motion } from 'framer-motion'
-import { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react'
-import type { LoreEntry } from '../../worldbook/loreArchiveTypes'
+import { motion } from 'framer-motion'
+import { Check, ChevronRight } from 'lucide-react'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { LoreArchiveTag, LoreEntry } from '../../worldbook/loreArchiveTypes'
+import { LORE_ARCHIVE_ENTRY_TAGS_CAP } from '../../worldbook/loreArchiveTypes'
 import {
   WORLD_BOOK_CHAR_PLACEHOLDER,
   WORLD_BOOK_USER_PLACEHOLDER,
 } from '../wechat/charUserPlaceholders'
-import type { GlobalWechatPlate } from '../../worldbook/globalWorldBookTypes'
-import { GLOBAL_WECHAT_PLATE_LABELS } from '../../worldbook/globalWorldBookTypes'
-import { Pressable } from '../../components/Pressable'
+import { LoreArchiveTagPill } from './LoreArchiveTagManager'
+import type { LoreEditorCharacter } from './LoreArchiveCharacterPickerSheet'
+import { LoreArchiveCharacterPickerSheet } from './LoreArchiveCharacterPickerSheet'
+import { readSceneChoice, writeSceneChoice, type LoreSceneChoice } from './loreArchiveScene'
+import { LA, LA_FONT_CN, laEase, laPageStyle } from './loreArchiveTheme'
 
-const PLATINUM_RING = '#D4AF37'
+export type { LoreEditorCharacter }
 
-const ALL_PLATES: GlobalWechatPlate[] = ['private_chat', 'group_chat', 'offline_plot', 'vn']
-
-export type LoreEditorCharacter = { id: string; name: string; avatarUrl: string; kind: 'npc' | 'player' }
+type EditTab = 'content' | 'tags' | 'scene' | 'roles'
 
 type Props = {
   draft: LoreEntry
+  isNew: boolean
   roster: LoreEditorCharacter[]
+  tags: LoreArchiveTag[]
   onChange: (next: LoreEntry) => void
-  onBack: () => void
-  autoSaveLabel?: string
+  onSave: () => void
+  onCancel: () => void
+  onDelete?: () => void
+  onOpenTagManager: () => void
 }
 
-function togglePlateInScope(scope: LoreEntry['plateScope'], plate: GlobalWechatPlate): LoreEntry['plateScope'] {
-  if (scope.mode === 'all') return { mode: 'plates', plates: [plate] }
-  const next = new Set(scope.plates)
-  if (next.has(plate)) next.delete(plate)
-  else next.add(plate)
-  const arr = [...next]
-  return arr.length ? { mode: 'plates', plates: arr } : { mode: 'all' }
-}
+const EDIT_TABS: Array<{ id: EditTab; label: string }> = [
+  { id: 'content', label: '内容' },
+  { id: 'tags', label: '分类' },
+  { id: 'scene', label: '场景' },
+  { id: 'roles', label: '角色' },
+]
 
 const AutoGrowTextarea = forwardRef<
   HTMLTextAreaElement,
@@ -46,270 +50,423 @@ const AutoGrowTextarea = forwardRef<
     const el = innerRef.current
     if (!el) return
     el.style.height = '0px'
-    el.style.height = `${Math.max(160, el.scrollHeight)}px`
+    el.style.height = `${Math.max(260, el.scrollHeight)}px`
   }, [])
-
   useEffect(() => {
     adjust()
   }, [value, adjust])
-
   return (
     <textarea
       ref={ref}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      rows={4}
-      className="w-full resize-none bg-transparent text-[15px] leading-relaxed text-neutral-800 outline-none placeholder:text-neutral-300"
+      rows={10}
+      className="w-full resize-none bg-transparent text-[15px] outline-none"
+      style={{ color: LA.ink, lineHeight: 1.7 }}
     />
   )
 })
 
-export function LoreEditor({ draft, roster, onChange, onBack, autoSaveLabel }: Props) {
+function GuideBlock({ title, body }: { title: string; body: string }) {
+  return (
+    <div
+      className="mb-6 rounded-2xl border px-4 py-3.5"
+      style={{ borderColor: LA.hairline, background: LA.card }}
+    >
+      <p className="text-[13px] font-semibold" style={{ color: LA.ink }}>
+        {title}
+      </p>
+      <p className="mt-1.5 text-[12px] leading-relaxed" style={{ color: LA.mist }}>
+        {body}
+      </p>
+    </div>
+  )
+}
+
+export function LoreEditor({
+  draft,
+  isNew,
+  roster,
+  tags,
+  onChange,
+  onSave,
+  onCancel,
+  onDelete,
+  onOpenTagManager,
+}: Props) {
   const contentRef = useRef<HTMLTextAreaElement | null>(null)
+  const [tab, setTab] = useState<EditTab>('content')
+  const [charPickerOpen, setCharPickerOpen] = useState(false)
+  const scene = readSceneChoice(draft)
 
-  const insertPlaceholder = useCallback(
-    (token: string) => {
-      const el = contentRef.current
-      if (!el) {
-        onChange({ ...draft, content: `${draft.content}${token}`, updatedAt: Date.now() })
-        return
-      }
-      const start = el.selectionStart ?? draft.content.length
-      const end = el.selectionEnd ?? start
-      const next = `${draft.content.slice(0, start)}${token}${draft.content.slice(end)}`
-      onChange({ ...draft, content: next, updatedAt: Date.now() })
-      queueMicrotask(() => {
-        el.focus()
-        const pos = start + token.length
-        el.setSelectionRange(pos, pos)
-      })
-    },
-    [draft, onChange],
+  const selectedTagIds = useMemo(
+    () => new Set((draft.tagIds ?? []).map((x) => String(x ?? '').trim()).filter(Boolean)),
+    [draft.tagIds],
   )
 
-  const plateAll = draft.plateScope.mode === 'all'
   const charAll = draft.characterScope.mode === 'all'
+  const selectedCharIds =
+    draft.characterScope.mode === 'characters' ? draft.characterScope.ids : []
+  const selectedChars = useMemo(() => {
+    const set = new Set(selectedCharIds)
+    return roster.filter((c) => set.has(c.id))
+  }, [roster, selectedCharIds])
 
-  const selectedCharIds = useMemo(
-    () =>
-      draft.characterScope.mode === 'characters'
-        ? new Set(draft.characterScope.ids.map((x) => String(x ?? '').trim()).filter(Boolean))
-        : new Set<string>(),
-    [draft.characterScope],
-  )
-
-  const setPlateScope = (next: LoreEntry['plateScope']) => {
-    onChange({ ...draft, plateScope: next, updatedAt: Date.now() })
+  const setScene = (next: LoreSceneChoice) => {
+    onChange({ ...draft, plateScope: writeSceneChoice(next), updatedAt: Date.now() })
   }
 
-  const setCharacterAll = (all: boolean) => {
+  const toggleTag = (tagId: string) => {
+    const set = new Set(selectedTagIds)
+    if (set.has(tagId)) set.delete(tagId)
+    else {
+      if (set.size >= LORE_ARCHIVE_ENTRY_TAGS_CAP) return
+      set.add(tagId)
+    }
+    const nextIds = [...set]
     onChange({
       ...draft,
-      // 切到「限定角色」时先留空 ids；保存时若仍为空会规范化回「全部角色」
-      characterScope: all ? { mode: 'all' } : { mode: 'characters', ids: [] },
+      tagIds: nextIds.length ? nextIds : undefined,
       updatedAt: Date.now(),
     })
   }
 
-  const toggleTarget = (id: string) => {
-    const tid = id.trim()
-    if (!tid) return
-    if (draft.characterScope.mode !== 'characters') return
-    const set = new Set(draft.characterScope.ids)
-    if (set.has(tid)) set.delete(tid)
-    else set.add(tid)
-    onChange({
-      ...draft,
-      characterScope: { mode: 'characters', ids: [...set] },
-      updatedAt: Date.now(),
+  const insertPlaceholder = (token: string) => {
+    const el = contentRef.current
+    if (!el) {
+      onChange({ ...draft, content: `${draft.content}${token}`, updatedAt: Date.now() })
+      return
+    }
+    const start = el.selectionStart ?? draft.content.length
+    const end = el.selectionEnd ?? start
+    const next = `${draft.content.slice(0, start)}${token}${draft.content.slice(end)}`
+    onChange({ ...draft, content: next, updatedAt: Date.now() })
+    queueMicrotask(() => {
+      el.focus()
+      const pos = start + token.length
+      el.setSelectionRange(pos, pos)
     })
+  }
+
+  const tabIndex = EDIT_TABS.findIndex((t) => t.id === tab)
+  const goNext = () => {
+    if (tabIndex < EDIT_TABS.length - 1) setTab(EDIT_TABS[tabIndex + 1]!.id)
+    else onSave()
+  }
+  const goPrev = () => {
+    if (tabIndex > 0) setTab(EDIT_TABS[tabIndex - 1]!.id)
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-[#fafafa]">
+    <motion.div
+      className="flex min-h-0 flex-1 flex-col"
+      style={laPageStyle}
+      initial={{ y: '8%', opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: '8%', opacity: 0 }}
+      transition={{ duration: 0.2, ease: laEase }}
+    >
       <header
-        className="flex shrink-0 items-center gap-2 border-b border-black/[0.06] bg-white/90 px-3 pb-2 backdrop-blur-md"
-        style={{ paddingTop: 'max(8px, env(safe-area-inset-top, 0px))' }}
+        className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3"
+        style={{
+          borderColor: LA.hairline,
+          background: LA.card,
+          paddingTop: 'max(10px, env(safe-area-inset-top, 0px))',
+        }}
       >
-        <Pressable
-          onClick={onBack}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-600"
-          aria-label="返回"
+        <button type="button" onClick={onCancel} className="text-[14px]" style={{ color: LA.mist }}>
+          取消
+        </button>
+        <h1 className="text-[15px] font-semibold" style={{ color: LA.ink }}>
+          {isNew ? '新建世界书' : '编辑世界书'}
+        </h1>
+        <button
+          type="button"
+          onClick={onSave}
+          className="text-[14px] font-bold"
+          style={{ color: LA.amber }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.35">
-            <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </Pressable>
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-light uppercase tracking-[0.45em] text-neutral-400">LORE ARCHIVE</p>
-          {autoSaveLabel ? (
-            <p className="text-[10px] text-neutral-400">{autoSaveLabel}</p>
-          ) : (
-            <p className="text-[10px] text-neutral-300">编辑中</p>
-          )}
-        </div>
+          保存
+        </button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-10 pt-6">
-        <input
-          type="text"
-          value={draft.title}
-          onChange={(e) => onChange({ ...draft, title: e.target.value, updatedAt: Date.now() })}
-          placeholder="设定标题"
-          className="w-full border-b border-neutral-200/90 bg-transparent pb-2 text-[26px] font-light tracking-tight text-neutral-900 outline-none placeholder:text-neutral-300"
-        />
-
-        <div className="mt-8">
-          <div className="mb-2 flex flex-wrap gap-2">
+      <div
+        className="flex shrink-0 gap-4 overflow-x-auto border-b px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        style={{ borderColor: LA.hairline, background: LA.card }}
+      >
+        {EDIT_TABS.map((t) => {
+          const on = tab === t.id
+          return (
             <button
+              key={t.id}
               type="button"
-              onClick={() => insertPlaceholder(WORLD_BOOK_CHAR_PLACEHOLDER)}
-              className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-[11px] font-medium text-neutral-800 transition-colors hover:bg-neutral-50"
+              onClick={() => setTab(t.id)}
+              className="relative shrink-0 pb-2.5 pt-2 text-[13px] transition-colors"
+              style={{ color: on ? LA.amber : LA.mist, fontWeight: on ? 600 : 400 }}
             >
-              插入 {'{{char}}'}
+              {t.label}
+              {on ? (
+                <span
+                  className="absolute inset-x-0 bottom-0 h-[2px] rounded-full"
+                  style={{ background: LA.amber }}
+                />
+              ) : null}
             </button>
+          )
+        })}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-28 pt-5">
+        {tab === 'content' ? (
+          <div>
+            <GuideBlock
+              title="写什么"
+              body="这里写设定、规则与背景。标题用于目录识别；正文会在匹配场景注入模型。"
+            />
+            <input
+              type="text"
+              value={draft.title}
+              onChange={(e) => onChange({ ...draft, title: e.target.value, updatedAt: Date.now() })}
+              placeholder="给这篇世界书起个名字"
+              className="w-full border-b bg-transparent pb-2 text-[20px] font-medium outline-none"
+              style={{ borderColor: LA.hairline, color: LA.ink, fontFamily: LA_FONT_CN }}
+            />
+            <div className="mt-6 mb-2 flex items-center justify-between">
+              <p className="text-[13px] font-semibold" style={{ color: LA.ink }}>
+                正文
+              </p>
+              <span className="text-[11px] tabular-nums" style={{ color: LA.mist }}>
+                {draft.content.length} 字
+              </span>
+            </div>
+            <div className="mb-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => insertPlaceholder(WORLD_BOOK_CHAR_PLACEHOLDER)}
+                className="rounded-full border px-3 py-1 text-[11px]"
+                style={{ borderColor: LA.hairline, color: LA.mist }}
+              >
+                插入 {'{{char}}'}
+              </button>
+              <button
+                type="button"
+                onClick={() => insertPlaceholder(WORLD_BOOK_USER_PLACEHOLDER)}
+                className="rounded-full border px-3 py-1 text-[11px]"
+                style={{ borderColor: LA.hairline, color: LA.mist }}
+              >
+                插入 {'{{user}}'}
+              </button>
+            </div>
+            <AutoGrowTextarea
+              ref={contentRef}
+              value={draft.content}
+              onChange={(content) => onChange({ ...draft, content, updatedAt: Date.now() })}
+              placeholder="在这里编写世界设定、人物背景、规则……"
+            />
+            {!isNew && onDelete ? (
+              <div className="mt-12 flex justify-center">
+                <button type="button" onClick={onDelete} className="text-[13px]" style={{ color: LA.ink }}>
+                  删除此世界书
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {tab === 'tags' ? (
+          <div>
+            <GuideBlock
+              title="用分类整理"
+              body="分类只影响你在档案室里的浏览与筛选，不会改变注入内容。可多选，也可在主页顶栏直接点分类查看。"
+            />
+            <p className="mb-3 text-[12px]" style={{ color: LA.mist }}>
+              已选 {selectedTagIds.size}/{LORE_ARCHIVE_ENTRY_TAGS_CAP}
+            </p>
+            {tags.length === 0 ? (
+              <p className="mb-4 text-[13px]" style={{ color: LA.mist }}>
+                还没有分类，先去创建一个。
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {tags.map((tag) => {
+                  const on = selectedTagIds.has(tag.id)
+                  return (
+                    <button key={tag.id} type="button" onClick={() => toggleTag(tag.id)}>
+                      <LoreArchiveTagPill name={tag.name} size="md" selected={on} />
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             <button
               type="button"
-              onClick={() => insertPlaceholder(WORLD_BOOK_USER_PLACEHOLDER)}
-              className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-[11px] font-medium text-neutral-800 transition-colors hover:bg-neutral-50"
+              onClick={onOpenTagManager}
+              className="mt-5 rounded-full border border-dashed px-4 py-2 text-[13px]"
+              style={{ borderColor: LA.amber, color: LA.amber }}
             >
-              插入 {'{{user}}'}
+              + 管理 / 新建分类
             </button>
           </div>
-          <AutoGrowTextarea
-            ref={contentRef}
-            value={draft.content}
-            onChange={(content) => onChange({ ...draft, content, updatedAt: Date.now() })}
-            placeholder="写入规范模型输出的全局法则，如活人感、抗超雄、格式约束等（可用上方按钮插入占位符）"
-          />
-        </div>
+        ) : null}
 
-        <section className="mt-10 border-t border-black/[0.06] pt-8">
-          <p className="text-[12px] font-medium text-neutral-700">生效板块</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setPlateScope({ mode: 'all' })}
-              className="rounded-[10px] border px-3 py-2 text-[12px] font-medium transition-all"
-              style={{
-                borderColor: 'rgba(0,0,0,0.08)',
-                background: plateAll ? '#111827' : '#fff',
-                color: plateAll ? '#fff' : '#171717',
-              }}
-            >
-              全部板块
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setPlateScope(
-                  plateAll ? { mode: 'plates', plates: ['private_chat'] } : draft.plateScope,
-                )
-              }
-              className="rounded-[10px] border px-3 py-2 text-[12px] font-medium transition-all"
-              style={{
-                borderColor: 'rgba(0,0,0,0.08)',
-                background: !plateAll ? '#111827' : '#fff',
-                color: !plateAll ? '#fff' : '#171717',
-              }}
-            >
-              自定义板块
-            </button>
-          </div>
-          {!plateAll && draft.plateScope.mode === 'plates' ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {ALL_PLATES.map((plate) => {
-                const scope = draft.plateScope
-                const plates = scope.mode === 'plates' ? scope.plates : []
-                const on = plates.includes(plate)
+        {tab === 'scene' ? (
+          <div>
+            <GuideBlock
+              title="何时生效"
+              body="三选一：全局 / 线上聊天 / 线下约会。同一时间只能勾选一项。"
+            />
+            <div className="flex flex-col gap-2">
+              {(
+                [
+                  ['global', '全局作用', '私聊、群聊、线下剧情与 VN 均生效'],
+                  ['online', '线上聊天', '微信私聊与群聊'],
+                  ['offline', '线下约会', '线下普通剧情与 VN'],
+                ] as const
+              ).map(([key, label, hint]) => {
+                const on =
+                  key === 'global' ? scene.global : key === 'online' ? scene.online : scene.offline
                 return (
                   <button
-                    key={plate}
+                    key={key}
                     type="button"
-                    onClick={() => setPlateScope(togglePlateInScope(scope, plate))}
-                    className="rounded-full border px-3 py-1.5 text-[11px] font-medium transition-all"
+                    onClick={() => {
+                      if (key === 'global') {
+                        setScene({ global: true, online: false, offline: false })
+                      } else if (key === 'online') {
+                        setScene({ global: false, online: true, offline: false })
+                      } else {
+                        setScene({ global: false, online: false, offline: true })
+                      }
+                    }}
+                    className="flex w-full items-center justify-between rounded-2xl border px-4 py-3.5 text-left"
                     style={{
-                      borderColor: 'rgba(0,0,0,0.08)',
-                      background: on ? '#111827' : '#fff',
-                      color: on ? '#fff' : '#171717',
+                      borderColor: on ? LA.amber : LA.hairline,
+                      background: on ? LA.amberSoft : LA.card,
+                      transition: 'border-color 200ms ease, background 200ms ease',
                     }}
                   >
-                    {GLOBAL_WECHAT_PLATE_LABELS[plate]}
+                    <div>
+                      <p className="text-[14px] font-medium" style={{ color: LA.ink }}>
+                        {label}
+                      </p>
+                      <p className="mt-1 text-[11px]" style={{ color: LA.mist }}>
+                        {hint}
+                      </p>
+                    </div>
+                    <span
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
+                      style={{
+                        borderColor: on ? LA.amber : LA.hairline,
+                        background: on ? LA.amber : 'transparent',
+                      }}
+                    >
+                      {on ? <Check className="size-3 text-white" strokeWidth={2.5} /> : null}
+                    </span>
                   </button>
                 )
               })}
             </div>
-          ) : null}
-        </section>
+          </div>
+        ) : null}
 
-        <section className="mt-8 border-t border-black/[0.06] pt-8">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[13px] text-neutral-600">作用全部角色</span>
+        {tab === 'roles' ? (
+          <div>
+            <GuideBlock
+              title="对谁生效"
+              body="默认对全部角色生效。若只想作用于部分通讯录角色，点下方更改后勾选；「全部角色」与「指定角色」互斥。"
+            />
             <button
               type="button"
-              role="switch"
-              aria-checked={charAll}
-              onClick={() => setCharacterAll(!charAll)}
-              className="relative h-8 w-[52px] shrink-0 rounded-full transition-all duration-200 ease-out"
-              style={{ background: charAll ? '#000000' : '#e5e5e5' }}
-              aria-label="作用全部角色"
+              onClick={() => setCharPickerOpen(true)}
+              className="flex w-full items-center justify-between rounded-2xl border px-4 py-4 text-left"
+              style={{ borderColor: LA.hairline, background: LA.card }}
             >
-              <span
-                className="absolute top-0.5 h-7 w-7 rounded-full bg-white shadow-sm transition-all duration-200 ease-out"
-                style={{ left: charAll ? 'calc(100% - 1.75rem - 2px)' : '2px' }}
-              />
-            </button>
-          </div>
-
-          <AnimatePresence initial={false}>
-            {!charAll ? (
-              <motion.div
-                key="roster"
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                className="overflow-hidden"
-              >
-                <div className="-mx-1 mt-6 flex gap-3 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                  {roster.map((c) => {
-                    const on = selectedCharIds.has(c.id)
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => toggleTarget(c.id)}
-                        className="flex shrink-0 flex-col items-center gap-1.5"
-                      >
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-medium" style={{ color: LA.ink }}>
+                  {charAll ? '全部角色' : `已指定 ${selectedChars.length} 人`}
+                </p>
+                {charAll ? (
+                  <p className="mt-1 text-[11px]" style={{ color: LA.mist }}>
+                    通讯录内角色均会匹配本条（仍受场景限制）
+                  </p>
+                ) : (
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="flex -space-x-2">
+                      {selectedChars.slice(0, 5).map((c) => (
                         <span
-                          className="relative flex h-[52px] w-[52px] items-center justify-center overflow-hidden rounded-full border bg-white transition"
-                          style={{
-                            borderColor: on ? PLATINUM_RING : 'rgba(0,0,0,0.06)',
-                            boxShadow: on ? `0 0 0 2px ${PLATINUM_RING}55` : undefined,
-                            opacity: on ? 1 : 0.45,
-                            filter: on ? 'none' : 'grayscale(1)',
-                          }}
+                          key={c.id}
+                          className="inline-flex h-8 w-8 overflow-hidden rounded-full border"
+                          style={{ borderColor: LA.card, background: LA.paper }}
                         >
                           {c.avatarUrl ? (
-                            <img src={c.avatarUrl} alt="" className="h-full w-full object-cover" draggable={false} />
+                            <img src={c.avatarUrl} alt="" className="h-full w-full object-cover" />
                           ) : (
-                            <span className="text-[14px] text-neutral-500">{c.name.slice(0, 1)}</span>
+                            <span
+                              className="flex h-full w-full items-center justify-center text-[11px]"
+                              style={{ color: LA.mist }}
+                            >
+                              {c.name.slice(0, 1)}
+                            </span>
                           )}
                         </span>
-                        <span className="max-w-[64px] truncate text-[10px] text-neutral-500">{c.name}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-                {!roster.length ? (
-                  <p className="text-[12px] text-neutral-400">暂无通讯录角色；请先在微信同步人设到通讯录。</p>
-                ) : null}
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </section>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <span className="inline-flex items-center gap-0.5 text-[13px] font-medium" style={{ color: LA.amber }}>
+                更改
+                <ChevronRight className="size-4" strokeWidth={1.6} />
+              </span>
+            </button>
+          </div>
+        ) : null}
       </div>
-    </div>
+
+      <div
+        className="flex shrink-0 items-center justify-between gap-3 border-t px-4 py-3"
+        style={{
+          borderColor: LA.hairline,
+          background: LA.card,
+          paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+        <button
+          type="button"
+          onClick={goPrev}
+          disabled={tabIndex === 0}
+          className="rounded-full px-4 py-2 text-[13px] disabled:opacity-30"
+          style={{ color: LA.mist }}
+        >
+          上一步
+        </button>
+        <span className="text-[11px] tabular-nums" style={{ color: LA.mist }}>
+          {tabIndex + 1} / {EDIT_TABS.length}
+        </span>
+        <button
+          type="button"
+          onClick={goNext}
+          className="rounded-full px-5 py-2 text-[13px] font-semibold text-white"
+          style={{ background: LA.amber }}
+        >
+          {tabIndex === EDIT_TABS.length - 1 ? '完成并保存' : '下一步'}
+        </button>
+      </div>
+
+      <LoreArchiveCharacterPickerSheet
+        open={charPickerOpen}
+        roster={roster}
+        selectedIds={charAll ? null : selectedCharIds}
+        onClose={() => setCharPickerOpen(false)}
+        onConfirm={(next) => {
+          onChange({
+            ...draft,
+            characterScope: next.mode === 'all' ? { mode: 'all' } : next,
+            updatedAt: Date.now(),
+          })
+        }}
+      />
+    </motion.div>
   )
 }

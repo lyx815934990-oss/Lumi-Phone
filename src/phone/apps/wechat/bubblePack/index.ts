@@ -43,6 +43,16 @@ export {
 } from './samples'
 
 export {
+  LIQUID_GLASS_MINIMAL_BUBBLE_PACK,
+  LIQUID_GLASS_MINIMAL_BUBBLE_PRESET,
+  LIQUID_GLASS_MINIMAL_PRESET_ID,
+  LIQUID_GLASS_MINIMAL_SCOPED_CSS,
+  isLiquidGlassCssPackPresetId,
+  isLiquidGlassMinimalPackActive,
+  liquidGlassBubblePackForPresetId,
+} from './liquidGlassMinimalPack'
+
+export {
   ensureFrostedBubbleCss,
   extractBubbleBackdropBlurPx,
   normalizeBubblePackScopedCss,

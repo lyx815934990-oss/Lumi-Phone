@@ -5,9 +5,13 @@ import { useCustomization } from '../../CustomizationContext'
 import { Pressable } from '../../components/Pressable'
 import type { LoreEntry } from '../../worldbook/loreArchiveTypes'
 import { removeLoreEntry, useWorldbookStore } from '../../worldbook/worldbookLoreStore'
+import type { LoreArchiveBuiltinPresetMeta } from '../../worldbook/loreArchiveBuiltinPresets'
 import { LORE_ARCHIVE_FOCUS_ENTRY_SESSION_KEY } from './loreArchiveFocusNavigation'
-import { LoreArchiveList } from './LoreArchiveList'
+import { LoreArchiveList, type LoreHomeSegment, parseLoreTagSegment } from './LoreArchiveList'
+import { LoreArchiveTagManagerSheet } from './LoreArchiveTagManager'
+import { LoreArchiveSystemDetailSheet } from './LoreArchiveSystemDetailSheet'
 import { LoreEditor, type LoreEditorCharacter } from './LoreEditor'
+import { LA, laEase, laPageStyle } from './loreArchiveTheme'
 
 type Props = { onBack: () => void }
 
@@ -25,12 +29,31 @@ function newEmptyEntry(): LoreEntry {
 
 export function LoreArchiveApp({ onBack }: Props) {
   const { state } = useCustomization()
-  const { entries, upsertEntry, hydrated, builtinPresets, setBuiltinPresetEnabled } = useWorldbookStore()
-  const [platformTab, setPlatformTab] = useState<'wechat' | 'weibo'>('wechat')
+  const {
+    entries,
+    tags,
+    upsertEntry,
+    upsertTag,
+    removeTag,
+    hydrated,
+    builtinPresets,
+    setBuiltinPresetEnabled,
+  } = useWorldbookStore()
+
+  const [segment, setSegment] = useState<LoreHomeSegment>('all')
   const [screen, setScreen] = useState<'list' | 'edit'>('list')
   const [draft, setDraft] = useState<LoreEntry | null>(null)
-  const [autoSaveAt, setAutoSaveAt] = useState<number | null>(null)
+  const [draftIsNew, setDraftIsNew] = useState(false)
   const [roster, setRoster] = useState<LoreEditorCharacter[]>([])
+  const [tagManagerOpen, setTagManagerOpen] = useState(false)
+  const [systemDetail, setSystemDetail] = useState<LoreArchiveBuiltinPresetMeta | null>(null)
+  const [highlightEntryId, setHighlightEntryId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (segment === 'all' || segment === 'system' || segment === 'mine' || segment === 'untagged') return
+    const tagId = parseLoreTagSegment(segment)
+    if (tagId && !tags.some((t) => t.id === tagId)) setSegment('all')
+  }, [tags, segment])
 
   useEffect(() => {
     let cancelled = false
@@ -58,7 +81,7 @@ export function LoreArchiveApp({ onBack }: Props) {
             }),
           )
         ).filter((x) => x.id)
-        setRoster(npcRows)
+        if (!cancelled) setRoster(npcRows)
       } catch {
         if (!cancelled) setRoster([])
       }
@@ -69,13 +92,10 @@ export function LoreArchiveApp({ onBack }: Props) {
   }, [state.wechatPersonaContacts])
 
   useEffect(() => {
-    if (!draft || screen !== 'edit') return
-    const t = window.setTimeout(() => {
-      upsertEntry({ ...draft, updatedAt: Date.now() })
-      setAutoSaveAt(Date.now())
-    }, 560)
+    if (!highlightEntryId) return
+    const t = window.setTimeout(() => setHighlightEntryId(null), 600)
     return () => window.clearTimeout(t)
-  }, [draft, screen, upsertEntry])
+  }, [highlightEntryId])
 
   const resolveTargets = useCallback(
     (ids: string[]) =>
@@ -90,16 +110,20 @@ export function LoreArchiveApp({ onBack }: Props) {
     [roster],
   )
 
-  const autoSaveLabel = useMemo(() => {
-    if (!autoSaveAt) return hydrated ? '改动将自动保存' : '加载中…'
-    const d = new Date(autoSaveAt)
-    return `已自动保存 ${d.toLocaleTimeString()}`
-  }, [autoSaveAt, hydrated])
+  const entryCountByTagId = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const e of entries) {
+      for (const id of e.tagIds ?? []) {
+        map[id] = (map[id] ?? 0) + 1
+      }
+    }
+    return map
+  }, [entries])
 
   const openCreate = useCallback(() => {
     setDraft(newEmptyEntry())
+    setDraftIsNew(true)
     setScreen('edit')
-    setAutoSaveAt(null)
   }, [])
 
   const openEdit = useCallback(
@@ -107,14 +131,12 @@ export function LoreArchiveApp({ onBack }: Props) {
       const found = entries.find((e) => e.id === id)
       if (!found) return
       setDraft({ ...found })
+      setDraftIsNew(false)
       setScreen('edit')
-      setPlatformTab('wechat')
-      setAutoSaveAt(null)
     },
     [entries],
   )
 
-  /** 遇见等模块：跳转档案室并直接打开指定法则条目 */
   useEffect(() => {
     if (!hydrated) return
     let pending: string | null = null
@@ -134,39 +156,15 @@ export function LoreArchiveApp({ onBack }: Props) {
     openEdit(pending)
   }, [hydrated, entries, openEdit])
 
-  const duplicateEntry = useCallback(
-    (id: string) => {
-      const found = entries.find((e) => e.id === id)
-      if (!found) return
-      const baseTitle = found.title.trim()
-      const clone: LoreEntry = {
-        ...found,
-        id: crypto.randomUUID(),
-        title: baseTitle ? `${baseTitle}（副本）` : '未命名法则（副本）',
-        updatedAt: Date.now(),
-      }
-      upsertEntry(clone)
-      setDraft({ ...clone })
-      setScreen('edit')
-      setAutoSaveAt(null)
-    },
-    [entries, upsertEntry],
-  )
-
-  const moveToWeiboReserved = useCallback(() => {
-    window.alert('移至微博板块功能尚在筹备中，敬请期待。')
-  }, [])
-
   const deleteEntry = useCallback(
     (id: string) => {
       const found = entries.find((e) => e.id === id)
-      const titleLabel = found?.title.trim() || '未命名法则'
-      if (!window.confirm(`确定删除「${titleLabel}」吗？此操作不可撤销。`)) return
+      const titleLabel = found?.title.trim() || '未命名世界书'
+      if (!window.confirm(`确定删除「${titleLabel}」吗？`)) return
       removeLoreEntry(id)
       if (draft?.id === id) {
         setDraft(null)
         setScreen('list')
-        setAutoSaveAt(null)
       }
     },
     [entries, draft],
@@ -181,23 +179,36 @@ export function LoreArchiveApp({ onBack }: Props) {
     [entries, upsertEntry],
   )
 
-  const closeEdit = useCallback(() => {
-    if (draft) {
+  const saveDraft = useCallback(() => {
+    if (!draft) return
+    const empty = !draft.title.trim() && !draft.content.trim()
+    if (empty) {
+      if (draftIsNew) removeLoreEntry(draft.id)
+      setDraft(null)
+      setScreen('list')
+      return
+    }
+    const next = { ...draft, updatedAt: Date.now() }
+    upsertEntry(next)
+    setHighlightEntryId(next.id)
+    setDraft(null)
+    setScreen('list')
+    setSegment('mine')
+  }, [draft, draftIsNew, upsertEntry])
+
+  const cancelEdit = useCallback(() => {
+    if (draft && draftIsNew) {
       const empty = !draft.title.trim() && !draft.content.trim()
-      if (empty) {
-        removeLoreEntry(draft.id)
-      } else {
-        upsertEntry({ ...draft, updatedAt: Date.now() })
-      }
+      if (empty) removeLoreEntry(draft.id)
     }
     setDraft(null)
     setScreen('list')
-    setAutoSaveAt(null)
-  }, [draft, upsertEntry])
+  }, [draft, draftIsNew])
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col bg-[#fafafa]"
+      className="flex h-full min-h-0 flex-col"
+      style={laPageStyle}
       data-phone-page="app"
       data-app-id="loreArchive"
     >
@@ -209,78 +220,88 @@ export function LoreArchiveApp({ onBack }: Props) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.2, ease: laEase }}
           >
-            <header
-              className="flex shrink-0 flex-col gap-2 border-b border-black/[0.06] bg-white/80 px-3 pb-2 backdrop-blur-md"
-              style={{ paddingTop: 'max(8px, env(safe-area-inset-top, 0px))' }}
+            <div
+              className="flex shrink-0 items-center px-2 pb-1"
+              style={{
+                paddingTop: 'max(8px, env(safe-area-inset-top, 0px))',
+                background: LA.paper,
+              }}
             >
-              <div className="relative flex h-9 items-center justify-center">
-                <Pressable
-                  onClick={onBack}
-                  className="absolute left-0 flex h-9 w-9 items-center justify-center rounded-full text-neutral-600"
-                  aria-label="返回桌面"
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.35">
-                    <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </Pressable>
-                <span className="text-[15px] font-medium text-neutral-800">档案室</span>
-              </div>
-              <div className="flex rounded-xl bg-neutral-100/90 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setPlatformTab('wechat')}
-                  className={`flex-1 rounded-[10px] py-2 text-[13px] font-medium transition-colors ${
-                    platformTab === 'wechat' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500'
-                  }`}
-                >
-                  微信
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPlatformTab('weibo')}
-                  className={`flex-1 rounded-[10px] py-2 text-[13px] font-medium transition-colors ${
-                    platformTab === 'weibo' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500'
-                  }`}
-                >
-                  微博
-                </button>
-              </div>
-            </header>
-            {platformTab === 'weibo' ? (
-              <div className="flex flex-1 flex-col items-center justify-center px-6 pb-10 text-center">
-                <p className="text-[15px] font-medium text-neutral-700">微博</p>
-                <p className="mt-2 text-[13px] leading-relaxed text-neutral-500">功能预留，敬请期待。</p>
-              </div>
-            ) : (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <LoreArchiveList
-                  entries={entries}
-                  builtinPresets={builtinPresets}
-                  resolveTargets={resolveTargets}
-                  onOpenEntry={openEdit}
-                  onCreate={openCreate}
-                  onSetEntryEnabled={setEntryEnabled}
-                  onSetBuiltinPresetEnabled={setBuiltinPresetEnabled}
-                  onDuplicateEntry={duplicateEntry}
-                  onMoveToWeiboReserved={moveToWeiboReserved}
-                  onDeleteEntry={deleteEntry}
-                />
-              </div>
-            )}
+              <Pressable
+                onClick={onBack}
+                className="flex h-9 w-9 items-center justify-center rounded-full"
+                style={{ color: LA.mist }}
+                aria-label="返回桌面"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.35">
+                  <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </Pressable>
+            </div>
+            <LoreArchiveList
+              entries={entries}
+              tags={tags}
+              segment={segment}
+              onSegmentChange={setSegment}
+              builtinPresets={builtinPresets}
+              resolveTargets={resolveTargets}
+              onOpenEntry={openEdit}
+              onOpenSystem={setSystemDetail}
+              onCreate={openCreate}
+              onSetEntryEnabled={setEntryEnabled}
+              onSetBuiltinPresetEnabled={setBuiltinPresetEnabled}
+              onOpenTagManager={() => setTagManagerOpen(true)}
+              highlightEntryId={highlightEntryId}
+              onDeleteEntry={deleteEntry}
+            />
           </motion.div>
         ) : draft ? (
           <LoreEditor
             key={draft.id}
             draft={draft}
+            isNew={draftIsNew}
             roster={roster}
+            tags={tags}
             onChange={setDraft}
-            onBack={closeEdit}
-            autoSaveLabel={autoSaveLabel}
+            onSave={saveDraft}
+            onCancel={cancelEdit}
+            onDelete={
+              draftIsNew
+                ? undefined
+                : () => {
+                    const titleLabel = draft.title.trim() || '未命名世界书'
+                    if (!window.confirm(`确定删除「${titleLabel}」吗？`)) return
+                    removeLoreEntry(draft.id)
+                    setDraft(null)
+                    setScreen('list')
+                  }
+            }
+            onOpenTagManager={() => setTagManagerOpen(true)}
           />
         ) : null}
       </AnimatePresence>
+
+      <LoreArchiveTagManagerSheet
+        open={tagManagerOpen}
+        tags={tags}
+        entryCountByTagId={entryCountByTagId}
+        onClose={() => setTagManagerOpen(false)}
+        onUpsert={(input) => upsertTag(input)}
+        onRemove={removeTag}
+      />
+
+      <LoreArchiveSystemDetailSheet
+        open={Boolean(systemDetail)}
+        preset={systemDetail}
+        enabled={systemDetail ? builtinPresets[systemDetail.id] === true : false}
+        onClose={() => setSystemDetail(null)}
+        onToggle={(enabled) => {
+          if (!systemDetail) return
+          setBuiltinPresetEnabled(systemDetail.id, enabled)
+        }}
+      />
     </div>
   )
 }

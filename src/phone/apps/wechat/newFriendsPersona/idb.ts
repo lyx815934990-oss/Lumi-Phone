@@ -1185,21 +1185,26 @@ function normalizeWeChatChatMessage(input: unknown): WeChatChatMessage | null {
       const trackTitle = typeof r.trackTitle === 'string' ? r.trackTitle.trim().slice(0, 120) : ''
       const trackArtist = typeof r.trackArtist === 'string' ? r.trackArtist.trim().slice(0, 120) : ''
       const coverUrl = typeof r.coverUrl === 'string' ? r.coverUrl.trim().slice(0, 2000) : ''
-      if (!Number.isFinite(trackIdRaw) || !trackTitle) return undefined
+      // trackId 允许 0（未匹配网易云）；无歌名时用占位，避免整条 musicSync 被丢掉导致接受卡对不上邀约
+      if (!inviteId) return undefined
       const lyricsExcerpt =
         typeof r.lyricsExcerpt === 'string' ? r.lyricsExcerpt.trim().slice(0, 3600) : ''
       const userRespondedRaw = typeof r.userResponded === 'string' ? r.userResponded.trim() : ''
       const userResponded =
         userRespondedRaw === 'accepted' || userRespondedRaw === 'declined' ? userRespondedRaw : undefined
+      const charRespondedRaw = typeof r.charResponded === 'string' ? r.charResponded.trim() : ''
+      const charResponded =
+        charRespondedRaw === 'accepted' || charRespondedRaw === 'declined' ? charRespondedRaw : undefined
       return {
         kind: 'music_invite',
         inviteId,
-        trackId: Math.floor(trackIdRaw),
-        trackTitle,
+        trackId: Number.isFinite(trackIdRaw) ? Math.floor(trackIdRaw) : 0,
+        trackTitle: trackTitle || '一起听',
         trackArtist,
         coverUrl,
         ...(lyricsExcerpt ? { lyricsExcerpt } : {}),
         ...(userResponded ? { userResponded } : {}),
+        ...(charResponded ? { charResponded } : {}),
       }
     }
     const replyText = typeof r.replyText === 'string' ? r.replyText.trim().slice(0, 500) : ''
@@ -9275,6 +9280,26 @@ export class PersonaDb {
     tx.objectStore(PHONE_KV_STORE).put({ key, value })
     await txDone(tx)
     db.close()
+  }
+
+  /** 列出 phoneKv 中指定前缀的全部 key（用于一次性清理） */
+  async listPhoneKvKeysByPrefix(prefix: string): Promise<string[]> {
+    const p = prefix.trim()
+    if (!p) return []
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(PHONE_KV_STORE)) {
+      db.close()
+      return []
+    }
+    const tx = db.transaction(PHONE_KV_STORE, 'readonly')
+    const req = tx.objectStore(PHONE_KV_STORE).getAllKeys()
+    const keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+      req.onsuccess = () => resolve((req.result as IDBValidKey[]) ?? [])
+      req.onerror = () => reject(req.error ?? new Error('listPhoneKvKeysByPrefix'))
+    })
+    await txDone(tx)
+    db.close()
+    return keys.map((k) => String(k)).filter((k) => k.startsWith(p))
   }
 
   async deletePhoneKv(key: string): Promise<void> {

@@ -14,6 +14,12 @@ import { motion } from 'framer-motion'
 
 import { resolveProfileAvatarPreviewUrl } from '../phone/utils/characterAvatarUrl'
 import { DEFAULT_PUBLIC_AVATAR_PATH } from '../phone/types'
+import {
+  LUMI_LIQUID_NAV_CONTENT_PAD_BOTTOM,
+  LUMI_SHELL,
+  LUMI_SHELL_FONT,
+  lumiThreadCapsuleStyle,
+} from '../phone/apps/wechat/lumiShellTheme'
 
 function MemoryTraceNeuronGlyph({ className }: { className?: string }) {
   return (
@@ -76,8 +82,15 @@ const MENU_ROWS: MenuRow[] = [
   { id: 'settings', label: '设置', en: 'Settings', icon: Settings },
 ]
 
+const softCard = {
+  background: LUMI_SHELL.card,
+  borderRadius: LUMI_SHELL.cardRadiusPx,
+  border: `1px solid ${LUMI_SHELL.hairline}`,
+  boxShadow: '0 8px 28px rgba(16,16,18,0.045)',
+} as const
+
 /**
- * 微信「我的」页结构 + 偏 iOS 玻璃感个人名片（React + TS + Tailwind）。
+ * 微信「我的」页：Lumi 纸感名片 + 柔和功能列表。
  */
 export function WeChatMeInstagramProfile({
   nickname = '微信昵称',
@@ -90,143 +103,175 @@ export function WeChatMeInstagramProfile({
 }: WeChatMeInstagramProfileProps) {
   const avatarSrc = resolveProfileAvatarPreviewUrl(avatarUrl)
 
+  const profileInner = (
+    <>
+      <div
+        className="mx-auto flex items-center justify-center rounded-full"
+        style={{
+          width: 112,
+          height: 112,
+          background: LUMI_SHELL.card,
+          boxShadow: '0 8px 24px rgba(16,16,18,0.08)',
+          border: `2.5px solid ${LUMI_SHELL.card}`,
+        }}
+      >
+        <img
+          src={avatarSrc}
+          alt=""
+          width={108}
+          height={108}
+          className="h-[108px] w-[108px] shrink-0 rounded-full object-cover"
+          style={{ border: `1px solid ${LUMI_SHELL.hairline}` }}
+          loading="lazy"
+          onError={(e) => {
+            const fallback = resolveProfileAvatarPreviewUrl(DEFAULT_PUBLIC_AVATAR_PATH)
+            if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback
+          }}
+        />
+      </div>
+      <h1
+        className="mt-4 text-center text-[20px] font-semibold leading-tight tracking-tight"
+        style={{ color: LUMI_SHELL.ink, letterSpacing: '-0.02em' }}
+      >
+        {nickname}
+      </h1>
+      <p
+        className="mx-auto mt-2 max-w-[300px] text-center text-[13px] leading-relaxed"
+        style={{ color: LUMI_SHELL.mist }}
+      >
+        {signature}
+      </p>
+    </>
+  )
+
   return (
     <div
       className={`h-full min-h-0 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${className}`}
-      style={{ background: 'transparent', color: '#1C1C1E' }}
+      style={{ background: 'transparent', fontFamily: LUMI_SHELL_FONT, color: LUMI_SHELL.ink }}
     >
-      <div className="mx-auto flex max-w-[480px] flex-col pb-10">
-        {/* 顶部个人名片 */}
-        <header className="px-4 pt-8">
+      <div
+        className="mx-auto flex w-full max-w-[520px] flex-col px-4 pt-4"
+        style={{ gap: 20, paddingBottom: LUMI_LIQUID_NAV_CONTENT_PAD_BOTTOM }}
+      >
+        <header>
           {onOpenProfileCard ? (
             <button
               type="button"
               onClick={onOpenProfileCard}
-              className="w-full rounded-[12px] border bg-white px-5 py-7 text-center outline-none transition-opacity active:opacity-90"
-              style={{ borderColor: '#e5e5e5', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
+              className="relative w-full overflow-hidden px-5 py-7 text-center outline-none transition-transform active:scale-[0.992]"
+              style={softCard}
             >
-              <div className="mx-auto flex h-[124px] w-[124px] items-center justify-center rounded-full border bg-white" style={{ borderColor: '#e5e5e5' }}>
-                <img
-                  src={avatarSrc}
-                  alt=""
-                  width={120}
-                  height={120}
-                  className="h-[120px] w-[120px] shrink-0 rounded-full border object-cover"
-                  style={{ borderColor: '#e5e5e5' }}
-                  loading="lazy"
-                  onError={(e) => {
-                    const fallback = resolveProfileAvatarPreviewUrl(DEFAULT_PUBLIC_AVATAR_PATH)
-                    if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback
-                  }}
-                />
-              </div>
-              <h1 className="mt-4 text-center text-[20px] font-semibold leading-tight" style={{ color: '#000000' }}>
-                {nickname}
-              </h1>
-              <p className="mx-auto mt-2 max-w-[300px] text-center text-[14px] leading-relaxed" style={{ color: '#666666' }}>
-                {signature}
-              </p>
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0"
+                style={{
+                  background:
+                    'radial-gradient(120% 80% at 50% 0%, rgba(16,16,18,0.035) 0%, transparent 55%)',
+                }}
+              />
+              <div className="relative">{profileInner}</div>
             </button>
           ) : (
-            <div
-              className="rounded-[12px] border bg-white px-5 py-7 text-center"
-              style={{ borderColor: '#e5e5e5', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
-            >
-              <div className="mx-auto flex h-[124px] w-[124px] items-center justify-center rounded-full border bg-white" style={{ borderColor: '#e5e5e5' }}>
-                <img
-                  src={avatarSrc}
-                  alt=""
-                  width={120}
-                  height={120}
-                  className="h-[120px] w-[120px] shrink-0 rounded-full border object-cover"
-                  style={{ borderColor: '#e5e5e5' }}
-                  loading="lazy"
-                  onError={(e) => {
-                    const fallback = resolveProfileAvatarPreviewUrl(DEFAULT_PUBLIC_AVATAR_PATH)
-                    if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback
-                  }}
-                />
-              </div>
-              <h1 className="mt-4 text-center text-[20px] font-semibold leading-tight" style={{ color: '#000000' }}>
-                {nickname}
-              </h1>
-              <p className="mx-auto mt-2 max-w-[300px] text-center text-[14px] leading-relaxed" style={{ color: '#666666' }}>
-                {signature}
-              </p>
+            <div className="relative overflow-hidden px-5 py-7 text-center" style={softCard}>
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0"
+                style={{
+                  background:
+                    'radial-gradient(120% 80% at 50% 0%, rgba(16,16,18,0.035) 0%, transparent 55%)',
+                }}
+              />
+              <div className="relative">{profileInner}</div>
             </div>
           )}
         </header>
 
-        {/* 思维溯源入口 */}
         {onOpenMemoryTrace ? (
-          <section className="mx-4 mt-6" aria-label="思维溯源">
+          <section aria-label="思维溯源">
             <motion.button
               type="button"
               onClick={onOpenMemoryTrace}
               whileTap={{ scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 520, damping: 28 }}
-              className="flex w-full items-center gap-3 rounded-2xl border bg-white px-4 py-4 text-left shadow-sm outline-none transition-colors hover:bg-neutral-50/90"
-              style={{ borderColor: '#e5e5e5', color: '#1C1C1E' }}
+              className="flex w-full items-center gap-3 px-3.5 py-3.5 text-left outline-none"
+              style={{
+                ...lumiThreadCapsuleStyle(),
+                color: LUMI_SHELL.ink,
+              }}
             >
               <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-white"
-                style={{ borderColor: '#e5e5e5', color: '#D4AF37' }}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                style={{ background: 'rgba(16,16,18,0.04)', color: '#B8973A' }}
               >
                 <MemoryTraceNeuronGlyph className="size-[22px]" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[16px] font-semibold leading-tight">思维溯源</span>
-                <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-[0.22em] text-neutral-400">
+                <span className="block text-[15px] font-semibold leading-tight">思维溯源</span>
+                <span
+                  className="mt-0.5 block text-[10px] font-medium uppercase tracking-[0.18em]"
+                  style={{ color: LUMI_SHELL.mist }}
+                >
                   AI MEMORY TRACE
                 </span>
               </span>
-              <ChevronRight className="ml-auto size-4 shrink-0 text-neutral-400" strokeWidth={1.75} aria-hidden />
+              <ChevronRight className="ml-auto size-4 shrink-0" strokeWidth={1.75} style={{ color: LUMI_SHELL.mist }} aria-hidden />
             </motion.button>
           </section>
         ) : null}
 
-        {/* 功能列表卡片 */}
-        <section className="mx-4 mt-6 overflow-hidden rounded-[12px] border bg-white" style={{ borderColor: '#e5e5e5', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }} aria-label="功能列表">
-          <ul>
-            {MENU_ROWS.map((row, idx) => {
-              const Icon = row.icon
-              const borderTop = idx === 0 ? 'none' : '1px solid #e5e5e5'
-              return (
-                <li key={row.id} style={{ borderTop }}>
-                  <button
-                    type="button"
-                    onClick={() => onMenuItemClick?.(row.id)}
-                    className="group flex w-full items-center gap-3 px-4 py-4 text-left transition-all duration-200 ease-out hover:bg-[#f5f5f5]"
-                  >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-white transition-colors duration-200 group-hover:bg-white" style={{ borderColor: '#e5e5e5' }}>
-                      <Icon
-                        className="size-5 shrink-0"
+        <section aria-label="功能列表">
+          <div
+            className="px-1 pb-2.5 pt-0.5 text-[11px] font-semibold tracking-[0.08em]"
+            style={{ color: LUMI_SHELL.mist }}
+          >
+            功能
+          </div>
+          <div className="overflow-hidden" style={softCard}>
+            <ul>
+              {MENU_ROWS.map((row, idx) => {
+                const Icon = row.icon
+                const isLast = idx === MENU_ROWS.length - 1
+                return (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      onClick={() => onMenuItemClick?.(row.id)}
+                      className="group flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors"
+                      style={{
+                        borderBottom: isLast ? undefined : `1px solid ${LUMI_SHELL.hairline}`,
+                      }}
+                    >
+                      <span
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                        style={{ background: 'rgba(16,16,18,0.04)' }}
+                      >
+                        <Icon className="size-[18px] shrink-0" strokeWidth={1.75} style={{ color: LUMI_SHELL.ink }} aria-hidden />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[15px] font-medium leading-tight" style={{ color: LUMI_SHELL.ink }}>
+                          {row.label}
+                        </span>
+                        {row.en ? (
+                          <span
+                            className="mt-0.5 block text-[11px] tracking-[0.06em]"
+                            style={{ color: LUMI_SHELL.mist }}
+                          >
+                            {row.en}
+                          </span>
+                        ) : null}
+                      </span>
+                      <ChevronRight
+                        className="ml-auto size-4 shrink-0 transition-transform duration-200 ease-out group-hover:translate-x-0.5"
                         strokeWidth={1.75}
-                        color="#000000"
+                        style={{ color: LUMI_SHELL.mist }}
                         aria-hidden
                       />
-                    </span>
-                    <span className="flex-1">
-                      <span className="block text-[16px] leading-tight" style={{ color: '#000000' }}>
-                        {row.label}
-                      </span>
-                      {row.en ? (
-                        <span className="mt-0.5 block text-[11px] tracking-[0.08em]" style={{ color: '#666666' }}>
-                          {row.en}
-                        </span>
-                      ) : null}
-                    </span>
-                    <ChevronRight
-                      className="ml-auto size-4 shrink-0 transition-transform duration-200 ease-out group-hover:translate-x-0.5"
-                      strokeWidth={1.75}
-                      color="#666666"
-                      aria-hidden
-                    />
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
         </section>
       </div>
     </div>

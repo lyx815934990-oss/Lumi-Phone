@@ -309,7 +309,7 @@ function buildStickerCatalogLines(
   const lines: string[] = []
   let chars = 0
   const push = (e: StickerCatalogEntry) => {
-    const line = `- 「${e.groupTag}」${e.description} → 发送时单独一行输出：表情包 ${e.ref}`
+    const line = `- 「${e.groupTag}」${e.description} → 整行只写：表情包 ${e.ref}`
     if (lines.length >= maxLines) return
     if (chars + line.length > maxChars && lines.length > 0) return
     lines.push(line)
@@ -373,11 +373,16 @@ export function resolveStickerCatalogRefForUrl(url: string): string | null {
 
 export function extractStickerRefFromContent(content: string): string | null {
   const t = String(content ?? '').trim()
+  const payload = extractStickerPayloadFromProtocolLine(t)
+  if (payload) {
+    const hit = resolveStickerCatalogMatch(payload)
+    return hit?.ref ?? payload
+  }
   if (!t.startsWith('[表情包]')) return null
-  const payload = t.slice('[表情包]'.length).trim()
-  if (!payload) return null
-  const hit = resolveStickerCatalogMatch(payload)
-  return hit?.ref ?? payload
+  const legacy = t.slice('[表情包]'.length).trim()
+  if (!legacy) return null
+  const hit = resolveStickerCatalogMatch(legacy)
+  return hit?.ref ?? legacy
 }
 
 export function resolveStickerCatalogMatch(rawInput: string): { url: string; ref: string } | null {
@@ -451,22 +456,65 @@ export function resolveStickerOutputRef(rawInput: string): string | null {
   return null
 }
 
-/** 角色侧：单行 `表情包 引用名` 或旧版 `[表情包]引用名`（须能解析到表情包资源库） */
-export function parseCharacterStickerLine(line: string): { url: string; ref: string } | null {
-  const t = String(line ?? '')
+/** 剥掉行首零宽 / BOM，供表情包协议识别共用 */
+function normalizeStickerProtocolLine(line: string): string {
+  return String(line ?? '')
     .trim()
     .replace(/^\uFEFF+/, '')
     .replace(/^[\u200B-\u200D\uFEFF]+/, '')
     .trim()
-  let raw = ''
-  const mNew = /^表情包\s+(.+)$/.exec(t)
-  if (mNew) raw = mNew[1]!.trim()
-  else {
-    const m = /^\[表情包\]\s*(.+)$/.exec(t)
-    if (!m) return null
-    raw = m[1]!.trim()
+}
+
+/**
+ * 是否像「角色想发 GIF 表情包」的协议行（含常见误写）。
+ * 用于：匹配失败时**不要**当成普通文字气泡露出「表情包 xxx」。
+ * 不含微信经典黄脸 token（如 `[呲牙]`）。
+ */
+export function looksLikeCharacterStickerProtocolLine(line: string): boolean {
+  const t = normalizeStickerProtocolLine(line)
+  if (!t) return false
+  if (/^表情包(?:\s*[:：﹕∶]|\s+)\S/.test(t)) return true
+  if (/^\[表情包\]/.test(t)) return true
+  if (/^【表情包】/.test(t)) return true
+  if (/^\[动画表情\]/.test(t)) return true
+  if (/^\[GIF(?:表情)?\]/i.test(t)) return true
+  if (/^\[贴纸\]/.test(t)) return true
+  // 误写：整行只有「表情包」或「表情包：」
+  if (/^表情包\s*[:：﹕∶]?\s*$/.test(t)) return true
+  return false
+}
+
+/** 从协议行提取载荷（引用名）；无法识别前缀时返回 null */
+function extractStickerPayloadFromProtocolLine(line: string): string | null {
+  const t = normalizeStickerProtocolLine(line)
+  if (!t) return null
+  const patterns: RegExp[] = [
+    /^表情包\s+(.+)$/,
+    /^表情包\s*[:：﹕∶]\s*(.+)$/,
+    /^\[表情包\]\s*(.+)$/,
+    /^【表情包】\s*(.+)$/,
+    /^\[动画表情\]\s*(.+)$/,
+    /^\[GIF(?:表情)?\]\s*(.+)$/i,
+    /^\[贴纸\]\s*(.+)$/,
+  ]
+  for (const re of patterns) {
+    const m = re.exec(t)
+    if (m?.[1]?.trim()) return m[1]!.trim()
   }
+  return null
+}
+
+/**
+ * 角色侧：单行 `表情包 引用名`（推荐）或旧版 `[表情包]引用名` 等变体。
+ * 须能解析到表情包资源库；失败返回 null（调用方应跳过，勿当纯文字）。
+ */
+export function parseCharacterStickerLine(line: string): { url: string; ref: string } | null {
+  let raw = extractStickerPayloadFromProtocolLine(line)
+  if (!raw) return null
   raw = raw.replace(/^['"`「」]+|['"`」]+$/g, '').trim()
+  // 偶发：引用名前再套一层「表情包 xxx」或描述箭头
+  raw = stripLeadingStickerLabelGarbage(raw)
+  raw = raw.replace(/^→\s*/, '').replace(/^发送时单独一行输出[:：]?\s*/i, '').trim()
   if (!raw) return null
   return resolveStickerCatalogMatch(raw)
 }
@@ -515,7 +563,7 @@ export function buildStickerCatalogPromptBlock(
       : ''
   if (body.length > maxChars) body = `${body.slice(0, maxChars)}${truncated || '\n…（目录过长已截断，请只用上方已列出的引用名）'}`
   else if (truncated) body = `${body}${truncated}`
-  return `---------------------\n【表情包资源（含默认包与用户自建分组；选用须贴脸，默认不发）】\n---------------------\n${WECHAT_STICKER_SEND_CONSERVATIVE_RULE}\n\n${WECHAT_STICKER_DESCRIPTION_SEMANTICS_RULE}\n\n${body}\n`
+  return `---------------------\n【表情包资源（含默认包与用户自建分组；选用须贴脸，默认不发）】\n---------------------\n发送格式硬约束：每一条 GIF **独占一行**，整行只能是「表情包」+半角空格+下方箭头右侧的引用名原文；不要方括号、不要冒号、不要跟口语粘在同一行。\n\n${WECHAT_STICKER_SEND_CONSERVATIVE_RULE}\n\n${WECHAT_STICKER_DESCRIPTION_SEMANTICS_RULE}\n\n${body}\n`
 }
 
 function writeState(next: StickerState) {

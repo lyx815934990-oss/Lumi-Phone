@@ -41,7 +41,7 @@ export function PlotMagazineBody({
       {segments.map((seg, index) => {
         if (seg.type === 'image') {
           return (
-            <div key={seg.image.id} className="my-3 w-full">
+            <div key={seg.image.id} className="my-4 w-full">
               <PlotImageTile
                 image={seg.image}
                 characterId={characterId}

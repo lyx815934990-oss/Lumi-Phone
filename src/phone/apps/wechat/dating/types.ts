@@ -29,31 +29,10 @@ export function parsePlotDimensionLengthTarget(raw: number | string, fallback = 
 export const DATING_AI_MAX_CONTEXT_TOKENS = 200_000
 
 /**
- * 剧情续写单次 completion 输出上限（token）。
- * 不设上限时部分线路会一直写到超时（数分钟～10 分钟），手机也会一直发烫空等。
+ * 剧情 completion 等待上限（毫秒）。
+ * 输出 token 上限改由 API 设置页「最大 Token」控制（留空则系统默认 12800）。
  */
-export const DATING_AI_MAX_OUTPUT_TOKENS = 50_000
-
-/** 剧情 completion 等待上限（毫秒）；配合 max_tokens，避免干等十分钟 */
 export const DATING_PLOT_COMPLETION_TIMEOUT_MS = 240_000
-
-/**
- * 按目标字数估算本轮 max_tokens：正文 + 思维链 + 文末译文附录余量。
- * 汉字约按 2 token/字留余量；再夹硬上下限，防止模型无限输出。
- */
-export function resolveDatingPlotMaxOutputTokens(params: {
-  targetChars: number
-  thinkingChainEnabled: boolean
-  syncTranslateEnabled: boolean
-}): number {
-  const target = clampDatingLengthTargetChars(params.targetChars)
-  const bodyChars = Math.round(target * 1.25)
-  let tokens = Math.ceil(bodyChars * 2.2)
-  if (params.thinkingChainEnabled) tokens += 2800
-  if (params.syncTranslateEnabled) tokens += Math.ceil(bodyChars * 1.15)
-  tokens += 1600 // VN 语音 / 世界书补丁 / 时间线隐藏块等
-  return Math.max(1600, Math.min(DATING_AI_MAX_OUTPUT_TOKENS, tokens))
-}
 
 /**
  * 参考资料汉字总预算（按 {@link DATING_AI_MAX_CONTEXT_TOKENS} 估算，预留 system/思维链指令）。

@@ -167,6 +167,42 @@ function syncBgmToPublicPlugin(): Plugin {
   }
 }
 
+/**
+ * 同步 wechat-emojis 全套 PNG 到 public/wechat-emojis（避免 import.meta.glob 丢中文路径图）。
+ * 完整 109 枚：face / gesture / animal / blessing / other。
+ */
+function syncWechatEmojisToPublicPlugin(): Plugin {
+  const srcRoot = path.resolve(__dirname, 'node_modules/wechat-emojis/assets')
+  const destRoot = path.resolve(__dirname, 'public/wechat-emojis')
+
+  const copyTree = () => {
+    if (!fs.existsSync(srcRoot)) return
+    fs.mkdirSync(destRoot, { recursive: true })
+    const walk = (dir: string, rel = '') => {
+      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        const from = path.join(dir, ent.name)
+        const toRel = rel ? `${rel}/${ent.name}` : ent.name
+        const to = path.join(destRoot, toRel)
+        if (ent.isDirectory()) {
+          fs.mkdirSync(to, { recursive: true })
+          walk(from, toRel)
+          continue
+        }
+        if (!ent.isFile() || !/\.png$/i.test(ent.name)) continue
+        fs.mkdirSync(path.dirname(to), { recursive: true })
+        fs.writeFileSync(to, fs.readFileSync(from))
+      }
+    }
+    walk(srcRoot)
+  }
+
+  return {
+    name: 'sync-wechat-emojis-to-public',
+    buildStart: copyTree,
+    configureServer: copyTree,
+  }
+}
+
 /** dev：浏览器 PUT 头像 blob，供 iOS 通知栏直接拉取（绕过自签证书下 /assets 拉取失败） */
 function notifyIconDevServerPlugin(): Plugin {
   const marker = '/__lumi_notify_icon__/'
@@ -278,6 +314,7 @@ export default defineConfig(({ command, mode }) => {
     notifyIconDevServerPlugin(),
     copyRootImageDirToDist(),
     syncBgmToPublicPlugin(),
+    syncWechatEmojisToPublicPlugin(),
     pwaManifestPlugin(),
     {
       name: 'dev-lan-hint',

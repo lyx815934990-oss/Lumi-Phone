@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ListenNumericText } from '../../../../components/discoverListen/ListenNum'
 import type { WeChatContactRow } from '../../../../components/WeChatContactsInstagram'
 import { personaDb } from '../newFriendsPersona/idb'
 import type { CharacterMemory } from '../newFriendsPersona/types'
@@ -934,13 +933,6 @@ export function MemoryArchivePanel({
                 alignUserToast={alignUserToast}
                 rosterSummary={rosterSummary}
               />
-              {!loading && rosterForDisplay.length > 0 ? (
-                <div className="mx-auto max-w-xl px-4 pb-1 pt-2">
-                  <p className="text-[11px] font-medium tracking-wide text-gray-400">
-                    <ListenNumericText text={`${rosterForDisplay.length} 位角色`} />
-                  </p>
-                </div>
-              ) : null}
               <MemoryCharacterRoster
                 items={rosterForDisplay}
                 loading={loading}
@@ -959,7 +951,7 @@ export function MemoryArchivePanel({
                 clearAllDisabled={clearAllDisabled}
               />
               <div
-                className="sticky top-0 z-20 px-4 pb-2 pt-1"
+                className="sticky top-0 z-20 px-4 pb-3 pt-2"
                 style={{ background: ARCHIVE_BG }}
               >
                 <MemoryCharacterSourceTabNav

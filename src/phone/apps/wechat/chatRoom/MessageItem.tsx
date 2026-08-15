@@ -18,6 +18,8 @@ export type MessageItemShellProps = {
   textFingerprint?: string
   /** 气泡模版切换时变化，避免 memo 挡住 Telegram / 微信等外观更新 */
   bubbleSkinKey?: string
+  /** 连续气泡簇位置，供皮肤分化圆角 */
+  bubbleCluster?: 'single' | 'first' | 'middle' | 'last'
   children: ReactNode
   onToggleSelect?: () => void
   isMultiSelectMode?: boolean
@@ -29,6 +31,7 @@ function MessageItemShellInner({
   isHighlighted,
   isRecallAnimating,
   isSelected,
+  bubbleCluster,
   children,
   onToggleSelect,
   isMultiSelectMode = false,
@@ -43,6 +46,7 @@ function MessageItemShellInner({
       <div
         className={`wx-chat-msg-row ${gap} ${hiCls} ${recallAnimCls}`}
         data-wx-msg-id={messageId}
+        data-wx-bubble-cluster={bubbleCluster}
       >
         {children}
       </div>
@@ -53,6 +57,7 @@ function MessageItemShellInner({
     <div
       className={`wx-chat-msg-row ${gap} ${hiCls} ${recallAnimCls}`}
       data-wx-msg-id={messageId}
+      data-wx-bubble-cluster={bubbleCluster}
       data-wx-selected={isSelected ? 'true' : undefined}
       onClickCapture={(e) => {
         e.stopPropagation()
@@ -78,6 +83,7 @@ function messageItemShellEqual(a: MessageItemShellProps, b: MessageItemShellProp
     a.selfAnimated === b.selfAnimated &&
     a.isRecalled === b.isRecalled &&
     a.textFingerprint === b.textFingerprint &&
+    a.bubbleCluster === b.bubbleCluster &&
     a.bubbleSkinKey === b.bubbleSkinKey &&
     a.isMultiSelectMode === b.isMultiSelectMode
   )

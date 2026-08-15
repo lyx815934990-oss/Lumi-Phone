@@ -1,5 +1,8 @@
 import type { ApiConfig } from './types'
 
+/** API 设置未填写「最大 Token」时的系统默认输出上限 */
+export const DEFAULT_MAX_TOKENS = 12800
+
 /** 从存储/表单规范化可选数值；非法或空 → undefined（表示不覆盖系统默认） */
 export function normalizeOptionalNumber(
   raw: unknown,
@@ -45,15 +48,15 @@ export type ChatSamplingOptions = {
 
 /**
  * 温度 / max_tokens / top_p / 惩罚：配置页有值则优先于各功能硬编码；
- * 配置页留空时，才回落单次 options（如约会篇幅、起名等内置上限）或温度默认 0.7。
- * 可选参数仅在有值时写入请求体。
+ * 配置页留空时，才回落单次 options（如起名等内置上限）；max_tokens 再无则用系统默认 12800。
+ * 可选参数仅在有值时写入请求体（max_tokens 始终有有效上限）。
  */
 export function resolveChatSampling(
   cfg: ApiConfig,
   options?: ChatSamplingOptions,
 ): {
   temperature: number
-  maxTokens?: number
+  maxTokens: number
   topP?: number
   frequencyPenalty?: number
   presencePenalty?: number
@@ -66,13 +69,13 @@ export function resolveChatSampling(
         ? options.temperature
         : 0.7
 
-  // 用户在 API 设置里调的最大 Token 覆盖约会/起名/摘要/弹幕等内置上限；未调则仍用各功能 options
+  // 用户在 API 设置里调的最大 Token 覆盖各功能内置上限；未调则用 options，再无则系统默认
   const maxTokens =
     typeof cfg.maxTokens === 'number' && Number.isFinite(cfg.maxTokens)
       ? Math.floor(cfg.maxTokens)
       : typeof options?.max_tokens === 'number' && Number.isFinite(options.max_tokens)
         ? Math.floor(options.max_tokens)
-        : undefined
+        : DEFAULT_MAX_TOKENS
 
   const topP =
     typeof cfg.topP === 'number' && Number.isFinite(cfg.topP)
@@ -102,7 +105,7 @@ export function resolveChatSampling(
 
   return {
     temperature,
-    ...(maxTokens !== undefined ? { maxTokens } : {}),
+    maxTokens,
     ...(topP !== undefined ? { topP } : {}),
     ...(frequencyPenalty !== undefined ? { frequencyPenalty } : {}),
     ...(presencePenalty !== undefined ? { presencePenalty } : {}),

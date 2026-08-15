@@ -24,8 +24,11 @@ import { genderLabelZh } from './newFriendsPersona/utils'
 import { loadPrivateChatNetworkRelationshipsBlock } from './networkRelationshipsPrompt'
 import { buildPrivateChatNetworkNpcPronounBlock } from './privateChatNetworkNpcPronoun'
 import { loadPulseCharacterFollowingPromptBlock } from '../lumiPulse/pulseFollowingPrompt'
+import { loadUserPulseStatusPromptBlock } from './messagesPulse/userPulseStatusStorage'
+import { loadUserMurmursPromptBlock } from './messagesPulse/murmurStorage'
 import {
   buildMemorySummaryCharGenderDirective,
+  buildMemorySummaryIdentityRosterBlock,
   normalizeMemorySummaryBodyAfterModel,
 } from './memory/memorySummaryContentNormalize'
 import { normalizeMemoryIdPlaceholderSyntax } from './memory/memoryIdPlaceholderNormalize'
@@ -143,6 +146,7 @@ import {
 } from './wechatCharacterProfileUpdateApply'
 import { WECHAT_CHARACTER_MOMENT_PIN_APPENDIX } from './wechatCharacterMomentPinApply'
 import { WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX } from './wechatCharacterMomentPublishApply'
+import { WECHAT_CHARACTER_PRESENCE_MURMUR_APPENDIX } from './wechatCharacterPresenceMurmurApply'
 import { WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX } from './wechatCharacterMomentSongShareApply'
 import { WECHAT_INTERNET_MEME_LEXICON_APPENDIX } from './wechatInternetMemeLexicon'
 import { WECHAT_HEART_WHISPER_SYSTEM_PROMPT } from './wechatHeartWhisperPrompt'
@@ -778,6 +782,8 @@ export function buildSystemContent(params: {
   earlyOutputAppendix?: string
   /** 共同好友传话协议附录（联动聊天模式开启时由 ChatRoom 注入） */
   mutualFriendChainNotes?: string
+  /** 用户微信状态（在线/心情/气泡/当日行程）；由 materialize 自动装载亦可手传 */
+  userPulseStatusNotes?: string
 }): string {
   const worldBookIdentity = params.worldBookPlayerIdentity ?? params.playerIdentity
   const expandNames = resolveCharUserNamesForPrompt({
@@ -883,6 +889,9 @@ export function buildSystemContent(params: {
           !!params.friendRequestAdjudication || !!params.nonPrimarySpeakerLine,
       })
     : buildPlayerIdentitySection(params.playerIdentity)
+  const userPulse = params.userPulseStatusNotes?.trim()
+    ? `\n\n---\n${params.userPulseStatusNotes.trim()}\n`
+    : ''
   const fictionCot = `\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n`
   const earlyOutput = params.earlyOutputAppendix?.trim()
     ? `\n\n---\n${params.earlyOutputAppendix.trim()}\n`
@@ -920,7 +929,7 @@ export function buildSystemContent(params: {
     // 助手模式：不注入「虚构沙盒」免责声明；记忆顺序与人设模式对齐。
     const raw =
       `${LUMI_ASSISTANT_SYSTEM_PROMPT}${earlyOutput}` +
-      `${pi}${loreBlock}` +
+      `${pi}${userPulse}${loreBlock}` +
       `${memoryTail}` +
       `${altProbe}${replyBias}${currentTime}${schedule}${peerLine}`
     return appendLinkPreview(linkedExpand(raw))
@@ -965,7 +974,7 @@ export function buildSystemContent(params: {
   const rawMain =
     `${WECHAT_ROLEPLAY_SYSTEM_PROMPT}${priorityLadder}` +
     `${replyBias}${regenAppendix}${earlyOutput}${fictionCot}` +
-    `${pi}${loreBlock}${extra}${networkRelationships}${networkNpcPronoun}${mutualFriendChainBlock}` +
+    `${pi}${userPulse}${loreBlock}${extra}${networkRelationships}${networkNpcPronoun}${mutualFriendChainBlock}` +
     `${memoryTail}` +
     `${altProbe}${currentTime}${schedule}${peerLine}`
   return appendLinkPreview(linkedExpand(rawMain))
@@ -978,7 +987,7 @@ export async function materializeSystemContent(params: BuildSystemContentParams)
   const worldBookTextForPrompt = params.character
     ? await buildWorldBookTextForPrompt(params.character)
     : ''
-  const [networkNpcPronounBlock, networkRelationshipsBlock, pulseFollowingBlock] =
+  const [networkNpcPronounBlock, networkRelationshipsBlock, pulseFollowingBlock, userPulseStatusNotes, userMurmurNotes] =
     await Promise.all([
       params.character && params.promptMode === 'persona'
         ? buildPrivateChatNetworkNpcPronounBlock({
@@ -997,16 +1006,32 @@ export async function materializeSystemContent(params: BuildSystemContentParams)
             characterId: params.character.id,
           })
         : Promise.resolve(''),
+      params.userPulseStatusNotes?.trim()
+        ? Promise.resolve(params.userPulseStatusNotes.trim())
+        : loadUserPulseStatusPromptBlock({
+            playerIdentityId: params.playerIdentity?.id,
+            displayName: params.playerDisplayName,
+          }),
+      loadUserMurmursPromptBlock({
+        playerIdentityId: params.playerIdentity?.id,
+        displayName: params.playerDisplayName,
+        viewerCharacterId: params.character?.id,
+      }),
     ])
   const mergedNetworkRelationships = [networkRelationshipsBlock, pulseFollowingBlock]
     .map((s) => s.trim())
     .filter(Boolean)
     .join('\n')
+  const mergedUserPulseNotes = [userPulseStatusNotes, userMurmurNotes]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join('\n\n')
   const raw = buildSystemContent({
     ...params,
     worldBookTextForPrompt,
     networkNpcPronounBlock,
     networkRelationshipsBlock: mergedNetworkRelationships || undefined,
+    userPulseStatusNotes: mergedUserPulseNotes || undefined,
   })
   const wbIden = params.worldBookPlayerIdentity ?? params.playerIdentity ?? null
   return expandSystemPromptPlaceholders(raw, {
@@ -1489,7 +1514,7 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
     ? `\n\n${buildWeChatPulseDmScreenshotOutputBlock()}`
     : ''
   const profileImageBlock = params.includeProfileImageChange
-    ? `\n\n${WECHAT_CHARACTER_PROFILE_IMAGE_APPLY_APPENDIX}${profileBlock ? `\n\n${profileBlock}` : ''}`
+    ? `\n\n${WECHAT_CHARACTER_PROFILE_IMAGE_APPLY_APPENDIX}`
     : ''
   const memeLexiconBlock = params.includeInternetMemeLexicon
     ? `\n\n${WECHAT_INTERNET_MEME_LEXICON_APPENDIX}`
@@ -1530,10 +1555,11 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
         })
       : ''
   const langAppend = [langBlock, syncTrBlock].filter(Boolean).map((s) => `\n\n${s}`).join('')
+  const profileStateBlock = profileBlock ? `\n\n${profileBlock}` : ''
   return appendWorldBookAfterPatchOutputRules(
     params.character,
     false,
-    `${buildWechatReplyOutputAppendix(toggles)}${forwardBlock}${pulseDmShotBlock}${thinkingBlock}${profileImageBlock}${memeLexiconBlock}${langAppend}\n\n${WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX}${pinCatalog ? `\n\n${pinCatalog}` : ''}${userMomentsCatalog ? `\n\n${userMomentsCatalog}` : ''}\n\n${WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_PIN_APPENDIX}`,
+    `${buildWechatReplyOutputAppendix(toggles)}${forwardBlock}${pulseDmShotBlock}${thinkingBlock}${profileImageBlock}${profileStateBlock}${memeLexiconBlock}${langAppend}\n\n${WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX}${pinCatalog ? `\n\n${pinCatalog}` : ''}${userMomentsCatalog ? `\n\n${userMomentsCatalog}` : ''}\n\n${WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_PIN_APPENDIX}\n\n${WECHAT_CHARACTER_PRESENCE_MURMUR_APPENDIX}`,
   )
 }
 
@@ -1619,7 +1645,7 @@ async function callWeChatPeerReplyChat(
     /** 用户在本聊天展示的微信头像（会话覆盖优先） */
     playerWechatAvatarUrl?: string | null
     temperature: number
-    /** 缺省不传：不限制输出 token，由模型/线路自行决定 */
+    /** 缺省：走 API 设置或系统默认 12800 */
     max_tokens?: number
   },
 ): Promise<string> {
@@ -3556,6 +3582,59 @@ async function buildMemorySummaryPeerGenderAppendix(peerCharacterId: string | nu
   }
 }
 
+/** 线下摘要写事件前钉死 {{char}}/{{user}} 对应谁 */
+async function buildMemorySummaryIdentityRosterAppendix(
+  peerCharacterId: string | null | undefined,
+  sessionPlayerIdentityId?: string | null,
+): Promise<string> {
+  const cid = peerCharacterId?.trim()
+  if (!cid) return ''
+  try {
+    const ch = await personaDb.getCharacter(cid)
+    const charDisplayName =
+      String(ch?.name ?? '').trim() ||
+      String(ch?.wechatNickname ?? '').trim() ||
+      String(ch?.remark ?? '').trim()
+
+    let userDisplayName = ''
+    const tryIden = async (pid: string | null | undefined) => {
+      const id = String(pid ?? '').trim()
+      if (!id || id === '__none__') return ''
+      try {
+        const iden = await personaDb.getPlayerIdentity(id)
+        return (
+          String(iden?.wechatNickname ?? '').trim() ||
+          String(iden?.name ?? '').trim() ||
+          String(iden?.remark ?? '').trim()
+        )
+      } catch {
+        return ''
+      }
+    }
+    userDisplayName = await tryIden(sessionPlayerIdentityId)
+    if (!userDisplayName) userDisplayName = await tryIden(ch?.playerIdentityId)
+    if (!userDisplayName) {
+      try {
+        const cur = await personaDb.getCurrentIdentity()
+        userDisplayName =
+          String(cur?.wechatNickname ?? '').trim() ||
+          String(cur?.name ?? '').trim() ||
+          String(cur?.remark ?? '').trim()
+      } catch {
+        userDisplayName = ''
+      }
+    }
+
+    const block = buildMemorySummaryIdentityRosterBlock({
+      charDisplayName,
+      userDisplayName,
+    })
+    return block ? `\n\n${block}` : ''
+  } catch {
+    return ''
+  }
+}
+
 /** 约会剧情同一 HTTP 回复末尾追加的合并长期记忆分隔符（须单独成行）。新：markup；旧：JSON 分隔符仍可解析。 */
 export const DATING_UNIFIED_MEMORY_JSON_DELIMITER = DATING_UNIFIED_MEMORY_MARKUP_DELIMITER
 /** @deprecated 兼容旧分隔符字面量 */
@@ -3610,6 +3689,8 @@ export function buildDatingCombinedMemoryUserAppendix(params: {
   summaryRoundDue?: boolean
   /** 生日/节日/参考时刻（注入 timeline 写法的日历上下文） */
   calendarContextBlock?: string
+  /** {{char}}/{{user}} 身份对照表 */
+  identityRosterBlock?: string
   /** 系统内仍 open 的动机伏笔（同轮记忆块须对照回收；待办不由摘要维护） */
   priorOpenAnchorsBlock?: string
 }): string {
@@ -3625,6 +3706,8 @@ export function buildDatingCombinedMemoryUserAppendix(params: {
   const epilogueBlock = String(params.epilogueSnapshotBlock || '').trim()
   const epilogueSection = epilogueBlock ? `\n${epilogueBlock}\n` : ''
   const calendarBlock = String(params.calendarContextBlock || '').trim()
+  const identityBlock = String(params.identityRosterBlock || '').trim()
+  const identitySection = identityBlock ? `\n${identityBlock}\n` : ''
   const calendarSection = calendarBlock ? `\n${calendarBlock}\n` : `\n${STORY_TIMELINE_CALENDAR_AWARENESS_RULES}\n`
   const summaryRoundDue = params.summaryRoundDue === true
   const roundModeBlock = summaryRoundDue
@@ -3651,13 +3734,13 @@ ${roundModeBlock}
 【本轮合并长期记忆的语义要求】
 - 你是嵌入在本轮剧情模型里的「长期记忆 / 剧情时间轴」子任务：须综合下列「线上 / 已有线下 / 人脉 NPC 摘录」以及**分隔符上方你刚输出的全部剧情正文**（去掉 \`<thinking>…</thinking>\`；VN 标签可保留）提炼事实。
 - **[TIMELINE]（每轮必填）**：须反映分隔符上方正文**读至末尾时**的时空锚点与本轮「事件」；仅写相对上一状态的**增量**。「事件」为融合叙事（道具、服装变化、人物动机都写进事件），**禁止**再单列服装/物品/伏笔/待办。**禁止输出待办 / todos**。**故事日 / 时刻 为故事内时刻（禁止生成/落库时刻）**；跨时段须写结束故事日、结束时刻。**地点**：须写可区分的具体地点。
-- primary：**第三人称**；${summaryRoundDue ? '合成线上（若有）+ 游标后已有线下（若有）+ **本轮新正文**' : '本轮非总结间隔，正文可留空，勿写长期记忆正文'}；玩家 **{{user}}**、对方 **{{char}}**；**禁止「我」**；不要写 [私聊][线下] 前缀。
+- primary：**第三人称**；${summaryRoundDue ? '合成线上（若有）+ 游标后已有线下（若有）+ **本轮新正文**' : '本轮非总结间隔，正文可留空，勿写长期记忆正文'}；玩家 **{{user}}**、对方 **{{char}}**；**禁止「我」**；不要写 [私聊][线下] 前缀。身体遭遇（摔倒/受伤等）按材料主语挂靠，禁止把 {{char}} 的伤写成 {{user}} 的伤。
 - linked：除上表摘录外，**必须**结合你刚写的**本轮剧情正文**判断可关联角色是否有可记事实；每条 linked 正文**须为第三人称**，且一律用占位符。**每条 linked 后须再跟 [TIMELINE]**（含标题/关键词/事件）。
 - 若汇总后确实无任何可核对的新事实，primary 正文可留空且不写 [LINKED]。
 
 【可关联角色 id 表】（[LINKED] character_id 仅可从中择一或多；勿选 \`${peerId}\`）
 ${roster}
-${priorAnchorsSection}${epilogueSection}
+${identitySection}${priorAnchorsSection}${epilogueSection}
 【线上聊天摘录（未总结）】
 ${onlineBlock}
 
@@ -3667,7 +3750,7 @@ ${off}
 【线下关联摘录（人脉子角色 / 已绑定主角）】
 ${npc}
 
-【指称·材料边界】上文「显示名：」、发言者标签、剧情台词里的称呼**仅用于你对号入座是谁**；写入 **primary / linked 正文** 时**不得**复述这些汉字专名，须一律改为占位符（与【记忆正文·指称铁律】一致）。
+【指称·材料边界】上文「显示名：」、发言者标签、剧情台词里的称呼**仅用于你对号入座是谁**；写入 **primary / linked / [TIMELINE] 事件** 时**不得**复述这些汉字专名，须一律改为占位符（与【记忆正文·指称铁律】一致）。角色台词里的「我」仍指 {{char}}，勿把角色遭遇误挂到 {{user}}。
 ${calendarSection}`.trim()
 }
 
@@ -3786,6 +3869,7 @@ const STORY_TIMELINE_SUMMARY_ONLY_SYSTEM = `
 - **地点**：须写可区分的具体地点，禁止仅写「饭馆、酒店、咖啡厅」等类名。
 - 仅写相对上一状态的**增量**；无变化也须至少写「事件」（约 400～500 字，为保证完整可合理加长，勿砍关键经过）；**标题**必填（4～10 字）；**关键词**必填（3～5 个、每条 ≤5 字）。
 - 若用户提供【系统已有·未收动机】：已收束者在「事件」里回溯带过即可，勿再输出伏笔分区。
+- **主客体**：{{char}}=对方角色，{{user}}=玩家；身体遭遇（摔倒/受伤等）按材料主语挂靠，禁止把角色的伤写成玩家的伤。
 - **禁止 JSON**；只输出：
   [PRIMARY]
 正文：
@@ -3828,6 +3912,10 @@ export async function requestStoryTimelineSummaryOnly(params: {
   const priorAnchors = String(params.priorOpenAnchorsBlock || '').trim()
   const priorAnchorsBlock = priorAnchors ? `${priorAnchors}\n\n` : ''
   const genderAppendix = await buildMemorySummaryPeerGenderAppendix(params.peerCharacterId)
+  const identityAppendix = await buildMemorySummaryIdentityRosterAppendix(
+    params.peerCharacterId,
+    params.sessionPlayerIdentityId,
+  )
   const calendarAppendix = await buildStoryTimelineCalendarContextBlock({
     peerCharacterId: params.peerCharacterId,
     sessionPlayerIdentityId: params.sessionPlayerIdentityId,
@@ -3842,7 +3930,9 @@ export async function requestStoryTimelineSummaryOnly(params: {
         priorAnchorsBlock +
         latestBlock +
         `${material}\n\n` +
-        `【指称】timeline 内「事件」等叙述须第三人称；玩家 {{user}}、对方 {{char}}；禁止「我」。${genderAppendix}${calendarAppendix}`,
+        `【指称】timeline 内「事件」等叙述须第三人称；玩家 {{user}}、对方 {{char}}；禁止「我」。` +
+        `身体遭遇按材料主语归属，禁止把 {{char}} 的伤/痛写成 {{user}}。` +
+        `${identityAppendix}${genderAppendix}${calendarAppendix}`,
     },
   ]
   const text = await openAiCompatibleChatLenient(cfg, messages, {

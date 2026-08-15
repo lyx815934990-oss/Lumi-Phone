@@ -2,6 +2,7 @@ import { create } from 'zustand'
 
 import { LISTEN_TOGETHER_TOAST_MS } from '../components/discoverListen/ListenTogetherActionToast'
 import { persistFloatingOrbDismissed } from '../components/discoverListen/listenTogetherFloatingOrbDismiss'
+import { persistSyncListeningState } from '../components/discoverListen/listenTogetherSyncListeningPersist'
 import type { ParsedLyricLine } from '../components/discoverListen/listenLyricParse'
 import type { ListenPlayMode } from '../components/discoverListen/listenPlayMode'
 
@@ -87,6 +88,8 @@ type MusicStoreState = {
   /** 启动时从 KV 灌入关闭状态 */
   hydrateFloatingOrbDismissedFlag: (dismissed: boolean) => void
   setSyncListening: (state: SyncListeningState | null) => void
+  /** 启动时从 KV 恢复一起听同伴（不写回存储） */
+  hydrateSyncListening: (state: SyncListeningState | null) => void
   setDesktopLyricOpen: (open: boolean) => void
   openDesktopLyricsKeepOrb: () => void
   setDesktopLyricLocked: (locked: boolean) => void
@@ -173,7 +176,14 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
     get()._recomputeFloatingVisible()
   },
 
-  setSyncListening: (state) => set({ syncListening: state }),
+  setSyncListening: (state) => {
+    set({ syncListening: state })
+    void persistSyncListeningState(state)
+  },
+
+  hydrateSyncListening: (state) => {
+    set({ syncListening: state })
+  },
 
   setDesktopLyricOpen: (open) => set({ isDesktopLyricOpen: open }),
 

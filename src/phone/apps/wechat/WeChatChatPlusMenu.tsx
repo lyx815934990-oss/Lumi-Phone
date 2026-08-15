@@ -145,7 +145,10 @@ function PlusMenuGridCell({
         aria-disabled="true"
         title="占位功能，暂不可用"
       >
-        <div className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[12px] bg-[#f5f5f5]">
+        <div
+          data-wx-plus-tile
+          className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[12px] bg-[#f5f5f5]"
+        >
           {actionId === 'redpacket' ? (
             <RedPacketIcon size={24} />
           ) : actionId === 'transfer' ? (
@@ -154,7 +157,9 @@ function PlusMenuGridCell({
             <Icon size={24} strokeWidth={2} className="text-black" aria-hidden />
           )}
         </div>
-        <p className="mt-2 text-center text-[12px] leading-none text-black">{label}</p>
+        <p data-wx-plus-label className="mt-2 text-center text-[12px] leading-none text-black">
+          {label}
+        </p>
       </div>
     )
   }
@@ -168,7 +173,10 @@ function PlusMenuGridCell({
       }}
       className="flex w-full flex-col items-center justify-start rounded-lg bg-transparent p-0 outline-none"
     >
-      <div className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[12px] bg-[#f5f5f5] transition-colors duration-100 active:bg-[#e5e5e5]">
+      <div
+        data-wx-plus-tile
+        className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[12px] bg-[#f5f5f5] transition-[background-color,transform,opacity] duration-100 active:scale-[0.96] active:opacity-80"
+      >
         {actionId === 'redpacket' ? (
           <RedPacketIcon size={24} />
         ) : actionId === 'transfer' ? (
@@ -177,7 +185,9 @@ function PlusMenuGridCell({
           <Icon size={24} strokeWidth={2} className="text-black" aria-hidden />
         )}
       </div>
-      <p className="mt-2 text-center text-[12px] leading-none text-black">{label}</p>
+      <p data-wx-plus-label className="mt-2 text-center text-[12px] leading-none text-black">
+        {label}
+      </p>
     </Pressable>
   )
 }
@@ -213,6 +223,7 @@ function PageDots({
           aria-current={i === active ? 'true' : undefined}
           className="h-1.5 w-1.5 rounded-full p-0 transition-colors duration-200"
           style={{ backgroundColor: i === active ? '#000000' : '#d4d4d4' }}
+          data-wx-plus-dot={i === active ? 'active' : 'idle'}
           onClick={() => onPick(i)}
         />
       ))}
@@ -270,7 +281,8 @@ export function WeChatChatPlusMenuPanel({ onAction }: { onAction: (id: WeChatPlu
 
   return (
     <div
-      className="w-full max-w-full min-w-0 select-none overflow-hidden bg-white"
+      data-wx-plus-menu-surface
+      className="w-full max-w-full min-w-0 select-none overflow-hidden bg-transparent"
       style={{ height: PLUS_MENU_HEIGHT_PX }}
     >
       <div

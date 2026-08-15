@@ -133,6 +133,8 @@ function VoiceTranscriptExpandedPanel({
   dividerClassName,
   firstCharClassName,
   bottomRadiusPx,
+  /** 独立圆角卡片（不贴在语音条下方衔接）；为 true 时四角同圆角并保留顶边 */
+  detached = false,
   fitContent = false,
 }: {
   open: boolean
@@ -142,26 +144,30 @@ function VoiceTranscriptExpandedPanel({
   dividerClassName: string
   firstCharClassName: string
   bottomRadiusPx: number
+  detached?: boolean
   /** 微信：按转写内容收缩宽度，而非撑满父容器 */
   fitContent?: boolean
 }) {
+  const radius = bottomRadiusPx
   return (
     <AnimatePresence initial={false}>
       {open ? (
         <motion.div
+          data-wx-voice-transcript
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: 'auto', opacity: 1 }}
           exit={{ height: 0, opacity: 0 }}
           transition={SPRING}
-          className={`overflow-hidden border border-t-0 ${fitContent ? 'w-fit max-w-full' : 'w-full'} ${panelClassName}`}
+          className={`overflow-hidden border ${detached ? 'mt-1.5' : 'border-t-0'} ${fitContent ? 'w-fit max-w-full' : 'w-full'} ${panelClassName}`}
           style={{
             borderWidth: 0.5,
-            borderBottomLeftRadius: bottomRadiusPx,
-            borderBottomRightRadius: bottomRadiusPx,
+            borderRadius: detached ? radius : undefined,
+            borderBottomLeftRadius: detached ? undefined : radius,
+            borderBottomRightRadius: detached ? undefined : radius,
           }}
         >
           <div
-            className={`border-t border-dashed px-3 py-2.5 text-[13px] leading-[1.7] break-words ${dividerClassName}`}
+            className={`${detached ? '' : 'border-t border-dashed'} px-3 py-2.5 text-[13px] leading-[1.7] break-words ${dividerClassName}`}
           >
             {firstChar ? (
               <span className={`mr-[1px] text-[17px] leading-none ${firstCharClassName}`}>{firstChar}</span>
@@ -397,18 +403,65 @@ export function VoiceMessageBubble({
   const wechatRadius = bubble?.selfBubbleRadiusPx ?? WECHAT_CLASSIC.bubbleRadiusPx
 
   if (messengerStyle === 'css') {
+    const showUnreadDot = !isUser && !played
+    const hasTranscript =
+      transcriptText.trim().length > 0 && transcriptText.trim() !== '（暂未生成转写文本）'
     return (
-      <button
-        type="button"
-        className="appearance-none border-0 bg-transparent p-0 text-left"
-        onClick={() => {
-          void togglePlay()
-        }}
+      <div
+        className={`inline-flex max-w-full ${isUser ? 'items-end' : 'items-start'}`}
+        data-wx-msg-kind="voice-wrap"
+        data-wx-bubble-side={isUser ? 'self' : 'other'}
       >
-        <CssVoiceShell isUser={isUser} durationSec={duration}>
-          {isPlaying ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-        </CssVoiceShell>
-      </button>
+        <div className={`flex items-start gap-1.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+          <div className={`flex min-w-0 flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+            <button
+              type="button"
+              className="appearance-none border-0 bg-transparent p-0 text-left"
+              onClick={() => {
+                if (longPressTriggeredRef.current) {
+                  longPressTriggeredRef.current = false
+                  return
+                }
+                void togglePlay()
+              }}
+              onPointerDown={onBubblePointerDown}
+              onPointerMove={onBubblePointerMove}
+              onPointerUp={onBubblePointerEnd}
+              onPointerCancel={onBubblePointerEnd}
+            >
+              <CssVoiceShell isUser={isUser} durationSec={duration}>
+                {isPlaying ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+              </CssVoiceShell>
+            </button>
+            <VoiceTranscriptExpandedPanel
+              open={isTranscribing}
+              firstChar={firstChar}
+              restText={restText}
+              fitContent
+              detached
+              panelClassName="border-white/40 bg-white/55 text-[#101012] backdrop-blur-xl"
+              dividerClassName="border-black/10"
+              firstCharClassName="text-[#101012]"
+              bottomRadiusPx={22}
+            />
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5 self-center">
+            {showUnreadDot ? (
+              <span className="h-2 w-2 shrink-0 rounded-full bg-[#FA5151]" aria-label="未播放" />
+            ) : null}
+            {hasTranscript ? (
+              <button
+                type="button"
+                data-wx-special-part="transcript-toggle"
+                onClick={(e) => toggleTranscript(e)}
+                className="shrink-0 rounded-full border border-white/45 bg-white/55 px-2 py-0.5 text-[12px] text-[#6B6B70] backdrop-blur-md active:opacity-70"
+              >
+                转文字
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
     )
   }
 

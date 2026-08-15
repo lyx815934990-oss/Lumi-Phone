@@ -10,9 +10,62 @@ import { useDating } from './DatingContext'
 import { PlotDimensionPanel } from './PlotDimensionPanel'
 import { getAiPlotVersionSlices, getAiVersionArrays } from './plotVersions'
 import { resolveDatingPlotDisplayFromItem } from './plotCoT'
+import {
+  formatPlotGenerationTimeCompact,
+  resolvePlotStoryEndDisplayLabel,
+} from './plotStoryTimeLabel'
 import { PlotMagazineBody } from './PlotMagazineBody'
 import { PlotRichParagraph } from './plotRichText'
+import { DatingNum } from './DatingNum'
 import type { BranchOption, NarrativePerspective, PlotDimensionKind, PlotItem } from './types'
+
+function PlotCardMetaFooter({
+  bodyChars,
+  generationCompact,
+  storyEndLabel,
+  showLongPressHint,
+}: {
+  bodyChars?: number
+  generationCompact: string
+  storyEndLabel?: string | null
+  showLongPressHint?: boolean
+}) {
+  const hasStory = Boolean(storyEndLabel?.trim())
+  return (
+    <div className="mt-2.5 border-t border-black/[0.05] pt-2">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        {typeof bodyChars === 'number' ? (
+          <p className="text-[10px] leading-none text-[#8A8A8E]">
+            约 <DatingNum>{bodyChars}</DatingNum> 字
+          </p>
+        ) : (
+          <span />
+        )}
+        {showLongPressHint ? (
+          <span className="shrink-0 text-[10px] leading-none text-[#C8C8CC] opacity-0 transition-opacity group-hover:opacity-100">
+            长按菜单
+          </span>
+        ) : null}
+      </div>
+      <div className="grid grid-cols-1 gap-1">
+        <div className="flex min-w-0 items-baseline gap-2" title={`生成时间 ${generationCompact}`}>
+          <span className="w-6 shrink-0 text-[9px] font-medium tracking-[0.08em] text-[#8A8A8E]">生成</span>
+          <span className="min-w-0 truncate text-[11px] leading-tight text-[#555]">
+            <DatingNum>{generationCompact}</DatingNum>
+          </span>
+        </div>
+        {hasStory ? (
+          <div className="flex min-w-0 items-baseline gap-2" title={`剧情时间 ${storyEndLabel}`}>
+            <span className="w-6 shrink-0 text-[9px] font-medium tracking-[0.08em] text-[#8A8A8E]">剧情</span>
+            <span className="min-w-0 truncate text-[11px] leading-tight text-[#333]">
+              <DatingNum>{storyEndLabel}</DatingNum>
+            </span>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
 
 export type BranchChoicesSlot = {
   loading: boolean
@@ -57,12 +110,12 @@ function TypewriterShimmer() {
   const dots = '.'.repeat(tick + 1)
   return (
     <motion.div
-      className="min-h-[4.5rem] rounded-xl bg-stone-50/90 px-3 py-3 text-[14px] leading-relaxed text-stone-400"
+      className="min-h-[4.5rem] rounded-[16px] border border-black/[0.05] bg-white px-3.5 py-3.5 text-[14px] leading-relaxed text-[#8A8A8E]"
       initial={{ opacity: 0.6 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.35 }}
     >
-      <span className="font-medium text-stone-500">正在重新生成</span>
+      <span className="font-medium text-[#555]">正在重新生成</span>
       <span className="tabular-nums">{dots.padEnd(3, '\u00a0')}</span>
     </motion.div>
   )
@@ -98,14 +151,14 @@ function PlotDimensionChip({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-lg border px-2 py-1 text-[11px] font-medium leading-none transition-colors ${
+      className={`rounded-full border px-2.5 py-1 text-[10px] font-medium leading-none tracking-wide transition-colors ${
         filled
-          ? 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100/80'
-          : 'border-stone-200 bg-white/90 text-stone-600 hover:border-stone-300 hover:bg-stone-50'
+          ? 'border-[#111] bg-[#111] text-white'
+          : 'border-black/[0.08] bg-white text-[#666] hover:border-black/15 hover:bg-black/[0.02]'
       }`}
     >
       {label}
-      {filled ? <span className="ml-1 inline-block size-1.5 rounded-full bg-violet-500 align-middle" aria-hidden /> : null}
+      {filled ? <span className="ml-1 inline-block size-1 rounded-full bg-white/80 align-middle" aria-hidden /> : null}
     </button>
   )
 }
@@ -272,6 +325,11 @@ export function StoryBlock({
   }
 
   const bodyChars = countPlotCharsExcludePunctuation(plot.type === 'ai' ? aiSplit.displayBody : plot.content)
+  const generationCompact = useMemo(() => formatPlotGenerationTimeCompact(plot), [plot])
+  const storyEndTimeLabel = useMemo(
+    () => (plot.type === 'ai' ? resolvePlotStoryEndDisplayLabel(plot) : null),
+    [plot],
+  )
 
   const albumCharacterId = (timelineExpandCharacterId ?? currentCharacterId)?.trim() ?? ''
 
@@ -461,7 +519,7 @@ export function StoryBlock({
   if (plot.type === 'player') {
     return (
       <>
-        <motion.div layout className="group relative mb-5" transition={{ type: 'spring', stiffness: 380, damping: 32 }}>
+        <motion.div layout className="group relative mb-7" transition={{ type: 'spring', stiffness: 380, damping: 32 }}>
         <motion.div
           ref={cardRef}
           animate={{ scale: pressing && !editing ? 0.98 : 1 }}
@@ -476,7 +534,7 @@ export function StoryBlock({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 2 }}
                 transition={{ duration: 0.2 }}
-                className="rounded-xl bg-white/90 p-1 shadow-[0_0_0_1px_rgba(120,113,108,0.12),0_8px_28px_rgba(0,0,0,0.06)] ring-2 ring-stone-200/50"
+                className="rounded-[16px] border border-black/[0.08] bg-white p-1 shadow-[0_8px_28px_rgba(16,16,18,0.06)]"
               >
                 <textarea
                   ref={textareaRef}
@@ -517,16 +575,21 @@ export function StoryBlock({
                 onPointerCancel={endPointer}
                 onContextMenu={suppressSystemTextUi.onContextMenu}
                 style={suppressSystemTextUi.style}
-                className={`rounded-xl border border-sky-200 bg-sky-50/75 px-3 py-2 text-[16px] leading-[1.8] text-sky-900 transition-shadow duration-200 hover:shadow-[0_6px_20px_rgba(14,165,233,0.08)] ${suppressSystemTextUi.className}`}
+                className={`rounded-[16px] border border-black/[0.06] bg-[#FAFAFA] px-3.5 py-3 text-[16px] leading-[1.8] text-[#1A1A1A] transition-shadow duration-200 ${suppressSystemTextUi.className}`}
               >
-                <span className="mr-2 inline-block rounded-md bg-sky-600 px-2 py-0.5 text-[12px] font-medium text-white">我</span>
+                <span className="mr-2 inline-block rounded-full bg-[#111] px-2 py-0.5 text-[11px] font-medium tracking-wide text-white">
+                  我
+                </span>
                 <PlotRichParagraph content={plot.content} />
               </motion.div>
             )}
           </AnimatePresence>
         </motion.div>
         {!editing ? (
-          <p className="mt-1 text-right text-[10px] text-stone-300/90 opacity-0 transition-opacity group-hover:opacity-100">长按菜单</p>
+          <PlotCardMetaFooter
+            generationCompact={generationCompact}
+            showLongPressHint
+          />
         ) : null}
       </motion.div>
         {menuLayer}
@@ -539,21 +602,21 @@ export function StoryBlock({
 
   return (
     <>
-    <motion.div layout className="group relative mb-5" transition={{ type: 'spring', stiffness: 380, damping: 32 }}>
-      <div className="mb-2 flex items-start gap-2">
+    <motion.div layout className="group relative mb-7" transition={{ type: 'spring', stiffness: 380, damping: 32 }}>
+      <div className="mb-2.5 flex items-start gap-2">
         <div className="min-w-0 flex-1 flex flex-col gap-2">
       {thinkingText ? (
-        <details className="rounded-lg border border-stone-200 bg-stone-50/80 px-2.5 py-1.5">
+        <details className="rounded-[14px] border border-black/[0.06] bg-white px-3 py-2">
           <summary
             onContextMenu={suppressSystemTextUi.onContextMenu}
-            className="cursor-pointer select-none touch-manipulation list-none text-[12px] text-[#6b7280] [-webkit-touch-callout:none] [-webkit-user-select:none] [&::-webkit-details-marker]:hidden"
+            className="cursor-pointer select-none touch-manipulation list-none text-[11px] font-medium tracking-wide text-[#8A8A8E] [-webkit-touch-callout:none] [-webkit-user-select:none] [&::-webkit-details-marker]:hidden"
             style={suppressSystemTextUi.style}
           >
-            Lumi思维链（点击展开/收起）
+            Lumi 思维链
           </summary>
           <pre
             onContextMenu={suppressSystemTextUi.onContextMenu}
-            className="mt-1 max-h-[min(40vh,280px)] overflow-y-auto whitespace-pre-wrap break-words font-sans text-[12px] leading-relaxed text-[#4b5563] select-none [-webkit-touch-callout:none] [-webkit-user-select:none]"
+            className="mt-1.5 max-h-[min(40vh,280px)] overflow-y-auto whitespace-pre-wrap break-words border-t border-black/[0.04] pt-1.5 font-sans text-[12px] leading-relaxed text-[#555] select-none [-webkit-touch-callout:none] [-webkit-user-select:none]"
             style={suppressSystemTextUi.style}
           >
             {thinkingText}
@@ -562,17 +625,17 @@ export function StoryBlock({
       ) : null}
 
       {timelineSnapshotText ? (
-        <details className="listen-together-cn-text rounded-lg border border-emerald-200/80 bg-emerald-50/50 px-2.5 py-1.5">
+        <details className="listen-together-cn-text rounded-[14px] border border-black/[0.06] bg-white px-3 py-2">
           <summary
             onContextMenu={suppressSystemTextUi.onContextMenu}
-            className="cursor-pointer select-none touch-manipulation list-none text-[12px] text-emerald-800/90 [-webkit-touch-callout:none] [-webkit-user-select:none] [&::-webkit-details-marker]:hidden"
+            className="cursor-pointer select-none touch-manipulation list-none text-[11px] font-medium tracking-wide text-[#8A8A8E] [-webkit-touch-callout:none] [-webkit-user-select:none] [&::-webkit-details-marker]:hidden"
             style={suppressSystemTextUi.style}
           >
-            剧情时间轴（点击展开/收起）
+            剧情时间轴
           </summary>
           <pre
             onContextMenu={suppressSystemTextUi.onContextMenu}
-            className="mt-1 max-h-[min(40vh,280px)] overflow-y-auto whitespace-pre-wrap break-words font-sans text-[12px] leading-relaxed text-emerald-950/85 select-none [-webkit-touch-callout:none] [-webkit-user-select:none]"
+            className="mt-1.5 max-h-[min(40vh,280px)] overflow-y-auto whitespace-pre-wrap break-words border-t border-black/[0.04] pt-1.5 font-sans text-[12px] leading-relaxed text-[#333] select-none [-webkit-touch-callout:none] [-webkit-user-select:none]"
             style={suppressSystemTextUi.style}
           >
             {timelineSnapshotText}
@@ -654,7 +717,7 @@ export function StoryBlock({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 2 }}
                 transition={{ duration: 0.2 }}
-                className="rounded-xl bg-white/92 p-1 shadow-[0_0_0_1px_rgba(120,113,108,0.12),0_10px_32px_rgba(0,0,0,0.07)] ring-2 ring-stone-200/55"
+                className="rounded-[16px] border border-black/[0.08] bg-white p-1 shadow-[0_8px_28px_rgba(16,16,18,0.06)]"
               >
                 <textarea
                   ref={textareaRef}
@@ -667,14 +730,14 @@ export function StoryBlock({
                   <button
                     type="button"
                     onClick={cancelEdit}
-                    className="rounded-lg px-2.5 py-1 text-[12px] text-stone-500 hover:bg-stone-100"
+                    className="rounded-full px-3 py-1 text-[12px] text-[#666] hover:bg-black/[0.04]"
                   >
                     取消
                   </button>
                   <button
                     type="button"
                     onClick={commitEdit}
-                    className="rounded-lg bg-stone-900 px-2.5 py-1 text-[12px] font-medium text-white hover:bg-stone-800"
+                    className="rounded-full bg-[#111] px-3 py-1 text-[12px] font-medium text-white hover:opacity-90"
                   >
                     保存
                   </button>
@@ -695,7 +758,7 @@ export function StoryBlock({
                 onPointerCancel={endPointer}
                 onContextMenu={suppressSystemTextUi.onContextMenu}
                 style={suppressSystemTextUi.style}
-                className={`rounded-xl pr-2 text-[16px] font-normal leading-[1.85] text-[#262626] transition-shadow duration-200 hover:shadow-[0_6px_22px_rgba(0,0,0,0.04)] ${suppressSystemTextUi.className}`}
+                className={`rounded-[18px] border border-black/[0.05] bg-white px-4 py-4 text-[16px] font-normal leading-[1.85] text-[#262626] shadow-[0_8px_28px_rgba(16,16,18,0.035)] ${suppressSystemTextUi.className}`}
               >
                 {plot.type === 'ai' && plot.plotImages?.length ? (
                   <PlotMagazineBody
@@ -733,24 +796,24 @@ export function StoryBlock({
       </motion.div>
 
       {branchChoices ? (
-        <details className="mt-2 rounded-lg border border-stone-200 bg-stone-50/80 px-2.5 py-1.5">
+        <details className="mt-3 rounded-[14px] border border-black/[0.06] bg-white px-3 py-2">
           <summary
             onContextMenu={suppressSystemTextUi.onContextMenu}
-            className="cursor-pointer select-none touch-manipulation list-none text-[12px] text-[#6b7280] [-webkit-touch-callout:none] [-webkit-user-select:none] [&::-webkit-details-marker]:hidden"
+            className="cursor-pointer select-none touch-manipulation list-none text-[11px] font-medium tracking-wide text-[#8A8A8E] [-webkit-touch-callout:none] [-webkit-user-select:none] [&::-webkit-details-marker]:hidden"
             style={suppressSystemTextUi.style}
           >
-            剧情分支（点击展开/收起）
+            剧情分支
           </summary>
-          <div className="mt-2 max-h-[min(48vh,320px)] space-y-2 overflow-y-auto pb-1">
+          <div className="mt-2 max-h-[min(48vh,320px)] space-y-2 overflow-y-auto border-t border-black/[0.04] pt-2 pb-1">
             {branchChoices.loading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <div
                   key={i}
-                  className="animate-pulse rounded-xl border border-stone-100 bg-stone-100/80 px-4 py-3"
+                  className="animate-pulse rounded-[14px] border border-black/[0.04] bg-black/[0.03] px-4 py-3"
                 >
-                  <div className="h-3 w-16 rounded bg-stone-200/90" />
-                  <div className="mt-2 h-3 w-full rounded bg-stone-200/70" />
-                  <div className="mt-1.5 h-3 w-[82%] rounded bg-stone-200/50" />
+                  <div className="h-3 w-16 rounded bg-black/[0.06]" />
+                  <div className="mt-2 h-3 w-full rounded bg-black/[0.05]" />
+                  <div className="mt-1.5 h-3 w-[82%] rounded bg-black/[0.04]" />
                 </div>
               ))
             ) : (
@@ -759,12 +822,14 @@ export function StoryBlock({
                   key={o.id}
                   type="button"
                   onClick={() => branchChoices.onPick(o)}
-                  className="w-full rounded-xl bg-white px-4 py-3 text-left shadow-sm transition-all duration-200 hover:bg-stone-50"
+                  className="w-full rounded-[14px] border border-black/[0.05] bg-[#FAFAFA] px-4 py-3 text-left transition-colors active:bg-black/[0.03]"
                 >
                   {o.styleLabel ? (
-                    <span className="mb-1 block text-[11px] font-medium text-stone-400">{o.styleLabel}</span>
+                    <span className="mb-1 block text-[10px] font-medium tracking-wide text-[#8A8A8E]">
+                      {o.styleLabel}
+                    </span>
                   ) : null}
-                  <span className="text-[15px] leading-relaxed text-[#262626]">{o.content}</span>
+                  <span className="text-[15px] leading-relaxed text-[#1A1A1A]">{o.content}</span>
                 </button>
               ))
             )}
@@ -773,10 +838,12 @@ export function StoryBlock({
       ) : null}
 
       {!isRegenerating ? (
-        <p className="mt-1 text-right text-[10px] tabular-nums leading-none text-stone-400/75">
-          约 {bodyChars} 字（不含标点）
-          {!editing ? <span className="ml-2 text-stone-300/90 opacity-0 group-hover:opacity-100">· 长按菜单</span> : null}
-        </p>
+        <PlotCardMetaFooter
+          bodyChars={bodyChars}
+          generationCompact={generationCompact}
+          storyEndLabel={storyEndTimeLabel}
+          showLongPressHint={!editing}
+        />
       ) : null}
     </motion.div>
     {menuLayer}

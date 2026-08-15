@@ -64,6 +64,11 @@ export class LazyChunkErrorBoundary extends Component<Props, State> {
           <p className="max-w-[260px] text-[12px] leading-relaxed text-black/45">
             请优先打开 www.lumiphone.cn。先点「再试一次」；仍不行再清缓存刷新。系统不会再自动刷页打断下载。
           </p>
+          {this.state.error?.message ? (
+            <p className="max-w-[280px] break-words text-[11px] leading-relaxed text-red-700/70">
+              {this.state.error.message}
+            </p>
+          ) : null}
           <div className="mt-1 flex gap-2">
             <button
               type="button"

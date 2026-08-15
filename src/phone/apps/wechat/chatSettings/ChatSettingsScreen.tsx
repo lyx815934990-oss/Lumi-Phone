@@ -48,6 +48,14 @@ import {
   loadMutualFriendLinkedMode,
   saveMutualFriendLinkedMode,
 } from '../mutualFriend'
+import {
+  loadShowChatPresenceDot,
+  saveShowChatPresenceDot,
+} from '../chatRoom/chatPresenceDotStorage'
+import {
+  loadPeerPresenceAutoUpdate,
+  savePeerPresenceAutoUpdate,
+} from '../chatRoom/peerPresenceThoughtStorage'
 import { resolvePrivateChatNetworkRootId } from '../privateChatNetworkNpcPronoun'
 import { LinkedChatModeHelpButton } from './LinkedChatModeHelp'
 import { ChatFindChatHistoryScreen } from './ChatFindChatHistoryScreen'
@@ -59,7 +67,11 @@ import {
 import { CreateGroupPickContactsSheet, type CreateGroupContactPick } from '../group/CreateGroupPickContactsSheet'
 import { ChatBackgroundPresetGrid } from './ChatBackgroundPresetGrid'
 import { resolvePublicImageUrl } from '../../../../publicAssetUrl'
-import { compressAvatarDataUrl, MAX_AVATAR_DATA_URL_LEN } from '../avatarCompress'
+import {
+  compressAvatarDataUrl,
+  MAX_AVATAR_DATA_URL_LEN,
+  MAX_CHAT_BG_DATA_URL_LEN,
+} from '../avatarCompress'
 import { resolveWechatAppAvatar } from '../../../../components/discoverListen/listenTogetherUserAvatarPreference'
 
 function WxSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
@@ -219,6 +231,8 @@ export type ChatSettingsScreenProps = {
   inviteGroupFromPeerCharacterId?: string | null
   personaContactsForGroup?: CreateGroupContactPick[]
   onInviteCreateGroup?: (extraCharacterIds: string[]) => void | Promise<void>
+  /** 顶栏在线状态圆点显示开关变更（可选，便于聊天页即时刷新） */
+  onShowPresenceDotChange?: (on: boolean) => void
 }
 
 export function ChatSettingsScreen({
@@ -237,6 +251,7 @@ export function ChatSettingsScreen({
   inviteGroupFromPeerCharacterId = null,
   personaContactsForGroup = [],
   onInviteCreateGroup,
+  onShowPresenceDotChange,
 }: ChatSettingsScreenProps) {
   const { state } = useCustomization()
   const disableTransitions = state.ui.disablePageTransitions
@@ -259,6 +274,8 @@ export function ChatSettingsScreen({
   const [linkedChatModeAvailable, setLinkedChatModeAvailable] = useState(false)
   const [linkedChatUnavailableHint, setLinkedChatUnavailableHint] = useState('')
   const [linkedNetworkRootId, setLinkedNetworkRootId] = useState<string | null>(null)
+  const [showPresenceDot, setShowPresenceDot] = useState(false)
+  const [peerPresenceAutoUpdate, setPeerPresenceAutoUpdate] = useState(false)
   const chatBgFileRef = useRef<HTMLInputElement | null>(null)
   const chatAvatarFileRef = useRef<HTMLInputElement | null>(null)
 
@@ -305,6 +322,17 @@ export function ChatSettingsScreen({
       setLinkedChatModeAvailable(false)
       setLinkedChatModeOn(false)
       setLinkedChatUnavailableHint('当前角色无人脉关系，无法开启联动。')
+    }
+
+    try {
+      setShowPresenceDot(await loadShowChatPresenceDot(conversationKey))
+    } catch {
+      setShowPresenceDot(false)
+    }
+    try {
+      setPeerPresenceAutoUpdate(await loadPeerPresenceAutoUpdate(conversationKey))
+    } catch {
+      setPeerPresenceAutoUpdate(false)
     }
   }, [conversationKey, peerCharacterId, playerIdentityId])
 
@@ -559,6 +587,19 @@ export function ChatSettingsScreen({
     await load()
   }, [conversationKey, peerCharacterId, playerIdentityId, effective.isMuted, load])
 
+  const toggleShowPresenceDot = useCallback(async () => {
+    const next = !showPresenceDot
+    setShowPresenceDot(next)
+    await saveShowChatPresenceDot(conversationKey, next)
+    onShowPresenceDotChange?.(next)
+  }, [conversationKey, onShowPresenceDotChange, showPresenceDot])
+
+  const togglePeerPresenceAutoUpdate = useCallback(async () => {
+    const next = !peerPresenceAutoUpdate
+    setPeerPresenceAutoUpdate(next)
+    await savePeerPresenceAutoUpdate(conversationKey, next)
+  }, [conversationKey, peerPresenceAutoUpdate])
+
   const togglePin = useCallback(async () => {
     const next = !effective.isPinned
     await personaDb.updatePinnedStatus({
@@ -802,8 +843,19 @@ export function ChatSettingsScreen({
           objectFit="vertical-cover"
           onCancel={() => setChatBgCropSrc(null)}
           onConfirm={(dataUrl) => {
-            setChatBgCropSrc(null)
-            setChatBgDraft(dataUrl)
+            void (async () => {
+              try {
+                const next = await compressAvatarDataUrl(dataUrl, MAX_CHAT_BG_DATA_URL_LEN)
+                if (next.length > MAX_CHAT_BG_DATA_URL_LEN) {
+                  window.alert('图片过大，请选择较小的图片。')
+                  return
+                }
+                setChatBgCropSrc(null)
+                setChatBgDraft(next)
+              } catch {
+                window.alert('图片处理失败，请重试。')
+              }
+            })()
           }}
         />
       </div>
@@ -972,6 +1024,24 @@ export function ChatSettingsScreen({
           <ListRow borderBottom>
             <span className="text-[16px] text-black">消息免打扰</span>
             <WxSwitch on={effective.isMuted} onToggle={() => void toggleMute()} />
+          </ListRow>
+          <ListRow borderBottom>
+            <div className="min-w-0 flex-1 pr-3">
+              <span className="text-[16px] text-black">显示在线状态</span>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                开启后，备注旁显示在线圆点；点击可查看状态与想法
+              </p>
+            </div>
+            <WxSwitch on={showPresenceDot} onToggle={() => void toggleShowPresenceDot()} />
+          </ListRow>
+          <ListRow borderBottom>
+            <div className="min-w-0 flex-1 pr-3">
+              <span className="text-[16px] text-black">自行更新在线与想法</span>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                开启后，每轮回复结束按本轮内容判断是否更新在线状态与想法
+              </p>
+            </div>
+            <WxSwitch on={peerPresenceAutoUpdate} onToggle={() => void togglePeerPresenceAutoUpdate()} />
           </ListRow>
           <ListRow borderBottom>
             <span className="text-[16px] text-black">通知提醒</span>

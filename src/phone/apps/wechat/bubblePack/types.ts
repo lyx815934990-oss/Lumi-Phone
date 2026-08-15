@@ -1,5 +1,9 @@
 import type { WeChatAvatarChrome } from '../wechatAvatarChrome'
 import type { WeChatBubblePreset } from '../wechatBubblePresets'
+import type { BubbleEdgeStickersBySide } from '../bubbleEdgeStickers'
+import type { BubbleFramesBySide } from '../bubbleFrame'
+import type { AvatarStickersBySide } from '../avatarStickers'
+import type { BubbleBadgesBySide } from '../bubbleBadge'
 
 /** 文件扩展名（内容为 JSON） */
 export const LUMI_BUBBLE_PACK_EXT = '.lumiBubblePack'
@@ -35,6 +39,8 @@ export type LumiBubblePackSkinEngine = 'structured' | 'css'
  * - scopedCss：可选，仅作用于 [data-wx-chat-skin-scope]
  * - skinEngine：css 时不套默认特殊消息皮
  * - avatarChrome / assets：头像框与角标（v2）
+ * - bubbleEdgeStickers：文字气泡四边贴纸（外观工坊）
+ * - bubbleFrames：文字气泡九宫格拉伸框（外观工坊）
  */
 export type LumiWeChatBubblePack = {
   format: typeof LUMI_BUBBLE_PACK_FORMAT
@@ -48,6 +54,14 @@ export type LumiWeChatBubblePack = {
   avatarChrome?: WeChatAvatarChrome
   /** 可选内嵌资源；导入时写入 phoneKv */
   assets?: Record<string, LumiBubblePackEmbeddedAsset>
+  /** 文字气泡四边贴纸（self / other） */
+  bubbleEdgeStickers?: BubbleEdgeStickersBySide
+  /** 文字气泡九宫格框（self / other；null = 该侧无框） */
+  bubbleFrames?: BubbleFramesBySide
+  /** 头像装饰贴纸（self / other；可含 GIF dataUrl） */
+  avatarStickers?: AvatarStickersBySide
+  /** 气泡外侧角标（self / other） */
+  bubbleBadges?: BubbleBadgesBySide
 }
 
 /** 允许写入 skinOverrides 的 CSS 变量前缀 */

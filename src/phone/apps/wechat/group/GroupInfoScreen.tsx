@@ -20,7 +20,7 @@ import { GroupRobotSettingsScreen } from './GroupRobotSettingsScreen'
 import { GroupManagementScreen } from './GroupManagementScreen'
 import { CreateGroupPickContactsSheet, type CreateGroupContactPick } from './CreateGroupPickContactsSheet'
 import { GroupMemberAvatarWithRanks } from './GroupMemberAvatarWithRanks'
-import { compressAvatarDataUrl, MAX_AVATAR_DATA_URL_LEN } from '../avatarCompress'
+import { compressAvatarDataUrl, MAX_AVATAR_DATA_URL_LEN, MAX_CHAT_BG_DATA_URL_LEN } from '../avatarCompress'
 import { ChatBackgroundPresetGrid } from '../chatSettings/ChatBackgroundPresetGrid'
 import { resolvePublicImageUrl } from '../../../../publicAssetUrl'
 
@@ -512,8 +512,19 @@ export function GroupInfoScreen({
           objectFit="vertical-cover"
           onCancel={() => setChatBgCropSrc(null)}
           onConfirm={(dataUrl) => {
-            setChatBgCropSrc(null)
-            setChatBgDraft(dataUrl)
+            void (async () => {
+              try {
+                const next = await compressAvatarDataUrl(dataUrl, MAX_CHAT_BG_DATA_URL_LEN)
+                if (next.length > MAX_CHAT_BG_DATA_URL_LEN) {
+                  window.alert('图片过大，请选择较小的图片。')
+                  return
+                }
+                setChatBgCropSrc(null)
+                setChatBgDraft(next)
+              } catch {
+                window.alert('图片处理失败，请重试。')
+              }
+            })()
           }}
         />
       </div>,

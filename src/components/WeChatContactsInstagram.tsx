@@ -1,7 +1,22 @@
 import { ChevronRight, HelpCircle, MessageSquare, Star, Tag, UserPlus, Users } from 'lucide-react'
-import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 import { LUMI_ASSISTANT_AVATAR_PATH } from '../phone/apps/wechat/lumiAssistantAssets'
+import {
+  LUMI_LIQUID_NAV_CONTENT_PAD_BOTTOM,
+  LUMI_SHELL,
+  LUMI_SHELL_FONT,
+  LUMI_THREAD_CAPSULE,
+  lumiThreadCapsuleStyle,
+} from '../phone/apps/wechat/lumiShellTheme'
 import { DEFAULT_PUBLIC_AVATAR_URL } from '../phone/types'
 import { resolveCharacterAvatarUrl } from '../phone/utils/characterAvatarUrl'
 
@@ -127,6 +142,88 @@ function getGroupLetter(name: string): LetterKey {
   return '#'
 }
 
+const softGroupCardStyle: CSSProperties = {
+  background: LUMI_SHELL.card,
+  borderRadius: LUMI_SHELL.cardRadiusPx,
+  border: `1px solid ${LUMI_SHELL.hairline}`,
+  boxShadow: '0 8px 28px rgba(16,16,18,0.045)',
+  overflow: 'hidden',
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="px-1 pb-2.5 pt-0.5 text-[11px] font-semibold tracking-[0.08em]"
+      style={{ color: LUMI_SHELL.mist }}
+    >
+      {children}
+    </div>
+  )
+}
+
+function ContactAvatar({ url, size = 44 }: { url?: string; name?: string; size?: number }) {
+  const src = resolveCharacterAvatarUrl({ avatarUrl: url }) || AVATAR_PLACEHOLDER
+  return (
+    <img
+      src={src}
+      alt=""
+      width={size}
+      height={size}
+      className="shrink-0 rounded-full object-cover"
+      style={{
+        width: size,
+        height: size,
+        border: `1px solid ${LUMI_SHELL.hairline}`,
+        boxShadow: '0 1px 3px rgba(16,16,18,0.04)',
+      }}
+      loading="lazy"
+    />
+  )
+}
+
+function ContactCapsuleRow({
+  contact,
+  onClick,
+  trailing,
+}: {
+  contact: Contact
+  onClick?: () => void
+  trailing?: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-transform active:scale-[0.992]"
+      style={{
+        ...lumiThreadCapsuleStyle(),
+        fontFamily: LUMI_SHELL_FONT,
+      }}
+    >
+      <ContactAvatar url={contact.avatarUrl} name={contact.remarkName} />
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="truncate text-[15px] font-semibold" style={{ color: LUMI_SHELL.ink }}>
+          {contact.remarkName}
+        </span>
+        {contact.tag ? (
+          <span
+            className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium leading-tight"
+            style={{
+              background: 'rgba(16,16,18,0.06)',
+              color: LUMI_SHELL.mist,
+            }}
+          >
+            {contact.tag}
+          </span>
+        ) : null}
+      </div>
+      {trailing ?? (
+        <ChevronRight className="size-4 shrink-0" strokeWidth={1.75} color={LUMI_SHELL.mist} />
+      )}
+    </button>
+  )
+}
+
 export function WeChatContactsInstagram({
   contacts = WECHAT_DEFAULT_CONTACTS,
   onEntryClick,
@@ -135,7 +232,7 @@ export function WeChatContactsInstagram({
   className = '',
 }: WeChatContactsInstagramProps) {
   const [activeLetter, setActiveLetter] = useState<LetterKey>('A')
-  const groupRefs = useRef<Partial<Record<LetterKey, HTMLDivElement | null>>>({})
+  const groupRefs = useRef<Partial<Record<LetterKey, HTMLElement | null>>>({})
   const indexNavRef = useRef<HTMLDivElement | null>(null)
 
   const grouped = useMemo(() => {
@@ -217,173 +314,125 @@ export function WeChatContactsInstagram({
   return (
     <div
       className={`relative h-full min-h-0 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${className}`}
+      style={{ fontFamily: LUMI_SHELL_FONT }}
     >
-      <div className="mx-auto max-w-[560px] space-y-3 px-4 pb-8 pt-4">
-        <section className="overflow-hidden rounded-[12px] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-          <ul className="divide-y divide-[#dbdbdb]">
-            {ENTRY_ACTIONS.map((item) => {
-              const Icon = item.icon
-              const showNewFriendBadge = item.id === 'new-friend' && newFriendsBadgeCount > 0
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => onEntryClick?.(item.id)}
-                    className="flex w-full items-center px-4 py-4 text-left transition-colors duration-200 hover:bg-[#fafafa]"
-                  >
-                    <Icon className="size-5 text-[#262626]" strokeWidth={1.75} />
-                    <span className="ml-3 text-[16px] text-[#262626]">{item.label}</span>
-                    {showNewFriendBadge ? (
-                      <span className="ml-2 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#fa3b30] px-1 text-[11px] font-semibold leading-none text-white">
-                        {newFriendsBadgeCount > 99 ? '99+' : newFriendsBadgeCount}
+      <div
+        className="mx-auto flex w-full max-w-[520px] flex-col px-4 pt-3"
+        style={{
+          gap: 24,
+          paddingBottom: LUMI_LIQUID_NAV_CONTENT_PAD_BOTTOM,
+        }}
+      >
+        <section>
+          <SectionLabel>快捷入口</SectionLabel>
+          <div style={softGroupCardStyle}>
+            <ul>
+              {ENTRY_ACTIONS.map((item, idx) => {
+                const Icon = item.icon
+                const showNewFriendBadge = item.id === 'new-friend' && newFriendsBadgeCount > 0
+                const isLast = idx === ENTRY_ACTIONS.length - 1
+                return (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => onEntryClick?.(item.id)}
+                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors"
+                      style={{
+                        borderBottom: isLast ? undefined : `1px solid ${LUMI_SHELL.hairline}`,
+                      }}
+                    >
+                      <span
+                        className="flex size-9 shrink-0 items-center justify-center rounded-full"
+                        style={{ background: 'rgba(16,16,18,0.04)', color: LUMI_SHELL.ink }}
+                      >
+                        <Icon className="size-[18px]" strokeWidth={1.75} />
                       </span>
-                    ) : null}
-                    <ChevronRight className="ml-auto size-4 text-[#8e8e8e]" strokeWidth={1.75} />
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+                      <span className="min-w-0 flex-1 text-[15px] font-medium" style={{ color: LUMI_SHELL.ink }}>
+                        {item.label}
+                      </span>
+                      {showNewFriendBadge ? (
+                        <span
+                          className="inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10px] font-semibold leading-none text-white"
+                          style={{ background: LUMI_SHELL.badgeRed }}
+                        >
+                          {newFriendsBadgeCount > 99 ? '99+' : newFriendsBadgeCount}
+                        </span>
+                      ) : null}
+                      <ChevronRight
+                        className="size-4 shrink-0"
+                        strokeWidth={1.75}
+                        color={LUMI_SHELL.mist}
+                      />
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
         </section>
 
-        <section
-          className="overflow-hidden rounded-[12px] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-          aria-label="帮助与支持"
-        >
-          <div className="border-b border-[#dbdbdb] px-4 py-3">
-            <div className="flex items-center gap-2">
-              <HelpCircle className="size-[18px] shrink-0 text-[#262626]" strokeWidth={1.75} />
-              <span className="text-[15px] font-semibold text-[#262626]">帮助与支持</span>
-            </div>
-            <p className="mt-2 text-[12px] leading-relaxed text-[#8e8e8e]">
+        <section aria-label="帮助与支持">
+          <SectionLabel>帮助与支持</SectionLabel>
+          <div className="mb-2.5 flex items-start gap-2 px-1">
+            <HelpCircle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} color={LUMI_SHELL.mist} />
+            <p className="text-[12px] leading-relaxed" style={{ color: LUMI_SHELL.mist }}>
               项目内功能、操作有疑问时，可向 Lumi 小助手提问。
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => onContactClick?.(WECHAT_LUMI_ASSISTANT_CONTACT.id)}
-            className="flex w-full items-center gap-3 px-4 py-4 text-left transition-colors duration-200 hover:bg-[#fafafa]"
-          >
-            <img
-              src={
-                resolveCharacterAvatarUrl({ avatarUrl: WECHAT_LUMI_ASSISTANT_CONTACT.avatarUrl }) ||
-                AVATAR_PLACEHOLDER
-              }
-              alt=""
-              width={44}
-              height={44}
-              className="h-11 w-11 shrink-0 rounded-full border border-[#dbdbdb] object-cover"
+          <div className="flex flex-col" style={{ gap: LUMI_THREAD_CAPSULE.gapPx }}>
+            <ContactCapsuleRow
+              contact={WECHAT_LUMI_ASSISTANT_CONTACT}
+              onClick={() => onContactClick?.(WECHAT_LUMI_ASSISTANT_CONTACT.id)}
             />
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="truncate text-[16px] font-medium text-[#262626]">
-                {WECHAT_LUMI_ASSISTANT_CONTACT.remarkName}
-              </span>
-              {WECHAT_LUMI_ASSISTANT_CONTACT.tag ? (
-                <span
-                  className="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold leading-tight text-white"
-                  style={{ background: '#111827', boxShadow: '0 0 0 1px rgba(0,0,0,0.06)' }}
-                >
-                  {WECHAT_LUMI_ASSISTANT_CONTACT.tag}
-                </span>
-              ) : null}
-            </div>
-            <ChevronRight className="ml-auto size-4 shrink-0 text-[#8e8e8e]" strokeWidth={1.75} />
-          </button>
+          </div>
         </section>
 
         {starredContacts.length ? (
-          <section
-            className="overflow-hidden rounded-[12px] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-            aria-label="星标朋友"
-          >
-            <div className="border-b border-[#dbdbdb] px-4 py-3">
-              <div className="flex items-center gap-2">
-                <Star className="size-[18px] shrink-0 text-[#111827]" fill="#111827" strokeWidth={1.6} />
-                <span className="text-[15px] font-semibold text-[#262626]">星标朋友</span>
-              </div>
-            </div>
-            <ul className="bg-white">
-              {starredContacts.map((c, idx) => (
-                <li key={`starred-${c.id}`} className={idx !== starredContacts.length - 1 ? 'border-b border-[#dbdbdb]' : ''}>
-                  <button
-                    type="button"
-                    onClick={() => onContactClick?.(c.id)}
-                    className="flex w-full items-center px-4 py-3 text-left transition-colors duration-200 hover:bg-[#fafafa]"
-                  >
-                    <img
-                      src={resolveCharacterAvatarUrl({ avatarUrl: c.avatarUrl }) || AVATAR_PLACEHOLDER}
-                      alt=""
-                      width={44}
-                      height={44}
-                      className="h-11 w-11 rounded-full border border-[#dbdbdb] object-cover"
-                      loading="lazy"
-                    />
-                    <div className="ml-3 flex min-w-0 flex-1 items-center gap-2">
-                      <span className="truncate text-[16px] text-[#262626]">{c.remarkName}</span>
-                    </div>
-                    <ChevronRight className="size-4 shrink-0 text-[#8e8e8e]" strokeWidth={1.75} />
-                  </button>
-                </li>
+          <section aria-label="星标朋友">
+            <SectionLabel>
+              <span className="inline-flex items-center gap-1.5">
+                <Star className="size-3" fill={LUMI_SHELL.ink} strokeWidth={1.6} color={LUMI_SHELL.ink} />
+                星标朋友
+              </span>
+            </SectionLabel>
+            <div className="flex flex-col" style={{ gap: LUMI_THREAD_CAPSULE.gapPx }}>
+              {starredContacts.map((c) => (
+                <ContactCapsuleRow
+                  key={`starred-${c.id}`}
+                  contact={c}
+                  onClick={() => onContactClick?.(c.id)}
+                />
               ))}
-            </ul>
+            </div>
           </section>
         ) : null}
 
         {visibleLetters.length ? (
-          <section className="overflow-hidden rounded-[12px] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-            <div>
-              {visibleLetters.map((letter) => {
-                const list = grouped.get(letter) ?? []
-                return (
-                  <div
-                    key={letter}
-                    ref={(el) => {
-                      groupRefs.current[letter] = el
-                    }}
-                  >
-                    <div className="bg-[#fafafa] px-4 py-2">
-                      <span className="text-[14px] font-semibold uppercase text-[#8e8e8e]">{letter}</span>
-                    </div>
-
-                    <ul className="bg-white">
-                      {list.map((c, idx) => (
-                        <li
-                          key={c.id}
-                          className={idx !== list.length - 1 ? 'border-b border-[#dbdbdb]' : ''}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => onContactClick?.(c.id)}
-                            className="flex w-full items-center px-4 py-3 text-left transition-colors duration-200 hover:bg-[#fafafa]"
-                          >
-                            <img
-                              src={resolveCharacterAvatarUrl({ avatarUrl: c.avatarUrl }) || AVATAR_PLACEHOLDER}
-                              alt=""
-                              width={44}
-                              height={44}
-                              className="h-11 w-11 rounded-full border border-[#dbdbdb] object-cover"
-                              loading="lazy"
-                            />
-                            <div className="ml-3 flex min-w-0 flex-1 items-center gap-2">
-                              <span className="truncate text-[16px] text-[#262626]">{c.remarkName}</span>
-                              {c.tag ? (
-                                <span
-                                  className="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold leading-tight text-white"
-                                  style={{ background: '#111827', boxShadow: '0 0 0 1px rgba(0,0,0,0.06)' }}
-                                >
-                                  {c.tag}
-                                </span>
-                              ) : null}
-                            </div>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+          <div className="flex flex-col" style={{ gap: 24 }}>
+            {visibleLetters.map((letter) => {
+              const list = grouped.get(letter) ?? []
+              return (
+                <section
+                  key={letter}
+                  ref={(el) => {
+                    groupRefs.current[letter] = el
+                  }}
+                >
+                  <SectionLabel>{letter}</SectionLabel>
+                  <div className="flex flex-col" style={{ gap: LUMI_THREAD_CAPSULE.gapPx }}>
+                    {list.map((c) => (
+                      <ContactCapsuleRow
+                        key={c.id}
+                        contact={c}
+                        onClick={() => onContactClick?.(c.id)}
+                        trailing={<span className="w-4 shrink-0" aria-hidden />}
+                      />
+                    ))}
                   </div>
-                )
-              })}
-            </div>
-          </section>
+                </section>
+              )
+            })}
+          </div>
         ) : null}
       </div>
 
@@ -397,7 +446,13 @@ export function WeChatContactsInstagram({
           onPointerUp={onIndexPointerUp}
           onPointerCancel={onIndexPointerUp}
         >
-          <ul className="flex flex-col items-center">
+          <ul
+            className="flex flex-col items-center gap-0.5 px-1.5 py-2"
+            style={{
+              ...lumiThreadCapsuleStyle(),
+              borderRadius: 999,
+            }}
+          >
             {visibleLetters.map((letter) => {
               const isActive = activeLetter === letter
               return (
@@ -406,9 +461,10 @@ export function WeChatContactsInstagram({
                     type="button"
                     onClick={() => jumpToLetter(letter)}
                     data-letter={letter}
-                    className="block px-1 py-0.5 text-[12px] leading-4 transition-colors duration-150"
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold leading-none transition-colors"
                     style={{
-                      color: isActive ? '#262626' : '#8e8e8e',
+                      color: isActive ? LUMI_SHELL.ink : LUMI_SHELL.mist,
+                      background: isActive ? 'rgba(16,16,18,0.06)' : 'transparent',
                     }}
                   >
                     {letter}

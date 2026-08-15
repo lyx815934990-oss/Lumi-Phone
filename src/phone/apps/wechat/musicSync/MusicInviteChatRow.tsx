@@ -1,8 +1,11 @@
+import type { ReactNode } from 'react'
+
 import type { WeChatBubbleTheme } from '../../../types'
 import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
 } from '../group/ChatGroupSpeakerAvatarWrap'
+import { useSpecialChatCardLongPress } from '../hooks/useSpecialChatCardLongPress'
 import type { WeChatMusicSyncPayload, WeChatMusicSyncInvitePayload } from '../newFriendsPersona/types'
 import { AcceptResponseCard } from './AcceptResponseCard'
 import { CharacterInviteReceivedCard } from './CharacterInviteReceivedCard'
@@ -31,6 +34,9 @@ type Props = {
     invite: WeChatMusicSyncInvitePayload,
     response: 'accept' | 'decline',
   ) => void
+  multiSelectAvatar?: ReactNode
+  selected?: boolean
+  onLongPress?: (anchorRect: DOMRect) => void
 }
 
 function MusicSyncCardBody({
@@ -89,18 +95,39 @@ export function MusicInviteChatRow({
   inviteCoverUrl,
   musicInviteRespondBusy,
   onRespondToCharacterInvite,
+  multiSelectAvatar,
+  selected = false,
+  onLongPress,
 }: Props) {
   const avatarPx = 40
+  const { anchorRef, bind, pressStyle } = useSpecialChatCardLongPress(onLongPress, selected)
+  const listenStatus =
+    data.kind === 'music_invite'
+      ? 'invite'
+      : data.kind === 'music_accept'
+        ? 'accepted'
+        : 'declined'
   const card = (
-    <MusicSyncCardBody
-      messageId={id}
-      isSelf={isSelf}
-      data={data}
-      inviteCoverUrl={inviteCoverUrl}
-      peerName={chatOtherSenderNickname}
-      musicInviteRespondBusy={musicInviteRespondBusy}
-      onRespondToCharacterInvite={onRespondToCharacterInvite}
-    />
+    <div
+      ref={anchorRef}
+      className="relative inline-block select-none transition-[transform,opacity] duration-150 ease-out"
+      style={pressStyle}
+      {...bind}
+      data-wx-msg-kind="listen-together"
+      data-wx-special-card
+      data-wx-special-status={listenStatus}
+      data-wx-bubble-side={isSelf ? 'self' : 'other'}
+    >
+      <MusicSyncCardBody
+        messageId={id}
+        isSelf={isSelf}
+        data={data}
+        inviteCoverUrl={inviteCoverUrl}
+        peerName={chatOtherSenderNickname}
+        musicInviteRespondBusy={musicInviteRespondBusy}
+        onRespondToCharacterInvite={onRespondToCharacterInvite}
+      />
+    </div>
   )
   const showAvatarVisual = showAvatar && showAvatarColumn
   const reserveAvatarGutter = showAvatar
@@ -123,30 +150,32 @@ export function MusicInviteChatRow({
     return (
       <div className="w-[100vw] max-w-[100vw] shrink-0 overflow-x-visible" data-wx-msg-id={id}>
         <div className="ml-auto mr-[24px] flex max-w-full flex-row-reverse items-start gap-[12px]">
-          {showAvatarVisual ? (
-            chatSelfAvatarUrl?.trim() ? (
-              <img
-                src={chatSelfAvatarUrl.trim()}
-                alt=""
-                width={avatarPx}
-                height={avatarPx}
-                className="h-10 w-10 shrink-0 object-cover"
-                style={{
-                  borderRadius: `${bubble.avatarRadiusPx}px`,
-                  border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                }}
-                aria-hidden
-              />
-            ) : (
-              <div
-                className="h-10 w-10 shrink-0"
-                style={{
-                  borderRadius: `${bubble.avatarRadiusPx}px`,
-                  background: 'rgba(0,0,0,0.06)',
-                  border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                }}
-                aria-hidden
-              />
+          {showAvatarVisual || multiSelectAvatar ? (
+            multiSelectAvatar ?? (
+              chatSelfAvatarUrl?.trim() ? (
+                <img
+                  src={chatSelfAvatarUrl.trim()}
+                  alt=""
+                  width={avatarPx}
+                  height={avatarPx}
+                  className="h-10 w-10 shrink-0 object-cover"
+                  style={{
+                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                  }}
+                  aria-hidden
+                />
+              ) : (
+                <div
+                  className="h-10 w-10 shrink-0"
+                  style={{
+                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    background: 'rgba(0,0,0,0.06)',
+                    border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                  }}
+                  aria-hidden
+                />
+              )
             )
           ) : reserveAvatarGutter ? (
             avatarGutter
@@ -159,30 +188,32 @@ export function MusicInviteChatRow({
 
   return (
     <div className="w-[100vw] max-w-[100vw] shrink-0 overflow-x-visible" data-wx-msg-id={id}>
-      {!showAvatar ? (
+      {!showAvatar && !multiSelectAvatar ? (
         <div className="ml-[24px] mr-auto min-w-0">{card}</div>
-      ) : showAvatarVisual ? (
+      ) : showAvatarVisual || multiSelectAvatar ? (
         <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">
-          {<ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge}>
-                {chatOtherAvatarUrl?.trim() ? (
-              <img
-                src={chatOtherAvatarUrl.trim()}
-                alt=""
-                width={avatarPx}
-                height={avatarPx}
-                className="h-10 w-10 shrink-0 object-cover"
-                style={{
-                  borderRadius: `${bubble.avatarRadiusPx}px`,
-                  border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
-                }}
-                aria-hidden
-              />
-            ) : (
-              otherAvatarFallback
-            )}
-              </ChatGroupSpeakerRankOnAvatar>}
+          {multiSelectAvatar ?? (
+            <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge}>
+              {chatOtherAvatarUrl?.trim() ? (
+                <img
+                  src={chatOtherAvatarUrl.trim()}
+                  alt=""
+                  width={avatarPx}
+                  height={avatarPx}
+                  className="h-10 w-10 shrink-0 object-cover"
+                  style={{
+                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                  }}
+                  aria-hidden
+                />
+              ) : (
+                otherAvatarFallback
+              )}
+            </ChatGroupSpeakerRankOnAvatar>
+          )}
           <div className="flex min-w-0 flex-1 flex-col items-start gap-[3px]">
-            {rankBeside ? (
+            {!multiSelectAvatar && rankBeside ? (
               <ChatGroupSenderNicknameWithRank
                 nickname={chatOtherSenderNickname}
                 rankBadge={chatOtherAvatarRankBadge ?? null}

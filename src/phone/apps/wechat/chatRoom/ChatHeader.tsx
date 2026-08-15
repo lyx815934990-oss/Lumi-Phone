@@ -19,6 +19,8 @@ export type ChatHeaderTypingProps = {
   titleUnreadCount?: number
   /** 自定义未读数展示组件 */
   renderUnread?: (count: number) => ReactNode
+  /** 备注名后方（如在线状态圆点） */
+  titleAfterName?: ReactNode
 }
 
 /**
@@ -35,6 +37,7 @@ function ChatHeaderTypingCenter({
   titleTrailingInteractive = false,
   titleUnreadCount,
   renderUnread,
+  titleAfterName,
 }: ChatHeaderTypingProps) {
   const [altPhase, setAltPhase] = useState<'title' | 'typing'>('title')
   const typingAlt = pendingCount > 0 && !forceTyping && !!typingText.trim()
@@ -85,10 +88,12 @@ function ChatHeaderTypingCenter({
             transition={{ duration: 0.2, ease: 'easeOut' }}
           >
             <p
-              className="truncate text-center text-[15px] font-normal leading-snug"
+              data-wx-chat-header-sub
+              className="inline-flex max-w-full items-center justify-center gap-0.5 truncate text-center text-[15px] font-normal leading-snug"
               style={{ color: 'var(--wx-text-muted)' }}
             >
-              {typingText}
+              <span className="truncate">{typingText}</span>
+              {titleAfterName}
             </p>
           </motion.div>
         </AnimatePresence>
@@ -113,12 +118,15 @@ function ChatHeaderTypingCenter({
                 <div className="relative inline-flex max-w-full min-w-0 items-center">
                   <div className="flex min-h-[36px] flex-col items-center justify-center gap-0 leading-tight">
                     <h1
-                      className="max-w-full truncate text-center text-[17px] font-semibold tracking-[0.2px]"
+                      data-wx-chat-header-title
+                      className="inline-flex max-w-full items-center justify-center gap-0.5 truncate text-center text-[17px] font-semibold tracking-[0.2px]"
                       style={{ color: 'var(--wx-text)' }}
                     >
-                      {contactName}
+                      <span className="truncate">{contactName}</span>
+                      {titleAfterName}
                     </h1>
                     <p
+                      data-wx-chat-header-sub
                       className="max-w-full truncate text-center text-[11px] font-normal"
                       style={{ color: 'var(--wx-text-muted)' }}
                     >
@@ -137,10 +145,12 @@ function ChatHeaderTypingCenter({
               ) : (
                 <div className="relative inline-flex max-w-full min-w-0 items-center">
                   <h1
+                    data-wx-chat-header-title
                     className="flex min-h-[36px] items-center justify-center gap-0.5 truncate text-center text-[17px] font-semibold leading-[36px] tracking-[0.2px]"
                     style={{ color: 'var(--wx-text)' }}
                   >
                     <span className="truncate">{contactName}</span>
+                    {titleAfterName}
                     {showTitleUnread && renderUnread ? renderUnread(titleUnreadCount) : null}
                   </h1>
                   {trailing ? (
@@ -164,10 +174,12 @@ function ChatHeaderTypingCenter({
               transition={{ duration: 0.14, ease: 'easeOut' }}
             >
               <p
-                className="truncate text-center text-[15px] font-normal leading-snug"
+                data-wx-chat-header-sub
+                className="inline-flex max-w-full items-center justify-center gap-0.5 truncate text-center text-[15px] font-normal leading-snug"
                 style={{ color: 'var(--wx-text-muted)' }}
               >
-                {typingText}
+                <span className="truncate">{typingText}</span>
+                {titleAfterName}
               </p>
             </motion.div>
           )}
@@ -181,12 +193,15 @@ function ChatHeaderTypingCenter({
       <div className="relative inline-flex max-w-full min-w-0 items-center">
         <div className="flex min-h-[36px] flex-col items-center justify-center gap-0 leading-tight">
           <h1
-            className="max-w-full truncate text-center text-[17px] font-semibold tracking-[0.2px]"
+            data-wx-chat-header-title
+            className="inline-flex max-w-full items-center justify-center gap-0.5 truncate text-center text-[17px] font-semibold tracking-[0.2px]"
             style={{ color: 'var(--wx-text)' }}
           >
-            {contactName}
+            <span className="truncate">{contactName}</span>
+            {titleAfterName}
           </h1>
           <p
+            data-wx-chat-header-sub
             className="max-w-full truncate text-center text-[11px] font-normal"
             style={{ color: 'var(--wx-text-muted)' }}
           >
@@ -208,10 +223,12 @@ function ChatHeaderTypingCenter({
   return (
     <div className="relative inline-flex max-w-full min-w-0 items-center">
       <h1
+        data-wx-chat-header-title
         className="flex min-h-[36px] items-center justify-center gap-0.5 truncate text-center text-[17px] font-semibold leading-[36px] tracking-[0.2px]"
         style={{ color: 'var(--wx-text)' }}
       >
         <span className="truncate">{contactName}</span>
+        {titleAfterName}
         {showTitleUnread && renderUnread ? renderUnread(titleUnreadCount) : null}
       </h1>
       {trailing ? (
@@ -237,6 +254,7 @@ export type ChatHeaderStatusLineProps = {
   idleText?: string
   className?: string
   typingClassName?: string
+  titleAfterName?: ReactNode
 }
 
 function ChatHeaderStatusLineInner({
@@ -247,6 +265,7 @@ function ChatHeaderStatusLineInner({
   idleText = '在线',
   className = '',
   typingClassName = '',
+  titleAfterName,
 }: ChatHeaderStatusLineProps) {
   const [showTypingLine, setShowTypingLine] = useState(false)
   const active = forceTyping || pendingCount > 0
@@ -281,7 +300,10 @@ function ChatHeaderStatusLineInner({
 
   return (
     <>
-      <span className="block w-full truncate text-[16px] font-bold leading-tight text-black">{contactName}</span>
+      <span className="flex w-full items-center justify-center gap-0.5 truncate text-[16px] font-bold leading-tight text-black">
+        <span className="truncate">{contactName}</span>
+        {titleAfterName}
+      </span>
       <span
         className={`mt-[2px] block w-full truncate text-[12px] leading-tight ${active && showTypingLine ? typingClassName : className}`}
       >
