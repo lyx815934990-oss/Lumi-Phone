@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  BookMarked,
   BookUser,
   Brain,
   ChevronDown,
@@ -66,6 +67,7 @@ import { splitDatingAssistantOutput } from './plotCoT'
 import { StoryFeed } from './StoryFeed'
 import { extractVnVoiceParamsBlock } from './vnVoiceParamsStrip'
 import { StyleSettingsDrawer } from './StyleSettingsDrawer'
+import { DatingArchiveWorldbookSheet } from './DatingArchiveWorldbookSheet'
 import { loadDatingStyleTuning, type DatingStyleTuning } from './styleTuningStorage'
 import {
   clampDatingLengthTargetChars,
@@ -761,6 +763,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
   const [vnRegenerateConfirmOpen, setVnRegenerateConfirmOpen] = useState(false)
   const [resetArchiveConfirmOpen, setResetArchiveConfirmOpen] = useState(false)
   const [styleDrawerOpen, setStyleDrawerOpen] = useState(false)
+  const [archiveWbSheetOpen, setArchiveWbSheetOpen] = useState(false)
   const [plotImageSettingsOpen, setPlotImageSettingsOpen] = useState(false)
   const { configured: imageGenConfigured } = useImageGenSettings()
   const [styleTuning, setStyleTuning] = useState<DatingStyleTuning>(() => ({ stylePrompt: '', referenceSnippet: '' }))
@@ -3806,7 +3809,15 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                   onChange={patchDatingPlotFontSettings}
                   onDataUrlChange={setPlotFontDataUrls}
                 />
-                <div className="ml-auto flex shrink-0 items-center pl-1">
+                <div className="ml-auto flex shrink-0 items-center gap-1.5 pl-1">
+                  <button
+                    type="button"
+                    onClick={() => setArchiveWbSheetOpen(true)}
+                    title="档案室世界书"
+                    className="rounded-lg border border-stone-200/90 bg-stone-50/80 p-2 text-stone-400 transition-all duration-200 hover:border-stone-300 hover:bg-white hover:text-stone-800"
+                  >
+                    <BookMarked className="size-4" strokeWidth={1.65} />
+                  </button>
                   <button
                     type="button"
                     onClick={() => setStyleDrawerOpen(true)}
@@ -4040,6 +4051,16 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                   }}
                 />
               </div>
+              <button
+                type="button"
+                className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-[#262626] hover:bg-stone-50"
+                onClick={() => {
+                  setArchiveWbSheetOpen(true)
+                  setMenuOpen(false)
+                }}
+              >
+                档案室世界书
+              </button>
               <button
                 type="button"
                 className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-[#262626] hover:bg-stone-50"
@@ -5513,6 +5534,11 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
         characterId={currentCharacter.id}
         onClose={() => setStyleDrawerOpen(false)}
         onSaved={(v) => setStyleTuning(v)}
+      />
+
+      <DatingArchiveWorldbookSheet
+        open={archiveWbSheetOpen}
+        onClose={() => setArchiveWbSheetOpen(false)}
       />
 
       <DatingPlotImageSettingsSheet
