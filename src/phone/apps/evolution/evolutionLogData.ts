@@ -85,7 +85,7 @@ export const EVOLUTION_LOG: VersionRecord[] = [
         modules: [
           {
             moduleName: '记忆 · 手动改剧情时间',
-            entryPath: '微信 › 聊天室 / 线下约会 › 记忆管理 · 剧情时间轴',
+            entryPath: '微信 › 我 › 记忆',
             items: [
               d(
                 '记忆与时间轴：可手动编辑记忆条目、时间轴节点上的剧情时间（单点 / 区间），改完后写入本机并参与后续注入与展示。',
