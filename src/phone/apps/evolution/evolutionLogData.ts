@@ -117,7 +117,7 @@ export const EVOLUTION_LOG: VersionRecord[] = [
         modules: [
           {
             moduleName: '思维溯源面板',
-            entryPath: '微信 › 私聊 › 功能面板 › 思维溯源',
+            entryPath: '微信 › 我 › 思维溯源',
             items: [
               d(
                 '七段重排：按真实注入顺序展示——时间轴现状、向量历史摘要、近场线下摘要、两轮线下全文、未摘要私聊、向量线上长期记忆、关键词线上长期记忆。',
