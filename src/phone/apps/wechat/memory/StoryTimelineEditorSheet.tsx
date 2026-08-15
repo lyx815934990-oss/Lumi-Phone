@@ -18,12 +18,20 @@ import {
   resolveStoryTimelineRowTitle,
   stripStoryTimelineTitleLine,
   upsertStoryTimelineTitleInRowText,
+  upsertStoryTimelineCalendarAnchorInRowText,
+  extractStoryTimelineEditableCalendarLabel,
   normalizeStoryTimelineRowTitle,
   STORY_TIMELINE_ROW_TITLE_MAX,
   type StoryTimelineEventScope,
   type StoryTimelinePlotRow,
   type StoryTimelineState,
 } from './storyTimelineTypes'
+import {
+  dualNarrativeFieldsFromDatetimeLocal,
+  dualNarrativeFieldsToDatetimeLocal,
+  parseDualNarrativeFieldsFromLabel,
+  type DualNarrativeStoryFields,
+} from './dualNarrativeTime'
 
 export type StoryTimelineEditorTarget =
   | { kind: 'row-create'; characterId: string; defaultScope?: StoryTimelineEventScope }
@@ -55,6 +63,7 @@ export function StoryTimelineEditorSheet({
 }) {
   const [text, setText] = useState('')
   const [rowTitleDraft, setRowTitleDraft] = useState('')
+  const [storyFields, setStoryFields] = useState<DualNarrativeStoryFields>({})
   const [busy, setBusy] = useState(false)
   const [loadingDisplay, setLoadingDisplay] = useState(false)
   const [error, setError] = useState('')
@@ -74,11 +83,14 @@ export function StoryTimelineEditorSheet({
       displaySnapshotRef.current = ''
       setText('')
       setRowTitleDraft('')
+      setStoryFields({})
       setLoadingDisplay(false)
       return
     }
     if (target.kind === 'row-edit') {
       setRowTitleDraft(resolveStoryTimelineRowTitle(target.row))
+      const cal = extractStoryTimelineEditableCalendarLabel(target.row.rowText)
+      setStoryFields(cal ? parseDualNarrativeFieldsFromLabel(cal) : {})
       const rawBody = stripStoryTimelineTitleLine(target.row.rowText)
       rawPersistRef.current = rawBody
       setLoadingDisplay(true)
@@ -88,6 +100,10 @@ export function StoryTimelineEditorSheet({
           if (loadSeqRef.current !== seq) return
           displaySnapshotRef.current = display
           setText(display)
+          if (!cal) {
+            const fromDisplay = extractStoryTimelineEditableCalendarLabel(display)
+            if (fromDisplay) setStoryFields(parseDualNarrativeFieldsFromLabel(fromDisplay))
+          }
         })
         .catch(() => {
           if (loadSeqRef.current !== seq) return
@@ -100,6 +116,7 @@ export function StoryTimelineEditorSheet({
       return
     }
     setRowTitleDraft('')
+    setStoryFields({})
     const rawState = target.initialText
     rawPersistRef.current = rawState
     setLoadingDisplay(true)
@@ -109,6 +126,8 @@ export function StoryTimelineEditorSheet({
         if (loadSeqRef.current !== seq) return
         displaySnapshotRef.current = display
         setText(display)
+        const fromDisplay = extractStoryTimelineEditableCalendarLabel(display)
+        if (fromDisplay) setStoryFields(parseDualNarrativeFieldsFromLabel(fromDisplay))
       })
       .catch(() => {
         if (loadSeqRef.current !== seq) return
@@ -151,7 +170,12 @@ export function StoryTimelineEditorSheet({
           },
         )
       }
-      const mergedRowText = upsertStoryTimelineTitleInRowText(bodyForStorage, normalizedTitle).slice(0, 4000)
+      const mergedWithTitle = upsertStoryTimelineTitleInRowText(bodyForStorage, normalizedTitle).slice(0, 4000)
+      const calendarLabel = storyFields.storyTimeLabel?.trim() || ''
+      const mergedRowText =
+        isRow && calendarLabel
+          ? upsertStoryTimelineCalendarAnchorInRowText(mergedWithTitle, calendarLabel).slice(0, 4000)
+          : mergedWithTitle
       if (target.kind === 'row-create') {
         const row = buildManualStoryTimelinePlotRow({
           characterId: target.characterId,
@@ -228,7 +252,7 @@ export function StoryTimelineEditorSheet({
     } finally {
       setBusy(false)
     }
-  }, [target, busy, loadingDisplay, text, rowTitleDraft, onClose, onSaved])
+  }, [target, busy, loadingDisplay, text, rowTitleDraft, storyFields, onClose, onSaved])
 
   if (typeof document === 'undefined') return null
 
@@ -291,6 +315,36 @@ export function StoryTimelineEditorSheet({
                     placeholder="如：温柔瞬间、化解冲突（约 10 字内）"
                     className="mb-4 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-[14px] text-gray-900 outline-none focus:border-gray-400 focus:bg-white disabled:opacity-60"
                   />
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                    剧情时间（锚点）
+                  </p>
+                  <p className="mb-2 text-[11px] leading-relaxed text-gray-400">
+                    系统用【本轮锚点】里的公历日判断是否为「历史」。只改正文年份不够；在此改正会同步改锚点。
+                  </p>
+                  <div className="mb-4 flex items-center gap-2">
+                    <input
+                      type="datetime-local"
+                      value={dualNarrativeFieldsToDatetimeLocal(storyFields)}
+                      onChange={(e) => setStoryFields(dualNarrativeFieldsFromDatetimeLocal(e.target.value))}
+                      disabled={busy || loadingDisplay}
+                      className="min-w-0 flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-[14px] text-gray-900 outline-none focus:border-gray-400 focus:bg-white disabled:opacity-60"
+                    />
+                    {storyFields.storyTimeLabel ? (
+                      <button
+                        type="button"
+                        disabled={busy || loadingDisplay}
+                        className="shrink-0 rounded-full px-3 py-2 text-[12px] text-gray-500 active:bg-gray-100 disabled:opacity-50"
+                        onClick={() => setStoryFields({})}
+                      >
+                        清除
+                      </button>
+                    ) : null}
+                  </div>
+                  {storyFields.storyTimeLabel ? (
+                    <p className="mb-4 -mt-2 text-[12px] text-gray-500">
+                      将写入锚点：{storyFields.storyTimeLabel}
+                    </p>
+                  ) : null}
                 </>
               ) : null}
               <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">

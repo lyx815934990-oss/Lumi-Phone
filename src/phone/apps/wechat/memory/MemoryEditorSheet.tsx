@@ -42,6 +42,14 @@ import {
   readMemoryCoachSeen,
   writeMemoryCoachSeen,
 } from './memoryCoachTypes'
+import {
+  dualNarrativeFieldsFromDatetimeLocal,
+  dualNarrativeFieldsToDatetimeLocal,
+  extractStoryTimeLabelFromText,
+  parseDualNarrativeFieldsFromLabel,
+  upsertOnlineMemoryStoryTimeInContent,
+  type DualNarrativeStoryFields,
+} from './dualNarrativeTime'
 
 const INK = ARCHIVE_INK
 const MUTED = ARCHIVE_MUTED
@@ -97,6 +105,7 @@ export function MemoryEditorSheet({
   const [keywords, setKeywords] = useState<string[]>([])
   const [kwKey, setKwKey] = useState(0)
   const [content, setContent] = useState('')
+  const [storyFields, setStoryFields] = useState<DualNarrativeStoryFields>({})
   const [userBindings, setUserBindings] = useState<WorldBookUserPlaceholderBinding[]>([])
   const [sessionInsertCtx, setSessionInsertCtx] = useState<WorldBookUserInsertContext | null>(null)
   const [identityOptions, setIdentityOptions] = useState<MemoryEditorIdentityOption[]>([])
@@ -185,6 +194,33 @@ export function MemoryEditorSheet({
       setTriggerType(entry.triggerType)
       setKeywords(entry.triggerKeywords ?? [])
       setContent(entry.content)
+      {
+        const fromRaw: DualNarrativeStoryFields = {
+          ...(raw.storyDay?.trim() ? { storyDay: raw.storyDay.trim() } : {}),
+          ...(raw.storyTime?.trim() ? { storyTime: raw.storyTime.trim() } : {}),
+          ...(raw.storyTimeLabel?.trim()
+            ? { storyTimeLabel: raw.storyTimeLabel.trim() }
+            : {}),
+        }
+        const fromLabel =
+          fromRaw.storyTimeLabel ||
+          entry.storyTimeLabel ||
+          extractStoryTimeLabelFromText(entry.content) ||
+          ''
+        setStoryFields(
+          fromRaw.storyDay || fromRaw.storyTimeLabel
+            ? {
+                ...fromRaw,
+                ...(fromLabel && !fromRaw.storyTimeLabel
+                  ? parseDualNarrativeFieldsFromLabel(fromLabel)
+                  : fromRaw.storyTimeLabel
+                    ? {}
+                    : parseDualNarrativeFieldsFromLabel(fromLabel)),
+                ...(fromLabel ? { storyTimeLabel: fromLabel } : {}),
+              }
+            : parseDualNarrativeFieldsFromLabel(fromLabel),
+        )
+      }
       setUserBindings(
         raw.userPlaceholderBindings?.length ? raw.userPlaceholderBindings.map((b) => ({ ...b })) : [],
       )
@@ -198,6 +234,7 @@ export function MemoryEditorSheet({
     setTriggerType('keyword')
     setKeywords([])
     setContent('')
+    setStoryFields({})
     setUserBindings([])
     setKwKey((k) => k + 1)
   }, [open, mode, entry, raw, attributionRoster, allContacts, initialCharId, groupOptions, isLinkedEditor])
@@ -353,8 +390,8 @@ export function MemoryEditorSheet({
   }
 
   const save = async () => {
-    const body = content.trim()
-    if (!body || !storageCharacterId) return
+    const bodyRaw = content.trim()
+    if (!bodyRaw || !storageCharacterId) return
     setBusy(true)
     try {
       let linkedFromCharacterId = raw?.linkedFromCharacterId
@@ -370,6 +407,20 @@ export function MemoryEditorSheet({
       const meetOnly =
         tags.includes('遇见') && !tags.includes('私聊') && !tags.includes('群聊')
 
+      const storyPatch: DualNarrativeStoryFields = storyFields.storyTimeLabel?.trim()
+        ? parseDualNarrativeFieldsFromLabel(storyFields.storyTimeLabel)
+        : storyFields.storyDay?.trim()
+          ? parseDualNarrativeFieldsFromLabel(
+              `${storyFields.storyDay.trim()}${
+                storyFields.storyTime?.trim() ? ` ${storyFields.storyTime.trim()}` : ''
+              }`,
+            )
+          : {}
+      const body = upsertOnlineMemoryStoryTimeInContent(
+        bodyRaw,
+        storyPatch.storyTimeLabel ?? null,
+      )
+
       const draftEntry: MemoryEntry = {
         id: entry?.id ?? uid('mem'),
         sourceIdentity: 'main_wechat',
@@ -381,6 +432,7 @@ export function MemoryEditorSheet({
         triggerType,
         triggerKeywords: triggerType === 'keyword' ? keywords : undefined,
         timestamp: Date.now(),
+        storyTimeLabel: storyPatch.storyTimeLabel,
         groupId: !isLinkedEditor && tags.includes('群聊') ? groupId.trim() : undefined,
         memoryScope: isLinkedEditor ? 'linked' : raw?.memoryScope,
         linkedFromCharacterId,
@@ -413,16 +465,37 @@ export function MemoryEditorSheet({
       )
 
       const now = Date.now()
+      const hasStory = Boolean(storyPatch.storyTimeLabel?.trim())
+      const storyPersist: DualNarrativeStoryFields = hasStory
+        ? {
+            ...(storyPatch.storyDay ? { storyDay: storyPatch.storyDay } : {}),
+            ...(storyPatch.storyTime ? { storyTime: storyPatch.storyTime } : {}),
+            storyTimeLabel: storyPatch.storyTimeLabel,
+          }
+        : {}
+      const storyChanged =
+        (storyPersist.storyTimeLabel ?? '') !== (raw?.storyTimeLabel?.trim() ?? '') ||
+        (storyPersist.storyDay ?? '') !== (raw?.storyDay?.trim() ?? '')
       if (mode === 'edit' && raw) {
+        const {
+          storyDay: _omitDay,
+          storyTime: _omitTime,
+          storyTimeLabel: _omitLabel,
+          ...rawWithoutStory
+        } = raw
         await personaDb.upsertCharacterMemory({
-          ...raw,
+          ...rawWithoutStory,
           ...payload,
           id: raw.id,
           createdAt: raw.createdAt,
           updatedAt: now,
           isAutoGenerated: false,
+          ...storyPersist,
           ...(reconciled.userPlaceholderBindings.length
             ? { userPlaceholderBindings: reconciled.userPlaceholderBindings }
+            : {}),
+          ...(reconciled.content !== raw.content || storyChanged
+            ? { memoryEmbedding: undefined, memoryEmbeddingHash: undefined }
             : {}),
         })
       } else {
@@ -432,6 +505,7 @@ export function MemoryEditorSheet({
           createdAt: now,
           updatedAt: now,
           isAutoGenerated: false,
+          ...storyPersist,
           ...(reconciled.userPlaceholderBindings.length
             ? { userPlaceholderBindings: reconciled.userPlaceholderBindings }
             : {}),
@@ -721,6 +795,40 @@ export function MemoryEditorSheet({
                           </motion.div>
                         ) : null}
                       </AnimatePresence>
+                    </div>
+
+                    <div className="mt-5">
+                      <p className="text-[10px] tracking-[0.2em] uppercase" style={{ color: MUTED }}>
+                        剧情时间
+                      </p>
+                      <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
+                        卡片「剧情时间」与系统历史判定均读此字段；只改正文里的年份不够。改完会同步写入【剧情时间】行。
+                      </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="datetime-local"
+                          value={dualNarrativeFieldsToDatetimeLocal(storyFields)}
+                          onChange={(e) => {
+                            const next = dualNarrativeFieldsFromDatetimeLocal(e.target.value)
+                            setStoryFields(next)
+                          }}
+                          className="min-w-0 flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-[14px] text-gray-900 outline-none focus:border-gray-400 focus:bg-white"
+                        />
+                        {storyFields.storyTimeLabel || storyFields.storyDay ? (
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-full px-3 py-2 text-[12px] text-gray-500 active:bg-gray-100"
+                            onClick={() => setStoryFields({})}
+                          >
+                            清除
+                          </button>
+                        ) : null}
+                      </div>
+                      {storyFields.storyTimeLabel ? (
+                        <p className="mt-1.5 text-[12px] text-gray-500">
+                          将保存为：{storyFields.storyTimeLabel}
+                        </p>
+                      ) : null}
                     </div>
 
                     <div className="mt-5">

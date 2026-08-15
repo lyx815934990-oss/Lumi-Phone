@@ -1625,6 +1625,51 @@ export function upsertStoryTimelineTitleInRowText(rowText: string, title?: strin
   return body ? `【摘要标题】${normalized}\n\n${body}` : `【摘要标题】${normalized}`
 }
 
+/**
+ * 手动纠正摘要行故事内公历时刻：改写【本轮锚点】开头的年月日（及可选时刻），
+ * 保留地点/在场等其它锚点段。历史「时效」判定读的就是这一行。
+ */
+export function upsertStoryTimelineCalendarAnchorInRowText(
+  rowText: string,
+  calendarLabel: string | null | undefined,
+): string {
+  const label = String(calendarLabel ?? '').trim()
+  const raw = String(rowText ?? '')
+  if (!label) return raw
+  const lines = raw.split('\n')
+  let found = false
+  const next = lines.map((line) => {
+    const m = line.match(/^(\s*【本轮锚点】)\s*(.*)$/)
+    if (!m) return line
+    found = true
+    const rest = (m[2] ?? '').trim()
+    const parts = rest
+      .split(/\s*·\s*/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .filter((p) => !GREGORIAN_ANCHOR_PART_RE.test(p) && !/^剧情日\s/.test(p))
+    return `${m[1]}${[label, ...parts].join(' · ')}`
+  })
+  if (found) return next.join('\n')
+  const titleIdx = next.findIndex((l) => /^【摘要标题】/.test(l.trim()))
+  const kwIdx = next.findIndex((l) => /^【摘要关键词】/.test(l.trim()))
+  const insertAt = Math.max(titleIdx, kwIdx)
+  const anchorLine = `【本轮锚点】${label}`
+  if (insertAt >= 0) {
+    next.splice(insertAt + 1, 0, '', anchorLine)
+    return next.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  }
+  return `${anchorLine}\n\n${raw}`.trim()
+}
+
+/** 从摘要行提取可编辑的公历日历段（不含地点/在场） */
+export function extractStoryTimelineEditableCalendarLabel(rowText: string): string {
+  const anchor = String(rowText ?? '').match(/【本轮锚点】([^\n]+)/)?.[1]?.trim() ?? ''
+  if (!anchor) return ''
+  const m = anchor.match(STORY_TIMELINE_GREGORIAN_ANCHOR_RE)
+  return m?.[0]?.trim() ?? ''
+}
+
 export function resolveStoryTimelineRowTitle(
   row: StoryTimelinePlotRow,
   displayText?: string,
