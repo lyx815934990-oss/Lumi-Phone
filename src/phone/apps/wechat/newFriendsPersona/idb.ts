@@ -8843,7 +8843,6 @@ export class PersonaDb {
         opts,
         existingText: baseText,
       })
-      if (recalled.recalledCount > 0) vectorUsed = true
       return recalled.text
     }
 
