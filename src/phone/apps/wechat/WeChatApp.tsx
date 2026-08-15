@@ -6151,6 +6151,7 @@ function WeChatAppInner({ onBack }: Props) {
                     onThreadHidden={hideMessageThreadFromList}
                     onNewGroup={() => setNewGroupFromMessagesOpen(true)}
                     onAddFriend={() => setRoute({ name: 'add-friend' })}
+                    onHome={onBack}
                     pulseContacts={state.wechatPersonaContacts.map((c) => ({
                       characterId: c.characterId,
                       remarkName: c.remarkName,

@@ -579,6 +579,7 @@ export function MessagesTab({
   onThreadHidden,
   onAddFriend,
   onNewGroup,
+  onHome,
   pulseContacts = [],
   pulseSelfName,
   pulseSelfAvatarUrl,
@@ -594,6 +595,8 @@ export function MessagesTab({
   onThreadHidden?: (conversationKey: string) => void
   onAddFriend?: () => void
   onNewGroup?: () => void
+  /** 返回手机桌面（信息页自管顶栏时须自行挂载） */
+  onHome?: () => void
   /** 动态页：通讯录人设好友 */
   pulseContacts?: FriendPulseContact[]
   pulseSelfName?: string
@@ -690,6 +693,34 @@ export function MessagesTab({
     >
       {/* 顶栏 */}
       <div className="relative flex shrink-0 items-center justify-center px-4 pb-1 pt-2">
+        {onHome ? (
+          <div className="absolute left-3 top-1/2 flex -translate-y-1/2 items-center">
+            <Pressable
+              type="button"
+              data-wx-chat-header-btn="back"
+              onClick={onHome}
+              className="flex h-9 w-9 items-center justify-center rounded-full"
+              style={{ color: LUMI_SHELL.ink }}
+              aria-label="返回桌面"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.35"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M3 11l9-7 9 7" />
+                <path d="M5 10.5V20a1.8 1.8 0 0 0 1.8 1.8h10.4A1.8 1.8 0 0 0 19 20v-9.5" />
+                <path d="M10 21v-6.2a1.6 1.6 0 0 1 1.6-1.6h.8a1.6 1.6 0 0 1 1.6 1.6V21" />
+              </svg>
+            </Pressable>
+          </div>
+        ) : null}
         <h1 className="text-[17px] font-semibold tracking-tight" style={{ color: LUMI_SHELL.ink }}>
           微信
         </h1>
