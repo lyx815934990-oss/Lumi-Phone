@@ -2653,6 +2653,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       unsGroupBlock: unsGrpClipped,
       unsOfflineBlock: unsOffClipped,
       storyTimelineNotes: (storyTimelineBlock ?? '').trim() || storyTimelineClipped,
+      longTermMemoryNotes: longMemClipped,
       conversationKey: onlineCtx?.conversationKey,
       apiConfig,
       rawAssistantOutput: traceBody,

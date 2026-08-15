@@ -17,17 +17,13 @@ import {
   MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
   MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
 } from './wechatMemoryPromptBlocks'
-import { stripPromptPolicyBlocksForTraceDisplay, stripUnsummarizedOnlineTimestampsForDisplay } from './memoryTraceDisplaySanitize'
+import { stripPromptPolicyBlocksForTraceDisplay, stripUnsummarizedOnlineTimestampsForDisplay, sanitizeMemoryTraceDisplayText } from './memoryTraceDisplaySanitize'
 import {
   buildPrivateUnsummarizedTraceBlocks,
   lineRelationUiLabel,
   normalizeMemoryPromptLineScope,
   parseLineScopedUnsummarizedTextForTrace,
 } from './wechatMemoryLineScope'
-
-function traceOnlineUnsummarizedSnippetForDisplay(snippet: string): string {
-  return stripUnsummarizedOnlineTimestampsForDisplay(snippet.trim())
-}
 import {
   buildOfflinePlotTraceRowsFromInjectedContext,
   listInjectedOfflinePlotTraceRowsForMemoryTrace,
@@ -41,6 +37,109 @@ import type {
   MemoryTraceWorldBookAfterInjectedEntry,
   MemoryTraceWorldBookAfterPatchRow,
 } from './memoryTraceTypes'
+
+function traceOnlineUnsummarizedSnippetForDisplay(snippet: string): string {
+  const raw = snippet.trim()
+  if (!raw) return ''
+  const light = stripUnsummarizedOnlineTimestampsForDisplay(
+    stripPromptPolicyBlocksForTraceDisplay(raw),
+  ).trim()
+  const heavy = sanitizeMemoryTraceDisplayText(light || raw).trim()
+  // 清洗过度时回退轻量版，避免「有待总结」却显示空
+  if (heavy.length >= 12) return heavy
+  if (light.length >= 12) return light
+  return stripUnsummarizedOnlineTimestampsForDisplay(raw).trim() || raw
+}
+
+/** 从本轮实际注入的长期记忆正文拆出关键词/向量段，供溯源在二次召回为空时回显 */
+function parseInjectedLongTermMemoryForTrace(raw: string): {
+  keywordHits: Array<{ keyword: string; content: string }>
+  vectorRetrievals: Array<{ relevanceScore: number; content: string }>
+} {
+  const text = String(raw ?? '').trim()
+  if (!text) return { keywordHits: [], vectorRetrievals: [] }
+
+  const keywordHits: Array<{ keyword: string; content: string }> = []
+  const vectorRetrievals: Array<{ relevanceScore: number; content: string }> = []
+
+  const pushNumbered = (body: string, into: 'kw' | 'vec', label: string) => {
+    const cleaned = sanitizeMemoryTraceDisplayText(body).trim() || body.trim()
+    if (!cleaned) return
+    const items = cleaned
+      .split(/\n(?=\d+\.\s)/)
+      .map((x) => x.replace(/^\d+\.\s*/, '').trim())
+      .filter(Boolean)
+    if (!items.length) {
+      if (into === 'kw') keywordHits.push({ keyword: label, content: cleaned })
+      else vectorRetrievals.push({ relevanceScore: 0, content: cleaned })
+      return
+    }
+    for (const item of items) {
+      if (into === 'kw') keywordHits.push({ keyword: label, content: item })
+      else vectorRetrievals.push({ relevanceScore: 0, content: item })
+    }
+  }
+
+  const sectionRe =
+    /【板块·(向量召回|关键词命中)·([^】]+)】[^\n]*\n([\s\S]*?)(?=\n【板块·|\n【记忆参考|$)/g
+  let m: RegExpExecArray | null
+  let matched = false
+  while ((m = sectionRe.exec(text)) !== null) {
+    matched = true
+    const kind = m[1]
+    const title = m[2]?.trim() || (kind === '向量召回' ? '向量召回' : '关键词命中')
+    const body = m[3] ?? ''
+    if (kind === '向量召回') pushNumbered(body, 'vec', title)
+    else pushNumbered(body, 'kw', title)
+  }
+
+  if (!matched) {
+    const cleaned = sanitizeMemoryTraceDisplayText(text).trim() || text
+    if (cleaned) keywordHits.push({ keyword: '本轮注入', content: cleaned })
+  }
+
+  return { keywordHits, vectorRetrievals }
+}
+
+async function fallbackUnsummarizedPrivateForTrace(params: {
+  characterId: string
+  conversationKey?: string | null
+  wechatAccountId?: string | null
+}): Promise<string> {
+  const cid = params.characterId.trim()
+  if (!cid) return ''
+  try {
+    const split = await formatDatingUnsummarizedPrivateChatSplit({
+      conversationKey: params.conversationKey?.trim() || '',
+      characterId: cid,
+      wechatAccountId: params.wechatAccountId,
+      maxMessages: MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
+      maxChars: MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
+    })
+    const body = [split.nearBlock, split.pastBlock].filter(Boolean).join('\n\n').trim()
+    if (body) return body
+  } catch {
+    /* ignore */
+  }
+  try {
+    const recent = await personaDb.listWeChatChatMessagesRecentByCharacter({
+      characterId: cid,
+      limit: 80,
+    })
+    const lines: string[] = []
+    for (const m of recent) {
+      if (m.isRecalled) continue
+      const mk = String(m.conversationKey ?? '').trim()
+      if (mk.startsWith('wxgrp:') || mk.startsWith('wxagrp:')) continue
+      const line = formatPrivateLineUnsummarized(m, { includeTimestamp: true })
+      if (line) lines.push(line)
+    }
+    if (lines.length) return lines.join('\n')
+  } catch {
+    /* ignore */
+  }
+  return ''
+}
 import {
   parseStoryTimelineInjectBodyForTrace,
 } from './memory/storyTimelineTypes'
@@ -66,8 +165,25 @@ function buildStoryTimelineTraceBlock(
 ): MemoryTraceStoryTimeline {
   const trimmed = String(raw ?? '').trim()
   if (!trimmed) return { injected: false, promptExcerpt: '' }
-  const promptExcerpt = expand(trimmed)
-  const rows = parseStoryTimelineInjectBodyForTrace(promptExcerpt)
+  const expanded = expand(trimmed)
+  const rows = parseStoryTimelineInjectBodyForTrace(expanded).map((row) => {
+    const cleaned = sanitizeMemoryTraceDisplayText(row.content).trim()
+    // 清洗过度时保留去横幅后的原文，避免角标有数、展开空白
+    const light = String(row.content ?? '')
+      .replace(/^【时效·已发生】[^\n]*\n*/gm, '')
+      .replace(/^【向量召回·已发生硬规则】[^\n]*\n*/gm, '')
+      .replace(/^【历史回忆·事实铁律】[^\n]*\n*/gm, '')
+      .replace(/^【历史摘要·时效铁律】[^\n]*\n*/gm, '')
+      .trim()
+    return {
+      ...row,
+      content: cleaned.length >= 8 ? cleaned : light || String(row.content ?? '').trim(),
+      label: row.label?.replace(/（[^）]*）/g, '').trim() || row.label,
+    }
+  }).filter((row) => row.content.trim())
+  const promptExcerpt =
+    sanitizeMemoryTraceDisplayText(expanded).trim() ||
+    expanded.replace(/^【时效·已发生】[^\n]*\n*/gm, '').trim()
   return {
     injected: true,
     promptExcerpt,
@@ -497,6 +613,8 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
   worldBookAfterApplied?: boolean
   /** 剧情时间轴注入块（与 prompt 同源） */
   storyTimelineNotes?: string
+  /** 本轮实际注入的线上长期记忆正文（与 prompt 同源；溯源优先展示） */
+  longTermMemoryNotes?: string
   /** 去重后的「最近 N 轮参考」 */
   recentPrivateAiRoundsNotes?: string
   recentOfflineAiRoundsNotes?: string
@@ -514,6 +632,11 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
   const hay = buildMemoryRelevanceHaystack([
     ...params.transcript.slice(-32).map((t) => t.text),
     params.biasText,
+    params.offlineDatingPlotsContext,
+    params.unsPrivateNotes,
+    params.unsGroupNotes,
+    params.unsMeetNotes,
+    params.longTermMemoryNotes,
   ])
   const lineScope = normalizeMemoryPromptLineScope(
     params.wechatAccountId,
@@ -529,7 +652,25 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
   const { getCharacterMemoryRelevanceTraceForPromptInjection } = await import(
     './memory/formatCharacterMemoriesForPromptInjection'
   )
-  const deep = await getCharacterMemoryRelevanceTraceForPromptInjection(cid, hay, recallOpts)
+  let deep = await getCharacterMemoryRelevanceTraceForPromptInjection(cid, hay, recallOpts)
+  const injectedLtm = params.longTermMemoryNotes?.trim() || ''
+  if (injectedLtm && !deep.keywordHits.length && !deep.vectorRetrievals.length) {
+    const parsed = parseInjectedLongTermMemoryForTrace(injectedLtm)
+    deep = {
+      keywordHits: parsed.keywordHits.map((h) => ({
+        ...h,
+        sourceLineLabel: '本轮注入',
+        lineRelation: 'unlabeled' as const,
+        memoryBucket: 'own' as const,
+      })),
+      vectorRetrievals: parsed.vectorRetrievals.map((h) => ({
+        ...h,
+        sourceLineLabel: '本轮注入',
+        lineRelation: 'unlabeled' as const,
+        memoryBucket: 'own' as const,
+      })),
+    }
+  }
   const embeddingMode =
     memSettings.memoryEmbeddingProviderMode === 'api' ||
     memSettings.memoryEmbeddingProviderMode === 'local' ||
@@ -555,17 +696,39 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
   const worldBgOut = expand(params.worldBackgroundPrompt.trim())
 
   const offlinePlotRowsRaw = await listInjectedOfflinePlotTraceRowsForMemoryTrace(cid, params.charDisplayName)
-  const offlinePlotRows = offlinePlotRowsRaw.length
+  const offlinePlotRows = (offlinePlotRowsRaw.length
     ? offlinePlotRowsRaw
     : buildOfflinePlotTraceRowsFromInjectedContext(params.offlineDatingPlotsContext)
+  ).map((r) => ({
+    ...r,
+    snippet: sanitizeMemoryTraceDisplayText(
+      stripOfflineDatingPlotsInjectHeaderForTraceDisplay(r.snippet),
+    ),
+  })).filter((r) => r.snippet.trim())
   const offlineCtxBody = offlinePlotRows.map((r) => r.snippet.trim()).filter(Boolean).join('\n\n')
 
   const unsChats: MemoryTraceData['contextMatrix']['recentContext']['unsummarizedChats'] = []
-  const unsPrivateInjected = params.unsPrivateNotes.trim()
+  let unsPrivateSource = params.unsPrivateNotes.trim()
+  let currentLineRaw = params.currentLinePrivateRaw?.trim() || ''
+  let crossAccountRaw = params.crossAccountPrivateRaw?.trim() || ''
+
+  if (!unsPrivateSource && !currentLineRaw) {
+    const fb = await fallbackUnsummarizedPrivateForTrace({
+      characterId: cid,
+      conversationKey: params.conversationKey,
+      wechatAccountId: params.wechatAccountId,
+    })
+    if (fb) {
+      unsPrivateSource = fb
+      currentLineRaw = fb
+    }
+  }
+
+  const unsPrivateInjected = !!(unsPrivateSource || currentLineRaw || crossAccountRaw)
   const privateTraceBlocks = unsPrivateInjected
     ? await buildPrivateUnsummarizedTraceBlocks({
-        crossAccountMerged: params.crossAccountPrivateRaw,
-        currentLineRaw: params.currentLinePrivateRaw,
+        crossAccountMerged: crossAccountRaw,
+        currentLineRaw,
         lineScope,
       })
     : []
@@ -579,9 +742,9 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
         snippet: traceOnlineUnsummarizedSnippetForDisplay(b.snippet),
       })
     }
-  } else if (unsPrivateInjected) {
+  } else if (unsPrivateSource) {
     for (const b of parseLineScopedUnsummarizedTextForTrace(
-      stripPromptPolicyBlocksForTraceDisplay(params.unsPrivateNotes),
+      stripPromptPolicyBlocksForTraceDisplay(unsPrivateSource),
     )) {
       unsChats.push({
         type: 'private',
@@ -589,6 +752,27 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
         sourceLineLabel: b.sourceLineLabel,
         lineRelation: b.lineRelation,
         snippet: traceOnlineUnsummarizedSnippetForDisplay(b.snippet),
+      })
+    }
+  }
+  if (!unsChats.some((c) => c.type === 'private' && c.snippet.trim()) && unsPrivateSource) {
+    unsChats.push({
+      type: 'private',
+      source: '尚未总结 · 私聊',
+      snippet: traceOnlineUnsummarizedSnippetForDisplay(unsPrivateSource),
+    })
+  }
+  if (!unsChats.some((c) => c.type === 'private' && c.snippet.trim())) {
+    const fb = await fallbackUnsummarizedPrivateForTrace({
+      characterId: cid,
+      conversationKey: params.conversationKey,
+      wechatAccountId: params.wechatAccountId,
+    })
+    if (fb) {
+      unsChats.push({
+        type: 'private',
+        source: '尚未总结 · 私聊',
+        snippet: traceOnlineUnsummarizedSnippetForDisplay(fb),
       })
     }
   }
@@ -632,7 +816,8 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
     keywordHitCount: deep.keywordHits.length,
     longTermVectorCount: deep.vectorRetrievals.length,
     storyTimelineInjected: storyTimeline.injected,
-    unsummarizedPrivateInjected: !!unsPrivateInjected,
+    unsummarizedPrivateInjected:
+      !!unsPrivateInjected || unsChats.some((c) => c.type === 'private' && !!c.snippet.trim()),
     unsummarizedGroupInjected: !!params.unsGroupNotes.trim(),
     unsummarizedOfflineInjected: !!offlineCtxBody,
     embeddingProviderMode: embeddingMode,
@@ -677,7 +862,7 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
     ? {
         ...netTraceRaw,
         promptExcerpt: netTraceRaw.promptExcerpt.trim()
-          ? expand(netTraceRaw.promptExcerpt)
+          ? sanitizeMemoryTraceDisplayText(expand(netTraceRaw.promptExcerpt))
           : '',
       }
     : null
@@ -771,8 +956,8 @@ export async function publishWeChatGroupMemoryTrace(params: {
       snippet: traceOnlineUnsummarizedSnippetForDisplay(params.groupUnsummarizedNotes),
     })
   }
-  const offlineCombinedBody = stripOfflineDatingPlotsInjectHeaderForTraceDisplay(
-    params.offlinePlotsCombined,
+  const offlineCombinedBody = sanitizeMemoryTraceDisplayText(
+    stripOfflineDatingPlotsInjectHeaderForTraceDisplay(params.offlinePlotsCombined),
   )
   if (offlineCombinedBody) {
     unsChats.push({
@@ -850,6 +1035,8 @@ export async function publishDatingOfflineMemoryTrace(params: {
   recentPrivateAiRoundsNotes?: string
   recentOfflineAiRoundsNotes?: string
   storyTimelineNotes?: string
+  /** 本轮实际注入的长期记忆正文 */
+  longTermMemoryNotes?: string
   dedupePrivateRecentOmitted?: boolean
   dedupeOfflineRecentOmitted?: boolean
   conversationKey?: string | null
@@ -860,14 +1047,38 @@ export async function publishDatingOfflineMemoryTrace(params: {
   const cid = params.characterId.trim()
   if (!cid) return
 
-  const hay = buildMemoryRelevanceHaystack([params.userText, params.unsPrivateBlock, params.unsGroupBlock])
+  const hay = buildMemoryRelevanceHaystack([
+    params.userText,
+    params.unsPrivateBlock,
+    params.unsGroupBlock,
+    params.unsOfflineBlock,
+    params.longTermMemoryNotes,
+  ])
   const memSettings = await personaDb.getMemorySettings()
   const apiPick = pickTrimmedApiUrlKey(params.apiConfig)
   const recallOpts = {
     apiConfig: apiPick,
     conversationKey: params.conversationKey?.trim() || undefined,
   }
-  const deep = await getCharacterMemoryRelevanceTraceForPromptInjection(cid, hay, recallOpts)
+  let deep = await getCharacterMemoryRelevanceTraceForPromptInjection(cid, hay, recallOpts)
+  const injectedLtm = params.longTermMemoryNotes?.trim() || ''
+  if (injectedLtm && !deep.keywordHits.length && !deep.vectorRetrievals.length) {
+    const parsed = parseInjectedLongTermMemoryForTrace(injectedLtm)
+    deep = {
+      keywordHits: parsed.keywordHits.map((h) => ({
+        ...h,
+        sourceLineLabel: '本轮注入',
+        lineRelation: 'unlabeled' as const,
+        memoryBucket: 'own' as const,
+      })),
+      vectorRetrievals: parsed.vectorRetrievals.map((h) => ({
+        ...h,
+        sourceLineLabel: '本轮注入',
+        lineRelation: 'unlabeled' as const,
+        memoryBucket: 'own' as const,
+      })),
+    }
+  }
   const embeddingMode =
     memSettings.memoryEmbeddingProviderMode === 'api' ||
     memSettings.memoryEmbeddingProviderMode === 'local' ||
@@ -893,9 +1104,15 @@ export async function publishDatingOfflineMemoryTrace(params: {
   const personaDetailOut = expand(personaDetail)
   const worldBgOut = expand(params.worldBackground.trim())
   const offlinePlotRowsRaw = await listInjectedOfflinePlotTraceRowsForMemoryTrace(cid, params.charName)
-  const offlinePlotRows = offlinePlotRowsRaw.length
+  const offlinePlotRows = (offlinePlotRowsRaw.length
     ? offlinePlotRowsRaw
     : buildOfflinePlotTraceRowsFromInjectedContext(params.unsOfflineBlock)
+  ).map((r) => ({
+    ...r,
+    snippet: sanitizeMemoryTraceDisplayText(
+      stripOfflineDatingPlotsInjectHeaderForTraceDisplay(r.snippet),
+    ),
+  })).filter((r) => r.snippet.trim())
   const offlineCtxBody = offlinePlotRows.map((r) => r.snippet.trim()).filter(Boolean).join('\n\n')
 
   const unsChats: MemoryTraceData['contextMatrix']['recentContext']['unsummarizedChats'] = []

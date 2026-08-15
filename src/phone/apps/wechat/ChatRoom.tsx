@@ -10641,6 +10641,7 @@ export function ChatRoomInner({
             recentOfflineAiRoundsNotes: recentOfflineAiRoundsRound,
             recentMeetAiRoundsNotes: recentMeetAiRoundsRound,
             storyTimelineNotes: storyTimelineRound,
+            longTermMemoryNotes: memoryRound,
             dedupePrivateRecentOmitted: dedupePrivateRecentOmittedRound,
             dedupeOfflineRecentOmitted: dedupeOfflineRecentOmittedRound,
             dedupeMeetRecentOmitted: dedupeMeetRecentOmittedRound,

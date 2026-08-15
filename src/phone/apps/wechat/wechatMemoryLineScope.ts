@@ -115,6 +115,8 @@ export async function formatPrivateMemoriesPromptWithLineScope(params: {
   contents: string[]
   scope: MemoryPromptLineScope
   vectorTail: string
+  /** 外层板块标题（不含【】） */
+  sectionTitle?: string
 }): Promise<string> {
   const { memories, contents, scope, vectorTail } = params
   if (!memories.length) return ''
@@ -155,11 +157,12 @@ export async function formatPrivateMemoriesPromptWithLineScope(params: {
     bucket.lines.push(`${bucket.lines.length + 1}. ${body}`)
   }
 
-  const chunks: string[] = [WECHAT_MEMORY_LINE_SCOPE_RULES, '']
+  const section = String(params.sectionTitle ?? '线上长期记忆').trim() || '线上长期记忆'
+  const chunks: string[] = [`【${section}】`, WECHAT_MEMORY_LINE_SCOPE_RULES, '']
 
   if (currentItems.length) {
     chunks.push(
-      `【当前微信线 · ${currentLabel} · 长期记忆（默认已与当前这位相关）】`,
+      `【当前微信线 · ${currentLabel}】`,
       currentItems.join('\n'),
       '',
     )
@@ -168,7 +171,7 @@ export async function formatPrivateMemoriesPromptWithLineScope(params: {
   for (const { label, lines } of otherByKey.values()) {
     if (!lines.length) continue
     chunks.push(
-      `【其它微信线 · ${label} · 长期记忆（勿默认当前这位已听过）】`,
+      `【其它微信线 · ${label}（勿默认当前这位已听过）】`,
       lines.join('\n'),
       '',
     )
@@ -176,13 +179,16 @@ export async function formatPrivateMemoriesPromptWithLineScope(params: {
 
   if (unlabeled.length) {
     chunks.push(
-      '【来源未标注 · 长期记忆（可能对任意联系人都说过，勿默认当前这位已知）】',
+      '【来源未标注（可能对任意联系人都说过，勿默认当前这位已知）】',
       unlabeled.join('\n'),
       '',
     )
   }
 
-  chunks.push(`（${vectorTail}）`)
+  if (vectorTail.trim()) {
+    chunks.push(`（${vectorTail.trim()}）`)
+  }
+
   return chunks.join('\n').trim()
 }
 

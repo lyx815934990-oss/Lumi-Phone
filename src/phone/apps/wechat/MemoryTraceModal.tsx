@@ -5,10 +5,12 @@ import type {
   MemoryTraceData,
   MemoryTraceLineRelation,
   MemoryTraceMemoryBucket,
+  MemoryTraceStoryTimelineInjectRow,
 } from './memoryTraceTypes'
 import { lineRelationUiLabel } from './wechatMemoryLineScope'
 import { MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS } from './memory/memorySummaryRetention'
-import { stripUnsummarizedOnlineTimestampsForDisplay } from './memoryTraceDisplaySanitize'
+import { parseStoryTimelineInjectBodyForTrace } from './memory/storyTimelineTypes'
+import { stripUnsummarizedOnlineTimestampsForDisplay, sanitizeMemoryTraceDisplayText } from './memoryTraceDisplaySanitize'
 
 export type { MemoryTraceData } from './memoryTraceTypes'
 
@@ -16,96 +18,132 @@ const PLATINUM = '#D4AF37'
 const INK = '#1C1C1E'
 const SHEET_SPRING = { type: 'spring' as const, damping: 38, stiffness: 380 }
 
+function traceText(raw: string | null | undefined): string {
+  return sanitizeMemoryTraceDisplayText(String(raw ?? ''))
+}
+
+function TraceCard(props: {
+  children: ReactNode
+  tone?: 'neutral' | 'gold' | 'green' | 'amber' | 'violet'
+}) {
+  const tone = props.tone ?? 'neutral'
+  const ring =
+    tone === 'gold'
+      ? 'border-amber-100/90 bg-gradient-to-br from-amber-50/50 to-white'
+      : tone === 'green'
+        ? 'border-emerald-100/90 bg-gradient-to-br from-emerald-50/40 to-white'
+        : tone === 'amber'
+          ? 'border-orange-100/90 bg-gradient-to-br from-orange-50/40 to-white'
+          : tone === 'violet'
+            ? 'border-violet-100/90 bg-gradient-to-br from-violet-50/40 to-white'
+            : 'border-neutral-100 bg-white'
+  return (
+    <div className={`rounded-2xl border p-3.5 shadow-[0_1px_0_rgba(255,255,255,0.8)_inset] ${ring}`}>
+      {props.children}
+    </div>
+  )
+}
+
+function TraceBody(props: { text: string; maxClass?: string }) {
+  const body = traceText(props.text)
+  if (!body) return <p className="mt-1 text-[12px] text-neutral-400">（无）</p>
+  return (
+    <pre
+      className={`mt-2 overflow-y-auto whitespace-pre-wrap break-words font-sans text-[13px] leading-[1.65] text-neutral-800 [scrollbar-width:thin] ${
+        props.maxClass ?? 'max-h-[min(36vh,320px)]'
+      }`}
+    >
+      {body}
+    </pre>
+  )
+}
+
+function EmptyHint({ text }: { text: string }) {
+  return <p className="px-1 text-[12px] leading-relaxed text-neutral-400">{text}</p>
+}
+
+function CountBadge({ n, active }: { n: number; active?: boolean }) {
+  const on = active ?? n > 0
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${
+        on ? 'bg-emerald-50 text-emerald-800' : 'bg-neutral-100 text-neutral-500'
+      }`}
+    >
+      {on ? `${n}` : '暂无'}
+    </span>
+  )
+}
+
 type AccordionId =
   | 'sample'
-  | 'wbAfter'
+  | 'm1'
+  | 'm2'
+  | 'm3'
+  | 'm4'
+  | 'm5'
+  | 'm6'
+  | 'm7'
+  | 'personaWb'
+  | 'globalWb'
+  | 'persona'
   | 'network'
-  | 'core'
-  | 'cursor'
-  | 'deep'
-  | 'timeline'
+  | 'wbAfter'
 
 function pct(score: number): string {
   return `${Math.round(score * 1000) / 10}%`
 }
 
-function storyTimelineInjectBadge(row: {
-  injectKind: 'state' | 'recent' | 'vector'
-  label?: string
-  isHistorical?: boolean
-}) {
-  const kindLabel =
-    row.injectKind === 'vector' ? '标题召回' : row.injectKind === 'recent' ? '近端固定' : '合并快照'
+function timelineRowTitle(row: MemoryTraceStoryTimelineInjectRow): string | null {
   const title = row.label?.trim()
-  const showTitle =
-    !!title && title !== kindLabel && title !== '向量命中' && title !== '近端固定'
-  const kindClass =
-    row.injectKind === 'vector'
-      ? 'bg-emerald-100/70 text-emerald-900'
-      : row.injectKind === 'recent'
-        ? 'bg-amber-100/70 text-amber-900'
-        : 'bg-neutral-200/80 text-neutral-700'
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {showTitle ? (
-        <span className="text-[12px] font-semibold leading-snug text-neutral-800">{title}</span>
-      ) : null}
-      <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${kindClass}`}>{kindLabel}</span>
-      {row.isHistorical ? (
-        <span className="rounded-md bg-violet-100/80 px-1.5 py-0.5 text-[10px] font-semibold text-violet-900">
-          历史
-        </span>
-      ) : null}
-    </div>
-  )
+  if (!title) return null
+  if (title === '向量命中' || title === '近端固定' || title === '合并快照') return null
+  if (title === '向量召回' || title === '近端摘要' || title === '当前状态') return null
+  return title
 }
 
-function embeddingModeLabel(mode: 'api' | 'local' | 'auto'): string {
-  if (mode === 'local') return '本地向量'
-  if (mode === 'api') return 'API 向量'
-  return '自动'
-}
-
-function InjectionSummaryBar(props: { summary: NonNullable<MemoryTraceData['injectionSummary']> }) {
-  const s = props.summary
-  const chip = (label: string, active: boolean, tone: 'gold' | 'green' | 'muted' | 'amber' = 'muted') => {
-    const styles =
-      tone === 'green'
-        ? 'bg-emerald-50 text-emerald-800'
-        : tone === 'gold'
-          ? 'bg-amber-50/90 text-amber-900'
-          : tone === 'amber'
-            ? 'bg-orange-50 text-orange-900'
-            : active
-              ? 'bg-neutral-100 text-neutral-700'
-              : 'bg-neutral-50 text-neutral-400'
-    return (
-      <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${styles}`}>
-        {label}
-      </span>
-    )
+function InjectionOverview(props: {
+  summary: NonNullable<MemoryTraceData['injectionSummary']> | null | undefined
+  counts: {
+    state: number
+    vectorPlot: number
+    recentSummary: number
+    offlineFull: number
+    unsChat: number
+    ltmVector: number
+    ltmKeyword: number
+    personaWb: boolean
+    globalWb: boolean
+    wbAfter: boolean
   }
+}) {
+  const chip = (label: string, on: boolean) => (
+    <span
+      className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+        on
+          ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100'
+          : 'bg-neutral-50 text-neutral-400 ring-1 ring-neutral-100'
+      }`}
+    >
+      {label}
+    </span>
+  )
+  const c = props.counts
   return (
-    <div className="rounded-2xl border border-neutral-100 bg-gradient-to-b from-neutral-50/90 to-white p-4 shadow-sm">
-      <p className="text-[10px] font-medium uppercase tracking-[0.28em] text-neutral-400">INJECTION · 本轮记忆注入</p>
-      <p className="mt-1 text-[12px] leading-relaxed text-neutral-600">
-        与 system prompt 注入顺序对齐：长期记忆 → 剧情时间轴 → 未总结摘录 → 语义召回。
-      </p>
+    <div className="rounded-2xl border border-neutral-100/90 bg-gradient-to-b from-[#FBF8F1] to-white p-4 shadow-sm">
+      <p className="text-[10px] font-medium uppercase tracking-[0.28em] text-neutral-400">本轮参考</p>
+      <p className="mt-1 text-[13px] font-semibold text-neutral-800">七板块记忆 · 世界书 · 尾声</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        {chip(`关键词 ${s.keywordHitCount}`, s.keywordHitCount > 0, s.keywordHitCount > 0 ? 'gold' : 'muted')}
-        {chip(`长期向量 ${s.longTermVectorCount}`, s.longTermVectorCount > 0, s.longTermVectorCount > 0 ? 'gold' : 'muted')}
-        {chip(`时间轴`, s.storyTimelineInjected, s.storyTimelineInjected ? 'green' : 'muted')}
-        {chip(`未总结私聊`, s.unsummarizedPrivateInjected, s.unsummarizedPrivateInjected ? 'green' : 'muted')}
-        {chip(`未总结群聊`, s.unsummarizedGroupInjected, s.unsummarizedGroupInjected ? 'green' : 'muted')}
-        {chip(`未总结线下`, s.unsummarizedOfflineInjected, s.unsummarizedOfflineInjected ? 'green' : 'muted')}
-        {chip(embeddingModeLabel(s.embeddingProviderMode), true, 'muted')}
-        {s.privateRecentRoundsOmitted
-          ? chip('私聊最近6轮：已省略', true, 'amber')
-          : null}
-        {s.offlineRecentRoundsOmitted
-          ? chip('线下最近6轮：已省略', true, 'amber')
-          : null}
-        {s.meetRecentRoundsOmitted ? chip('遇见最近6轮：已省略', true, 'amber') : null}
+        {chip(`① 当前状态`, c.state > 0)}
+        {chip(`② 历史摘要 ${c.vectorPlot}`, c.vectorPlot > 0)}
+        {chip(`③ 线下摘要 ${c.recentSummary}`, c.recentSummary > 0)}
+        {chip(`④ 线下原文 ${c.offlineFull}`, c.offlineFull > 0)}
+        {chip(`⑤ 未总结 ${c.unsChat}`, c.unsChat > 0)}
+        {chip(`⑥ 长期向量 ${c.ltmVector}`, c.ltmVector > 0)}
+        {chip(`⑦ 关键词 ${c.ltmKeyword}`, c.ltmKeyword > 0)}
+        {chip('人设世界书', c.personaWb)}
+        {chip('档案室世界书', c.globalWb)}
+        {chip('尾声延展', c.wbAfter)}
       </div>
     </div>
   )
@@ -205,6 +243,12 @@ function AccordionRow(props: {
   )
 }
 
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">{children}</p>
+  )
+}
+
 export type MemoryTraceModalProps = {
   open: boolean
   onClose: () => void
@@ -216,12 +260,120 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
   const [expanded, setExpanded] = useState<Set<AccordionId>>(() => new Set())
   const matrix = data?.contextMatrix
 
+  const timelineRows = useMemo(() => {
+    const stored = matrix?.storyTimeline?.rows ?? []
+    const looksComplete = (c: string) =>
+      /【本轮事件】|【本轮锚点】|【摘要标题】|【当前锚点】|【服装锁定】|【物品追踪】/.test(c)
+    const hasSubstance = stored.some((r) => looksComplete(String(r.content ?? '')))
+    if (hasSubstance) return stored
+    const excerpt = matrix?.storyTimeline?.promptExcerpt?.trim() || ''
+    if (!excerpt) return stored
+    // 旧溯源曾把行正文截断洗空：用全文重新解析
+    try {
+      const reparsed = parseStoryTimelineInjectBodyForTrace(excerpt)
+      if (reparsed.some((r) => looksComplete(r.content) || r.content.trim().length >= 24)) {
+        return reparsed
+      }
+    } catch {
+      /* ignore */
+    }
+    return stored
+  }, [matrix?.storyTimeline?.rows, matrix?.storyTimeline?.promptExcerpt])
+  const stateRows = useMemo(
+    () => timelineRows.filter((r) => r.injectKind === 'state'),
+    [timelineRows],
+  )
+  const vectorPlotRows = useMemo(
+    () => timelineRows.filter((r) => r.injectKind === 'vector'),
+    [timelineRows],
+  )
+  const recentSummaryRows = useMemo(
+    () => timelineRows.filter((r) => r.injectKind === 'recent'),
+    [timelineRows],
+  )
+
+  const offlineFullRows = useMemo(
+    () => (matrix?.recentContext.unsummarizedOfflinePlots ?? []).filter((row) => traceText(row.snippet)),
+    [matrix?.recentContext.unsummarizedOfflinePlots],
+  )
+
+  const unsChatRows = useMemo(() => {
+    return (matrix?.recentContext.unsummarizedChats ?? [])
+      .map((row) => ({
+        ...row,
+        // 发布端已清洗；此处只去时间戳，避免二次 sanitize 把正文抹空
+        body: stripUnsummarizedOnlineTimestampsForDisplay(String(row.snippet ?? '')).trim() || String(row.snippet ?? '').trim(),
+      }))
+      .filter((row) => row.body)
+  }, [matrix?.recentContext.unsummarizedChats])
+
+  const ltmVectorRows = useMemo(() => {
+    return (matrix?.deepMemory.vectorRetrievals ?? [])
+      .map((row) => ({
+        ...row,
+        body: String(row.content ?? '').trim() || traceText(row.content),
+      }))
+      .filter((row) => row.body)
+  }, [matrix?.deepMemory.vectorRetrievals])
+
+  const ltmKeywordRows = useMemo(() => {
+    return (matrix?.deepMemory.keywordHits ?? [])
+      .map((row) => ({
+        ...row,
+        body: String(row.content ?? '').trim() || traceText(row.content),
+      }))
+      .filter((row) => row.body)
+  }, [matrix?.deepMemory.keywordHits])
+
+  const personaWbText = traceText(matrix?.baseDirectives.characterWorldBook)
+  const globalWbText = traceText(matrix?.baseDirectives.globalWorldbook)
+  const personaDetailText = traceText(matrix?.baseDirectives.personaDetail)
+  const worldBgText = traceText(matrix?.baseDirectives.worldBackground)
+
+  const hasPersonaWb =
+    !!personaWbText &&
+    !/^\(未绑定|^（未绑定|^无$|未启用人设世界书/.test(personaWbText)
+  const hasGlobalWb =
+    !!globalWbText &&
+    !/^\(当前场景无|^（当前场景无|^无$|无匹配的档案室/.test(globalWbText)
+
+  const wbAfter = data?.worldBookAfterChat
+  const hasWbAfter =
+    !!wbAfter &&
+    (wbAfter.protocolInPrompt ||
+      (wbAfter.injectedSnapshotEntries?.length ?? 0) > 0 ||
+      wbAfter.parsedPatches.length > 0 ||
+      (wbAfter.autoSummaryPatches?.length ?? 0) > 0)
+
+  const overviewCounts = {
+    state: stateRows.length || (matrix?.storyTimeline?.injected && !timelineRows.length ? 1 : 0),
+    vectorPlot: vectorPlotRows.length,
+    recentSummary: recentSummaryRows.length,
+    offlineFull: offlineFullRows.length,
+    unsChat: unsChatRows.length,
+    ltmVector: ltmVectorRows.length,
+    ltmKeyword: ltmKeywordRows.length,
+    personaWb: hasPersonaWb,
+    globalWb: hasGlobalWb,
+    wbAfter: hasWbAfter,
+  }
+
   useEffect(() => {
     if (!open) return
     const t = window.setTimeout(() => {
-      setExpanded(data ? new Set<AccordionId>(['deep', 'timeline']) : new Set())
+      if (!data) {
+        setExpanded(new Set())
+        return
+      }
+      const prefer: AccordionId[] = []
+      if (overviewCounts.state > 0) prefer.push('m1')
+      else if (overviewCounts.unsChat > 0) prefer.push('m5')
+      else if (overviewCounts.offlineFull > 0) prefer.push('m4')
+      else prefer.push('m1', 'm5')
+      setExpanded(new Set(prefer))
     }, 0)
     return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随打开/数据切换重置展开
   }, [open, data])
 
   const toggleAccordion = (id: AccordionId) => {
@@ -235,19 +387,11 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
 
   const isExpanded = (id: AccordionId) => expanded.has(id)
 
-  const storyTimelineInjected =
-    matrix?.storyTimeline?.injected === true && matrix.storyTimeline.promptExcerpt.trim().length > 0
-
-  const injectedOfflinePlotRows = useMemo(
-    () => (matrix?.recentContext.unsummarizedOfflinePlots ?? []).filter((row) => row.snippet.trim()),
-    [matrix?.recentContext.unsummarizedOfflinePlots],
-  )
-
   const blockVariants = useMemo(
     () => ({
       hidden: {},
       show: {
-        transition: { staggerChildren: 0.07, delayChildren: 0.06 },
+        transition: { staggerChildren: 0.06, delayChildren: 0.05 },
       },
     }),
     [],
@@ -256,10 +400,65 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
   const itemVariants = useMemo(
     () => ({
       hidden: { opacity: 0, y: 12 },
-      show: { opacity: 1, y: 0, transition: { duration: 0.38, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } },
+      show: {
+        opacity: 1,
+        y: 0,
+        transition: { duration: 0.36, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] },
+      },
     }),
     [],
   )
+
+  const renderTimelineRows = (rows: MemoryTraceStoryTimelineInjectRow[], tone: 'neutral' | 'green' | 'amber') => {
+    const cards = rows
+      .map((row, i) => {
+        const raw = String(row.content ?? '').trim()
+        if (!raw) return null
+        // 已在发布端清洗；避免 TraceBody 再次 sanitize 洗空
+        const body =
+          raw.length >= 8
+            ? raw
+            : traceText(raw) ||
+              raw
+                .replace(/^【时效·已发生】[^\n]*\n*/gm, '')
+                .trim()
+        if (!body) return null
+        const title = timelineRowTitle(row)
+        return (
+          <li key={i}>
+            <TraceCard tone={tone}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  {title ? (
+                    <p className="text-[13px] font-semibold leading-snug text-neutral-900">{title}</p>
+                  ) : null}
+                  {row.isHistorical ? (
+                    <span className="mt-1 inline-flex rounded-full bg-violet-100/90 px-2 py-0.5 text-[10px] font-semibold text-violet-900">
+                      往事
+                    </span>
+                  ) : null}
+                  <pre
+                    className="mt-2 max-h-[min(32vh,280px)] overflow-y-auto whitespace-pre-wrap break-words font-sans text-[13px] leading-[1.65] text-neutral-800 [scrollbar-width:thin]"
+                  >
+                    {body}
+                  </pre>
+                </div>
+                {row.relevanceScore != null ? (
+                  <span className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-emerald-800">
+                    {pct(row.relevanceScore)}
+                  </span>
+                ) : null}
+              </div>
+            </TraceCard>
+          </li>
+        )
+      })
+      .filter(Boolean)
+    if (!cards.length) {
+      return <EmptyHint text="本板块有记录，但正文未能展开。请再生成一轮后查看。" />
+    }
+    return <ul className="space-y-2.5 px-1">{cards}</ul>
+  }
 
   return (
     <AnimatePresence>
@@ -290,7 +489,10 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
           >
             <div className="flex shrink-0 items-center justify-between border-b border-neutral-100 px-5 py-4">
               <div>
-                <p id="memory-trace-title" className="text-[11px] font-medium uppercase tracking-[0.32em] text-neutral-400">
+                <p
+                  id="memory-trace-title"
+                  className="text-[11px] font-medium uppercase tracking-[0.32em] text-neutral-400"
+                >
                   TRACE MATRIX
                 </p>
                 <p className="mt-1 text-[17px] font-semibold tracking-tight">思维溯源</p>
@@ -310,426 +512,480 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                 <div className="flex flex-col items-center justify-center px-2 py-16 text-center">
                   <p className="text-[15px] font-semibold text-neutral-800">暂无思维溯源记录</p>
                   <p className="mt-3 max-w-[300px] text-[13px] leading-relaxed text-neutral-500">
-                    在私聊、群聊或约会剧情中成功生成角色 AI 回复后，会在此展示当轮注入的记忆、时间轴、未总结摘录与语义召回摘要。数据会写入本地
-                    IndexedDB，刷新页面后仍会显示<strong className="font-medium text-neutral-700">上一条</strong>记录。
+                    生成一轮 AI 回复后，这里会按七板块记忆、世界书与尾声延展展示本轮实际注入的参考内容。
                   </p>
                 </div>
               ) : null}
+
               {data && matrix ? (
-              <motion.div variants={blockVariants} initial="hidden" animate="show" className="flex flex-col gap-5 pt-3">
-                {data.injectionSummary ? (
+                <motion.div
+                  variants={blockVariants}
+                  initial="hidden"
+                  animate="show"
+                  className="flex flex-col gap-5 pt-3"
+                >
                   <motion.div variants={itemVariants}>
-                    <InjectionSummaryBar summary={data.injectionSummary} />
+                    <InjectionOverview summary={data.injectionSummary} counts={overviewCounts} />
                   </motion.div>
-                ) : null}
 
-                {data.worldBookAfterChat == null ? (
-                  <motion.section
+                  <motion.div
                     variants={itemVariants}
-                    className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50/50 p-4 text-[13px] leading-relaxed text-neutral-500"
+                    className="overflow-hidden rounded-2xl border border-neutral-100 bg-white shadow-sm"
                   >
-                    <p className="text-[10px] font-medium uppercase tracking-[0.26em] text-neutral-400">POST-CHAT · 尾声延展</p>
-                    <p className="mt-2 font-semibold text-neutral-700">「尾声延展」溯源</p>
-                    <p className="mt-2">
-                      这条思维溯源是<strong className="font-medium text-neutral-700">在客户端加入「尾声延展」与补丁记录之前</strong>
-                      保存到本地的，所以没有「注入快照 / 模型补丁 / 替换前后对照」。再让角色或约会<strong className="font-medium text-neutral-700">任意生成一轮新 AI 回复</strong>
-                      后，新记录会带完整板块。
-                    </p>
-                  </motion.section>
-                ) : null}
-
-                <motion.div variants={itemVariants} className="overflow-hidden rounded-2xl border border-neutral-100 bg-white shadow-sm">
-                  <AccordionRow
-                    titleEn="TARGET SAMPLE"
-                    titleZh="样本锚定 · 最新回复切片"
-                    expanded={isExpanded('sample')}
-                    onToggle={() => toggleAccordion('sample')}
-                  >
-                    <div className="px-1">
-                      <div className="rounded-xl bg-neutral-50/80 p-4" style={{ borderLeft: `2px solid ${PLATINUM}80` }}>
-                        <p className="text-[12px] text-neutral-500">
-                          角色 <span className="font-medium text-neutral-700">{data.charName}</span>
-                        </p>
-                        <p className="mt-3 font-serif text-[16px] italic leading-relaxed text-neutral-900">{data.lastReply}</p>
-                      </div>
-                    </div>
-                  </AccordionRow>
-
-                  <AccordionRow
-                    titleEn="DEEP MEMORY"
-                    titleZh="深度记忆 · 关键词 + 向量"
-                    expanded={isExpanded('deep')}
-                    onToggle={() => toggleAccordion('deep')}
-                  >
-                    <div className="space-y-5 px-1">
-                      <p className="text-[11px] leading-relaxed text-neutral-500">
-                        长期记忆：关键词命中与向量语义召回。
+                    <div className="border-b border-neutral-50 bg-neutral-50/60 px-4 py-2.5">
+                      <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-neutral-400">
+                        Memory · ①–⑦
                       </p>
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">Keyword Hits · 关键词命中</p>
-                        {matrix.deepMemory.keywordHits.length === 0 ? (
-                          <p className="mt-2 text-[12px] text-neutral-400">本轮未命中关键词或始终触发条目</p>
-                        ) : null}
-                        <ul className="mt-2 space-y-3">
-                          {matrix.deepMemory.keywordHits.map((row, i) => (
-                            <li
-                              key={i}
-                              className="flex gap-3 rounded-lg border border-neutral-100 bg-neutral-50/50 p-3"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <LineScopeBadge
-                                  sourceLineLabel={row.sourceLineLabel}
-                                  lineRelation={row.lineRelation}
-                                  memoryBucket={row.memoryBucket}
-                                />
-                                <p className="font-mono text-[11px] font-semibold tracking-wide" style={{ color: PLATINUM }}>
-                                  {row.keyword}
-                                </p>
-                                <p className="mt-2 text-[12px] leading-relaxed text-neutral-600">{row.content}</p>
-                              </div>
-                              {row.relevanceScore != null ? (
-                                <span
-                                  className="shrink-0 font-mono text-[10px] font-medium tabular-nums"
-                                  style={{ color: PLATINUM }}
-                                >
-                                  Match: {pct(row.relevanceScore)}
-                                </span>
-                              ) : null}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">Long-term Vector · 长期记忆向量</p>
-                        {matrix.deepMemory.vectorRetrievals.length === 0 ? (
-                          <p className="mt-2 text-[12px] text-neutral-400">本轮未召回长期记忆向量条目</p>
-                        ) : null}
-                        <ul className="mt-2 space-y-3">
-                          {matrix.deepMemory.vectorRetrievals.map((row, i) => (
-                            <li
-                              key={i}
-                              className="flex gap-3 rounded-lg border border-neutral-100 bg-white p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <LineScopeBadge
-                                  sourceLineLabel={row.sourceLineLabel}
-                                  lineRelation={row.lineRelation}
-                                  memoryBucket={row.memoryBucket}
-                                />
-                                <p className="text-[12px] leading-relaxed text-neutral-600">{row.content}</p>
-                              </div>
-                              <span
-                                className="shrink-0 font-mono text-[10px] font-medium tabular-nums"
-                                style={{ color: PLATINUM }}
-                              >
-                                Match: {pct(row.relevanceScore)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
+                      <p className="mt-0.5 text-[13px] font-semibold text-neutral-700">七板块记忆注入</p>
                     </div>
-                  </AccordionRow>
 
-                  <AccordionRow
-                    titleEn="STORY TIMELINE"
-                    titleZh="剧情时间轴"
-                    expanded={isExpanded('timeline')}
-                    onToggle={() => toggleAccordion('timeline')}
-                    badge={
-                      storyTimelineInjected ? (
-                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">已注入</span>
+                    <AccordionRow
+                      titleEn="① CURRENT STATE"
+                      titleZh="当前状态 · 故事「现在」"
+                      expanded={isExpanded('m1')}
+                      onToggle={() => toggleAccordion('m1')}
+                      badge={<CountBadge n={overviewCounts.state} />}
+                    >
+                      {stateRows.length ? (
+                        renderTimelineRows(stateRows, 'neutral')
+                      ) : matrix.storyTimeline?.injected && matrix.storyTimeline.promptExcerpt.trim() ? (
+                        <div className="px-1">
+                          <TraceCard>
+                            <TraceBody
+                              text={matrix.storyTimeline.promptExcerpt}
+                              maxClass="max-h-[min(40vh,400px)]"
+                            />
+                          </TraceCard>
+                        </div>
                       ) : (
-                        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-500">暂无</span>
-                      )
-                    }
-                  >
-                    <div className="px-1">
-                      <p className="text-[12px] leading-relaxed text-neutral-600">
-                        由自动总结维护的结构化时空 / 在场人物 / 未收伏笔；承接剧情时优先对照本块。
-                        每条摘要行头为「摘要标题 · 近端固定」或「摘要标题 · 相似 xx%」；锚点公历日早于当前剧情日的行会带「历史」标记与正文内【时效·已发生】横幅。
-                      </p>
-                      {storyTimelineInjected ? (
-                        matrix.storyTimeline!.rows?.length ? (
-                          <ul className="mt-3 space-y-3">
-                            {matrix.storyTimeline!.rows!.map((row, i) => (
-                              <li
-                                key={i}
-                                className={`rounded-xl border p-3 ${
-                                  row.injectKind === 'vector'
-                                    ? 'border-emerald-100/80 bg-emerald-50/30'
-                                    : row.injectKind === 'recent'
-                                      ? 'border-amber-100/80 bg-amber-50/30'
-                                      : 'border-neutral-100 bg-neutral-50/50'
-                                }`}
-                              >
-                                <div className="flex items-start gap-3">
+                        <EmptyHint text="本轮未注入当前状态（地点/时段/服装/在场等故事「现在」快照）。" />
+                      )}
+                    </AccordionRow>
+
+                    <AccordionRow
+                      titleEn="② VECTOR · PLOT"
+                      titleZh="向量召回 · 历史剧情摘要"
+                      expanded={isExpanded('m2')}
+                      onToggle={() => toggleAccordion('m2')}
+                      badge={<CountBadge n={vectorPlotRows.length} />}
+                    >
+                      {vectorPlotRows.length ? (
+                        renderTimelineRows(vectorPlotRows, 'green')
+                      ) : (
+                        <EmptyHint text="本轮无向量命中的历史剧情摘要（至多 5 条）。" />
+                      )}
+                    </AccordionRow>
+
+                    <AccordionRow
+                      titleEn="③ NEAR · SUMMARY"
+                      titleZh="近端 · 更早线下摘要"
+                      expanded={isExpanded('m3')}
+                      onToggle={() => toggleAccordion('m3')}
+                      badge={<CountBadge n={recentSummaryRows.length} />}
+                    >
+                      {recentSummaryRows.length ? (
+                        renderTimelineRows(recentSummaryRows, 'amber')
+                      ) : (
+                        <EmptyHint text="本轮无更早轮次的线下剧情摘要（不含已用全文注入的最近 2 轮）。" />
+                      )}
+                    </AccordionRow>
+
+                    <AccordionRow
+                      titleEn="④ NEAR · FULL TEXT"
+                      titleZh={`近端 · 最近 ${MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS} 轮线下原文`}
+                      expanded={isExpanded('m4')}
+                      onToggle={() => toggleAccordion('m4')}
+                      badge={<CountBadge n={offlineFullRows.length} />}
+                    >
+                      {offlineFullRows.length ? (
+                        <ul className="space-y-2.5 px-1">
+                          {offlineFullRows.map((row, i) => (
+                            <li key={i}>
+                              <TraceCard>
+                                <p className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">
+                                  {row.date}
+                                </p>
+                                <TraceBody text={row.snippet} maxClass="max-h-[min(36vh,320px)]" />
+                              </TraceCard>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <EmptyHint text="本轮未注入最近线下剧情原文。" />
+                      )}
+                    </AccordionRow>
+
+                    <AccordionRow
+                      titleEn="⑤ UNSUMMARIZED"
+                      titleZh="未总结 · 线上私聊 / 群聊"
+                      expanded={isExpanded('m5')}
+                      onToggle={() => toggleAccordion('m5')}
+                      badge={<CountBadge n={unsChatRows.length} />}
+                    >
+                      {unsChatRows.length ? (
+                        <ul className="space-y-2.5 px-1">
+                          {unsChatRows.map((row, i) => (
+                            <li key={i}>
+                              <TraceCard tone="gold">
+                                <LineScopeBadge
+                                  sourceLineLabel={row.sourceLineLabel}
+                                  lineRelation={row.lineRelation}
+                                />
+                                <p className="text-[11px] font-semibold tracking-wide text-neutral-700">
+                                  {row.type === 'group' ? `群聊 · ${row.source}` : row.source || '私聊'}
+                                </p>
+                                <pre className="mt-2 whitespace-pre-wrap font-sans text-[13px] leading-[1.65] text-neutral-800">
+                                  {row.body}
+                                </pre>
+                              </TraceCard>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <EmptyHint text="本轮无未总结线上私聊 / 群聊摘录。" />
+                      )}
+                    </AccordionRow>
+
+                    <AccordionRow
+                      titleEn="⑥ LTM · VECTOR"
+                      titleZh="向量召回 · 线上长期记忆"
+                      expanded={isExpanded('m6')}
+                      onToggle={() => toggleAccordion('m6')}
+                      badge={<CountBadge n={ltmVectorRows.length} />}
+                    >
+                      {ltmVectorRows.length ? (
+                        <ul className="space-y-2.5 px-1">
+                          {ltmVectorRows.map((row, i) => (
+                            <li key={i}>
+                              <TraceCard tone="green">
+                                <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0 flex-1">
-                                    {storyTimelineInjectBadge(row)}
-                                    <pre className="mt-2 max-h-[min(32vh,280px)] overflow-y-auto whitespace-pre-wrap break-words font-sans text-[12px] leading-relaxed text-neutral-800 [scrollbar-width:thin]">
-                                      {row.content}
-                                    </pre>
+                                    <LineScopeBadge
+                                      sourceLineLabel={row.sourceLineLabel}
+                                      lineRelation={row.lineRelation}
+                                      memoryBucket={row.memoryBucket}
+                                    />
+                                    <p className="text-[13px] leading-[1.65] text-neutral-800">{row.body}</p>
+                                  </div>
+                                  <span className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-emerald-800">
+                                    {pct(row.relevanceScore)}
+                                  </span>
+                                </div>
+                              </TraceCard>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <EmptyHint text="本轮无线上长期记忆向量召回（至多 5 条）。" />
+                      )}
+                    </AccordionRow>
+
+                    <AccordionRow
+                      titleEn="⑦ LTM · KEYWORD"
+                      titleZh="关键词命中 · 线上长期记忆"
+                      expanded={isExpanded('m7')}
+                      onToggle={() => toggleAccordion('m7')}
+                      badge={<CountBadge n={ltmKeywordRows.length} />}
+                    >
+                      {ltmKeywordRows.length ? (
+                        <ul className="space-y-2.5 px-1">
+                          {ltmKeywordRows.map((row, i) => (
+                            <li key={i}>
+                              <TraceCard tone="gold">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <LineScopeBadge
+                                      sourceLineLabel={row.sourceLineLabel}
+                                      lineRelation={row.lineRelation}
+                                      memoryBucket={row.memoryBucket}
+                                    />
+                                    <p
+                                      className="font-mono text-[11px] font-semibold tracking-wide"
+                                      style={{ color: PLATINUM }}
+                                    >
+                                      {row.keyword}
+                                    </p>
+                                    <p className="mt-2 text-[13px] leading-[1.65] text-neutral-800">{row.body}</p>
                                   </div>
                                   {row.relevanceScore != null ? (
-                                    <span className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-emerald-800">
-                                      sim {pct(row.relevanceScore)}
+                                    <span
+                                      className="shrink-0 font-mono text-[10px] font-medium tabular-nums"
+                                      style={{ color: PLATINUM }}
+                                    >
+                                      {pct(row.relevanceScore)}
                                     </span>
                                   ) : null}
                                 </div>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <pre className="mt-3 max-h-[min(44vh,440px)] overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-amber-100/80 bg-amber-50/30 p-3 font-sans text-[12px] leading-relaxed text-neutral-800 [scrollbar-width:thin]">
-                            {matrix.storyTimeline!.promptExcerpt}
-                          </pre>
-                        )
-                      ) : null}
-                    </div>
-                  </AccordionRow>
+                              </TraceCard>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <EmptyHint text="本轮无关键词命中的线上长期记忆。" />
+                      )}
+                    </AccordionRow>
+                  </motion.div>
 
-                  <AccordionRow
-                    titleEn="ACTIVE CONTEXT"
-                    titleZh="游标上下文 · 未总结摘录"
-                    expanded={isExpanded('cursor')}
-                    onToggle={() => toggleAccordion('cursor')}
+                  <motion.div
+                    variants={itemVariants}
+                    className="overflow-hidden rounded-2xl border border-neutral-100 bg-white shadow-sm"
                   >
-                    <div className="space-y-4 px-1">
-                      <p className="text-[12px] text-neutral-600">
-                        本轮线下剧情历史{' '}
-                        <span className="font-mono text-[12px] font-semibold tabular-nums" style={{ color: PLATINUM }}>
-                          {matrix.recentContext.activeSessionMessages}
-                        </span>{' '}
-                        条（上限 32；指约会页剧情条数，
-                        <span className="font-semibold text-neutral-800">不是</span>
-                        线上私聊条数）。线上未总结原文见下方「尚未总结 · 私聊与群聊摘录」。
+                    <div className="border-b border-neutral-50 bg-neutral-50/60 px-4 py-2.5">
+                      <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-neutral-400">
+                        World Books · Epilogue
                       </p>
-                      {injectedOfflinePlotRows.length > 0 ? (
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">本轮注入 · 线下剧情（最近 {MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS} 轮 AI）</p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
-                          与 prompt 一致：固定注入约会页最近 {MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS} 轮 AI 剧情原文（不依赖「尚未总结」游标；线下每轮通常已写摘要）。此处逐条展示 AI 回复。更早段由剧情时间轴近端摘要 / 长期记忆 / 语义召回承接。
-                        </p>
-                        <ul className="mt-2 space-y-3">
-                          {injectedOfflinePlotRows.map((row, i) => (
-                            <li key={i} className="flex gap-3 text-[13px] leading-relaxed text-neutral-700">
-                              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-neutral-400 animate-pulse" aria-hidden />
-                              <div>
-                                <p className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">{row.date}</p>
-                                <p className="mt-1">{row.snippet}</p>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      ) : null}
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">尚未总结 · 私聊与群聊摘录</p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
-                          仅展示各线未总结聊天原文；分线阅读规则仅注入模型，不在此重复展示。
-                        </p>
-                        <ul className="mt-2 space-y-3">
-                          {matrix.recentContext.unsummarizedChats.length === 0 ? (
-                            <li className="text-[12px] text-neutral-400">（无尚未总结聊天摘录）</li>
-                          ) : null}
-                          {matrix.recentContext.unsummarizedChats.map((row, i) => (
-                            <li key={i} className="flex gap-3 text-[13px] leading-relaxed text-neutral-700">
-                              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-neutral-400 animate-pulse" aria-hidden />
-                              <div className="min-w-0 flex-1">
-                                <LineScopeBadge
-                                  sourceLineLabel={row.sourceLineLabel}
-                                  lineRelation={row.lineRelation}
-                                />
-                                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-neutral-800">
-                                  {row.type === 'group' ? `群聊 · ${row.source}` : row.source || '私聊摘录'}
-                                </p>
-                                <pre className="mt-1 whitespace-pre-wrap font-sans text-[12px] text-neutral-600">
-                                  {stripUnsummarizedOnlineTimestampsForDisplay(row.snippet)}
-                                </pre>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
+                      <p className="mt-0.5 text-[13px] font-semibold text-neutral-700">世界书与尾声</p>
                     </div>
-                  </AccordionRow>
 
-                  {data.networkRelationships ? (
                     <AccordionRow
-                      titleEn="NETWORK RELATIONS"
-                      titleZh="人脉关系与看法"
-                      expanded={isExpanded('network')}
-                      onToggle={() => toggleAccordion('network')}
+                      titleEn="PERSONA WORLD BOOK"
+                      titleZh="人设世界书"
+                      expanded={isExpanded('personaWb')}
+                      onToggle={() => toggleAccordion('personaWb')}
+                      badge={
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            hasPersonaWb ? 'bg-emerald-50 text-emerald-800' : 'bg-neutral-100 text-neutral-500'
+                          }`}
+                        >
+                          {hasPersonaWb ? '已注入' : '暂无'}
+                        </span>
+                      }
                     >
-                      <div className="space-y-4 px-1">
-                        <p className="text-[12px] leading-relaxed text-neutral-600">
-                          本轮私聊注入的圈内角色↔角色关系、双方看法与称呼，以及玩家↔圈内人、玩家身份↔本角色绑定边。与发给模型的 system 块同源。
-                        </p>
-                        <p className="text-[11px] text-neutral-500">
-                          视角角色：
-                          <span className="font-semibold text-neutral-800">
-                            {data.networkRelationships?.focusCharacterName}
-                          </span>
-                          {' · '}
-                          人脉根：
-                          <span className="font-semibold text-neutral-800">
-                            {data.networkRelationships?.rootCharacterName}
-                          </span>
-                        </p>
+                      <div className="px-1">
+                        {hasPersonaWb ? (
+                          <TraceCard>
+                            <TraceBody text={personaWbText} maxClass="max-h-[min(40vh,400px)]" />
+                          </TraceCard>
+                        ) : (
+                          <EmptyHint text="本轮未注入人设绑定世界书。" />
+                        )}
+                      </div>
+                    </AccordionRow>
 
-                        {(data.networkRelationships?.involvingFocus?.length ?? 0) > 0 ? (
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">
-                              与你直接相关 · 角色↔角色
-                            </p>
-                            <ul className="mt-2 space-y-2">
-                              {data.networkRelationships!.involvingFocus.map((row, i) => (
-                                <li
-                                  key={`f-${row.fromName}-${row.toName}-${i}`}
-                                  className="rounded-lg border border-amber-100/80 bg-amber-50/40 p-3 text-[12px] leading-relaxed text-neutral-800"
-                                >
-                                  <p className="font-semibold">
-                                    {row.fromName} —「{row.relation}」→ {row.toName}
-                                    {row.fromCallsTo ? (
-                                      <span className="font-normal text-neutral-600">
-                                        {' '}
-                                        · {row.fromName}称{row.toName}「{row.fromCallsTo}」
-                                      </span>
-                                    ) : null}
-                                  </p>
-                                  {row.fromPerspective ? (
-                                    <p className="mt-1 text-neutral-600">
-                                      {row.fromName}看：{row.fromPerspective}
-                                    </p>
-                                  ) : null}
-                                  {row.toPerspective ? (
-                                    <p className="mt-0.5 text-neutral-600">
-                                      {row.toName}看：{row.toPerspective}
-                                    </p>
-                                  ) : null}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-
-                        {(data.networkRelationships?.otherInClique?.length ?? 0) > 0 ? (
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">
-                              圈内其他人际 · 角色↔角色
-                            </p>
-                            <ul className="mt-2 space-y-2">
-                              {data.networkRelationships!.otherInClique.map((row, i) => (
-                                <li
-                                  key={`o-${row.fromName}-${row.toName}-${i}`}
-                                  className="rounded-lg border border-neutral-100 bg-neutral-50/80 p-3 text-[12px] leading-relaxed text-neutral-700"
-                                >
-                                  <p className="font-semibold">
-                                    {row.fromName} —「{row.relation}」→ {row.toName}
-                                    {row.fromCallsTo ? (
-                                      <span className="font-normal text-neutral-600">
-                                        {' '}
-                                        · {row.fromName}称{row.toName}「{row.fromCallsTo}」
-                                      </span>
-                                    ) : null}
-                                  </p>
-                                  {(row.fromPerspective || row.toPerspective) && (
-                                    <p className="mt-1 text-neutral-600">
-                                      {[row.fromPerspective && `${row.fromName}看：${row.fromPerspective}`, row.toPerspective && `${row.toName}看：${row.toPerspective}`]
-                                        .filter(Boolean)
-                                        .join(' · ')}
-                                    </p>
-                                  )}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-
-                        {(data.networkRelationships?.playerLinks?.length ?? 0) > 0 ? (
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">
-                              玩家与圈内角色
-                            </p>
-                            <ul className="mt-2 space-y-2">
-                              {data.networkRelationships!.playerLinks.map((row, i) => (
-                                <li
-                                  key={`pl-${row.targetName}-${i}`}
-                                  className="rounded-lg border border-neutral-100 bg-white p-3 text-[12px] text-neutral-700"
-                                >
-                                  <p className="font-semibold">
-                                    「{row.targetName}」
-                                    {row.isFocusCharacter ? (
-                                      <span className="ml-1.5 text-[10px] font-semibold text-amber-800/90">
-                                        当前角色对玩家
-                                      </span>
-                                    ) : null}
-                                  </p>
-                                  <ul className="mt-1.5 space-y-0.5 text-neutral-600">
-                                    {row.relationThemToYou ? <li>TA对你的关系：{row.relationThemToYou}</li> : null}
-                                    {row.theySeeYou ? <li>TA怎么看你：{row.theySeeYou}</li> : null}
-                                    {row.relationYouToThem ? <li>你对TA的关系：{row.relationYouToThem}</li> : null}
-                                    {row.youSeeThem ? <li>你怎么看TA：{row.youSeeThem}</li> : null}
-                                    {row.theyCallYou ? <li>TA称呼你：{row.theyCallYou}</li> : null}
-                                    {row.youCallThem ? <li>你称呼TA：{row.youCallThem}</li> : null}
-                                  </ul>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-
-                        {(data.networkRelationships?.identityEdges?.length ?? 0) > 0 ? (
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">
-                              玩家身份 ↔ 本角色
-                            </p>
-                            <ul className="mt-2 space-y-2">
-                              {data.networkRelationships!.identityEdges.map((row, i) => (
-                                <li
-                                  key={`id-${row.identityName}-${i}`}
-                                  className="rounded-lg border border-indigo-100/80 bg-indigo-50/30 p-3 text-[12px] text-neutral-800"
-                                >
-                                  <span className="rounded-md bg-indigo-100/60 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-900/80">
-                                    {row.scopeLabel}
-                                  </span>
-                                  <p className="mt-1.5 font-semibold">「{row.identityName}」—「{row.relation}」</p>
-                                  <p className="mt-1 text-neutral-600">{row.summary}</p>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-
-                        {data.networkRelationships?.promptExcerpt?.trim() ? (
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">
-                              注入全文（与模型一致）
-                            </p>
-                            <pre className="mt-2 max-h-[min(40vh,400px)] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-neutral-100 bg-neutral-50/80 p-3 font-sans text-[12px] leading-relaxed text-neutral-700 [scrollbar-width:thin]">
-                              {data.networkRelationships.promptExcerpt}
-                            </pre>
+                    <AccordionRow
+                      titleEn="ARCHIVE · GLOBAL"
+                      titleZh="全局世界书 · 档案室"
+                      expanded={isExpanded('globalWb')}
+                      onToggle={() => toggleAccordion('globalWb')}
+                      badge={
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            hasGlobalWb ? 'bg-emerald-50 text-emerald-800' : 'bg-neutral-100 text-neutral-500'
+                          }`}
+                        >
+                          {hasGlobalWb ? '已注入' : '暂无'}
+                        </span>
+                      }
+                    >
+                      <div className="px-1">
+                        {hasGlobalWb ? (
+                          <TraceCard>
+                            <TraceBody text={globalWbText} maxClass="max-h-[min(40vh,400px)]" />
+                          </TraceCard>
+                        ) : (
+                          <EmptyHint text="本轮无匹配的档案室全局世界书条目。" />
+                        )}
+                        {!hasGlobalWb && matrix.baseDirectives.worldbooks.length > 0 ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {matrix.baseDirectives.worldbooks.map((wb, i) => (
+                              <span
+                                key={`${wb.title}-${i}`}
+                                className="rounded-full border border-amber-100 bg-amber-50/50 px-3 py-1 text-[11px] font-medium text-neutral-800"
+                              >
+                                {wb.type === 'global' ? '全局' : '专属'} · {wb.title}
+                              </span>
+                            ))}
                           </div>
                         ) : null}
                       </div>
                     </AccordionRow>
-                  ) : null}
 
-                  <AccordionRow
-                    titleEn="CORE DIRECTIVES"
-                    titleZh="核心基底"
-                    expanded={isExpanded('core')}
-                    onToggle={() => toggleAccordion('core')}
+                    <AccordionRow
+                      titleEn="POST-CHAT · EPILOGUE"
+                      titleZh="尾声延展 · 变化"
+                      expanded={isExpanded('wbAfter')}
+                      onToggle={() => toggleAccordion('wbAfter')}
+                      badge={
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            hasWbAfter ? 'bg-amber-50 text-amber-900' : 'bg-neutral-100 text-neutral-500'
+                          }`}
+                        >
+                          {hasWbAfter ? '有记录' : '暂无'}
+                        </span>
+                      }
+                    >
+                      {!wbAfter ? (
+                        <EmptyHint text="这条记录生成时尚未采集尾声延展。再生成一轮后会出现注入快照与补丁对照。" />
+                      ) : (
+                        <div className="space-y-4 px-1 text-[13px] leading-relaxed text-neutral-700">
+                          <div className="flex flex-wrap gap-2 text-[12px]">
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 font-medium ${
+                                wbAfter.protocolInPrompt
+                                  ? 'bg-emerald-50 text-emerald-800'
+                                  : 'bg-neutral-100 text-neutral-600'
+                              }`}
+                            >
+                              快照：{wbAfter.protocolInPrompt ? '已进本轮' : '未启用'}
+                            </span>
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 font-medium ${
+                                wbAfter.parsedPatches.length || (wbAfter.autoSummaryPatches?.length ?? 0) > 0
+                                  ? 'bg-amber-50 text-amber-900'
+                                  : 'bg-neutral-100 text-neutral-600'
+                              }`}
+                            >
+                              补丁：
+                              {wbAfter.parsedPatches.length
+                                ? `本轮 ${wbAfter.parsedPatches.length}`
+                                : (wbAfter.autoSummaryPatches?.length ?? 0) > 0
+                                  ? '自动总结'
+                                  : '无'}
+                            </span>
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 font-medium ${
+                                wbAfter.appliedToDb
+                                  ? 'bg-emerald-50 text-emerald-800'
+                                  : 'bg-neutral-100 text-neutral-600'
+                              }`}
+                            >
+                              写库：{wbAfter.appliedToDb ? '已写入' : '未写入'}
+                            </span>
+                          </div>
+
+                          {wbAfter.injectedSnapshotEntries?.length ? (
+                            <div>
+                              <SectionLabel>注入快照</SectionLabel>
+                              <ul className="space-y-2.5">
+                                {wbAfter.injectedSnapshotEntries.map((entry, i) => (
+                                  <li key={`${entry.bookName}-${entry.itemName}-${i}`}>
+                                    <TraceCard>
+                                      <p className="text-[13px] font-semibold text-neutral-800">
+                                        {entry.characterName}
+                                        <span className="mx-1.5 font-normal text-neutral-400">·</span>
+                                        {entry.bookName && entry.itemName
+                                          ? `「${entry.bookName}」·「${entry.itemName}」`
+                                          : entry.itemName || entry.bookName || '条目'}
+                                      </p>
+                                      <TraceBody
+                                        text={entry.content}
+                                        maxClass="max-h-[min(28vh,280px)]"
+                                      />
+                                    </TraceCard>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+
+                          {wbAfter.parsedPatches.length ? (
+                            <div>
+                              <SectionLabel>本轮补丁对照</SectionLabel>
+                              <ul className="space-y-3">
+                                {wbAfter.parsedPatches.map((row, i) => (
+                                  <li key={`${row.worldBookId}-${row.itemId}-${i}`}>
+                                    <TraceCard tone="amber">
+                                      <p className="text-[13px] font-semibold text-neutral-800">
+                                        {row.bookName && row.itemName
+                                          ? `「${row.bookName}」·「${row.itemName}」`
+                                          : '世界书条目'}
+                                      </p>
+                                      <p className="mt-3 text-[11px] font-medium text-neutral-500">替换前</p>
+                                      <TraceBody
+                                        text={row.previousContent || '（无旧文）'}
+                                        maxClass="max-h-[min(20vh,200px)]"
+                                      />
+                                      <p className="mt-3 text-[11px] font-medium text-emerald-800/90">替换后</p>
+                                      <TraceBody
+                                        text={row.newContentFull || '（空）'}
+                                        maxClass="max-h-[min(28vh,280px)]"
+                                      />
+                                    </TraceCard>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+
+                          {(wbAfter.autoSummaryPatches?.length ?? 0) > 0 ? (
+                            <div>
+                              <SectionLabel>自动总结补丁</SectionLabel>
+                              <ul className="space-y-3">
+                                {wbAfter.autoSummaryPatches!.map((row, i) => (
+                                  <li key={`auto-${row.worldBookId}-${row.itemId}-${i}`}>
+                                    <TraceCard tone="violet">
+                                      <p className="text-[13px] font-semibold text-neutral-800">
+                                        {row.bookName && row.itemName
+                                          ? `「${row.bookName}」·「${row.itemName}」`
+                                          : '世界书条目'}
+                                      </p>
+                                      <p className="mt-3 text-[11px] font-medium text-neutral-500">替换前</p>
+                                      <TraceBody
+                                        text={row.previousContent || '（无旧文）'}
+                                        maxClass="max-h-[min(20vh,200px)]"
+                                      />
+                                      <p className="mt-3 text-[11px] font-medium text-emerald-800/90">替换后</p>
+                                      <TraceBody
+                                        text={row.newContentFull || '（空）'}
+                                        maxClass="max-h-[min(28vh,280px)]"
+                                      />
+                                    </TraceCard>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+
+                          {!wbAfter.injectedSnapshotEntries?.length &&
+                          !wbAfter.parsedPatches.length &&
+                          !(wbAfter.autoSummaryPatches?.length ?? 0) ? (
+                            <EmptyHint text="本轮无尾声延展快照或补丁变化。" />
+                          ) : null}
+                        </div>
+                      )}
+                    </AccordionRow>
+                  </motion.div>
+
+                  <motion.div
+                    variants={itemVariants}
+                    className="overflow-hidden rounded-2xl border border-neutral-100 bg-white shadow-sm"
                   >
-                    <div className="space-y-4 px-1">
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">人设档案（完整注入）</p>
-                        {matrix.baseDirectives.personaDetail?.trim() ? (
-                          <pre className="mt-2 max-h-[min(52vh,520px)] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-neutral-100 bg-neutral-50/80 p-3 font-sans text-[12px] leading-relaxed text-neutral-700 [scrollbar-width:thin]">
-                            {matrix.baseDirectives.personaDetail}
-                          </pre>
-                        ) : (
-                          <div className="mt-2 flex flex-wrap gap-2">
+                    <AccordionRow
+                      titleEn="TARGET SAMPLE"
+                      titleZh="最新回复切片"
+                      expanded={isExpanded('sample')}
+                      onToggle={() => toggleAccordion('sample')}
+                    >
+                      <div className="px-1">
+                        <div
+                          className="rounded-xl bg-neutral-50/80 p-4"
+                          style={{ borderLeft: `2px solid ${PLATINUM}80` }}
+                        >
+                          <p className="text-[12px] text-neutral-500">
+                            角色 <span className="font-medium text-neutral-700">{data.charName}</span>
+                          </p>
+                          <p className="mt-3 font-serif text-[16px] italic leading-relaxed text-neutral-900">
+                            {data.lastReply}
+                          </p>
+                        </div>
+                      </div>
+                    </AccordionRow>
+
+                    <AccordionRow
+                      titleEn="PERSONA CARD"
+                      titleZh="角色档案"
+                      expanded={isExpanded('persona')}
+                      onToggle={() => toggleAccordion('persona')}
+                    >
+                      <div className="space-y-4 px-1">
+                        {personaDetailText ? (
+                          <TraceCard>
+                            <TraceBody text={personaDetailText} maxClass="max-h-[min(40vh,400px)]" />
+                          </TraceCard>
+                        ) : matrix.baseDirectives.persona.length ? (
+                          <div className="flex flex-wrap gap-2">
                             {matrix.baseDirectives.persona.map((t) => (
                               <span
                                 key={t}
@@ -739,220 +995,78 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                               </span>
                             ))}
                           </div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">世界背景</p>
-                        <p className="mt-2 text-[13px] leading-relaxed text-neutral-600">{matrix.baseDirectives.worldBackground}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">人设绑定世界书</p>
-                        <p className="mt-1 text-[12px] text-neutral-500">
-                          角色卡上启用的世界书与各条目正文（与聊天模型注入同源；此处展示全文）
-                        </p>
-                        <pre className="mt-2 max-h-[min(40vh,420px)] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-neutral-100 bg-neutral-50/80 p-3 font-sans text-[12px] leading-relaxed text-neutral-700 [scrollbar-width:thin]">
-                          {matrix.baseDirectives.characterWorldBook?.trim() || '（无）'}
-                        </pre>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">全局世界书</p>
-                        <p className="mt-1 text-[12px] text-neutral-500">
-                          档案室在当前场景下生效的条目：仅条目标题与正文（不含对话注入用的前言与内置尾注）
-                        </p>
-                        <pre className="mt-2 max-h-[min(48vh,480px)] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-neutral-100 bg-neutral-50/80 p-3 font-sans text-[12px] leading-relaxed text-neutral-700 [scrollbar-width:thin]">
-                          {matrix.baseDirectives.globalWorldbook?.trim() || '（无）'}
-                        </pre>
-                        {!matrix.baseDirectives.globalWorldbook?.trim() && matrix.baseDirectives.worldbooks.length > 0 ? (
-                          <div className="mt-3">
-                            <p className="text-[11px] text-neutral-400">旧版记录·仅标题</p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {matrix.baseDirectives.worldbooks.map((wb, i) => (
-                                <span
-                                  key={`${wb.title}-${i}`}
-                                  className="rounded-full border px-3 py-1 text-[11px] font-medium tracking-wide"
-                                  style={{
-                                    borderColor: `${PLATINUM}55`,
-                                    color: INK,
-                                    background: 'rgba(212,175,55,0.06)',
-                                  }}
-                                >
-                                  {wb.type === 'global' ? '[全局]' : '[专属]'} {wb.title}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </AccordionRow>
-
-                  {data.worldBookAfterChat ? (
-                    <AccordionRow
-                      titleEn="POST-CHAT LAYER"
-                      titleZh="尾声延展（世界书）"
-                      expanded={isExpanded('wbAfter')}
-                      onToggle={() => toggleAccordion('wbAfter')}
-                    >
-                      <div className="space-y-4 px-1 text-[13px] leading-relaxed text-neutral-700">
-                        <div className="flex flex-wrap gap-2 text-[12px]">
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 font-medium ${
-                              data.worldBookAfterChat.protocolInPrompt
-                                ? 'bg-emerald-50 text-emerald-800'
-                                : 'bg-neutral-100 text-neutral-600'
-                            }`}
-                          >
-                            快照注入：{data.worldBookAfterChat.protocolInPrompt ? '已进本轮 system' : '未启用（无尾声延展条目）'}
-                          </span>
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 font-medium ${
-                              data.worldBookAfterChat.patchOutputRulesIncluded
-                                ? 'bg-emerald-50 text-emerald-800'
-                                : 'bg-neutral-100 text-neutral-600'
-                            }`}
-                          >
-                            覆盖协议说明：{data.worldBookAfterChat.patchOutputRulesIncluded ? '已附带' : '未附带'}
-                          </span>
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 font-medium ${
-                              (data.worldBookAfterChat.parsedPatches.length ||
-                                (data.worldBookAfterChat.autoSummaryPatches?.length ?? 0) > 0)
-                                ? 'bg-amber-50 text-amber-900'
-                                : 'bg-neutral-100 text-neutral-600'
-                            }`}
-                          >
-                            模型 JSON：
-                            {data.worldBookAfterChat.parsedPatches.length
-                              ? `本轮回复 ${data.worldBookAfterChat.parsedPatches.length} 条`
-                              : (data.worldBookAfterChat.autoSummaryPatches?.length ?? 0) > 0
-                                ? '本轮无 · 自动总结已补'
-                                : '无'}
-                          </span>
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 font-medium ${
-                              data.worldBookAfterChat.appliedToDb ? 'bg-emerald-50 text-emerald-800' : 'bg-neutral-100 text-neutral-600'
-                            }`}
-                          >
-                            写库：{data.worldBookAfterChat.appliedToDb ? '至少一条已写入人设' : '未写入或内容未变'}
-                          </span>
-                        </div>
-                        {data.worldBookAfterChat.modelOmittedPatchBlock ? (
-                          <p className="rounded-lg border border-amber-200/80 bg-amber-50/90 px-3 py-2 text-[12px] text-amber-950">
-                            本轮已向模型要求「有变化则输出 ---WB_AFTER_PATCH---」，但<strong className="font-semibold">未解析到有效补丁</strong>（可能模型未输出、JSON 格式不符，或仅声明无实质字段）。
-                          </p>
-                        ) : null}
-                        {data.worldBookAfterChat.injectedSnapshotEntries?.length ? (
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">
-                              注入快照（尾声延展条目）
-                            </p>
-                            <ul className="mt-2 space-y-3">
-                              {data.worldBookAfterChat.injectedSnapshotEntries.map((entry, i) => (
-                                <li
-                                  key={`${entry.characterId ?? 'char'}-${entry.bookName}-${entry.itemName}-${i}`}
-                                  className="rounded-lg border border-neutral-100 bg-neutral-50/80 p-3 shadow-sm"
-                                >
-                                  <p className="text-[13px] font-semibold text-neutral-800">
-                                    {entry.characterName}
-                                    <span className="mx-1.5 font-normal text-neutral-400">·</span>
-                                    {entry.bookName && entry.itemName
-                                      ? `「${entry.bookName}」·「${entry.itemName}」`
-                                      : entry.itemName || entry.bookName || '世界书条目'}
-                                  </p>
-                                  <pre className="mt-2 max-h-[min(28vh,280px)] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-neutral-100 bg-white/90 p-2.5 font-sans text-[12px] leading-relaxed text-neutral-700 [scrollbar-width:thin]">
-                                    {entry.content.trim() ? entry.content : '（条目正文为空）'}
-                                  </pre>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : data.worldBookAfterChat.protocolInPrompt ? (
-                          <p className="text-[12px] text-neutral-500">本轮已注入尾声延展条目，但未记录结构化快照（请在新回合后查看）。</p>
                         ) : (
-                          <p className="text-[12px] text-neutral-500">本轮 system 未包含「尾声延展」条目正文快照。</p>
+                          <EmptyHint text="无人设档案正文。" />
                         )}
-                        {data.worldBookAfterChat.parsedPatches.length ? (
+                        {worldBgText ? (
                           <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">
-                              补丁明细（本轮聊天 inline · 写库前旧文 ↔ 模型提交的替换后正文）
-                            </p>
-                            <ul className="mt-2 space-y-4">
-                              {data.worldBookAfterChat.parsedPatches.map((row, i) => (
-                                <li key={`${row.worldBookId}-${row.itemId}-${i}`} className="rounded-lg border border-neutral-100 bg-white p-3 shadow-sm">
-                                  <p className="text-[13px] font-semibold text-neutral-800">
-                                    {row.bookName && row.itemName
-                                      ? `「${row.bookName}」·「${row.itemName}」`
-                                      : '世界书条目'}
-                                    {row.characterId ? (
-                                      <span className="ml-2 font-mono text-[10px] font-normal text-neutral-500">
-                                        characterId={row.characterId}
-                                      </span>
-                                    ) : null}
-                                  </p>
-                                  <p className="mt-1 font-mono text-[10px] text-neutral-500">
-                                    worldBookId={row.worldBookId} · itemId={row.itemId}
-                                  </p>
-                                  <div className="mt-3 space-y-2">
-                                    <p className="text-[11px] font-medium text-neutral-500">替换前（写库前快照）</p>
-                                    <pre className="max-h-[min(24vh,240px)] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-neutral-100 bg-stone-50/90 p-2.5 font-sans text-[12px] leading-relaxed text-neutral-800 [scrollbar-width:thin]">
-                                      {row.previousContent.trim() ? row.previousContent : '（未在人设中找到对应条目，或 id 不一致；无法展示旧文）'}
-                                    </pre>
-                                  </div>
-                                  <div className="mt-3 space-y-2">
-                                    <p className="text-[11px] font-medium text-emerald-800/90">替换后（模型提交 · 与写库一致）</p>
-                                    <pre className="max-h-[min(32vh,320px)] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-emerald-100/80 bg-emerald-50/40 p-2.5 font-sans text-[12px] leading-relaxed text-neutral-900 [scrollbar-width:thin]">
-                                      {row.newContentFull.trim() || '（空）'}
-                                    </pre>
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-                        {(data.worldBookAfterChat.autoSummaryPatches?.length ?? 0) > 0 ? (
-                          <div>
-                            <p className="rounded-lg border border-sky-200/80 bg-sky-50/90 px-3 py-2 text-[12px] text-sky-950">
-                              下列补丁在<strong className="font-semibold">自动总结或每轮尾声同步</strong>阶段写入（额外请求或总结 JSON / 尾段 JSON 内的 epilogue_patches），已同步到本溯源；上方「注入快照」亦已更新为写库后正文。
-                            </p>
-                            <p className="mt-3 text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-400">
-                              补丁明细（自动总结 · 写库前旧文 ↔ 替换后正文）
-                            </p>
-                            <ul className="mt-2 space-y-4">
-                              {data.worldBookAfterChat.autoSummaryPatches!.map((row, i) => (
-                                <li
-                                  key={`auto-${row.worldBookId}-${row.itemId}-${i}`}
-                                  className="rounded-lg border border-sky-100 bg-white p-3 shadow-sm"
-                                >
-                                  <p className="text-[13px] font-semibold text-neutral-800">
-                                    {row.bookName && row.itemName
-                                      ? `「${row.bookName}」·「${row.itemName}」`
-                                      : '世界书条目'}
-                                  </p>
-                                  <p className="mt-1 font-mono text-[10px] text-neutral-500">
-                                    worldBookId={row.worldBookId} · itemId={row.itemId}
-                                  </p>
-                                  <div className="mt-3 space-y-2">
-                                    <p className="text-[11px] font-medium text-neutral-500">替换前</p>
-                                    <pre className="max-h-[min(24vh,240px)] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-neutral-100 bg-stone-50/90 p-2.5 font-sans text-[12px] leading-relaxed text-neutral-800 [scrollbar-width:thin]">
-                                      {row.previousContent.trim() ? row.previousContent : '（无法展示旧文）'}
-                                    </pre>
-                                  </div>
-                                  <div className="mt-3 space-y-2">
-                                    <p className="text-[11px] font-medium text-emerald-800/90">替换后（已写库）</p>
-                                    <pre className="max-h-[min(32vh,320px)] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-emerald-100/80 bg-emerald-50/40 p-2.5 font-sans text-[12px] leading-relaxed text-neutral-900 [scrollbar-width:thin]">
-                                      {row.newContentFull.trim() || '（空）'}
-                                    </pre>
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
+                            <SectionLabel>世界背景</SectionLabel>
+                            <TraceCard>
+                              <p className="text-[13px] leading-[1.65] text-neutral-800">{worldBgText}</p>
+                            </TraceCard>
                           </div>
                         ) : null}
                       </div>
                     </AccordionRow>
-                  ) : null}
+
+                    {data.networkRelationships ? (
+                      <AccordionRow
+                        titleEn="NETWORK"
+                        titleZh="人脉关系"
+                        expanded={isExpanded('network')}
+                        onToggle={() => toggleAccordion('network')}
+                      >
+                        <div className="space-y-4 px-1">
+                          {(data.networkRelationships.focusCharacterName ||
+                            data.networkRelationships.rootCharacterName) && (
+                            <p className="text-[12px] text-neutral-500">
+                              {[
+                                data.networkRelationships.focusCharacterName,
+                                data.networkRelationships.rootCharacterName,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </p>
+                          )}
+                          {(data.networkRelationships.involvingFocus?.length ?? 0) > 0 ? (
+                            <ul className="space-y-2.5">
+                              {data.networkRelationships.involvingFocus.map((row, i) => (
+                                <li key={`f-${row.fromName}-${row.toName}-${i}`}>
+                                  <TraceCard tone="gold">
+                                    <p className="text-[13px] font-semibold text-neutral-900">
+                                      {row.fromName} —「{row.relation}」→ {row.toName}
+                                    </p>
+                                    {row.fromPerspective ? (
+                                      <p className="mt-2 text-[13px] leading-[1.65] text-neutral-700">
+                                        {row.fromName}看：{row.fromPerspective}
+                                      </p>
+                                    ) : null}
+                                    {row.toPerspective ? (
+                                      <p className="mt-1 text-[13px] leading-[1.65] text-neutral-700">
+                                        {row.toName}看：{row.toPerspective}
+                                      </p>
+                                    ) : null}
+                                  </TraceCard>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {traceText(data.networkRelationships.promptExcerpt) ? (
+                            <div>
+                              <SectionLabel>参考摘录</SectionLabel>
+                              <TraceCard>
+                                <TraceBody
+                                  text={data.networkRelationships.promptExcerpt}
+                                  maxClass="max-h-[min(28vh,240px)]"
+                                />
+                              </TraceCard>
+                            </div>
+                          ) : null}
+                        </div>
+                      </AccordionRow>
+                    ) : null}
+                  </motion.div>
                 </motion.div>
-              </motion.div>
               ) : null}
             </div>
           </motion.div>

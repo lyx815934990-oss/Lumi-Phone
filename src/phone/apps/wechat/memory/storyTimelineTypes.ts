@@ -168,8 +168,8 @@ export function selectStoryTimelineRecentInjectRows(
     : allRows
   return eligible.slice(-recentCount)
 }
-/** 向量召回：除近端外额外注入的历史行数 */
-export const STORY_TIMELINE_VECTOR_RECALL_TOP_K = 3
+/** 向量召回：除近端外额外注入的历史行数（目标 5 条） */
+export const STORY_TIMELINE_VECTOR_RECALL_TOP_K = 5
 /** 向量召回注入上限 */
 export const STORY_TIMELINE_VECTOR_RECALL_MAX = 5
 /** 焦点 query 切片保底名额 */
@@ -2382,7 +2382,12 @@ export function splitStoryTimelineInjectBody(block: string): {
   const t = String(block ?? '').trim()
   if (!t) return { currentState: '', recallAndNear: '' }
 
-  const recallMarkers = ['【语义召回·历史剧情摘要', '【近端剧情摘要'] as const
+  const recallMarkers = [
+    '【板块·向量召回·历史剧情摘要】',
+    '【板块·近端·线下摘要】',
+    '【语义召回·历史剧情摘要',
+    '【近端剧情摘要',
+  ] as const
   let splitAt = -1
   for (const m of recallMarkers) {
     const i = t.indexOf(m)
@@ -2417,7 +2422,7 @@ export function formatStoryTimelineInjectBody(params: {
     currentStoryCalendarMs: currentStoryMs,
   })
   if (stateBlock) {
-    parts.push(`【当前状态·${STORY_TIMELINE_INJECT_LABEL_STATE}】\n${stateBlock}`)
+    parts.push(`【板块·剧情时间轴·当前状态】\n${stateBlock}`)
   }
 
   let hasSidePerspectiveRedact = false
@@ -2444,7 +2449,7 @@ export function formatStoryTimelineInjectBody(params: {
     if (vectorBlocks.length) {
       parts.push(
         `${STORY_TIMELINE_VECTOR_RECALL_CANON_RULES}\n` +
-          `【语义召回·历史剧情摘要（按向量语义匹配）】\n` +
+          `【板块·向量召回·历史剧情摘要】（相关性最高至多 ${STORY_TIMELINE_VECTOR_RECALL_MAX} 条；已发生往事，禁止复述重演）\n` +
           vectorBlocks.join('\n\n'),
       )
     }
@@ -2463,7 +2468,7 @@ export function formatStoryTimelineInjectBody(params: {
       .join('\n\n')
     if (recentBlocks) {
       parts.push(
-        `【近端剧情摘要（最近 ${recent.length} 轮，由旧到新；须与末尾情绪方向一致）】\n` +
+        `【板块·近端·线下摘要】（最近 ${recent.length} 轮模型摘要，由旧到新；**不含**已用全文注入的最近 2 轮线下剧情）\n` +
           recentBlocks,
       )
     }
@@ -2471,7 +2476,7 @@ export function formatStoryTimelineInjectBody(params: {
 
   if (!parts.length) return ''
   const footer =
-    `（剧情时间轴：当前状态 + 语义召回历史摘要 + 近端摘要；回复须与锚点、服装、物品一致；**语义召回须服从【向量召回·已发生硬规则】与【历史回忆·事实铁律】**（禁止复述经过，仅可历史提起）；**未收动机伏笔**才须承接，已完结者勿再引用；历史摘要仅补事实勿翻转情绪主客体；**描述故事内时空，与每条前缀「系统落库时刻」及【当前时间】独立，勿混用**。` +
+    `（剧情时间轴七板块之一～三：当前状态 + 向量历史摘要 + 近端摘要；回复须与锚点、服装、物品一致；**语义召回须服从【向量召回·已发生硬规则】与【历史回忆·事实铁律】**（禁止复述经过，仅可历史提起）；**未收动机伏笔**才须承接，已完结者勿再引用；历史摘要仅补事实勿翻转情绪主客体；**描述故事内时空，与每条前缀「系统落库时刻」及【当前时间】独立，勿混用**。` +
     ` ${STORY_TIMELINE_HISTORICAL_ROW_TEMPORAL_RULES}` +
     (hasSidePerspectiveRedact ? ` ${STORY_TIMELINE_SIDE_PERSPECTIVE_KNOWLEDGE_RULES}` : '') +
     `）`
@@ -2479,7 +2484,7 @@ export function formatStoryTimelineInjectBody(params: {
 }
 
 const STORY_TIMELINE_INJECT_ROW_HEADER_RE =
-  /---\s*(?:摘要|召回)\s*(\d+)\s*·\s*(.+?)\s*·\s*(?:相似\s*([\d.]+)%|(近端固定|向量命中))\s*---\s*\n([\s\S]*?)(?=\n\n---\s*(?:摘要|召回)|\n\n（剧情时间轴|$|\n\n【)/g
+  /---\s*(?:摘要|召回)\s*(\d+)\s*·\s*(.+?)\s*·\s*(?:相似\s*([\d.]+)%|(近端固定|向量命中))\s*---\s*\n([\s\S]*?)(?=\n\n---\s*(?:摘要|召回)|\n\n（剧情时间轴|$|\n\n【板块·)/g
 
 /** 从已格式化的剧情时间轴注入块解析各行（思维溯源 UI） */
 export function parseStoryTimelineInjectBodyForTrace(text: string): StoryTimelineInjectTraceRow[] {
@@ -2487,7 +2492,14 @@ export function parseStoryTimelineInjectBodyForTrace(text: string): StoryTimelin
   if (!raw) return []
   const out: StoryTimelineInjectTraceRow[] = []
 
-  const stateMatch = raw.match(/【当前状态·合并快照】\s*\n([\s\S]*?)(?=\n\n【|$)/)
+  // 勿用「\n\n【」截断：行内正文本身含【本轮锚点】【本轮事件】等字段
+  const stateMatch =
+    raw.match(
+      /【板块·剧情时间轴·当前状态】\s*\n([\s\S]*?)(?=\n\n【板块·|\n\n【向量召回|\n\n【历史回忆|\n\n【历史摘要|\n\n【语义召回|\n\n【近端剧情|\n\n---\s*(?:摘要|召回)|$)/,
+    ) ||
+    raw.match(
+      /【当前状态·合并快照】\s*\n([\s\S]*?)(?=\n\n【板块·|\n\n【向量召回|\n\n【语义召回|\n\n【近端剧情|\n\n---\s*(?:摘要|召回)|$)/,
+    )
   if (stateMatch?.[1]?.trim()) {
     out.push({
       injectKind: 'state',

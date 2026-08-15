@@ -504,10 +504,10 @@ export async function loadOfflineDatingPlotsPromptBlock(
     ? `故事「现在」已到 **${storyNowLabel}**，晚于末条 **${offlineLast}**：下列视为**往事实录**，**禁止**当当前现场（酒店/旅游地点等仅可回溯）。`
     : `须全文承接近端事实；**禁止**明显矛盾或假装未发生末条事件（若故事「现在」已晚于末条公历日，则改按往事读，地点以剧情轴当前为准）。`
   const header = borrowed
-    ? `【最近线下剧情（关联主角·固定最近 ${rounds} 轮 AI）】` +
-      `你与「${(ctx?.archiveOwner?.name ?? '').trim() || '主角'}」同属一条时间线；下列为约会页**时间/落库最新**的 ${rounds} 轮 AI 剧情及其间玩家输入（${timeHint}）。${staleHint}更早段由【剧情时间轴】/长期记忆/语义召回补全。`
-    : `【最近线下剧情（固定最近 ${rounds} 轮 AI）】` +
-      `与当前会话为**同一角色、同一时间线**；下列为约会页**时间/落库最新**的 ${rounds} 轮 AI 剧情及其间玩家输入（${timeHint}）。${staleHint}更早段由【剧情时间轴】/长期记忆/语义召回补全。`
+    ? `【板块·近端·最近 ${rounds} 轮线下剧情原文】（关联主角；必注全文）` +
+      `你与「${(ctx?.archiveOwner?.name ?? '').trim() || '主角'}」同属一条时间线；下列为约会页**时间/落库最新**的 ${rounds} 轮 AI 剧情及其间玩家输入（${timeHint}）。${staleHint}更早段由【板块·近端·线下摘要】/向量召回/长期记忆补全。`
+    : `【板块·近端·最近 ${rounds} 轮线下剧情原文】（必注全文）` +
+      `与当前会话为**同一角色、同一时间线**；下列为约会页**时间/落库最新**的 ${rounds} 轮 AI 剧情及其间玩家输入（${timeHint}）。${staleHint}更早段由【板块·近端·线下摘要】/向量召回/长期记忆补全。`
 
   const spatialRule = buildOnlineOfflineSpatialContinuityAppendix(body, characterDisplayName, {
     storyNowLabel,
@@ -517,7 +517,7 @@ export async function loadOfflineDatingPlotsPromptBlock(
 
 /** 模型注入块里的「最近线下剧情 / 尚未总结·线下」说明段（单行，后接空行再是正文）。 */
 const OFFLINE_PLOT_INJECT_HEADER_RE =
-  /【(?:最近线下剧情[^】]*|最新线下剧情·承接锚点[^】]*|尚未总结·(?:关联主角线下剧情（节选）|线下剧情（约会页 plot 总结游标之后）))】[^\n]*\n\n/g
+  /【(?:板块·近端·最近\s*\d+\s*轮线下剧情原文[^】]*|最近线下剧情[^】]*|最新线下剧情·承接锚点[^】]*|尚未总结·(?:关联主角线下剧情（节选）|线下剧情（约会页 plot 总结游标之后）))】[^\n]*\n\n/g
 
 /** 思维溯源 ACTIVE CONTEXT：与 prompt 注入同源，最近 N 轮 AI 线下剧情（仅 AI 条）。 */
 export async function listInjectedOfflinePlotTraceRowsForMemoryTrace(
@@ -549,11 +549,15 @@ export function stripOfflineDatingPlotsInjectHeaderForTraceDisplay(text: string)
   if (!s) return ''
 
   s = s.replace(OFFLINE_PLOT_INJECT_HEADER_RE, '').trim()
-  s = s.replace(/…【(?:最近线下剧情|尚未总结·线下剧情)[^】]*】\n?/g, '').trim()
+  s = s.replace(/…【(?:板块·近端·最近|最近线下剧情|尚未总结·线下剧情)[^】]*】\n?/g, '').trim()
   s = s
     .replace(/（近期「[^」]+」的线下剧情中，未找到[^\n]+）\n?/g, '')
     .replace(/（当前人设缺少可用于检索[^\n]+）\n?/g, '')
     .trim()
+
+  // 去掉空间铁律等模型说明段
+  const spatialCut = s.search(/\n---\n【(?:线上→线下|线下→线上|线上跳时)/)
+  if (spatialCut >= 0) s = s.slice(0, spatialCut).trim()
 
   return s
 }

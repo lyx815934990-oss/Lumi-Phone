@@ -8740,49 +8740,101 @@ export class PersonaDb {
     const privateContentsPick = await this.expandMemoryListContentForPrompt(privatePick, cid)
     const groupContentsPick = await this.expandMemoryListContentForPrompt(groupPick, cid)
 
-    const vectorTail = vectorUsed
-      ? '以上含「始终触发」、关键词命中、向量语义召回及无触发词兜底。向量召回条目均为已发生历史：禁止复述事情经过或重演旧场，仅可回溯提起；勿机械复读。'
-      : '以上含「始终触发」记忆、关键词命中项与少量无触发配置的旧数据兜底。请按情境自然使用，勿机械复读。'
+    const vectorIdSet = new Set([...vecExtraPrivate, ...vecExtraGroup].map((m) => m.id))
+    const keywordPrivate = privatePick.filter((m) => !vectorIdSet.has(m.id))
+    const keywordGroup = groupPick.filter((m) => !vectorIdSet.has(m.id))
+    const vectorPrivate = privatePick.filter((m) => vectorIdSet.has(m.id))
+    const vectorGroup = groupPick.filter((m) => vectorIdSet.has(m.id))
+
+    const contentById = new Map<string, string>()
+    for (let i = 0; i < privatePick.length; i++) {
+      contentById.set(privatePick[i]!.id, privateContentsPick[i] ?? '')
+    }
+    for (let i = 0; i < groupPick.length; i++) {
+      contentById.set(groupPick[i]!.id, groupContentsPick[i] ?? '')
+    }
+
+    const formatNumbered = (list: CharacterMemory[], groupAware: boolean) =>
+      list
+        .map((m, i) => {
+          const body = contentById.get(m.id) ?? ''
+          if (!groupAware) return `${i + 1}. ${body}`
+          const gid = m.groupId?.trim()
+          const gn = gid ? groupNameById.get(gid) ?? '群聊' : '群聊'
+          return `${i + 1}. （群：${gn}）${body}`
+        })
+        .join('\n')
 
     const lineScope = opts?.lineScope ?? null
     const chunks: string[] = []
-    if (privatePick.length) {
+
+    const pushVectorPrivate = async () => {
+      if (!vectorPrivate.length) return
       if (bucket === 'linked') {
         chunks.push(
-          `【与该人脉角色的线下关联长期记忆（来自绑定主角约会剧情；与私聊自有记忆分轨注入）】\n${privatePick
-            .map((_, i) => `${i + 1}. ${privateContentsPick[i]}`)
-            .join('\n')}`,
+          `【板块·向量召回·线下关联长期记忆】（相关性最高至多 ${MEMORY_VECTOR_TOP_PRIVATE} 条；已发生历史）\n${formatNumbered(vectorPrivate, false)}`,
         )
-      } else if (lineScope?.wechatAccountId?.trim()) {
+        return
+      }
+      if (lineScope?.wechatAccountId?.trim()) {
         const scopedBody = await formatPrivateMemoriesPromptWithLineScope({
-          memories: privatePick,
-          contents: privateContentsPick,
+          memories: vectorPrivate,
+          contents: vectorPrivate.map((m) => contentById.get(m.id) ?? ''),
           scope: {
             wechatAccountId: lineScope.wechatAccountId.trim(),
             sessionPlayerIdentityId: lineScope.sessionPlayerIdentityId.trim() || '__none__',
           },
-          vectorTail,
+          vectorTail: '向量召回条目均为已发生历史：禁止复述事情经过或重演旧场，仅可回溯提起。',
+          sectionTitle: `板块·向量召回·线上长期记忆（相关性最高至多 ${MEMORY_VECTOR_TOP_PRIVATE} 条）`,
         })
         if (scopedBody.trim()) chunks.push(scopedBody)
-      } else {
-        chunks.push(
-          `【与该角色的私聊长期记忆（关键词与向量语义筛选 + 少量无标签兜底）】\n${privatePick
-            .map((_, i) => `${i + 1}. ${privateContentsPick[i]}`)
-            .join('\n')}`,
-        )
+        return
       }
-    }
-    if (groupPick.length) {
       chunks.push(
-        `【你们共同参与过的群聊中被提炼的长期记忆（关键词与向量语义筛选 + 少量无标签兜底）】\n${groupPick
-          .map((m, i) => {
-            const gid = m.groupId?.trim()
-            const gn = gid ? groupNameById.get(gid) ?? '群聊' : '群聊'
-            return `${i + 1}. （群：${gn}）${groupContentsPick[i]}`
-          })
-          .join('\n')}`,
+        `【板块·向量召回·线上长期记忆】（相关性最高至多 ${MEMORY_VECTOR_TOP_PRIVATE} 条；已发生历史，禁止复述重演）\n${formatNumbered(vectorPrivate, false)}`,
       )
     }
+
+    const pushKeywordPrivate = async () => {
+      if (!keywordPrivate.length) return
+      if (bucket === 'linked') {
+        chunks.push(
+          `【板块·关键词命中·线下关联长期记忆】（始终触发 + 关键词命中 + 少量兜底）\n${formatNumbered(keywordPrivate, false)}`,
+        )
+        return
+      }
+      if (lineScope?.wechatAccountId?.trim()) {
+        const scopedBody = await formatPrivateMemoriesPromptWithLineScope({
+          memories: keywordPrivate,
+          contents: keywordPrivate.map((m) => contentById.get(m.id) ?? ''),
+          scope: {
+            wechatAccountId: lineScope.wechatAccountId.trim(),
+            sessionPlayerIdentityId: lineScope.sessionPlayerIdentityId.trim() || '__none__',
+          },
+          vectorTail: '以上含「始终触发」、关键词命中与少量无触发词兜底；请按情境自然使用，勿机械复读。',
+          sectionTitle: '板块·关键词命中·线上长期记忆',
+        })
+        if (scopedBody.trim()) chunks.push(scopedBody)
+        return
+      }
+      chunks.push(
+        `【板块·关键词命中·线上长期记忆】（始终触发 + 关键词命中 + 少量兜底）\n${formatNumbered(keywordPrivate, false)}`,
+      )
+    }
+
+    await pushVectorPrivate()
+    if (vectorGroup.length) {
+      chunks.push(
+        `【板块·向量召回·群聊长期记忆】（相关性最高至多 ${MEMORY_VECTOR_TOP_GROUP} 条）\n${formatNumbered(vectorGroup, true)}`,
+      )
+    }
+    await pushKeywordPrivate()
+    if (keywordGroup.length) {
+      chunks.push(
+        `【板块·关键词命中·群聊长期记忆】\n${formatNumbered(keywordGroup, true)}`,
+      )
+    }
+
     const appendContextRecall = async (baseText: string): Promise<string> => {
       if (bucket !== 'own' || !opts) return baseText
       const recalled = await appendContextVectorRecallToMemoryText({
@@ -8808,13 +8860,7 @@ export class PersonaDb {
     }
     const pickedMemories = [...privatePick, ...groupPick]
     const body = chunks.join('\n\n')
-    if (bucket === 'linked') {
-      return { text: `${body}\n\n（${vectorTail}）`, pickedMemories }
-    }
-    if (lineScope?.wechatAccountId?.trim() && privatePick.length) {
-      return { text: await appendContextRecall(body), pickedMemories }
-    }
-    return { text: await appendContextRecall(`${body}\n\n（${vectorTail}）`), pickedMemories }
+    return { text: await appendContextRecall(body), pickedMemories }
   }
 
   /**

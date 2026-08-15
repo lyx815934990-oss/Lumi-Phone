@@ -657,8 +657,15 @@ function buildPlayerIdentitySection(playerIdentity: PlayerIdentity | null): stri
 
 function buildLongTermMemorySection(notes?: string): string {
   const body = notes?.trim() || '（暂无长期记忆模块入库数据，仅根据最近对话与人设推断。）'
+  const alreadySectioned = /【板块·(?:向量召回|关键词命中)/.test(body)
+  if (alreadySectioned) {
+    return (
+      `\n\n---\n【记忆参考·线上长期记忆】（关键词 / 向量分轨；**优先级低于**当前状态与尚未总结；冲突以上方为准）\n` +
+      `【向量召回·已发生硬规则】向量条目**全部是已发生历史**；**禁止**复述/重演；**仅可**回溯一笔带过。\n${body}\n`
+    )
+  }
   return (
-    `\n\n---\n【长期记忆】（关键词/向量召回；**优先级最低的事实补全层**；与上方「尚未总结」或「剧情时间轴·当前状态」冲突时以上方为准）\n` +
+    `\n\n---\n【板块·线上长期记忆】（关键词/向量召回；**优先级最低的事实补全层**；与上方「尚未总结」或「剧情时间轴·当前状态」冲突时以上方为准）\n` +
     `【向量召回·已发生硬规则】下列内容**全部是已发生的历史事件**，不是本轮正在发生的场面；**禁止**复述、重演记忆中的事情经过或场景描写；**仅可**在相关时用回溯语气当作历史事件一笔带过，且不得覆盖尚未总结末尾或剧情时间轴·当前状态。\n${body}\n`
   )
 }
@@ -666,7 +673,7 @@ function buildLongTermMemorySection(notes?: string): string {
 function buildUnsummarizedPrivateSection(notes?: string): string {
   const t = notes?.trim()
   if (!t) return ''
-  return `\n\n---\n【尚未写入长期记忆的私聊片段（本地游标之后；**末尾最新优先**；前缀若含 \`[剧情 …｜系统 …]\`：左侧为故事内锚点，右侧为真实落库钟点；仅有系统前缀时**不是**剧情时间。故事「现在」以【剧情时间轴·当前状态】为准；线上落库晚于线下时，视为接在该锚点之后）】\n${t}\n`
+  return `\n\n---\n【板块·未总结·线上私聊原文】（本地游标之后；**末尾最新优先**；前缀若含 \`[剧情 …｜系统 …]\`：左侧为故事内锚点，右侧为真实落库钟点；仅有系统前缀时**不是**剧情时间。故事「现在」以【剧情时间轴·当前状态】为准；线上落库晚于线下时，视为接在该锚点之后）\n${t}\n`
 }
 
 function buildUnsummarizedGroupSection(notes?: string): string {
@@ -838,10 +845,10 @@ export function buildSystemContent(params: {
   const { currentState: storyTimelineCurrentState, recallAndNear: storyTimelineRecallAndNear } =
     splitStoryTimelineInjectBody(storyTimelineRaw)
   const timelineCurrent = storyTimelineCurrentState
-    ? `\n\n---\n【剧情时间轴·当前状态】（故事内「现在」；承接地点/时段/服装优先对照本块；**高于**下方语义召回与长期记忆）\n${storyTimelineCurrentState}\n`
+    ? `\n\n---\n【板块·剧情时间轴·当前状态】（故事内「现在」；承接地点/时段/服装优先对照本块；**高于**下方语义召回与长期记忆）\n${storyTimelineCurrentState}\n`
     : ''
   const timelineRecall = storyTimelineRecallAndNear
-    ? `\n\n---\n【剧情时间轴·语义召回/近端摘要】（往事补全；**不得**覆盖上方当前状态与尚未总结末尾最新）\n${storyTimelineRecallAndNear}\n`
+    ? `\n\n---\n【板块·剧情时间轴·向量/近端】（含：向量召回至多5条历史剧情摘要 + 近端5轮线下摘要；**不得**覆盖上方当前状态与尚未总结末尾最新）\n${storyTimelineRecallAndNear}\n`
     : ''
   const crossChannelTimeline = params.crossChannelTimelineNotes?.trim()
     ? `\n\n---\n${params.crossChannelTimelineNotes.trim()}\n`
@@ -903,11 +910,12 @@ export function buildSystemContent(params: {
         `「本轮回复偏向」为**内容最高优先级**；其次服从**角色档案、人设世界书与全局档案室世界书**（三者同级）；` +
         `输出格式硬约束（换行分条/禁 JSON/Markdown）次之；` +
         `不得捏造与「尚未总结」「剧情时间轴·当前状态」「尾声延展」明文冲突的已定事实。\n`
-      : `\n\n---\n【效力层级·微信私聊】` +
-        `**角色档案 + 人设世界书 + 全局档案室世界书**（同级最高设定）> 输出格式硬约束（换行分条/禁 JSON/Markdown）> 玩家身份铁律 > 世界背景/NPC网/尾声延展·关系 > ` +
-        `内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
-        `剧情时间轴·当前状态 > 尚未总结（末尾最新）> 线下摘录（「现在」已晚于末条公历日时改作往事，地点以当前状态为准）> 时间轴语义召回/近端摘要 > 向量长期记忆。` +
-        `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；输出格式不得压过人设气质与口吻，但客户端硬性分条/禁围栏仍须遵守；本轮用户消息决定接话方向，**不得**改写已定事实；角色在边界内可自主行动。\n`
+      : `\n\n---\n【效力层级·微信私聊｜七板块记忆参考】` +
+        `**角色档案 + 人设世界书 + 全局档案室世界书**（同级最高设定）> 输出格式硬约束 > 玩家身份铁律 > 世界背景/NPC网/尾声延展·关系 > ` +
+        `内置恋爱参考（与上列同级硬底线） > ` +
+        `①剧情时间轴·当前状态 > ⑤未总结·线上私聊原文（末尾最新）> ④近端·最近2轮线下剧情原文 > ` +
+        `③近端·更早5轮线下摘要 > ②向量召回·历史剧情摘要（至多5）> ⑥向量召回·线上长期记忆（至多5）≈ ⑦关键词命中·线上长期记忆。` +
+        `人设与全局档案冲突时取更具体硬约束；本轮用户消息决定接话方向，**不得**改写已定事实。\n`
 
   const linkedExpand = (raw: string) =>
     expandLinkedMemoryPlaceholders(raw, {
