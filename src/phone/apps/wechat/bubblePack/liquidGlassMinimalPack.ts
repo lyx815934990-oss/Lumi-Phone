@@ -30,6 +30,8 @@ const BLUR = 'blur(28px) saturate(175%)'
 /** 列表气泡：中等模糊，保留透底玻璃感，又比 40px 稳得多 */
 const BLUR_BUBBLE = 'blur(16px) saturate(165%)'
 const CAPSULE = '999px'
+/** 文字气泡圆角上限：短气泡仍会被浏览器收成胶囊；长文不会被 999px 大胶囊裁字 */
+const BUBBLE_R = '28px'
 const CARD_R = '999px'
 const SPECULAR =
   'linear-gradient(155deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.18) 34%, rgba(255,255,255,0.04) 52%, rgba(255,255,255,0) 68%)'
@@ -45,7 +47,7 @@ export const LIQUID_GLASS_MINIMAL_BUBBLE_PRESET: WeChatBubblePreset = {
   id: LIQUID_GLASS_MINIMAL_PRESET_ID,
   name: '液态玻璃',
   description:
-    '对标 iOS 液态玻璃：全胶囊磨砂气泡、顶栏 iMessage 式渐隐过渡、输入栏高光描边与强背景模糊。',
+    '对标 iOS 液态玻璃：磨砂气泡（圆角随高度自适应，长文不再裁切）、顶栏 iMessage 式渐隐过渡、输入栏高光描边与强背景模糊。',
   bubble: {
     selfBubbleBg: 'rgba(255,255,255,0.40)',
     otherBubbleBg: 'rgba(255,255,255,0.34)',
@@ -81,7 +83,7 @@ export const LIQUID_GLASS_MINIMAL_BUBBLE_PRESET: WeChatBubblePreset = {
 }
 
 /** 完整 scopedCss（写入后会进 @scope；变量用 :scope） */
-export const LIQUID_GLASS_MINIMAL_SCOPED_CSS = `/* lumi-liquid-glass — iOS liquid glass v2 (lumi-liquid-glass-ios-v14) */
+export const LIQUID_GLASS_MINIMAL_SCOPED_CSS = `/* lumi-liquid-glass — iOS liquid glass v2 (lumi-liquid-glass-ios-v15) */
 
 :scope {
   --lg-ink: ${INK};
@@ -95,6 +97,7 @@ export const LIQUID_GLASS_MINIMAL_SCOPED_CSS = `/* lumi-liquid-glass — iOS liq
   --lg-blur: ${BLUR};
   --lg-bubble-blur: ${BLUR_BUBBLE};
   --lg-capsule: ${CAPSULE};
+  --lg-bubble-r: ${BUBBLE_R};
   --lg-card-r: ${CARD_R};
   --lg-specular: ${SPECULAR};
   --lg-bubble-specular: ${BUBBLE_SPECULAR};
@@ -296,7 +299,9 @@ export const LIQUID_GLASS_MINIMAL_SCOPED_CSS = `/* lumi-liquid-glass — iOS liq
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 4px 14px rgba(0, 0, 0, 0.06) !important;
 }
 
-/* —— 文字气泡：全胶囊 + 轻量真实磨砂（透出壁纸） —— */
+/* —— 文字气泡：自适应圆角 + 轻量真实磨砂（透出壁纸） ——
+ * 勿用 999px：长气泡会变成半宽大胶囊，overflow:hidden 裁掉四角文字。
+ * 上限 28px；高度不足时浏览器会自动收到 height/2，短句仍是胶囊感。 */
 [data-wx-bubble-content] {
   position: relative !important;
   isolation: isolate !important;
@@ -306,7 +311,7 @@ export const LIQUID_GLASS_MINIMAL_SCOPED_CSS = `/* lumi-liquid-glass — iOS liq
   background-color: ${GLASS} !important;
   color: ${INK} !important;
   border: 1px solid rgba(255, 255, 255, 0.52) !important;
-  border-radius: 999px !important;
+  border-radius: var(--lg-bubble-r, ${BUBBLE_R}) !important;
   box-shadow: ${BUBBLE_SHADOW} !important;
   backdrop-filter: ${BLUR_BUBBLE} !important;
   -webkit-backdrop-filter: ${BLUR_BUBBLE} !important;

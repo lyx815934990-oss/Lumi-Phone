@@ -2969,11 +2969,11 @@ export function ChatRoomInner({
       !bubbleTailStyle ||
       showAvatar)
 
-  // 旧版液态玻璃 scopedCss：进聊天时静默升级（iOS 级材质 + 顶栏渐隐）
+  // 旧版液态玻璃 scopedCss：进聊天时静默升级（自适应气泡圆角，避免长文裁切）
   useEffect(() => {
     if (!liquidGlassActive) return
     const css = wechatTheme.chatSkinScopedCss ?? ''
-    if (css.includes('lumi-liquid-glass-ios-v14')) return
+    if (css.includes('lumi-liquid-glass-ios-v15')) return
     setWeChatTheme({ chatSkinScopedCss: LIQUID_GLASS_MINIMAL_SCOPED_CSS })
   }, [liquidGlassActive, wechatTheme.chatSkinScopedCss, setWeChatTheme])
 
