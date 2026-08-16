@@ -14,6 +14,7 @@ import { DIRECT_ANSWER_NO_PROBE_APPENDIX } from '../../../worldbook/directAnswer
 import { PASSIONATE_DIRECT_BALL_APPENDIX } from '../../../worldbook/passionateDirectBallAppendix'
 import { REALISTIC_CONFLICT_APPENDIX } from '../../../worldbook/realisticConflictAppendix'
 import { GENTLE_OLDER_BROTHER_APPENDIX } from '../../../worldbook/gentleOlderBrotherAppendix'
+import { AUTONOMOUS_SOCIAL_LIFE_APPENDIX } from '../../../worldbook/autonomousSocialLifeAppendix'
 import {
   CHARACTER_FREE_WILL_ILLUSION_APPENDIX,
   FAVORABILITY_SYSTEM_COT_APPENDIX,
@@ -514,11 +515,16 @@ export function buildDatingStyleSystemPrompt(
       ? `\n\n【档案室预设·能不能温柔一点·已开启】稳核年上照顾：主动、又说又做、动作轻柔、时刻考虑感受；禁油腻用力过猛（详见思维链【能不能温柔一点】）。非冲突日常优先本气质；与「正经吵架可以的」并存时冲突戏仍可僵持。`
       : `\n\n【档案室预设·能不能温柔一点·已开启】\n${GENTLE_OLDER_BROTHER_APPENDIX}`
     : ''
+  const autonomousLifePresetNote = resolved.autonomousSocialLife
+    ? thinkingChainEnabled
+      ? `\n\n【档案室预设·我也有自己的生活·已开启】自主日常+群像；宜有具体碎片与可辨认他人；禁没朋友/无所事事真空（详见思维链【我也有自己的生活】）。`
+      : `\n\n【档案室预设·我也有自己的生活·已开启】\n${AUTONOMOUS_SOCIAL_LIFE_APPENDIX}`
+    : ''
   const shell = thinkingChainEnabled ? DATING_LUMI_SYSTEM_SHELL : DATING_LUMI_DIRECT_SHELL
   const books = thinkingChainEnabled
     ? `\n\n${buildLumiThinkingChainBooksPrompt(toggles)}`
     : ''
-  return `${shell}\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n\n${OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES}${books}${innerOsPresetNote}${fashionPresetNote}${intimacyPosePresetNote}${cuisinePresetNote}${directAnswerPresetNote}${passionateDirectPresetNote}${realisticConflictPresetNote}${gentleBrotherPresetNote}`
+  return `${shell}\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n\n${OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES}${books}${innerOsPresetNote}${fashionPresetNote}${intimacyPosePresetNote}${cuisinePresetNote}${directAnswerPresetNote}${passionateDirectPresetNote}${realisticConflictPresetNote}${gentleBrotherPresetNote}${autonomousLifePresetNote}`
 }
 
 /** 默认全开（与档案室内置预设默认一致） */

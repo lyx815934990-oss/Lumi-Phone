@@ -202,6 +202,7 @@ function schedulePersist() {
         passionateDirectBall: snap.builtinPresets.passionateDirectBall,
         realisticConflict: snap.builtinPresets.realisticConflict,
         gentleOlderBrother: snap.builtinPresets.gentleOlderBrother,
+        autonomousSocialLife: snap.builtinPresets.autonomousSocialLife,
       },
       weibo: { _reserved: true },
     }

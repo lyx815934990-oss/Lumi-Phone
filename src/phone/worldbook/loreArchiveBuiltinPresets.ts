@@ -11,6 +11,7 @@ import { DIRECT_ANSWER_NO_PROBE_APPENDIX } from './directAnswerNoProbeAppendix'
 import { PASSIONATE_DIRECT_BALL_APPENDIX } from './passionateDirectBallAppendix'
 import { REALISTIC_CONFLICT_APPENDIX } from './realisticConflictAppendix'
 import { GENTLE_OLDER_BROTHER_APPENDIX } from './gentleOlderBrotherAppendix'
+import { AUTONOMOUS_SOCIAL_LIFE_APPENDIX } from './autonomousSocialLifeAppendix'
 
 /** 档案室系统内置预设（仅开关，正文不对用户展示） */
 export type LoreArchiveBuiltinPresetId =
@@ -25,6 +26,7 @@ export type LoreArchiveBuiltinPresetId =
   | 'passionateDirectBall'
   | 'realisticConflict'
   | 'gentleOlderBrother'
+  | 'autonomousSocialLife'
 
 export type LoreArchiveBuiltinPresetToggles = Partial<Record<LoreArchiveBuiltinPresetId, boolean>>
 
@@ -101,6 +103,12 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
     description:
       '系统内置：情绪稳定、内核强大的年上大哥哥式照顾——主动看见需要、又说又做、动作轻柔、时刻考虑对方感受，且不油腻。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
   },
+  {
+    id: 'autonomousSocialLife',
+    title: '我也有自己的生活',
+    description:
+      '系统内置：多元化自主生活 + 群像社交。线上会主动报备日常碎片，线下也有行程与他人痕迹；避免写成没朋友、没社交、无所事事。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+  },
 ]
 
 export function resolveLoreArchiveBuiltinPresetToggles(
@@ -119,6 +127,7 @@ export function resolveLoreArchiveBuiltinPresetToggles(
     passionateDirectBall: raw?.passionateDirectBall === true,
     realisticConflict: raw?.realisticConflict === true,
     gentleOlderBrother: raw?.gentleOlderBrother === true,
+    autonomousSocialLife: raw?.autonomousSocialLife === true,
   }
 }
 
@@ -140,6 +149,7 @@ export function buildWechatReplyRomanceSections(
   if (resolved.passionateDirectBall) parts.push(PASSIONATE_DIRECT_BALL_APPENDIX)
   if (resolved.realisticConflict) parts.push(REALISTIC_CONFLICT_APPENDIX)
   if (resolved.gentleOlderBrother) parts.push(GENTLE_OLDER_BROTHER_APPENDIX)
+  if (resolved.autonomousSocialLife) parts.push(AUTONOMOUS_SOCIAL_LIFE_APPENDIX)
   return parts.filter(Boolean).join('\n\n')
 }
 
@@ -193,7 +203,13 @@ export function buildWechatThinkingChainRomanceSteps(
   }
   if (resolved.gentleOlderBrother) {
     steps.push(
-      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三'][stepNo - 5] ?? String(stepNo)}步：内化「能不能温柔一点」（稳核年上照顾；又说又做；动作轻柔；时刻考虑感受；禁油腻用力过猛；条文在输出协议；禁复述）`,
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四'][stepNo - 5] ?? String(stepNo)}步：内化「能不能温柔一点」（稳核年上照顾；又说又做；动作轻柔；时刻考虑感受；禁油腻用力过猛；条文在输出协议；禁复述）`,
+    )
+    stepNo += 1
+  }
+  if (resolved.autonomousSocialLife) {
+    steps.push(
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五'][stepNo - 5] ?? String(stepNo)}步：内化「我也有自己的生活」（自主日常+群像；线上主动报备碎片；禁没朋友/无所事事真空；条文在输出协议；禁复述）`,
     )
     stepNo += 1
   }
@@ -260,6 +276,11 @@ ${REALISTIC_CONFLICT_APPENDIX}`)
 相处气质硬约束：情绪稳定、内核强大的年上照顾；主动、又说又做、动作轻柔、时刻考虑 {{user}} 感受；禁油腻与用力过猛：
 ${GENTLE_OLDER_BROTHER_APPENDIX}`)
   }
+  if (resolved.autonomousSocialLife) {
+    parts.push(`【我也有自己的生活】
+生活与群像硬约束：多元化自主日常；可辨认他人；线上宜主动报备具体碎片；禁止没朋友、没社交、无所事事的真空人设：
+${AUTONOMOUS_SOCIAL_LIFE_APPENDIX}`)
+  }
   return parts.join('\n\n')
 }
 
@@ -273,6 +294,7 @@ const BUILTIN_PRESETS_ONLINE: LoreArchiveBuiltinPresetId[] = [
   'passionateDirectBall',
   'realisticConflict',
   'gentleOlderBrother',
+  'autonomousSocialLife',
 ]
 
 /** 仅线下约会 / VN 额外注入的内置预设 */
