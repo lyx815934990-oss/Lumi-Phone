@@ -517,6 +517,21 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                   TRACE MATRIX
                 </p>
                 <p className="mt-1 text-[17px] font-semibold tracking-tight">思维溯源</p>
+                {data?.sourceChannel ? (
+                  <p className="mt-1 text-[12px] text-neutral-500">
+                    本轮来源：
+                    {data.sourceChannel === 'private_chat'
+                      ? '线上私聊'
+                      : data.sourceChannel === 'group_chat'
+                        ? '线上群聊'
+                        : data.sourceChannel === 'vn'
+                          ? '线下 VN'
+                          : '线下约会'}
+                    {typeof data.publishedAtMs === 'number' && data.publishedAtMs > 0
+                      ? ` · ${new Date(data.publishedAtMs).toLocaleString()}`
+                      : ''}
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"

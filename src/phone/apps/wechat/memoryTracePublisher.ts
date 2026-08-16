@@ -592,6 +592,8 @@ function buildInjectionSummary(params: {
 
 export async function publishWeChatPrivatePersonaMemoryTrace(params: {
   character: Character | null
+  /** 人设对象缺省时用 id 回查，避免私聊溯源静默跳过 */
+  characterId?: string | null
   charDisplayName: string
   transcript: ChatTranscriptTurn[]
   biasText: string
@@ -629,8 +631,20 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
   dedupeMeetRecentOmitted?: boolean
   conversationKey?: string | null
 }): Promise<void> {
-  const cid = params.character?.id?.trim()
+  let character = params.character
+  let cid = character?.id?.trim() || params.characterId?.trim() || ''
   if (!cid) return
+  if (!character?.id?.trim()) {
+    try {
+      character = (await personaDb.getCharacter(cid)) ?? null
+    } catch {
+      character = null
+    }
+  }
+  // 仍无角色行时用 id 占位，保证溯源能落库（不因 character 为空整轮跳过）
+  if (!character?.id?.trim()) {
+    character = { id: cid, name: params.charDisplayName.trim() || '角色' } as Character
+  }
 
   const hay = buildMemoryRelevanceHaystack([
     ...params.transcript.slice(-32).map((t) => t.text),
@@ -652,10 +666,18 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
     lineScope: lineScope ?? undefined,
     conversationKey: params.conversationKey?.trim() || undefined,
   }
-  const { getCharacterMemoryRelevanceTraceForPromptInjection } = await import(
-    './memory/formatCharacterMemoriesForPromptInjection'
-  )
-  let deep = await getCharacterMemoryRelevanceTraceForPromptInjection(cid, hay, recallOpts)
+  let deep: {
+    keywordHits: MemoryTraceData['contextMatrix']['deepMemory']['keywordHits']
+    vectorRetrievals: MemoryTraceData['contextMatrix']['deepMemory']['vectorRetrievals']
+  } = { keywordHits: [], vectorRetrievals: [] }
+  try {
+    const { getCharacterMemoryRelevanceTraceForPromptInjection } = await import(
+      './memory/formatCharacterMemoriesForPromptInjection'
+    )
+    deep = await getCharacterMemoryRelevanceTraceForPromptInjection(cid, hay, recallOpts)
+  } catch {
+    /* 召回失败仍发布溯源，避免线上回复永远盖不过线下 */
+  }
   const injectedLtm = params.longTermMemoryNotes?.trim() || ''
   if (injectedLtm && !deep.keywordHits.length && !deep.vectorRetrievals.length) {
     const parsed = parseInjectedLongTermMemoryForTrace(injectedLtm)
@@ -681,9 +703,9 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
       ? memSettings.memoryEmbeddingProviderMode
       : 'auto'
 
-  const personaDetail = buildFullPersonaDetailForMemoryTrace(params.character)
+  const personaDetail = buildFullPersonaDetailForMemoryTrace(character)
   const characterWorldBookRaw = (
-    await buildWorldBookTextForPrompt(params.character, TRACE_WORLD_BOOK_MAX_CHARS)
+    await buildWorldBookTextForPrompt(character, TRACE_WORLD_BOOK_MAX_CHARS)
   ).trim()
   const globalWorldbookRaw = buildWorldbookContext(
     params.chatMemberIds,
@@ -698,7 +720,7 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
     getLoreArchiveBuiltinPresetTogglesSnapshot(),
   )
   const playerFb = await resolvePlayerDisplayFallbackForTrace()
-  const expand = await expandTraceTextForCharacter(params.character, playerFb)
+  const expand = await expandTraceTextForCharacter(character, playerFb)
   const characterWorldBook = expand(characterWorldBookRaw)
   const globalWorldbook = expand(globalWorldbookRaw)
   const personaDetailOut = expand(personaDetail)
@@ -837,22 +859,22 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
 
   const lastReply = lastNonEmptyBubbleText(params.replyBubbles)
 
-  const chatAfterProtocol = hasChatAfterWorldBookItems(params.character)
+  const chatAfterProtocol = hasChatAfterWorldBookItems(character)
   const injectedSnapshotEntries =
-    chatAfterProtocol && params.character
+    chatAfterProtocol && character
       ? buildAfterChatInjectedSnapshotEntries(
           [
             {
-              character: params.character,
+              character,
               characterName:
-                params.charDisplayName.trim() || params.character.name?.trim() || '角色',
+                params.charDisplayName.trim() || character.name?.trim() || '角色',
             },
           ],
           expand,
         )
       : []
   const patchRows = buildWorldBookAfterPatchRowsFromSingleCharacter(
-    params.character,
+    character,
     params.worldBookPatches ?? [],
   )
   const worldBookAfterChat = buildWorldBookAfterChatTrace({
@@ -864,7 +886,7 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
   })
 
   const netTraceRaw = await buildPrivateChatNetworkRelationshipsTrace({
-    character: params.character,
+    character,
     sessionPlayerIdentityId: params.sessionPlayerIdentityId,
   })
   const networkRelationships = netTraceRaw
@@ -878,13 +900,15 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
 
   const data: MemoryTraceData = {
     lastReply: lastReply || '（本轮无可见文本气泡）',
-    charName: params.charDisplayName.trim() || params.character?.name?.trim() || '角色',
+    charName: params.charDisplayName.trim() || character?.name?.trim() || '角色',
+    publishedAtMs: Date.now(),
+    sourceChannel: 'private_chat',
     injectionSummary,
     worldBookAfterChat,
     networkRelationships,
     contextMatrix: {
       baseDirectives: {
-        persona: personaTagsFromCharacter(params.character),
+        persona: personaTagsFromCharacter(character),
         personaDetail: personaDetailOut,
         worldBackground: worldBgOut,
         characterWorldBook: characterWorldBook || '（未绑定或未启用人设世界书条目）',
@@ -1007,6 +1031,8 @@ export async function publishWeChatGroupMemoryTrace(params: {
   const data: MemoryTraceData = {
     lastReply: lastReply || '（本轮无可见文本气泡）',
     charName: params.groupName.trim() || '群聊',
+    publishedAtMs: Date.now(),
+    sourceChannel: 'group_chat',
     worldBookAfterChat,
     contextMatrix: {
       baseDirectives: {
@@ -1222,6 +1248,8 @@ export async function publishDatingOfflineMemoryTrace(params: {
   const data: MemoryTraceData = {
     lastReply: lastReply || '（本轮无正文）',
     charName: params.charName.trim() || '约会',
+    publishedAtMs: Date.now(),
+    sourceChannel: params.isVnMode ? 'vn' : 'offline_plot',
     injectionSummary,
     worldBookAfterChat: params.worldBookAfterChat ?? null,
     contextMatrix: {

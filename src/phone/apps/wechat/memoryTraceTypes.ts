@@ -170,6 +170,10 @@ export type MemoryTraceRecentRoundRef = {
 export type MemoryTraceData = {
   lastReply: string
   charName: string
+  /** 本轮溯源发布时间（防 hydrate / 慢写库把更新盖回旧线下记录） */
+  publishedAtMs?: number
+  /** 本轮生成渠道：便于 UI 区分「线上私聊」与「线下约会」 */
+  sourceChannel?: 'private_chat' | 'group_chat' | 'offline_plot' | 'vn'
   /** 可选：旧持久化记录无此字段 */
   injectionSummary?: MemoryTraceInjectionSummary | null
   /** 可选：旧持久化记录无此字段 */
@@ -570,6 +574,14 @@ export function parseMemoryTraceData(raw: unknown): MemoryTraceData | null {
   return {
     lastReply,
     charName: charName || '角色',
+    publishedAtMs: asNum(o.publishedAtMs, 0) || undefined,
+    sourceChannel:
+      o.sourceChannel === 'private_chat' ||
+      o.sourceChannel === 'group_chat' ||
+      o.sourceChannel === 'offline_plot' ||
+      o.sourceChannel === 'vn'
+        ? o.sourceChannel
+        : undefined,
     injectionSummary,
     worldBookAfterChat,
     networkRelationships,

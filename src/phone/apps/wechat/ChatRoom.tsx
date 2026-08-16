@@ -10638,6 +10638,7 @@ export function ChatRoomInner({
         if (roomType !== 'group' && pm === 'persona' && cid?.trim() && !useLumiProjectAssistantPrompt) {
           void publishWeChatPrivatePersonaMemoryTrace({
             character,
+            characterId: cid,
             charDisplayName: character?.name?.trim() || notifyPeerRound,
             transcript,
             biasText: traceReplyBias,
@@ -10666,7 +10667,9 @@ export function ChatRoomInner({
             replyBubbles: bubbles,
             worldBookPatches: aiReply.worldBookPatches,
             worldBookAfterApplied: worldBookAfterUpdated,
-          }).catch(() => {})
+          }).catch((err) => {
+            console.warn('[Lumi] private memory trace publish failed', err)
+          })
         }
         if (roomType === 'group' && pm === 'persona' && groupTraceSnapshot) {
           void publishWeChatGroupMemoryTrace({
@@ -10685,7 +10688,9 @@ export function ChatRoomInner({
             patchRulesIncluded: traceGroupChatAfterPatchRules,
             worldBookPatches: groupWorldBookPatches,
             worldBookAfterApplied: worldBookAfterUpdated,
-          }).catch(() => {})
+          }).catch((err) => {
+            console.warn('[Lumi] group memory trace publish failed', err)
+          })
         }
 
         const dedupeBubbleLines = (arr: string[]) =>
