@@ -1,4 +1,4 @@
-import { PROSE_FORBIDDEN_SCAN_TERM_COUNT } from '../proseForbiddenLexiconPrompt'
+﻿import { PROSE_FORBIDDEN_SCAN_TERM_COUNT } from '../proseForbiddenLexiconPrompt'
 import { DATING_INNER_OS_MARKUP_RULE } from './datingInnerOsMarkup'
 import { LUMI_UNIFIED_STYLE_ATMOSPHERE_BOOK } from './lumiOfflineWritingRulebook'
 import { OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES } from './offlineDatingExpressionRules'
@@ -9,6 +9,11 @@ import {
   buildOfflineRomanceThinkingChainSections,
   resolveLoreArchiveBuiltinPresetToggles,
 } from '../../../worldbook/loreArchiveBuiltinPresets'
+import { CUISINE_RECIPE_WORLD_BOOK_APPENDIX } from '../../../worldbook/cuisineRecipeWorldBookAppendix'
+import { DIRECT_ANSWER_NO_PROBE_APPENDIX } from '../../../worldbook/directAnswerNoProbeAppendix'
+import { PASSIONATE_DIRECT_BALL_APPENDIX } from '../../../worldbook/passionateDirectBallAppendix'
+import { REALISTIC_CONFLICT_APPENDIX } from '../../../worldbook/realisticConflictAppendix'
+import { GENTLE_OLDER_BROTHER_APPENDIX } from '../../../worldbook/gentleOlderBrotherAppendix'
 import {
   CHARACTER_FREE_WILL_ILLUSION_APPENDIX,
   FAVORABILITY_SYSTEM_COT_APPENDIX,
@@ -484,11 +489,36 @@ export function buildDatingStyleSystemPrompt(
       ? `\n\n【档案室预设·耳后三厘米经济特区·已开启】亲密须写具体姿势、表情与短对白；禁「很动情」等空词、禁跳过前戏（详见思维链内特区条文）。`
       : `\n\n【档案室预设·耳后三厘米经济特区·已开启】\n${OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX}`
     : ''
+  const cuisinePresetNote = resolved.cuisineRecipeAtlas
+    ? thinkingChainEnabled
+      ? `\n\n【档案室预设·来吃点丰盛的好不好·已开启】进食/点菜/下厨须落具体菜名与风味，禁止「随便吃点」（详见思维链【来吃点丰盛的好不好】）；寻味外卖指令仍只用系统菜单。`
+      : `\n\n【档案室预设·来吃点丰盛的好不好·已开启】\n${CUISINE_RECIPE_WORLD_BOOK_APPENDIX}`
+    : ''
+  const directAnswerPresetNote = resolved.directAnswerNoProbe
+    ? thinkingChainEnabled
+      ? `\n\n【档案室预设·别再问怎么了·已开启】{{user}} 已说出内容时须直接接住/回答，禁止默认「怎么了」「为什么这样说」（详见思维链【别再问怎么了】）。`
+      : `\n\n【档案室预设·别再问怎么了·已开启】\n${DIRECT_ANSWER_NO_PROBE_APPENDIX}`
+    : ''
+  const passionateDirectPresetNote = resolved.passionateDirectBall
+    ? thinkingChainEnabled
+      ? `\n\n【档案室预设·别再嘴硬硬损了·已开启】有心动/喜欢/心疼时须热烈直球；禁「等着/回去收拾你」当主轴（详见思维链【别再嘴硬硬损了】）。`
+      : `\n\n【档案室预设·别再嘴硬硬损了·已开启】\n${PASSIONATE_DIRECT_BALL_APPENDIX}`
+    : ''
+  const realisticConflictPresetNote = resolved.realisticConflict
+    ? thinkingChainEnabled
+      ? `\n\n【档案室预设·正经吵架可以的·已开启】允许正常矛盾与僵持；禁止 char 自我说服秒和好；和好须有台阶（详见思维链【正经吵架可以的】）。冲突场景下本预设优先于「必须直球哄」。`
+      : `\n\n【档案室预设·正经吵架可以的·已开启】\n${REALISTIC_CONFLICT_APPENDIX}`
+    : ''
+  const gentleBrotherPresetNote = resolved.gentleOlderBrother
+    ? thinkingChainEnabled
+      ? `\n\n【档案室预设·能不能温柔一点·已开启】稳核年上照顾：主动、又说又做、动作轻柔、时刻考虑感受；禁油腻用力过猛（详见思维链【能不能温柔一点】）。非冲突日常优先本气质；与「正经吵架可以的」并存时冲突戏仍可僵持。`
+      : `\n\n【档案室预设·能不能温柔一点·已开启】\n${GENTLE_OLDER_BROTHER_APPENDIX}`
+    : ''
   const shell = thinkingChainEnabled ? DATING_LUMI_SYSTEM_SHELL : DATING_LUMI_DIRECT_SHELL
   const books = thinkingChainEnabled
     ? `\n\n${buildLumiThinkingChainBooksPrompt(toggles)}`
     : ''
-  return `${shell}\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n\n${OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES}${books}${innerOsPresetNote}${fashionPresetNote}${intimacyPosePresetNote}`
+  return `${shell}\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n\n${OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES}${books}${innerOsPresetNote}${fashionPresetNote}${intimacyPosePresetNote}${cuisinePresetNote}${directAnswerPresetNote}${passionateDirectPresetNote}${realisticConflictPresetNote}${gentleBrotherPresetNote}`
 }
 
 /** 默认全开（与档案室内置预设默认一致） */

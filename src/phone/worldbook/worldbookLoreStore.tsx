@@ -197,6 +197,11 @@ function schedulePersist() {
         offlineRichInnerOs: snap.builtinPresets.offlineRichInnerOs,
         offlineFashionStyling: snap.builtinPresets.offlineFashionStyling,
         offlineCoupleIntimacyPoses: snap.builtinPresets.offlineCoupleIntimacyPoses,
+        cuisineRecipeAtlas: snap.builtinPresets.cuisineRecipeAtlas,
+        directAnswerNoProbe: snap.builtinPresets.directAnswerNoProbe,
+        passionateDirectBall: snap.builtinPresets.passionateDirectBall,
+        realisticConflict: snap.builtinPresets.realisticConflict,
+        gentleOlderBrother: snap.builtinPresets.gentleOlderBrother,
       },
       weibo: { _reserved: true },
     }

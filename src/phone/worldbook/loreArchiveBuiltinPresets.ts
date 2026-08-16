@@ -1,4 +1,4 @@
-import {
+﻿import {
   CHARACTER_EMOTION_CONFESSION_ENGINE_APPENDIX,
   LUMI_DOCTRINE_OF_LOVE_APPENDIX,
 } from '../apps/wechat/wechatReplyOutputPrompt'
@@ -6,6 +6,11 @@ import { OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX } from '../apps/wechat/dat
 import { OFFLINE_DATING_FASHION_STYLING_APPENDIX } from '../apps/wechat/dating/offlineDatingFashionStylingAppendix'
 import { OFFLINE_DATING_RICH_INNER_OS_APPENDIX } from '../apps/wechat/dating/offlineDatingRichInnerOsAppendix'
 import { PURE_RESTRAIN_LOVE_APPENDIX } from '../apps/wechat/pureRestrainLoveAppendix'
+import { CUISINE_RECIPE_WORLD_BOOK_APPENDIX } from './cuisineRecipeWorldBookAppendix'
+import { DIRECT_ANSWER_NO_PROBE_APPENDIX } from './directAnswerNoProbeAppendix'
+import { PASSIONATE_DIRECT_BALL_APPENDIX } from './passionateDirectBallAppendix'
+import { REALISTIC_CONFLICT_APPENDIX } from './realisticConflictAppendix'
+import { GENTLE_OLDER_BROTHER_APPENDIX } from './gentleOlderBrotherAppendix'
 
 /** 档案室系统内置预设（仅开关，正文不对用户展示） */
 export type LoreArchiveBuiltinPresetId =
@@ -15,6 +20,11 @@ export type LoreArchiveBuiltinPresetId =
   | 'offlineRichInnerOs'
   | 'offlineFashionStyling'
   | 'offlineCoupleIntimacyPoses'
+  | 'cuisineRecipeAtlas'
+  | 'directAnswerNoProbe'
+  | 'passionateDirectBall'
+  | 'realisticConflict'
+  | 'gentleOlderBrother'
 
 export type LoreArchiveBuiltinPresetToggles = Partial<Record<LoreArchiveBuiltinPresetId, boolean>>
 
@@ -61,6 +71,36 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
     description:
       '系统内置：专治「人贴在一起时只会复读三个动词」。开启后仅注入线下约会 AI，正文不可查看或编辑。',
   },
+  {
+    id: 'cuisineRecipeAtlas',
+    title: '来吃点丰盛的好不好',
+    description:
+      '系统内置：专治「随便吃点」「点了个菜」。中外菜系与甜品饮品词库，写吃饭/下厨/点菜须落具体菜名与风味。开启后注入线上私聊与线下约会 AI；寻味外卖指令仍只可用系统菜单。正文不可查看或编辑。',
+  },
+  {
+    id: 'directAnswerNoProbe',
+    title: '别再问怎么了',
+    description:
+      '系统内置：专治默认追问「怎么了」「为什么这样说」。user 已说出内容时，char 须问什么答什么、直接接住（如自我贬低就直接肯定，不要先审问原因）。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+  },
+  {
+    id: 'passionateDirectBall',
+    title: '别再嘴硬硬损了',
+    description:
+      '系统内置：专治嘴硬硬损与「等着」「回去收拾你」式推延调情。有心动/喜欢/心疼时须热烈直球说破，硬损须同轮托住。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+  },
+  {
+    id: 'realisticConflict',
+    title: '正经吵架可以的',
+    description:
+      '系统内置：允许正常吵架与僵持，禁止 char 莫名其妙自我说服、一轮秒和好。适合想正经吵的场景；可能下头、冷战，请谨慎开启。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+  },
+  {
+    id: 'gentleOlderBrother',
+    title: '能不能温柔一点',
+    description:
+      '系统内置：情绪稳定、内核强大的年上大哥哥式照顾——主动看见需要、又说又做、动作轻柔、时刻考虑对方感受，且不油腻。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+  },
 ]
 
 export function resolveLoreArchiveBuiltinPresetToggles(
@@ -74,6 +114,11 @@ export function resolveLoreArchiveBuiltinPresetToggles(
     offlineRichInnerOs: raw?.offlineRichInnerOs === true,
     offlineFashionStyling: raw?.offlineFashionStyling === true,
     offlineCoupleIntimacyPoses: raw?.offlineCoupleIntimacyPoses === true,
+    cuisineRecipeAtlas: raw?.cuisineRecipeAtlas === true,
+    directAnswerNoProbe: raw?.directAnswerNoProbe === true,
+    passionateDirectBall: raw?.passionateDirectBall === true,
+    realisticConflict: raw?.realisticConflict === true,
+    gentleOlderBrother: raw?.gentleOlderBrother === true,
   }
 }
 
@@ -90,6 +135,11 @@ export function buildWechatReplyRomanceSections(
   if (resolved.lumiDoctrineOfLove) parts.push(LUMI_DOCTRINE_OF_LOVE_APPENDIX)
   if (resolved.activeConfession) parts.push(CHARACTER_EMOTION_CONFESSION_ENGINE_APPENDIX)
   if (resolved.pureRestrainLove) parts.push(PURE_RESTRAIN_LOVE_APPENDIX)
+  if (resolved.cuisineRecipeAtlas) parts.push(CUISINE_RECIPE_WORLD_BOOK_APPENDIX)
+  if (resolved.directAnswerNoProbe) parts.push(DIRECT_ANSWER_NO_PROBE_APPENDIX)
+  if (resolved.passionateDirectBall) parts.push(PASSIONATE_DIRECT_BALL_APPENDIX)
+  if (resolved.realisticConflict) parts.push(REALISTIC_CONFLICT_APPENDIX)
+  if (resolved.gentleOlderBrother) parts.push(GENTLE_OLDER_BROTHER_APPENDIX)
   return parts.filter(Boolean).join('\n\n')
 }
 
@@ -114,6 +164,36 @@ export function buildWechatThinkingChainRomanceSteps(
   if (resolved.pureRestrainLove) {
     steps.push(
       `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「纯爱克制」（先判阶段；循序渐进禁速通；成全型喜欢；禁强制爱/刚确立深亲密；仅相处日久更深亲密戏可解锁【五附】纯情色气；条文在输出协议；禁复述）`,
+    )
+    stepNo += 1
+  }
+  if (resolved.cuisineRecipeAtlas) {
+    steps.push(
+      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：若本轮涉进食/点菜/下厨：内化「来吃点丰盛的好不好」（具体菜名+风味；禁「随便吃点」；寻味指令仍只用系统菜单；条文在输出协议；禁复述）`,
+    )
+    stepNo += 1
+  }
+  if (resolved.directAnswerNoProbe) {
+    steps.push(
+      `- 第${['五', '六', '七', '八', '九', '十', '十一'][stepNo - 5] ?? String(stepNo)}步：内化「别再问怎么了」（user 已说出内容则直接接住/回答；禁默认「怎么了」「为什么这样说」；条文在输出协议；禁复述）`,
+    )
+    stepNo += 1
+  }
+  if (resolved.passionateDirectBall) {
+    steps.push(
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二'][stepNo - 5] ?? String(stepNo)}步：内化「别再嘴硬硬损了」（热烈直球；禁「等着/回去收拾你」当主轴；硬损须同轮托住；条文在输出协议；禁复述）`,
+    )
+    stepNo += 1
+  }
+  if (resolved.realisticConflict) {
+    steps.push(
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三'][stepNo - 5] ?? String(stepNo)}步：内化「正经吵架可以的」（可僵持；禁自我说服秒和好；和好须有台阶；红线仍守；条文在输出协议；禁复述）`,
+    )
+    stepNo += 1
+  }
+  if (resolved.gentleOlderBrother) {
+    steps.push(
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三'][stepNo - 5] ?? String(stepNo)}步：内化「能不能温柔一点」（稳核年上照顾；又说又做；动作轻柔；时刻考虑感受；禁油腻用力过猛；条文在输出协议；禁复述）`,
     )
     stepNo += 1
   }
@@ -155,6 +235,31 @@ ${OFFLINE_DATING_FASHION_STYLING_APPENDIX}`)
 写亲密时用下面菜单：具体姿势 + 脸上的反应 + 嘴里的短句；禁空词（很动情/电流）、禁跳过前戏、禁哑巴动作、禁羞辱伴侣。关系阶段仍听其他设定：
 ${OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX}`)
   }
+  if (resolved.cuisineRecipeAtlas) {
+    parts.push(`【来吃点丰盛的好不好】
+以下为本轮进食/点菜/下厨描写的词库约束；有饮食戏时须落具体菜名与风味，禁止「随便吃点」；寻味外卖指令仍只用系统菜单：
+${CUISINE_RECIPE_WORLD_BOOK_APPENDIX}`)
+  }
+  if (resolved.directAnswerNoProbe) {
+    parts.push(`【别再问怎么了】
+对白接话硬约束：{{user}} 已说出内容时须直接回答/接住，禁止默认追问「怎么了」「为什么这样说」：
+${DIRECT_ANSWER_NO_PROBE_APPENDIX}`)
+  }
+  if (resolved.passionateDirectBall) {
+    parts.push(`【别再嘴硬硬损了】
+情感表达硬约束：有心动/喜欢/心疼时须热烈直球；禁止「等着/回去收拾你」式推延硬损当主轴：
+${PASSIONATE_DIRECT_BALL_APPENDIX}`)
+  }
+  if (resolved.realisticConflict) {
+    parts.push(`【正经吵架可以的】
+矛盾戏硬约束：允许正常吵架与僵持；禁止 {{char}} 莫名自我说服、一轮秒和好；和好须有台阶：
+${REALISTIC_CONFLICT_APPENDIX}`)
+  }
+  if (resolved.gentleOlderBrother) {
+    parts.push(`【能不能温柔一点】
+相处气质硬约束：情绪稳定、内核强大的年上照顾；主动、又说又做、动作轻柔、时刻考虑 {{user}} 感受；禁油腻与用力过猛：
+${GENTLE_OLDER_BROTHER_APPENDIX}`)
+  }
   return parts.join('\n\n')
 }
 
@@ -163,6 +268,11 @@ const BUILTIN_PRESETS_ONLINE: LoreArchiveBuiltinPresetId[] = [
   'lumiDoctrineOfLove',
   'activeConfession',
   'pureRestrainLove',
+  'cuisineRecipeAtlas',
+  'directAnswerNoProbe',
+  'passionateDirectBall',
+  'realisticConflict',
+  'gentleOlderBrother',
 ]
 
 /** 仅线下约会 / VN 额外注入的内置预设 */
@@ -174,7 +284,7 @@ const BUILTIN_PRESETS_OFFLINE_ONLY: LoreArchiveBuiltinPresetId[] = [
 
 /**
  * 思维溯源：当前开启且对本轮板块生效的系统内置世界书名称。
- * `plate` 为 offline_plot / vn 时含线下专属；否则仅线上恋爱类。
+ * `plate` 为 offline_plot / vn 时含线下专属；否则仅线上恋爱类（含来吃点丰盛的好不好）。
  * `plate === null` 时列出全部已开启（面板回退展示用）。
  */
 export function listEnabledBuiltinPresetTitlesForTrace(
