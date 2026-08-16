@@ -157,7 +157,7 @@ import { loadMeetEncounterMemoriesPromptBlock } from '../lumiMeet/meetWechatSync
 import { formatCharacterMemoriesForPromptInjectionPack } from './memory/formatCharacterMemoriesForPromptInjection'
 import { loadStoryTimelinePromptBlock } from './memory/storyTimelinePersist'
 import { composeStoryTimelineCalendarAnchorLabel } from './memory/storyTimelineTypes'
-import { syncStoryTimelineNowFromOnlineClock } from './time/applyOnlineChatTimeFusion'
+import { syncStoryTimelineNowFromOnlineClock, parseStoryAnchorLabelToMs } from './time/applyOnlineChatTimeFusion'
 import { mergeMomentImageUrlsForGroup } from './memory/momentMemoryPromptImages'
 import { emitWeChatStorageChanged, personaDb } from './newFriendsPersona/idb'
 import {
@@ -339,9 +339,10 @@ import {
 } from './groupChatMultiIdentityPrompt'
 import { buildGroupChatSelfAuditPromptSection } from './groupChatSelfAuditPrompt'
 import { loadOfflineDatingPlotsPromptBlock } from './dating/loadOfflineDatingPlotsForWechatPrompt'
-import { buildOnlineChatCrossChannelTimelineRule } from './wechatCrossChannelTimeline'
+import { buildOnlineChatCrossChannelTimelineRule, resolveLastOfflineAiPlotTimestampMs } from './wechatCrossChannelTimeline'
 import { publishWeChatGroupMemoryTrace, publishWeChatPrivatePersonaMemoryTrace } from './memoryTracePublisher'
 import {
+  loadDatingPlotsFromKv,
   runGroupChatMemorySummaryAfterThreshold,
   runUnifiedAutoMemorySummaryAfterThreshold,
 } from './unifiedMemoryAutoSummary'
@@ -3203,12 +3204,23 @@ export function ChatRoomInner({
         traceCrossAccountPrivate = crossDigest.traceExcerpts.trim()
       }
       const skipGroupDigestForStranger = isolateStrangerLine
+      const storyNowMsEarly = parseStoryAnchorLabelToMs(storyNowForOffline)
+      let lastOfflineAiPlotTs: number | null = null
+      try {
+        const plots = await loadDatingPlotsFromKv(pc)
+        lastOfflineAiPlotTs = resolveLastOfflineAiPlotTimestampMs(plots)
+      } catch {
+        lastOfflineAiPlotTs = null
+      }
       const [unsPrivateRaw, unsGroup, unsMeet, crossChannelTimeline] = await Promise.all([
         formatUnsummarizedPrivateChatBlock({
           conversationKey,
           maxMessages: MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
           maxChars: MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
           includeMessageTimestamps: true,
+          minStoryCalendarMs: storyNowMsEarly,
+          storyNowLabel: storyNowForOffline,
+          lastOfflineAiPlotTs,
         }).then((s) => s.trim()),
         skipGroupDigestForStranger
           ? Promise.resolve('')
@@ -3276,6 +3288,7 @@ export function ChatRoomInner({
       const recentPrivateRounds = (
         await buildRecentPrivateChatRoundsWithTimeBlock({
           conversationKey,
+          minStoryCalendarMs: storyNowMsEarly,
         })
       ).trim()
       const latestUserText =

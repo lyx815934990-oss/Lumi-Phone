@@ -673,7 +673,12 @@ function buildLongTermMemorySection(notes?: string): string {
 function buildUnsummarizedPrivateSection(notes?: string): string {
   const t = notes?.trim()
   if (!t) return ''
-  return `\n\n---\n【板块·未总结·线上私聊原文】（本地游标之后；**末尾最新优先**；前缀若含 \`[剧情 …｜系统 …]\`：左侧为故事内锚点，右侧为真实落库钟点；仅有系统前缀时**不是**剧情时间。故事「现在」以【剧情时间轴·当前状态】为准；线上落库晚于线下时，视为接在该锚点之后）\n${t}\n`
+  return (
+    `\n\n---\n【板块·未总结·线上私聊原文】（本地游标之后；**末尾最新优先**）\n` +
+    `前缀：\`[剧情 …｜系统 …]\` 左侧为故事内锚点、右侧为真实落库；仅 \`[系统 …·落库]\` 时**不是**剧情时间。\n` +
+    `故事「现在」以【剧情时间轴·当前状态】为准。若本块已拆「往事 / 近端」：**往事禁止写成刚刚发生**；近端可承接但仍须按前缀先后。\n` +
+    `${t}\n`
+  )
 }
 
 function buildUnsummarizedGroupSection(notes?: string): string {
