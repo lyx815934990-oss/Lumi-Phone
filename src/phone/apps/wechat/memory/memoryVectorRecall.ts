@@ -206,7 +206,7 @@ export function memoryKeywordHitVectorSim(m: CharacterMemory, queryVec: number[]
   return cosineSimilarity(queryVec, emb)
 }
 
-/** 子串命中候选在向量可用时须达 {@link MEMORY_KEYWORD_HIT_MIN_SIM}，否则剔除 */
+/** 子串命中候选在向量可用时须达 {@link MEMORY_KEYWORD_HIT_MIN_SIM}；尚无记忆向量时保留命中，勿误杀 */
 export function filterKeywordHitsByVectorConfirm(params: {
   hits: CharacterMemory[]
   queryVec: number[] | null | undefined
@@ -216,7 +216,8 @@ export function filterKeywordHitsByVectorConfirm(params: {
   if (!queryVec?.length) return hits
   return hits.filter((m) => {
     const sim = memoryKeywordHitVectorSim(m, queryVec)
-    if (sim == null) return false
+    // 记忆尚未写入 embedding：保留关键词命中（否则⑥⑦会双双变 0）
+    if (sim == null) return true
     return sim >= minSim
   })
 }

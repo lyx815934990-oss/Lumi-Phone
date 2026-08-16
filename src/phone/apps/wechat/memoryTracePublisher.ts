@@ -84,7 +84,7 @@ function parseInjectedLongTermMemoryForTrace(raw: string): {
   }
 
   const sectionRe =
-    /【板块·(向量召回|关键词命中)·([^】]+)】[^\n]*\n([\s\S]*?)(?=\n【板块·|\n【记忆参考|$)/g
+    /【板块·(向量召回|关键词命中)·([^】]+)】[^\n]*\n([\s\S]*?)(?=\n【板块·(?:向量召回|关键词命中)·|\n【记忆参考|$)/g
   let m: RegExpExecArray | null
   let matched = false
   while ((m = sectionRe.exec(text)) !== null) {
@@ -96,7 +96,12 @@ function parseInjectedLongTermMemoryForTrace(raw: string): {
     else pushNumbered(body, 'kw', title)
   }
 
+  // 分线包装标题也可能是「【板块·向量召回·线上长期记忆（…）】」；上面已覆盖。
+  // 若仍未拆出分段但有正文，整段落到关键词轨，避免溯源双 0。
   if (!matched) {
+    const cleaned = sanitizeMemoryTraceDisplayText(text).trim() || text
+    if (cleaned) keywordHits.push({ keyword: '本轮注入', content: cleaned })
+  } else if (!keywordHits.length && !vectorRetrievals.length) {
     const cleaned = sanitizeMemoryTraceDisplayText(text).trim() || text
     if (cleaned) keywordHits.push({ keyword: '本轮注入', content: cleaned })
   }
@@ -679,21 +684,24 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
     /* 召回失败仍发布溯源，避免线上回复永远盖不过线下 */
   }
   const injectedLtm = params.longTermMemoryNotes?.trim() || ''
-  if (injectedLtm && !deep.keywordHits.length && !deep.vectorRetrievals.length) {
+  // 溯源优先回显「本轮实际注入」正文，避免二次召回为空 / 与注入不一致时⑥⑦双 0
+  if (injectedLtm) {
     const parsed = parseInjectedLongTermMemoryForTrace(injectedLtm)
-    deep = {
-      keywordHits: parsed.keywordHits.map((h) => ({
-        ...h,
-        sourceLineLabel: '本轮注入',
-        lineRelation: 'unlabeled' as const,
-        memoryBucket: 'own' as const,
-      })),
-      vectorRetrievals: parsed.vectorRetrievals.map((h) => ({
-        ...h,
-        sourceLineLabel: '本轮注入',
-        lineRelation: 'unlabeled' as const,
-        memoryBucket: 'own' as const,
-      })),
+    if (parsed.keywordHits.length || parsed.vectorRetrievals.length) {
+      deep = {
+        keywordHits: parsed.keywordHits.map((h) => ({
+          ...h,
+          sourceLineLabel: '本轮注入',
+          lineRelation: 'unlabeled' as const,
+          memoryBucket: 'own' as const,
+        })),
+        vectorRetrievals: parsed.vectorRetrievals.map((h) => ({
+          ...h,
+          sourceLineLabel: '本轮注入',
+          lineRelation: 'unlabeled' as const,
+          memoryBucket: 'own' as const,
+        })),
+      }
     }
   }
   const embeddingMode =
@@ -1103,21 +1111,23 @@ export async function publishDatingOfflineMemoryTrace(params: {
   }
   let deep = await getCharacterMemoryRelevanceTraceForPromptInjection(cid, hay, recallOpts)
   const injectedLtm = params.longTermMemoryNotes?.trim() || ''
-  if (injectedLtm && !deep.keywordHits.length && !deep.vectorRetrievals.length) {
+  if (injectedLtm) {
     const parsed = parseInjectedLongTermMemoryForTrace(injectedLtm)
-    deep = {
-      keywordHits: parsed.keywordHits.map((h) => ({
-        ...h,
-        sourceLineLabel: '本轮注入',
-        lineRelation: 'unlabeled' as const,
-        memoryBucket: 'own' as const,
-      })),
-      vectorRetrievals: parsed.vectorRetrievals.map((h) => ({
-        ...h,
-        sourceLineLabel: '本轮注入',
-        lineRelation: 'unlabeled' as const,
-        memoryBucket: 'own' as const,
-      })),
+    if (parsed.keywordHits.length || parsed.vectorRetrievals.length) {
+      deep = {
+        keywordHits: parsed.keywordHits.map((h) => ({
+          ...h,
+          sourceLineLabel: '本轮注入',
+          lineRelation: 'unlabeled' as const,
+          memoryBucket: 'own' as const,
+        })),
+        vectorRetrievals: parsed.vectorRetrievals.map((h) => ({
+          ...h,
+          sourceLineLabel: '本轮注入',
+          lineRelation: 'unlabeled' as const,
+          memoryBucket: 'own' as const,
+        })),
+      }
     }
   }
   const embeddingMode =
