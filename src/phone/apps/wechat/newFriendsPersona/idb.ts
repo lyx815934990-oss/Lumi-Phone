@@ -8681,7 +8681,9 @@ export class PersonaDb {
               queryVec: queryHit.vec,
             })
 
-            const exclP = new Set<string>([...alwaysPrivate, ...taggedPrivateHits].map((m) => m.id))
+            // 向量轨独立捞 TopK：只排除「始终触发」，不排除关键词命中。
+            // 否则 haystack 一大时几乎所有带触发词的记忆都进关键词轨，⑥ 向量长期记忆永远为 0。
+            const exclP = new Set<string>(alwaysPrivate.map((m) => m.id))
             vecExtraPrivate = pickMemoriesByVectorSimilarity({
               candidates: privCandidates,
               queryVec: queryHit.vec,
@@ -8690,7 +8692,7 @@ export class PersonaDb {
               excludeIds: exclP,
             })
 
-            const exclG = new Set<string>([...alwaysGroup, ...taggedGroupHits].map((m) => m.id))
+            const exclG = new Set<string>(alwaysGroup.map((m) => m.id))
             vecExtraGroup = pickMemoriesByVectorSimilarity({
               candidates: groupFresh,
               queryVec: queryHit.vec,
@@ -8992,7 +8994,8 @@ export class PersonaDb {
               queryVec: queryHit.vec,
             })
 
-            const exclP = new Set<string>([...alwaysPrivate, ...taggedPrivateHits].map((m) => m.id))
+            // 与注入一致：向量独立 TopK，仅排除始终触发；已进向量的条目不再重复进关键词轨展示
+            const exclP = new Set<string>(alwaysPrivate.map((m) => m.id))
             const scoredP = pickMemoriesByVectorSimilarityScored({
               candidates: privCandidates,
               queryVec: queryHit.vec,
@@ -9001,7 +9004,7 @@ export class PersonaDb {
               excludeIds: exclP,
             })
 
-            const exclG = new Set<string>([...alwaysGroup, ...taggedGroupHits].map((m) => m.id))
+            const exclG = new Set<string>(alwaysGroup.map((m) => m.id))
             const scoredG = pickMemoriesByVectorSimilarityScored({
               candidates: groupFresh,
               queryVec: queryHit.vec,
@@ -9034,6 +9037,9 @@ export class PersonaDb {
                 ...(await enrichTraceMeta(memory)),
               })
             }
+            // 已进向量轨的条目不再进关键词轨，避免⑥=0、⑦把语义命中全吃掉
+            taggedPrivateHits = taggedPrivateHits.filter((m) => !vecSeen.has(m.id))
+            taggedGroupHits = taggedGroupHits.filter((m) => !vecSeen.has(m.id))
           }
         } catch {
           /* 无向量数据 */
