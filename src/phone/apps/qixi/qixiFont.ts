@@ -4,7 +4,7 @@ import qixiLetterTtf from '../../../../中文字体/七夕字体.ttf?url'
 
 export const QIXI_LETTER_FONT_FAMILY = 'QixiLetterFont'
 
-export const QIXI_LETTER_FONT_STACK = `'${QIXI_LETTER_FONT_FAMILY}', "STKaiti", "KaiTi", "PingFang SC", cursive`
+export const QIXI_LETTER_FONT_STACK = `'${QIXI_LETTER_FONT_FAMILY}'`
 
 export const QIXI_LETTER_FONT_URL = qixiLetterTtf
 
@@ -17,7 +17,7 @@ function injectFace(): void {
   if (document.getElementById(id)) return
   const el = document.createElement('style')
   el.id = id
-  el.textContent = `@font-face{font-family:'${QIXI_LETTER_FONT_FAMILY}';src:url('${qixiLetterTtf}') format('truetype');font-display:swap;font-weight:400;font-style:normal;}`
+  el.textContent = `@font-face{font-family:'${QIXI_LETTER_FONT_FAMILY}';src:url('${qixiLetterTtf}') format('truetype');font-display:block;font-weight:400;font-style:normal;}`
   document.head.appendChild(el)
 }
 
@@ -34,7 +34,7 @@ export async function ensureQixiLetterFontLoaded(): Promise<void> {
         const face = new FontFace(QIXI_LETTER_FONT_FAMILY, `url(${qixiLetterTtf})`, {
           style: 'normal',
           weight: '400',
-          display: 'swap',
+          display: 'block',
         })
         const loadedFace = await face.load()
         document.fonts.add(loadedFace)

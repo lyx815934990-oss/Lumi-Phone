@@ -14,6 +14,9 @@ export const QIXI_EVENT_DAY = 19
 export const QIXI_OPEN_EVENT = 'lumi-open-qixi-envelope'
 
 const LETTERS_KEY = 'lumi-qixi-letters-v1'
+const IDB_NAME = 'lumi-qixi-envelope-v1'
+const IDB_STORE = 'letters'
+const IDB_VERSION = 1
 /** 每用户当天自动开屏只触发一次：username -> 日历日 */
 const AUTO_OFFER_KEY = 'lumi-qixi-auto-offered-by-user-v1'
 
@@ -22,14 +25,18 @@ export type QixiOpenEventDetail = {
   withCeremony?: boolean
 }
 
-type QixiLetterStore = Record<
-  string,
-  {
-    day: string
-    letter: QixiLetterResult
-    savedAt: number
-  }
->
+type QixiLetterRow = {
+  day: string
+  letter: QixiLetterResult
+  savedAt: number
+}
+
+type QixiLetterStore = Record<string, QixiLetterRow>
+
+/** 同一次打开 App 内立刻可命中，不依赖磁盘 */
+const memLetters = new Map<string, QixiLetterRow>()
+let hydratePromise: Promise<void> | null = null
+let hydrated = false
 
 export function qixiCalendarDayKey(d = new Date()): string {
   const y = d.getFullYear()
@@ -116,6 +123,22 @@ export function resetQixiEnvelopeDismissals(): void {
   }
 }
 
+function isUsableLetterRow(row: QixiLetterRow | undefined, d = new Date()): row is QixiLetterRow {
+  return Boolean(row?.letter?.body?.trim() && row.day === qixiCalendarDayKey(d))
+}
+
+function letterFromRow(row: QixiLetterRow): QixiLetterResult {
+  const letter = row.letter
+  if (letter.signedAt?.trim()) return letter
+  const fallback = new Date(row.savedAt)
+  return {
+    ...letter,
+    signedAt: Number.isFinite(fallback.getTime())
+      ? `${fallback.getFullYear()}年${fallback.getMonth() + 1}月${fallback.getDate()}日 ${String(fallback.getHours()).padStart(2, '0')}:${String(fallback.getMinutes()).padStart(2, '0')}`
+      : '',
+  }
+}
+
 function readLetterStore(): QixiLetterStore {
   if (typeof window === 'undefined') return {}
   try {
@@ -130,45 +153,165 @@ function readLetterStore(): QixiLetterStore {
 
 function writeLetterStore(store: QixiLetterStore): void {
   if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(LETTERS_KEY, JSON.stringify(store))
-  } catch {
-    /* quota */
+  const persist = (data: QixiLetterStore) => {
+    window.localStorage.setItem(LETTERS_KEY, JSON.stringify(data))
   }
+  try {
+    persist(store)
+  } catch {
+    const day = qixiCalendarDayKey()
+    const slim: QixiLetterStore = {}
+    for (const [id, row] of Object.entries(store)) {
+      if (row?.day === day) slim[id] = row
+    }
+    try {
+      persist(slim)
+    } catch {
+      /* IndexedDB 仍会留下 */
+    }
+  }
+}
+
+function openQixiLetterDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('no idb'))
+      return
+    }
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION)
+    req.onupgradeneeded = () => {
+      const db = req.result
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE)
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error ?? new Error('idb open failed'))
+  })
+}
+
+async function idbPutLetter(characterId: string, row: QixiLetterRow): Promise<void> {
+  const db = await openQixiLetterDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite')
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error ?? new Error('idb put failed'))
+    tx.objectStore(IDB_STORE).put(row, characterId)
+  })
+  db.close()
+}
+
+async function idbReadAllLetters(): Promise<QixiLetterStore> {
+  const db = await openQixiLetterDb()
+  const out = await new Promise<QixiLetterStore>((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly')
+    const req = tx.objectStore(IDB_STORE).openCursor()
+    const store: QixiLetterStore = {}
+    req.onsuccess = () => {
+      const cursor = req.result
+      if (!cursor) return
+      const key = String(cursor.key ?? '')
+      const value = cursor.value as QixiLetterRow
+      if (key && value?.letter?.body) store[key] = value
+      cursor.continue()
+    }
+    tx.oncomplete = () => resolve(store)
+    tx.onerror = () => reject(tx.error ?? new Error('idb read failed'))
+  })
+  db.close()
+  return out
+}
+
+function mergeLetterStores(...stores: QixiLetterStore[]): void {
+  for (const store of stores) {
+    for (const [id, row] of Object.entries(store)) {
+      const cid = id.trim()
+      if (!cid || !row?.letter?.body?.trim()) continue
+      const prev = memLetters.get(cid)
+      if (!prev || (row.savedAt ?? 0) >= (prev.savedAt ?? 0)) memLetters.set(cid, row)
+    }
+  }
+}
+
+export async function hydrateQixiLetterStore(): Promise<void> {
+  if (hydrated) return
+  if (!hydratePromise) {
+    hydratePromise = (async () => {
+      mergeLetterStores(readLetterStore())
+      try {
+        mergeLetterStores(await idbReadAllLetters())
+      } catch {
+        /* 无 IndexedDB 时仍可用内存 / localStorage */
+      }
+      for (const [id, row] of memLetters) {
+        void idbPutLetter(id, row).catch(() => {
+          /* ignore */
+        })
+      }
+      hydrated = true
+    })().catch(() => {
+      hydratePromise = null
+      hydrated = true
+    })
+  }
+  await hydratePromise
+}
+
+function pickStoredLetterRow(characterId: string): QixiLetterRow | undefined {
+  const cid = characterId.trim()
+  if (!cid) return undefined
+  return memLetters.get(cid) ?? readLetterStore()[cid]
 }
 
 export function loadSavedQixiLetter(characterId: string, d = new Date()): QixiLetterResult | null {
-  const cid = characterId.trim()
-  if (!cid) return null
-  const row = readLetterStore()[cid]
-  if (!row?.letter?.body?.trim()) return null
-  if (row.day !== qixiCalendarDayKey(d)) return null
-  const letter = row.letter
-  if (letter.signedAt?.trim()) return letter
-  const fallback = new Date(row.savedAt)
-  return {
-    ...letter,
-    signedAt: Number.isFinite(fallback.getTime())
-      ? `${fallback.getFullYear()}年${fallback.getMonth() + 1}月${fallback.getDate()}日 ${String(fallback.getHours()).padStart(2, '0')}:${String(fallback.getMinutes()).padStart(2, '0')}`
-      : '',
-  }
+  const row = pickStoredLetterRow(characterId)
+  if (!isUsableLetterRow(row, d)) return null
+  return letterFromRow(row)
+}
+
+export async function loadSavedQixiLetterAsync(
+  characterId: string,
+  d = new Date(),
+): Promise<QixiLetterResult | null> {
+  await hydrateQixiLetterStore()
+  return loadSavedQixiLetter(characterId, d)
 }
 
 export function saveQixiLetter(characterId: string, letter: QixiLetterResult, d = new Date()): void {
+  void saveQixiLetterAsync(characterId, letter, d)
+}
+
+export async function saveQixiLetterAsync(
+  characterId: string,
+  letter: QixiLetterResult,
+  d = new Date(),
+): Promise<void> {
   const cid = characterId.trim()
   if (!cid || !letter.body?.trim()) return
+  const row: QixiLetterRow = { day: qixiCalendarDayKey(d), letter, savedAt: Date.now() }
+  memLetters.set(cid, row)
   const store = readLetterStore()
-  store[cid] = { day: qixiCalendarDayKey(d), letter, savedAt: Date.now() }
+  store[cid] = row
   writeLetterStore(store)
+  try {
+    await idbPutLetter(cid, row)
+  } catch {
+    /* 内存已留下，关掉再开仍可命中同一次会话 */
+  }
 }
 
 export function listSavedQixiLetterIds(d = new Date()): Set<string> {
   const day = qixiCalendarDayKey(d)
   const ids = new Set<string>()
-  for (const [id, row] of Object.entries(readLetterStore())) {
+  const consider = (id: string, row: QixiLetterRow | undefined) => {
     if (row?.day === day && row.letter?.body?.trim()) ids.add(id)
   }
+  for (const [id, row] of memLetters) consider(id, row)
+  for (const [id, row] of Object.entries(readLetterStore())) consider(id, row)
   return ids
+}
+
+export async function listSavedQixiLetterIdsAsync(d = new Date()): Promise<Set<string>> {
+  await hydrateQixiLetterStore()
+  return listSavedQixiLetterIds(d)
 }
 
 /** @deprecated 兼容旧调用名 */

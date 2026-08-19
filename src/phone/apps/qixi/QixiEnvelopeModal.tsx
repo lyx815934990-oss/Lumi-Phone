@@ -11,10 +11,11 @@ import { personaDb } from '../wechat/newFriendsPersona/idb'
 import type { Character } from '../wechat/newFriendsPersona/types'
 import { formatPlayerIdentityDisplayName } from '../wechat/wechatCharacterPlayerIdentity'
 import {
+  hydrateQixiLetterStore,
   listSavedQixiLetterIds,
-  loadSavedQixiLetter,
+  loadSavedQixiLetterAsync,
   markQixiAutoOfferedTodayForUser,
-  saveQixiLetter,
+  saveQixiLetterAsync,
 } from './qixiEnvelopeStorage'
 import { QixiCeremonyIntro } from './QixiCeremonyIntro'
 import { ensureQixiLetterFontLoaded, QIXI_LETTER_FONT_STACK } from './qixiFont'
@@ -43,7 +44,6 @@ export function QixiEnvelopeModal(props: {
   const [letter, setLetter] = useState<QixiLetterResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [writingHint, setWritingHint] = useState('正在落笔…')
-  const [fontReady, setFontReady] = useState(false)
   const [saveHint, setSaveHint] = useState<string | null>(null)
   const [albumPreviewUrl, setAlbumPreviewUrl] = useState<string | null>(null)
   const [savedLetterIds, setSavedLetterIds] = useState<Set<string>>(() => listSavedQixiLetterIds())
@@ -87,24 +87,36 @@ export function QixiEnvelopeModal(props: {
     setSaveHint(null)
     setSavedLetterIds(listSavedQixiLetterIds())
     setLoadingList(true)
-    void ensureQixiLetterFontLoaded().then(() => setFontReady(true))
+    void ensureQixiLetterFontLoaded()
     let cancelled = false
-    void listQixiEnvelopeCharacters()
-      .then((rows) => {
+    void (async () => {
+      await hydrateQixiLetterStore()
+      if (cancelled) return
+      setSavedLetterIds(listSavedQixiLetterIds())
+      try {
+        const rows = await listQixiEnvelopeCharacters()
         if (!cancelled) setCharacters(rows)
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setCharacters([])
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoadingList(false)
-      })
+      }
+    })()
     return () => {
       cancelled = true
     }
   }, [open, withCeremony])
 
-  const startLetterGeneration = useCallback(async (character: Character) => {
+  const startLetterGeneration = useCallback(async (character: Character, opts?: { force?: boolean }) => {
+    if (!opts?.force) {
+      const cached = await loadSavedQixiLetterAsync(character.id)
+      if (cached) {
+        setLetter(cached)
+        setSavedLetterIds(listSavedQixiLetterIds())
+        setPhase('letter')
+        return
+      }
+    }
     setPhase('writing')
     setWritingHint('正在写信…')
     setError(null)
@@ -137,7 +149,7 @@ export function QixiEnvelopeModal(props: {
         wechatAccountId,
         apiConfig: cfg,
       })
-      saveQixiLetter(character.id, result)
+      await saveQixiLetterAsync(character.id, result)
       setSavedLetterIds(listSavedQixiLetterIds())
       setLetter(result)
       setPhase('letter')
@@ -147,11 +159,12 @@ export function QixiEnvelopeModal(props: {
     }
   }, [])
 
-  const handlePick = useCallback((c: Character) => {
+  const handlePick = useCallback(async (c: Character) => {
     setSelected(c)
-    const existing = loadSavedQixiLetter(c.id)
+    const existing = await loadSavedQixiLetterAsync(c.id)
     if (existing) {
       setLetter(existing)
+      setSavedLetterIds(listSavedQixiLetterIds())
       setPhase('letter')
       return
     }
@@ -186,9 +199,10 @@ export function QixiEnvelopeModal(props: {
         opacity: 0.35,
         transition: { duration: 0.4 },
       })
-      const existing = loadSavedQixiLetter(selected.id)
+      const existing = await loadSavedQixiLetterAsync(selected.id)
       if (existing) {
         setLetter(existing)
+        setSavedLetterIds(listSavedQixiLetterIds())
         setPhase('letter')
         return
       }
@@ -198,7 +212,10 @@ export function QixiEnvelopeModal(props: {
     }
   }, [selected, sealControls, flapControls, letterControls, shellControls, startLetterGeneration])
 
-  const letterFontStyle = fontReady ? { fontFamily: QIXI_LETTER_FONT_STACK } : undefined
+  const letterFontStyle = {
+    fontFamily: QIXI_LETTER_FONT_STACK,
+    fontSynthesis: 'none' as const,
+  }
 
   if (!open) return null
 
@@ -507,7 +524,7 @@ export function QixiEnvelopeModal(props: {
                   <button
                     type="button"
                     onClick={() => {
-                      if (selected) void startLetterGeneration(selected)
+                      if (selected) void startLetterGeneration(selected, { force: true })
                     }}
                     className="rounded-full bg-[#c44862] px-5 py-2 text-[13px] text-white"
                   >
@@ -534,6 +551,8 @@ export function QixiEnvelopeModal(props: {
                   <div
                     className="qixi-lined-paper min-h-full px-5 py-5 text-[#2c1c24]"
                     style={{
+                      fontFamily: QIXI_LETTER_FONT_STACK,
+                      fontSynthesis: 'none',
                       backgroundColor: '#fffaf4',
                       backgroundImage: `
                         linear-gradient(90deg, transparent 0, transparent 28px, rgba(196, 90, 110, 0.28) 28px, rgba(196, 90, 110, 0.28) 29.5px, transparent 29.5px),
@@ -604,7 +623,7 @@ export function QixiEnvelopeModal(props: {
                     onClick={() => {
                       if (!selected) return
                       setSaveHint(null)
-                      void startLetterGeneration(selected)
+                      void startLetterGeneration(selected, { force: true })
                     }}
                     className="rounded-full border border-[#e8a0b0]/45 bg-white/10 px-5 py-2.5 text-[13px] tracking-widest text-[#fce8ee] disabled:opacity-50"
                   >
