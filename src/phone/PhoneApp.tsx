@@ -41,6 +41,12 @@ import {
   resetEvolutionPushDismissals,
   clearLegacyEvolutionPushSessionDismiss,
 } from './apps/evolution/evolutionPushStorage'
+import {
+  shouldOfferQixiEnvelope,
+  resetQixiEnvelopeDismissals,
+  QIXI_OPEN_EVENT,
+  type QixiOpenEventDetail,
+} from './apps/qixi/qixiEnvelopeStorage'
 import { LUMI_PULSE_NAVIGATE_EVENT } from './apps/lumiPulse/lumiPulseNavigation'
 import { WorldbookLoreProvider } from './worldbook/worldbookLoreStore'
 import type { AppSlot } from './types'
@@ -99,6 +105,11 @@ const AppPlaceholderScreen = lazyWithRetry(() =>
 const EvolutionUpdatePushModal = lazyWithRetry(() =>
   import('./apps/evolution/EvolutionUpdatePushModal').then((m) => ({
     default: m.EvolutionUpdatePushModal,
+  })),
+)
+const QixiEnvelopeModal = lazyWithRetry(() =>
+  import('./apps/qixi/QixiEnvelopeModal').then((m) => ({
+    default: m.QixiEnvelopeModal,
   })),
 )
 const ListenTogetherPlayerBootstrap = lazyWithRetry(() =>
@@ -202,6 +213,10 @@ export function PhoneApp() {
   const [authVerifyError, setAuthVerifyError] = useState<string | null>(null)
   const [authChecking, setAuthChecking] = useState(false)
   const [showEvolutionPush, setShowEvolutionPush] = useState(false)
+  const [showQixiEnvelope, setShowQixiEnvelope] = useState(false)
+  const [qixiWithCeremony, setQixiWithCeremony] = useState(true)
+  /** 演进面板本轮已结束（未弹或已关），才允许七夕跟进 */
+  const [evolutionPushSettled, setEvolutionPushSettled] = useState(false)
   /** Splash 结束后再挂听一听 / 宴席等次要运行时，减轻首开 */
   const [deferSecondaryRuntime, setDeferSecondaryRuntime] = useState(false)
   const openVerifiedRef = useRef(localDevBypassAuth || readAuthVerified())
@@ -539,8 +554,10 @@ export function PhoneApp() {
   useEffect(() => {
     if (!canOfferEvolutionPush) {
       setShowEvolutionPush((prev) => (prev ? false : prev))
+      setEvolutionPushSettled(false)
       return
     }
+    setEvolutionPushSettled(false)
     let cancelled = false
     void import('./apps/evolution/evolutionLogData').then(({ getLatestEvolutionRecord }) => {
       if (cancelled) return
@@ -559,6 +576,7 @@ export function PhoneApp() {
       }
       if (!shouldOfferEvolutionPush(version)) {
         setShowEvolutionPush(false)
+        setEvolutionPushSettled(true)
         return
       }
       setShowEvolutionPush(true)
@@ -567,6 +585,43 @@ export function PhoneApp() {
       cancelled = true
     }
   }, [canOfferEvolutionPush])
+
+  useEffect(() => {
+    if (!canOfferEvolutionPush) {
+      setShowQixiEnvelope(false)
+      return
+    }
+    if (showEvolutionPush || !evolutionPushSettled) return
+
+    if (import.meta.env.DEV) {
+      try {
+        const q = new URLSearchParams(window.location.search)
+        if (q.get('qixi') === '1') {
+          resetQixiEnvelopeDismissals()
+          setQixiWithCeremony(true)
+          setShowQixiEnvelope(true)
+          return
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!shouldOfferQixiEnvelope()) return
+    setQixiWithCeremony(true)
+    setShowQixiEnvelope(true)
+  }, [canOfferEvolutionPush, showEvolutionPush, evolutionPushSettled])
+
+  /** 桌面入口：当日可重复打开 */
+  useEffect(() => {
+    const onOpen = (ev: Event) => {
+      const detail = (ev as CustomEvent<QixiOpenEventDetail>).detail
+      setQixiWithCeremony(detail?.withCeremony === true)
+      setShowQixiEnvelope(true)
+    }
+    window.addEventListener(QIXI_OPEN_EVENT, onOpen)
+    return () => window.removeEventListener(QIXI_OPEN_EVENT, onOpen)
+  }, [])
 
   const handleRetryAuthVerify = useCallback(() => {
     openVerifiedRef.current = false
@@ -774,8 +829,20 @@ export function PhoneApp() {
           <Suspense fallback={null}>
             <EvolutionUpdatePushModal
               open={showEvolutionPush}
-              onClose={() => setShowEvolutionPush(false)}
+              onClose={() => {
+                setShowEvolutionPush(false)
+                setEvolutionPushSettled(true)
+              }}
               onOpenEvolution={() => openApp('evolution')}
+            />
+          </Suspense>
+        ) : null}
+        {showQixiEnvelope ? (
+          <Suspense fallback={null}>
+            <QixiEnvelopeModal
+              open={showQixiEnvelope}
+              withCeremony={qixiWithCeremony}
+              onClose={() => setShowQixiEnvelope(false)}
             />
           </Suspense>
         ) : null}

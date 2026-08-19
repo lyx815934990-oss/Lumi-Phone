@@ -28,6 +28,8 @@ import {
   widgetOccupiedHomeCells,
   type ProfileAnchor,
 } from '../widgetGallery/galleryGrid'
+import { isQixiEnvelopeEventDay } from '../apps/qixi/qixiEnvelopeStorage'
+import { QixiHomeFab } from '../apps/qixi/QixiHomeFab'
 
 type Props = {
   onOpenApp: (id: AppSlot['id']) => void
@@ -2724,6 +2726,8 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
           handlePointerDragStart(id, { zone: 'dock', index: dockIndex }, event)
         }}
       />
+
+      {isQixiEnvelopeEventDay() && !isEditMode ? <QixiHomeFab /> : null}
     </div>
   )
 }
