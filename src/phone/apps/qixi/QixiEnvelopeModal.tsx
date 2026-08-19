@@ -45,7 +45,6 @@ export function QixiEnvelopeModal(props: {
   const [error, setError] = useState<string | null>(null)
   const [writingHint, setWritingHint] = useState('正在落笔…')
   const [saveHint, setSaveHint] = useState<string | null>(null)
-  const [fontReady, setFontReady] = useState(false)
   const [albumPreviewUrl, setAlbumPreviewUrl] = useState<string | null>(null)
   const [savedLetterIds, setSavedLetterIds] = useState<Set<string>>(() => listSavedQixiLetterIds())
   const runningRef = useRef(false)
@@ -88,11 +87,8 @@ export function QixiEnvelopeModal(props: {
     setSaveHint(null)
     setSavedLetterIds(listSavedQixiLetterIds())
     setLoadingList(true)
-    setFontReady(false)
     let cancelled = false
-    void ensureQixiLetterFontLoaded().then((ok) => {
-      if (!cancelled) setFontReady(ok)
-    })
+    void ensureQixiLetterFontLoaded()
     void (async () => {
       await hydrateQixiLetterStore()
       if (cancelled) return
@@ -552,11 +548,6 @@ export function QixiEnvelopeModal(props: {
                   <p className="mt-1 text-[11px] text-white/40">约 {letter.charCount} 字</p>
                 </div>
                 <article className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-2xl border border-[#d4b8c0]/55 shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
-                  {!fontReady ? (
-                    <div className="flex min-h-[240px] items-center justify-center bg-[#fffaf4] px-6 text-center">
-                      <p className="text-[13px] leading-relaxed text-[#6b4050]/70">正在铺开信纸…</p>
-                    </div>
-                  ) : (
                   <div
                     className="qixi-lined-paper min-h-full px-5 py-5 text-[#2c1c24]"
                     style={{
@@ -621,7 +612,6 @@ export function QixiEnvelopeModal(props: {
                       </p>
                     ) : null}
                   </div>
-                  )}
                 </article>
                 {saveHint ? (
                   <p className="mt-2 shrink-0 text-center text-[11px] text-[#f0c4ce]/70">{saveHint}</p>

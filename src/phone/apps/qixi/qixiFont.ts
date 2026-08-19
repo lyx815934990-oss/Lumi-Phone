@@ -6,7 +6,8 @@
 
 export const QIXI_LETTER_FONT_FAMILY = 'QixiLetterHand'
 
-export const QIXI_LETTER_FONT_STACK = `'${QIXI_LETTER_FONT_FAMILY}'`
+/** 手写体优先；没就绪时先用楷体，保证信能看见 */
+export const QIXI_LETTER_FONT_STACK = `'${QIXI_LETTER_FONT_FAMILY}', "STKaiti", "KaiTi", "Kaiti SC", cursive`
 
 export function qixiLetterFontUrl(): string {
   const base = import.meta.env.BASE_URL || '/'
@@ -17,23 +18,9 @@ export function qixiLetterFontUrl(): string {
 let injectPromise: Promise<boolean> | null = null
 let loaded = false
 
-function injectPreload(url: string): void {
-  if (typeof document === 'undefined') return
-  const id = 'qixi-letter-font-preload-v2'
-  if (document.getElementById(id)) return
-  const link = document.createElement('link')
-  link.id = id
-  link.rel = 'preload'
-  link.as = 'font'
-  link.type = 'font/ttf'
-  link.crossOrigin = 'anonymous'
-  link.href = url
-  document.head.appendChild(link)
-}
-
 function injectFace(url: string): void {
   if (typeof document === 'undefined') return
-  const id = 'qixi-letter-font-face-v2'
+  const id = 'qixi-letter-font-face-v3'
   if (document.getElementById(id)) return
   const el = document.createElement('style')
   el.id = id
@@ -41,49 +28,23 @@ function injectFace(url: string): void {
   document.head.appendChild(el)
 }
 
-function fontIsActive(): boolean {
-  if (typeof document === 'undefined' || !('fonts' in document)) return false
-  try {
-    return document.fonts.check(`18px '${QIXI_LETTER_FONT_FAMILY}'`, '七夕你好亲爱的')
-  } catch {
-    return false
-  }
-}
-
 export async function ensureQixiLetterFontLoaded(): Promise<boolean> {
-  if (loaded && fontIsActive()) return true
+  if (loaded) return true
   if (!injectPromise) {
     injectPromise = (async () => {
       const url = qixiLetterFontUrl()
-      injectPreload(url)
       injectFace(url)
       if (typeof document === 'undefined' || !('fonts' in document)) {
         loaded = true
         return true
       }
       try {
-        const res = await fetch(url)
-        if (!res.ok) throw new Error(`font http ${res.status}`)
-        const buf = await res.arrayBuffer()
-        const face = new FontFace(QIXI_LETTER_FONT_FAMILY, buf, {
-          style: 'normal',
-          weight: '400',
-          display: 'swap',
-        })
-        const loadedFace = await face.load()
-        document.fonts.add(loadedFace)
+        await document.fonts.load(`21px '${QIXI_LETTER_FONT_FAMILY}'`, '七夕你好亲爱的')
         loaded = true
         return true
       } catch {
-        try {
-          await document.fonts.load(`21px '${QIXI_LETTER_FONT_FAMILY}'`, '七夕你好亲爱的')
-          loaded = true
-          return true
-        } catch {
-          injectPromise = null
-          loaded = false
-          return false
-        }
+        loaded = true
+        return false
       }
     })()
   }
