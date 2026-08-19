@@ -1,30 +1,36 @@
 /**
- * 七夕信封正文专用手写体。
- * 字体文件经 Vite 插件拷到 public/fonts/qixi-letter.ttf（英文路径），
- * 避免 Rolldown 打包「中文字体/七夕字体.ttf」时把资源丢掉。
+ * 七夕信封正文手写体。
+ * 衬线标题用的是系统宋体，不用下载；信纸必须走自定义 ttf。
+ * 主文件约 12MB，手机上常失败，所以再用一款约 5MB 的手写体兜底。
  */
 
+import { publicHandFontUrl } from '../../utils/publicHandFontUrl'
+
 export const QIXI_LETTER_FONT_FAMILY = 'QixiLetterHand'
+const QIXI_LETTER_FONT_SOFT = 'QixiLetterHandSoft'
 
-/** 手写体优先；没就绪时先用楷体，保证信能看见 */
-export const QIXI_LETTER_FONT_STACK = `'${QIXI_LETTER_FONT_FAMILY}', "STKaiti", "KaiTi", "Kaiti SC", cursive`
+export const QIXI_LETTER_FONT_STACK = `'${QIXI_LETTER_FONT_FAMILY}', '${QIXI_LETTER_FONT_SOFT}', cursive`
 
-export function qixiLetterFontUrl(): string {
-  const base = import.meta.env.BASE_URL || '/'
-  const prefix = base.endsWith('/') ? base : `${base}/`
-  return `${prefix}fonts/qixi-letter.ttf`
+function fontSrcList(fileName: string): string {
+  const primary = publicHandFontUrl(fileName)
+  const rooted = `/fonts/${fileName}`
+  const urls = primary === rooted ? [primary] : [primary, rooted]
+  return urls.map((u) => `url('${u}') format('truetype')`).join(',')
 }
 
 let injectPromise: Promise<boolean> | null = null
 let loaded = false
 
-function injectFace(url: string): void {
+function injectFaces(): void {
   if (typeof document === 'undefined') return
-  const id = 'qixi-letter-font-face-v3'
+  const id = 'qixi-letter-font-face-v4'
   if (document.getElementById(id)) return
   const el = document.createElement('style')
   el.id = id
-  el.textContent = `@font-face{font-family:'${QIXI_LETTER_FONT_FAMILY}';src:url('${url}') format('truetype');font-display:swap;font-weight:400;font-style:normal;}`
+  el.textContent = [
+    `@font-face{font-family:'${QIXI_LETTER_FONT_FAMILY}';src:${fontSrcList('qixi-letter.ttf')};font-display:swap;font-weight:400;font-style:normal;}`,
+    `@font-face{font-family:'${QIXI_LETTER_FONT_SOFT}';src:${fontSrcList('diary-qing-song-shou-xie.ttf')};font-display:swap;font-weight:400;font-style:normal;}`,
+  ].join('')
   document.head.appendChild(el)
 }
 
@@ -32,20 +38,21 @@ export async function ensureQixiLetterFontLoaded(): Promise<boolean> {
   if (loaded) return true
   if (!injectPromise) {
     injectPromise = (async () => {
-      const url = qixiLetterFontUrl()
-      injectFace(url)
+      injectFaces()
       if (typeof document === 'undefined' || !('fonts' in document)) {
         loaded = true
         return true
       }
       try {
-        await document.fonts.load(`21px '${QIXI_LETTER_FONT_FAMILY}'`, '七夕你好亲爱的')
-        loaded = true
-        return true
+        await Promise.race([
+          document.fonts.load(`21px '${QIXI_LETTER_FONT_FAMILY}', '${QIXI_LETTER_FONT_SOFT}'`, '七夕你好亲爱的'),
+          new Promise<void>((resolve) => window.setTimeout(resolve, 4000)),
+        ])
       } catch {
-        loaded = true
-        return false
+        /* 信纸不阻塞；浏览器会继续换字 */
       }
+      loaded = true
+      return true
     })()
   }
   return injectPromise
