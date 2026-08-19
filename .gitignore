@@ -13,6 +13,7 @@ dist-ssr
 public/BGM
 public/wechat-emojis
 public/fonts
+src/phone/apps/qixi/qixi-letter.ttf
 *.local
 
 # Editor directories and files

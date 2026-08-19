@@ -10,6 +10,62 @@ import { defineConfig, loadEnv, type Plugin, type ResolvedConfig } from 'vite'
 import { buildNeteaseDevProxyTable } from './viteNeteaseDevProxy'
 import { hfMirrorDevProxyPlugin } from './viteHfMirrorDevProxy'
 
+function ttfTableChecksum(buf: Buffer, offset: number, length: number): number {
+  let sum = 0
+  const end = offset + length
+  for (let i = offset; i < end; i += 4) {
+    let v = 0
+    if (i + 4 <= end) v = buf.readUInt32BE(i)
+    else {
+      const pad = Buffer.alloc(4)
+      buf.copy(pad, 0, i, end)
+      v = pad.readUInt32BE(0)
+    }
+    sum = (sum + v) >>> 0
+  }
+  return sum
+}
+
+/** Chrome OTS 拒绝 vhea 0x00010001；改成 1.0 才能当网页字体用。 */
+function patchTtfVheaForBrowser(srcBuf: Buffer): Buffer {
+  const buf = Buffer.from(srcBuf)
+  if (buf.length < 12) return buf
+  const numTables = buf.readUInt16BE(4)
+  let vheaDir = -1
+  let vheaOff = 0
+  let vheaLen = 0
+  let headDir = -1
+  let headOff = 0
+  let headLen = 0
+  for (let i = 0; i < numTables; i += 1) {
+    const o = 12 + i * 16
+    const tag = buf.toString('ascii', o, o + 4)
+    const off = buf.readUInt32BE(o + 8)
+    const len = buf.readUInt32BE(o + 12)
+    if (tag === 'vhea') {
+      vheaDir = o
+      vheaOff = off
+      vheaLen = len
+    }
+    if (tag === 'head') {
+      headDir = o
+      headOff = off
+      headLen = len
+    }
+  }
+  if (vheaDir < 0 || vheaLen < 4) return buf
+  if (buf.readUInt32BE(vheaOff) !== 0x00010001) return buf
+  buf.writeUInt32BE(0x00010000, vheaOff)
+  buf.writeUInt32BE(ttfTableChecksum(buf, vheaOff, vheaLen), vheaDir + 4)
+  if (headDir >= 0 && headLen >= 12) {
+    buf.writeUInt32BE(0, headOff + 8)
+    buf.writeUInt32BE(ttfTableChecksum(buf, headOff, headLen), headDir + 4)
+    const whole = ttfTableChecksum(buf, 0, buf.length)
+    buf.writeUInt32BE((0xb1b0afba - whole) >>> 0, headOff + 8)
+  }
+  return buf
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const PWA_MANIFEST_SRC = path.resolve(__dirname, 'pwa-manifest.template.json')
@@ -284,13 +340,25 @@ function syncHandwritingFontsToPublicPlugin(): Plugin {
     fs.copyFileSync(src, dest)
   }
 
+  const qixiModuleFont = path.resolve(__dirname, 'src/phone/apps/qixi/qixi-letter.ttf')
+
   const copy = () => {
     fs.mkdirSync(destDir, { recursive: true })
     for (const item of copies) copyOne(item.src, item.dest)
+    const qixiSrc = copies[0]?.src
+    if (qixiSrc && fs.existsSync(qixiSrc)) {
+      fs.mkdirSync(path.dirname(qixiModuleFont), { recursive: true })
+      const patched = patchTtfVheaForBrowser(fs.readFileSync(qixiSrc))
+      fs.writeFileSync(qixiModuleFont, patched)
+      fs.mkdirSync(destDir, { recursive: true })
+      fs.writeFileSync(path.join(destDir, 'qixi-letter.ttf'), patched)
+    }
   }
 
   return {
     name: 'sync-handwriting-fonts-to-public',
+    enforce: 'pre',
+    config: copy,
     buildStart: copy,
     configureServer: copy,
   }
