@@ -340,27 +340,56 @@ function syncHandwritingFontsToPublicPlugin(): Plugin {
     fs.copyFileSync(src, dest)
   }
 
-  const qixiModuleFont = path.resolve(__dirname, 'src/phone/apps/qixi/qixi-letter.ttf')
+  const qixiModuleTtf = path.resolve(__dirname, 'src/phone/apps/qixi/qixi-letter.ttf')
+  const qixiModuleWoff2 = path.resolve(__dirname, 'src/phone/apps/qixi/qixi-letter.woff2')
+
+  const prepareQixiModuleFont = async () => {
+    const qixiSrc = copies[0]?.src
+    if (!qixiSrc || !fs.existsSync(qixiSrc)) return
+    fs.mkdirSync(path.dirname(qixiModuleTtf), { recursive: true })
+    const patched = patchTtfVheaForBrowser(fs.readFileSync(qixiSrc))
+    fs.writeFileSync(qixiModuleTtf, patched)
+    fs.mkdirSync(destDir, { recursive: true })
+    fs.writeFileSync(path.join(destDir, 'qixi-letter.ttf'), patched)
+
+    const srcStat = fs.statSync(qixiSrc)
+    let needWoff2 = !fs.existsSync(qixiModuleWoff2)
+    if (!needWoff2) {
+      try {
+        needWoff2 = fs.statSync(qixiModuleWoff2).mtimeMs < srcStat.mtimeMs
+      } catch {
+        needWoff2 = true
+      }
+    }
+    if (!needWoff2) return
+    try {
+      const { compress } = await import('wawoff2')
+      const woff2 = Buffer.from(await compress(patched))
+      fs.writeFileSync(qixiModuleWoff2, woff2)
+      fs.writeFileSync(path.join(destDir, 'qixi-letter.woff2'), woff2)
+      console.log(`[hand-fonts] qixi woff2 ${Math.round(woff2.length / 1024)}KB`)
+    } catch (err) {
+      console.warn('[hand-fonts] woff2 compress failed', err)
+    }
+  }
 
   const copy = () => {
     fs.mkdirSync(destDir, { recursive: true })
     for (const item of copies) copyOne(item.src, item.dest)
-    const qixiSrc = copies[0]?.src
-    if (qixiSrc && fs.existsSync(qixiSrc)) {
-      fs.mkdirSync(path.dirname(qixiModuleFont), { recursive: true })
-      const patched = patchTtfVheaForBrowser(fs.readFileSync(qixiSrc))
-      fs.writeFileSync(qixiModuleFont, patched)
-      fs.mkdirSync(destDir, { recursive: true })
-      fs.writeFileSync(path.join(destDir, 'qixi-letter.ttf'), patched)
-    }
+    void prepareQixiModuleFont()
   }
 
   return {
     name: 'sync-handwriting-fonts-to-public',
     enforce: 'pre',
-    config: copy,
-    buildStart: copy,
-    configureServer: copy,
+    async buildStart() {
+      fs.mkdirSync(destDir, { recursive: true })
+      for (const item of copies) copyOne(item.src, item.dest)
+      await prepareQixiModuleFont()
+    },
+    configureServer() {
+      copy()
+    },
   }
 }
 

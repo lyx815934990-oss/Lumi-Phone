@@ -47,6 +47,7 @@ export function QixiEnvelopeModal(props: {
   const [saveHint, setSaveHint] = useState<string | null>(null)
   const [albumPreviewUrl, setAlbumPreviewUrl] = useState<string | null>(null)
   const [savedLetterIds, setSavedLetterIds] = useState<Set<string>>(() => listSavedQixiLetterIds())
+  const [fontTick, setFontTick] = useState(0)
   const runningRef = useRef(false)
 
   const shellControls = useAnimationControls()
@@ -88,7 +89,9 @@ export function QixiEnvelopeModal(props: {
     setSavedLetterIds(listSavedQixiLetterIds())
     setLoadingList(true)
     let cancelled = false
-    void ensureQixiLetterFontLoaded()
+    void ensureQixiLetterFontLoaded().then((ok) => {
+      if (!cancelled && ok) setFontTick((n) => n + 1)
+    })
     void (async () => {
       await hydrateQixiLetterStore()
       if (cancelled) return
@@ -549,6 +552,7 @@ export function QixiEnvelopeModal(props: {
                 </div>
                 <article className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-2xl border border-[#d4b8c0]/55 shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
                   <div
+                    key={`qixi-paper-${fontTick}`}
                     className="qixi-lined-paper min-h-full px-5 py-5 text-[#2c1c24]"
                     style={{
                       fontFamily: QIXI_LETTER_FONT_STACK,

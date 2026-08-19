@@ -5,8 +5,8 @@
 
 const NOTIFY_ICON_CACHE = 'lumi-notify-icons-v1'
 /** 发版后 bump，强制丢掉指着旧 hash / 坏 vendor 拆包的壳缓存 */
-const ASSET_CACHE = 'lumi-runtime-assets-v6'
-const SHELL_CACHE = 'lumi-shell-v6'
+const ASSET_CACHE = 'lumi-runtime-assets-v7'
+const SHELL_CACHE = 'lumi-shell-v7'
 const NOTIFY_ICON_PATH_MARKER = '/__lumi_notify_icon__/'
 
 /** 剧本杀 / 超大视频：永不进 SW 缓存，也勿拦截为 cache-first */
@@ -37,7 +37,7 @@ function isHashedAsset(url) {
 function isCacheableAsset(url) {
   if (shouldSkipCache(url)) return false
   if (!isHashedAsset(url)) return false
-  return /\.(js|css|woff2?|png|jpg|jpeg|webp|svg|gif|avif)($|\?)/i.test(url.pathname)
+  return /\.(js|css|woff2?|ttf|png|jpg|jpeg|webp|svg|gif|avif)($|\?)/i.test(url.pathname)
 }
 
 /** 导航失败时仍返回可读页，并尽量跳到 www、卸掉坏 SW */
