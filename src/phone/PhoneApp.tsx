@@ -14,6 +14,8 @@ import { isWeChatAppModuleReady, loadWeChatAppDefault } from './boot/wechatAppMo
 import { readEnableSplashScreenSync } from './boot/splashPref'
 import { BootResourceGate } from './components/BootResourceGate'
 import { SplashScreen } from './components/SplashScreen'
+import { isQixiEnvelopeEventDay } from './apps/qixi/qixiEnvelopeStorage'
+import { warmQixiLetterFont } from './apps/qixi/qixiFont'
 import { useCustomization } from './CustomizationContext'
 import {
   canEnterHomeOffline,
@@ -224,6 +226,11 @@ export function PhoneApp() {
   const sessionBootAuthDoneRef = useRef(false)
 
   const enableSplashScreen = state.ui.enableSplashScreen !== false
+
+  /** 七夕当天：组件一挂载就开下信纸字库，尽量赶在拆信封前就绪 */
+  useEffect(() => {
+    if (isQixiEnvelopeEventDay()) warmQixiLetterFont()
+  }, [])
 
   const handleBootReady = useCallback(() => {
     setBootDone(true)

@@ -2,6 +2,8 @@
 
 import { importNamedWithRetry } from '../lazyWithRetry'
 import { loadWeChatAppDefault, resetWeChatAppModuleCache } from './wechatAppModule'
+import { isQixiEnvelopeEventDay } from '../apps/qixi/qixiEnvelopeStorage'
+import { ensureQixiLetterFontLoaded, warmQixiLetterFont } from '../apps/qixi/qixiFont'
 
 const SKIP_URL_RE =
   /JBSGameFlow|jubensha|Jubensha|jbsChat|剧本杀|\.mp4(?:$|\?)|聊天室背景/i
@@ -82,6 +84,22 @@ const BOOT_PRELOAD_TASKS: PreloadTask[] = [
   { label: '浮光直播', load: () => import('../apps/lumiLive') },
   { label: '私语档案', load: () => import('../apps/wechat/diary/SubconsciousArchivesApp') },
 ]
+
+function buildBootPreloadTasks(): PreloadTask[] {
+  const tasks = [...BOOT_PRELOAD_TASKS]
+  if (typeof window !== 'undefined' && isQixiEnvelopeEventDay()) {
+    tasks.unshift({
+      label: '七夕信纸',
+      critical: true,
+      load: async () => {
+        const ok = await ensureQixiLetterFontLoaded()
+        if (!ok) throw new Error('qixi font failed')
+        return ok
+      },
+    })
+  }
+  return tasks
+}
 
 export type BootPreloadProgress = {
   done: number
@@ -246,8 +264,13 @@ export async function preloadAllNonJubenshaBootResources(
   onProgress?: (p: BootPreloadProgress) => void,
 ): Promise<void> {
   const mobile = isMobileBootClient()
-  const rest = BOOT_PRELOAD_TASKS.filter((t) => t.label !== '微信')
-  const totalAll = BOOT_PRELOAD_TASKS.length
+  const allTasks = buildBootPreloadTasks()
+  // 七夕当天：开屏一开始就拉信纸，和微信并行
+  if (allTasks.some((t) => t.label === '七夕信纸')) {
+    warmQixiLetterFont()
+  }
+  const rest = allTasks.filter((t) => t.label !== '微信')
+  const totalAll = allTasks.length
   let finished = 0
 
   const mapProgress = (local: BootPreloadProgress, baseDone: number, localTotal = local.total) => {
@@ -272,8 +295,9 @@ export async function preloadAllNonJubenshaBootResources(
   if (rest.length) {
     await runPreloadQueue(rest, (p) => mapProgress(p, finished), {
       concurrency: mobile ? 2 : 3,
-      overallTimeoutMs: wechatOk ? 75_000 : 40_000,
-      perTaskTimeoutMs: mobile ? 22_000 : 30_000,
+      overallTimeoutMs: wechatOk ? 90_000 : 50_000,
+      // 七夕 woff2 ~7MB，手机要更长时间
+      perTaskTimeoutMs: mobile ? 55_000 : 40_000,
       strict: true,
     })
   }
@@ -293,8 +317,9 @@ export async function preloadCriticalBootResources(
  */
 export function scheduleBackgroundAppWarm(): void {
   if (typeof window === 'undefined') return
-  const tasks = BOOT_PRELOAD_TASKS
+  const tasks = buildBootPreloadTasks()
   if (!tasks.length) return
+  warmQixiLetterFont()
 
   const run = () => {
     void (async () => {
@@ -305,7 +330,7 @@ export function scheduleBackgroundAppWarm(): void {
         {
           concurrency: isMobileBootClient() ? 1 : 2,
           overallTimeoutMs: 180_000,
-          perTaskTimeoutMs: isMobileBootClient() ? 45_000 : 60_000,
+          perTaskTimeoutMs: isMobileBootClient() ? 60_000 : 60_000,
           strict: false,
         },
       )

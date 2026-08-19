@@ -5,6 +5,8 @@ import {
   preloadAllNonJubenshaBootResources,
   scheduleBackgroundAppWarm,
 } from '../boot/warmShellCache'
+import { isQixiEnvelopeEventDay } from '../apps/qixi/qixiEnvelopeStorage'
+import { ensureQixiLetterFontLoaded, warmQixiLetterFont } from '../apps/qixi/qixiFont'
 
 type BootResourceGateProps = {
   /** false 时立刻关掉 HTML 加载层（如 OAuth 跳过开屏） */
@@ -65,7 +67,14 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
       try {
         markBootProgress(78, '核心模块就绪…')
 
-        // 字体最多等 400ms，不等 Google Fonts 拖死开屏
+        // 七夕当天：一进开屏就开下信纸字库（约 7MB），与后续预热并行
+        const qixiDay = isQixiEnvelopeEventDay()
+        if (qixiDay) {
+          warmQixiLetterFont()
+          markBootProgress(80, '正在准备七夕信纸…')
+        }
+
+        // 系统字体最多等 400ms；七夕手写体另算
         await Promise.race([
           typeof document !== 'undefined' && document.fonts?.ready
             ? document.fonts.ready.catch(() => undefined)
@@ -75,16 +84,25 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
         if (cancelled || sealedRef.current) return
 
         markBootProgress(82, mobile ? '正在准备微信与常用应用…' : '正在准备全部应用资源…')
+        const bootWarm = preloadAllNonJubenshaBootResources((p) => {
+          if (sealedRef.current) return
+          const pct = 82 + Math.round(p.ratio * 16)
+          markBootProgress(Math.min(pct, 98), p.label)
+        })
+        // 七夕日额外等信纸（最多约 50s），尽量进信封前就就绪
+        if (qixiDay) {
+          void ensureQixiLetterFontLoaded()
+        }
         await Promise.race([
-          preloadAllNonJubenshaBootResources((p) => {
-            if (sealedRef.current) return
-            // 82% → 98% 跟真实任务进度
-            const pct = 82 + Math.round(p.ratio * 16)
-            markBootProgress(Math.min(pct, 98), p.label)
-          }),
-          // 微信失败也不要卡死开屏；剩余资源进桌面后后台补暖
+          bootWarm,
           sleep(mobile ? 95_000 : 110_000),
         ])
+        if (sealedRef.current) return
+
+        if (qixiDay && !cancelled) {
+          markBootProgress(98, '正在铺开七夕信纸…')
+          await Promise.race([ensureQixiLetterFontLoaded(), sleep(mobile ? 50_000 : 35_000)])
+        }
         if (sealedRef.current) return
 
         markBootProgress(99, '即将进入…')
