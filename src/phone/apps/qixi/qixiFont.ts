@@ -1,36 +1,44 @@
 /**
- * 七夕信封正文手写体。
- * 衬线标题用的是系统宋体，不用下载；信纸必须走自定义 ttf。
- * 主文件约 12MB，手机上常失败，所以再用一款约 5MB 的手写体兜底。
+ * 七夕信封正文只用「七夕字体.ttf」。
+ * 开屏标题的宋体是系统字体；信纸必须下载这份手写体。
  */
 
 import { publicHandFontUrl } from '../../utils/publicHandFontUrl'
 
 export const QIXI_LETTER_FONT_FAMILY = 'QixiLetterHand'
-const QIXI_LETTER_FONT_SOFT = 'QixiLetterHandSoft'
 
-export const QIXI_LETTER_FONT_STACK = `'${QIXI_LETTER_FONT_FAMILY}', '${QIXI_LETTER_FONT_SOFT}', cursive`
+export const QIXI_LETTER_FONT_STACK = `'${QIXI_LETTER_FONT_FAMILY}', cursive`
 
-function fontSrcList(fileName: string): string {
-  const primary = publicHandFontUrl(fileName)
-  const rooted = `/fonts/${fileName}`
-  const urls = primary === rooted ? [primary] : [primary, rooted]
-  return urls.map((u) => `url('${u}') format('truetype')`).join(',')
+function qixiLetterUrls(): string[] {
+  const primary = publicHandFontUrl('qixi-letter.ttf')
+  const rooted = '/fonts/qixi-letter.ttf'
+  return primary === rooted ? [primary] : [primary, rooted]
 }
 
 let injectPromise: Promise<boolean> | null = null
 let loaded = false
 
-function injectFaces(): void {
+function injectPreload(url: string): void {
   if (typeof document === 'undefined') return
-  const id = 'qixi-letter-font-face-v4'
+  const id = `qixi-letter-font-preload-${url}`
   if (document.getElementById(id)) return
+  const link = document.createElement('link')
+  link.id = id
+  link.rel = 'preload'
+  link.as = 'font'
+  link.type = 'font/ttf'
+  link.href = url
+  document.head.appendChild(link)
+}
+
+function injectFace(urls: string[]): void {
+  if (typeof document === 'undefined') return
+  const id = 'qixi-letter-font-face-v5'
+  if (document.getElementById(id)) return
+  const src = urls.map((u) => `url('${u}') format('truetype')`).join(',')
   const el = document.createElement('style')
   el.id = id
-  el.textContent = [
-    `@font-face{font-family:'${QIXI_LETTER_FONT_FAMILY}';src:${fontSrcList('qixi-letter.ttf')};font-display:swap;font-weight:400;font-style:normal;}`,
-    `@font-face{font-family:'${QIXI_LETTER_FONT_SOFT}';src:${fontSrcList('diary-qing-song-shou-xie.ttf')};font-display:swap;font-weight:400;font-style:normal;}`,
-  ].join('')
+  el.textContent = `@font-face{font-family:'${QIXI_LETTER_FONT_FAMILY}';src:${src};font-display:swap;font-weight:400;font-style:normal;}`
   document.head.appendChild(el)
 }
 
@@ -38,18 +46,24 @@ export async function ensureQixiLetterFontLoaded(): Promise<boolean> {
   if (loaded) return true
   if (!injectPromise) {
     injectPromise = (async () => {
-      injectFaces()
+      const urls = qixiLetterUrls()
+      urls.forEach(injectPreload)
+      injectFace(urls)
       if (typeof document === 'undefined' || !('fonts' in document)) {
         loaded = true
         return true
       }
       try {
-        await Promise.race([
-          document.fonts.load(`21px '${QIXI_LETTER_FONT_FAMILY}', '${QIXI_LETTER_FONT_SOFT}'`, '七夕你好亲爱的'),
-          new Promise<void>((resolve) => window.setTimeout(resolve, 4000)),
-        ])
+        const face = new FontFace(QIXI_LETTER_FONT_FAMILY, `url("${urls[0]}") format("truetype")`, {
+          style: 'normal',
+          weight: '400',
+          display: 'swap',
+        })
+        void face.load().then((loadedFace) => {
+          document.fonts.add(loadedFace)
+        })
       } catch {
-        /* 信纸不阻塞；浏览器会继续换字 */
+        /* @font-face 仍会继续拉七夕字体 */
       }
       loaded = true
       return true
