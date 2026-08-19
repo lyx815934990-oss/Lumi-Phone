@@ -204,20 +204,74 @@ function syncWechatEmojisToPublicPlugin(): Plugin {
 }
 
 /**
- * 七夕手写体拷到 public/fonts/qixi-letter.ttf（英文路径）。
- * 直接 import「中文字体/七夕字体.ttf」会被 Rolldown 丢掉，线上就会回落到系统黑体。
+ * 手写体拷到 public/fonts/*.ttf（英文路径）。
+ * 直接 import 中文目录 ttf 会被 Rolldown 丢掉，线上就会回落到系统黑体。
  */
-function syncQixiLetterFontToPublicPlugin(): Plugin {
-  const src = path.resolve(__dirname, '中文字体', '七夕字体.ttf')
+function syncHandwritingFontsToPublicPlugin(): Plugin {
   const destDir = path.resolve(__dirname, 'public/fonts')
-  const dest = path.join(destDir, 'qixi-letter.ttf')
+  const copies: Array<{ src: string; dest: string }> = [
+    { src: path.resolve(__dirname, '中文字体', '七夕字体.ttf'), dest: 'qixi-letter.ttf' },
+    { src: path.resolve(__dirname, '中文字体', 'AaShiGeMingXinPian-2.ttf'), dest: 'obs-aa-shige-mingxinpian.ttf' },
+    {
+      src: path.resolve(__dirname, '写字好看的行书字体', 'YunFengJingLongXingShu', 'YunFengJingLongXingShu-2.ttf'),
+      dest: 'diary-yun-feng-jing-long.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '写字好看的行书字体', 'PingFangChangAnTi', 'PingFangChangAnTi-2.ttf'),
+      dest: 'diary-ping-fang-chang-an.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '写字好看的行书字体', 'PingFangJiangJunTi', 'PingFangJiangJunTi-2.ttf'),
+      dest: 'diary-ping-fang-jiang-jun.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '写字好看的楷体字体', 'HongLeiZhuoShuJianTi', 'HongLeiZhuoShuJianTi-2.ttf'),
+      dest: 'diary-hong-lei-zhuo-shu.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '写字好看的楷体字体', 'PingFangJiangNanTi', 'PingFangJiangNanTi-2.ttf'),
+      dest: 'diary-ping-fang-jiang-nan.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '写字好看的楷体字体', 'ShouShuTi', 'ShouShuTi-2.ttf'),
+      dest: 'diary-shou-shu.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '不怎么会写字的字体', 'QingSongShouXieTi2', 'QingSongShouXieTi2-2.ttf'),
+      dest: 'diary-qing-song-shou-xie.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '不怎么会写字的字体', 'XingQiBadeDianZiRiJi', 'XingQiBadeDianZiRiJi-2.ttf'),
+      dest: 'diary-xing-qi-ba.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '不怎么会写字的字体', 'PingFangXingChenTi', 'PingFangXingChenTi-2.ttf'),
+      dest: 'diary-ping-fang-xing-chen.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '不怎么会写字的字体', 'PingFangQingChunTi', 'PingFangQingChunTi-2.ttf'),
+      dest: 'diary-ping-fang-qing-chun.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '不怎么会写字的字体', 'FuLuLingGanHeChaTi', 'FuLuLingGanHeChaTi-2.ttf'),
+      dest: 'diary-fu-lu-ling-gan.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '不怎么会写字的字体', 'JinNianYeYaoJiaYouYa', 'JinNianYeYaoJiaYouYa-2.ttf'),
+      dest: 'diary-jin-nian-ye-yao.ttf',
+    },
+    {
+      src: path.resolve(__dirname, '不怎么会写字的字体', 'FuLuGuoQiTi', 'FuLuGuoQiTi-2.ttf'),
+      dest: 'diary-fu-lu-guo-qi.ttf',
+    },
+  ]
 
-  const copy = () => {
+  const copyOne = (src: string, destName: string) => {
     if (!fs.existsSync(src)) {
-      console.warn('[qixi-font] missing', src)
+      console.warn('[hand-fonts] missing', src)
       return
     }
-    fs.mkdirSync(destDir, { recursive: true })
+    const dest = path.join(destDir, destName)
     try {
       if (fs.existsSync(dest)) {
         const a = fs.statSync(src)
@@ -230,8 +284,13 @@ function syncQixiLetterFontToPublicPlugin(): Plugin {
     fs.copyFileSync(src, dest)
   }
 
+  const copy = () => {
+    fs.mkdirSync(destDir, { recursive: true })
+    for (const item of copies) copyOne(item.src, item.dest)
+  }
+
   return {
-    name: 'sync-qixi-letter-font-to-public',
+    name: 'sync-handwriting-fonts-to-public',
     buildStart: copy,
     configureServer: copy,
   }
@@ -349,7 +408,7 @@ export default defineConfig(({ command, mode }) => {
     copyRootImageDirToDist(),
     syncBgmToPublicPlugin(),
     syncWechatEmojisToPublicPlugin(),
-    syncQixiLetterFontToPublicPlugin(),
+    syncHandwritingFontsToPublicPlugin(),
     pwaManifestPlugin(),
     {
       name: 'dev-lan-hint',

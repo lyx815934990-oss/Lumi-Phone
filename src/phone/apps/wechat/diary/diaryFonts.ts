@@ -1,23 +1,5 @@
 import type { DiaryFontStyleCode } from './diaryTypes'
-
-/** 写字好看的行书字体 */
-import pingFangChangAnTtf from '../../../../../写字好看的行书字体/PingFangChangAnTi/PingFangChangAnTi-2.ttf?url'
-import pingFangJiangJunTtf from '../../../../../写字好看的行书字体/PingFangJiangJunTi/PingFangJiangJunTi-2.ttf?url'
-import yunFengJingLongTtf from '../../../../../写字好看的行书字体/YunFengJingLongXingShu/YunFengJingLongXingShu-2.ttf?url'
-
-/** 写字好看的楷体字体 */
-import hongLeiZhuoShuTtf from '../../../../../写字好看的楷体字体/HongLeiZhuoShuJianTi/HongLeiZhuoShuJianTi-2.ttf?url'
-import pingFangJiangNanTtf from '../../../../../写字好看的楷体字体/PingFangJiangNanTi/PingFangJiangNanTi-2.ttf?url'
-import shouShuTiTtf from '../../../../../写字好看的楷体字体/ShouShuTi/ShouShuTi-2.ttf?url'
-
-/** 不怎么会写字的字体 */
-import fuLuGuoQiTtf from '../../../../../不怎么会写字的字体/FuLuGuoQiTi/FuLuGuoQiTi-2.ttf?url'
-import fuLuLingGanHeChaTtf from '../../../../../不怎么会写字的字体/FuLuLingGanHeChaTi/FuLuLingGanHeChaTi-2.ttf?url'
-import jinNianYeYaoJiaYouTtf from '../../../../../不怎么会写字的字体/JinNianYeYaoJiaYouYa/JinNianYeYaoJiaYouYa-2.ttf?url'
-import pingFangQingChunTtf from '../../../../../不怎么会写字的字体/PingFangQingChunTi/PingFangQingChunTi-2.ttf?url'
-import pingFangXingChenTtf from '../../../../../不怎么会写字的字体/PingFangXingChenTi/PingFangXingChenTi-2.ttf?url'
-import qingSongShouXieTtf from '../../../../../不怎么会写字的字体/QingSongShouXieTi2/QingSongShouXieTi2-2.ttf?url'
-import xingQiBaRiJiTtf from '../../../../../不怎么会写字的字体/XingQiBadeDianZiRiJi/XingQiBadeDianZiRiJi-2.ttf?url'
+import { publicHandFontUrl } from '../../../utils/publicHandFontUrl'
 
 export type DiaryFontFolder = 'xingshu' | 'kaiti' | 'clumsy'
 
@@ -38,7 +20,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '云峰静龙行书',
     folder: 'xingshu',
     family: 'DiaryYunFengJingLong',
-    src: yunFengJingLongTtf,
+    src: publicHandFontUrl('diary-yun-feng-jing-long.ttf'),
     fallback: "'STXingkai', 'KaiTi', cursive",
   },
   {
@@ -46,7 +28,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '平方长安体',
     folder: 'xingshu',
     family: 'DiaryPingFangChangAn',
-    src: pingFangChangAnTtf,
+    src: publicHandFontUrl('diary-ping-fang-chang-an.ttf'),
     fallback: "'STXingkai', 'KaiTi', cursive",
   },
   {
@@ -54,7 +36,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '平方将军体',
     folder: 'xingshu',
     family: 'DiaryPingFangJiangJun',
-    src: pingFangJiangJunTtf,
+    src: publicHandFontUrl('diary-ping-fang-jiang-jun.ttf'),
     fallback: "'STXingkai', 'LiSu', cursive",
   },
   // 写字好看的楷体字体
@@ -63,7 +45,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '鸿雷拙书简体',
     folder: 'kaiti',
     family: 'DiaryHongLeiZhuoShu',
-    src: hongLeiZhuoShuTtf,
+    src: publicHandFontUrl('diary-hong-lei-zhuo-shu.ttf'),
     fallback: "'STKaiti', 'KaiTi', serif",
   },
   {
@@ -71,7 +53,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '平方江南体',
     folder: 'kaiti',
     family: 'DiaryPingFangJiangNan',
-    src: pingFangJiangNanTtf,
+    src: publicHandFontUrl('diary-ping-fang-jiang-nan.ttf'),
     fallback: "'STKaiti', 'KaiTi', serif",
   },
   {
@@ -79,7 +61,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '手书体',
     folder: 'kaiti',
     family: 'DiaryShouShu',
-    src: shouShuTiTtf,
+    src: publicHandFontUrl('diary-shou-shu.ttf'),
     fallback: "'STKaiti', 'KaiTi', serif",
   },
   // 不怎么会写字的字体
@@ -88,7 +70,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '青松手写体',
     folder: 'clumsy',
     family: 'DiaryQingSongShouXie',
-    src: qingSongShouXieTtf,
+    src: publicHandFontUrl('diary-qing-song-shou-xie.ttf'),
     fallback: "'STKaiti', 'PingFang SC', cursive",
   },
   {
@@ -96,7 +78,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '星期八的电子日记',
     folder: 'clumsy',
     family: 'DiaryXingQiBaRiJi',
-    src: xingQiBaRiJiTtf,
+    src: publicHandFontUrl('diary-xing-qi-ba.ttf'),
     fallback: "'STKaiti', cursive",
   },
   {
@@ -104,7 +86,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '平方星辰体',
     folder: 'clumsy',
     family: 'DiaryPingFangXingChen',
-    src: pingFangXingChenTtf,
+    src: publicHandFontUrl('diary-ping-fang-xing-chen.ttf'),
     fallback: "'STKaiti', 'PingFang SC', cursive",
   },
   {
@@ -112,7 +94,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '平方青春体',
     folder: 'clumsy',
     family: 'DiaryPingFangQingChun',
-    src: pingFangQingChunTtf,
+    src: publicHandFontUrl('diary-ping-fang-qing-chun.ttf'),
     fallback: "'STKaiti', cursive",
   },
   {
@@ -120,7 +102,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '福禄灵感喝茶体',
     folder: 'clumsy',
     family: 'DiaryFuLuLingGanHeCha',
-    src: fuLuLingGanHeChaTtf,
+    src: publicHandFontUrl('diary-fu-lu-ling-gan.ttf'),
     fallback: "'FangSong', cursive",
   },
   {
@@ -128,7 +110,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '今年也要加油呀',
     folder: 'clumsy',
     family: 'DiaryJinNianYeYaoJiaYou',
-    src: jinNianYeYaoJiaYouTtf,
+    src: publicHandFontUrl('diary-jin-nian-ye-yao.ttf'),
     fallback: "'STKaiti', cursive",
   },
   {
@@ -136,7 +118,7 @@ export const DIARY_FONT_LIBRARY: DiaryFontPreset[] = [
     label: '福禄国气体',
     folder: 'clumsy',
     family: 'DiaryFuLuGuoQi',
-    src: fuLuGuoQiTtf,
+    src: publicHandFontUrl('diary-fu-lu-guo-qi.ttf'),
     fallback: "'FangSong', cursive",
   },
 ]
@@ -305,12 +287,26 @@ async function loadFontFamily(family: string): Promise<void> {
     return
   }
   try {
-    const face = new FontFace(preset.family, `url(${preset.src})`)
+    const res = await fetch(preset.src)
+    if (!res.ok) throw new Error(`font http ${res.status}`)
+    const buf = await res.arrayBuffer()
+    const face = new FontFace(preset.family, buf, {
+      style: 'normal',
+      weight: '400',
+      display: 'swap',
+    })
     const loaded = await face.load()
     document.fonts.add(loaded)
     loadedFamilies.add(family)
   } catch {
-    loadedFamilies.add(family)
+    try {
+      const face = new FontFace(preset.family, `url(${preset.src})`)
+      const loaded = await face.load()
+      document.fonts.add(loaded)
+      loadedFamilies.add(family)
+    } catch {
+      /* 下次打开再试，避免永久当成已加载 */
+    }
   }
 }
 
