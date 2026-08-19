@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { dispatchOpenQixiEnvelope } from './qixiEnvelopeStorage'
+import { ensureQixiLetterFontLoaded } from './qixiFont'
 
 const POS_KEY = 'lumi-qixi-fab-pos-v1'
 const SIZE = 58
@@ -52,6 +53,10 @@ export function QixiHomeFab() {
     origY: number
     moved: boolean
   } | null>(null)
+
+  useEffect(() => {
+    void ensureQixiLetterFontLoaded()
+  }, [])
 
   useEffect(() => {
     const box = rootRef.current?.parentElement?.getBoundingClientRect()

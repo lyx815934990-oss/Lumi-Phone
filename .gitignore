@@ -12,6 +12,7 @@ dist
 dist-ssr
 public/BGM
 public/wechat-emojis
+public/fonts
 *.local
 
 # Editor directories and files

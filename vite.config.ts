@@ -203,6 +203,40 @@ function syncWechatEmojisToPublicPlugin(): Plugin {
   }
 }
 
+/**
+ * 七夕手写体拷到 public/fonts/qixi-letter.ttf（英文路径）。
+ * 直接 import「中文字体/七夕字体.ttf」会被 Rolldown 丢掉，线上就会回落到系统黑体。
+ */
+function syncQixiLetterFontToPublicPlugin(): Plugin {
+  const src = path.resolve(__dirname, '中文字体', '七夕字体.ttf')
+  const destDir = path.resolve(__dirname, 'public/fonts')
+  const dest = path.join(destDir, 'qixi-letter.ttf')
+
+  const copy = () => {
+    if (!fs.existsSync(src)) {
+      console.warn('[qixi-font] missing', src)
+      return
+    }
+    fs.mkdirSync(destDir, { recursive: true })
+    try {
+      if (fs.existsSync(dest)) {
+        const a = fs.statSync(src)
+        const b = fs.statSync(dest)
+        if (a.size === b.size && b.mtimeMs >= a.mtimeMs) return
+      }
+    } catch {
+      /* copy anyway */
+    }
+    fs.copyFileSync(src, dest)
+  }
+
+  return {
+    name: 'sync-qixi-letter-font-to-public',
+    buildStart: copy,
+    configureServer: copy,
+  }
+}
+
 /** dev：浏览器 PUT 头像 blob，供 iOS 通知栏直接拉取（绕过自签证书下 /assets 拉取失败） */
 function notifyIconDevServerPlugin(): Plugin {
   const marker = '/__lumi_notify_icon__/'
@@ -315,6 +349,7 @@ export default defineConfig(({ command, mode }) => {
     copyRootImageDirToDist(),
     syncBgmToPublicPlugin(),
     syncWechatEmojisToPublicPlugin(),
+    syncQixiLetterFontToPublicPlugin(),
     pwaManifestPlugin(),
     {
       name: 'dev-lan-hint',
