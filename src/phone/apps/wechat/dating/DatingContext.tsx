@@ -1935,8 +1935,9 @@ ${body}`
           : `（本轮视角混合开放 + 不抢话：当面段对白占比只计 ${character.realName}/NPC 引号对白；屏外/侧幕短切时按该镜头在场者计，禁止为凑占比硬塞玩家引号对白。）`)
   const npcRealNameRule =
     `【NPC命名铁律（最高优先级）】正文中凡 NPC 出场（旁白提及、对白前缀、他人转述）必须使用该 NPC 的真实姓名。` +
-    `严禁用纯称呼替代真实姓名（例如：王老师、王女士、老师、经理、同学、阿姨、师傅、保安等）；` +
-    `允许写法仅为「真实姓名」或「真实姓名+称呼后缀」（如“王静老师”），但禁止仅写称呼。`
+    `严禁用纯称呼替代真实姓名（禁止只写老师/经理/同学/阿姨/师傅/保安/店长，或「姓+老师/女士」而无完整姓名）。` +
+    `允许写法仅为「完整真实姓名」或「完整真实姓名+称呼后缀」（结构示例：姓名二字或三字 +「老师」）；**禁止**照抄本提示中的任何示范姓名——须按本轮场景与世界观**现编**不重复的常用姓名，且勿复用上一轮或固定套路名。` +
+    `若世界书/人脉已给出该 NPC 姓名，必须沿用原文，禁止另起一名。`
   const vnBackgroundRule = isVnMode ? buildVnBackgroundPromptBlock() : ''
   const vnBgmRule = isVnMode ? buildVnBgmPromptBlock() : ''
   const vnAtmosphereRule = isVnMode ? buildVnAtmospherePromptBlock() : ''
