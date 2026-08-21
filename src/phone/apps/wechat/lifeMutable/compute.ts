@@ -334,6 +334,31 @@ export function computeEducationLabel(params: {
   if (startMs != null && nowMs != null && nowMs >= startMs) {
     grade += academicYearIndex(nowMs) - academicYearIndex(startMs)
   }
+  // 学历备注若已写更高年级（近端剧情），展示勿压回开篇推算
+  const noteGradeHits = note.match(/大[一二三四]|研[一二三]|博[一二三四]|高[一二三]|初[一二三]/g) ?? []
+  const noteGradeMap: Record<string, number> = {
+    大一: 1,
+    大二: 2,
+    大三: 3,
+    大四: 4,
+    高一: 1,
+    高二: 2,
+    高三: 3,
+    初一: 1,
+    初二: 2,
+    初三: 3,
+    研一: 1,
+    研二: 2,
+    研三: 3,
+    博一: 1,
+    博二: 2,
+    博三: 3,
+    博四: 4,
+  }
+  for (const t of noteGradeHits) {
+    const n = noteGradeMap[t]
+    if (typeof n === 'number') grade = Math.max(grade, n)
+  }
   const max = trackMaxGrade(params.track)
   let stage = ''
   if (max > 0 && grade > max) {

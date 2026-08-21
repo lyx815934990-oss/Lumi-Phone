@@ -60,6 +60,57 @@ export function resolveEducationGradeNow(params: {
 
 const GRADE_TOKEN_RE = /大[一二三四]|研[一二三]|博[一二三四]|高[一二三]|初[一二三]/g
 
+function gradeTokenToNumber(token: string, track: LifeEducationTrack): number | null {
+  const t = token.trim()
+  if (track === 'undergrad' || !track) {
+    if (t === '大一') return 1
+    if (t === '大二') return 2
+    if (t === '大三') return 3
+    if (t === '大四') return 4
+  }
+  if (track === 'high_school') {
+    if (t === '高一') return 1
+    if (t === '高二') return 2
+    if (t === '高三') return 3
+  }
+  if (track === 'junior_high') {
+    if (t === '初一') return 1
+    if (t === '初二') return 2
+    if (t === '初三') return 3
+  }
+  if (track === 'master') {
+    if (t === '研一') return 1
+    if (t === '研二') return 2
+    if (t === '研三') return 3
+  }
+  if (track === 'phd') {
+    if (t === '博一') return 1
+    if (t === '博二') return 2
+    if (t === '博三') return 3
+    if (t === '博四') return 4
+  }
+  // 未指定 track 时仍识别大学年级
+  if (t === '大一') return 1
+  if (t === '大二') return 2
+  if (t === '大三') return 3
+  if (t === '大四') return 4
+  return null
+}
+
+/** 文案里已写明的最高年级（近端/对齐可能已超前于剧情日推算） */
+function detectMaxGradeInText(text: string, track: LifeEducationTrack): number | null {
+  let max: number | null = null
+  GRADE_TOKEN_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = GRADE_TOKEN_RE.exec(text)) !== null) {
+    const n = gradeTokenToNumber(m[0]!, track)
+    if (n == null) continue
+    max = max == null ? n : Math.max(max, n)
+  }
+  GRADE_TOKEN_RE.lastIndex = 0
+  return max
+}
+
 function replaceGradeTokens(text: string, track: LifeEducationTrack, gradeNow: number): string {
   const max = trackMaxGrade(track)
   const token =
@@ -76,6 +127,7 @@ function replaceGradeTokens(text: string, track: LifeEducationTrack, gradeNow: n
 /**
  * 让 occupation / educationNote 中的「大一/大二…」与学历推算一致。
  * 9 月前不得提前写成下一学年年级。
+ * 若文案已写更高年级（近端剧情已升学），不得用剧情日推算结果强行降级。
  */
 export function syncSheetStudentGradeWording(
   sheet: LifeMutableSheet,
@@ -83,15 +135,22 @@ export function syncSheetStudentGradeWording(
   nowDay?: string | null,
 ): LifeMutableSheet {
   const track = sheet.educationTrack
-  const gradeNow = resolveEducationGradeNow({
+  const gradeFromClock = resolveEducationGradeNow({
     track,
     gradeAtStart: sheet.educationGradeAtStart,
     startDay: startDay || sheet.storyStartDay,
     nowDay: nowDay || sheet.storyStartDay,
   })
-  if (gradeNow == null || !track || track === 'working' || track === 'other') {
+  if (gradeFromClock == null || !track || track === 'working' || track === 'other') {
     return sheet
   }
+  const detected = Math.max(
+    detectMaxGradeInText(sheet.occupationMain, track) ?? 0,
+    detectMaxGradeInText(sheet.occupationSide, track) ?? 0,
+    detectMaxGradeInText(sheet.educationNote, track) ?? 0,
+  )
+  // 近端/对齐已写大四时，禁止因时钟仍停在大三而压回去
+  const gradeNow = Math.max(gradeFromClock, detected || 0)
   const max = trackMaxGrade(track)
   const inSchool = max <= 0 || gradeNow <= max
   const gradeToken = inSchool ? gradeName(track, Math.min(gradeNow, max || gradeNow)) : ''
@@ -158,12 +217,13 @@ export function buildLifeLedgerAddressAndAcademicRules(): string {
 - 同一主体/同一家庭共用住所时，城市、小区/校名、楼栋口径须全表一致。
 
 【学年日历 · 年级必须自洽】
-- **人设世界书优先（最高）**：相遇羁绊/名片/身份等已写明「大三学长」「大一新生」等年级时，开局账本的主业、开篇年级、学历备注必须与之一致；禁止擅自降级/升级（例：世界书写大三，不得写成大二；写已是大一，不得写成「待升大一」）。
+- **开篇 vs 现在（硬）**：相遇羁绊/名片等写的「大三学长」「大一新生」= **开篇年级**（写入 educationGradeAtStart / 开局主业），不是永远锁死「现在」。剧情推进或近端已写「大四学长」「大二」时，**现在**的 occupationMain / educationNote 必须跟「现在」证据走，禁止仍抄开篇大三/大一。
+- **开局建档**（尚无近端剧情）：开篇年级必须与世界书一致；禁止擅自降级，也禁止臆造「待 9 月升大一」暗示尚未入学（除非世界书写未报到）。
 - 每年 **9 月**起升入新学年；**9 月以前**仍属上一学年年级（例：证据写大一且剧情日在 8 月 → 仍写大一，不可提前写成大二）。
 - **6 月**毕业季；**1–2 月**寒假；**7–8 月**暑假。
 - 艺考**联考**约 **12–1 月**；艺术**校考**约联考后 **2–4 月**。
-- educationTrack + educationGradeAtStart（开篇学年：1=大一/高一/初一，3=大三…）须对齐世界书已给年级；occupationMain、educationNote 必须与该年级一致，禁止一边大一一边大二。
-- 开局日若在 7–8 月暑假：职业仍写世界书给出的当前年级「…大三在读…」；学历备注可写「暑假在读」或「暑假（仍属大三）」；**禁止**臆造「待 9 月升大X」来改年级，更禁止用「待升大一」暗示尚未入学（除非世界书明确写未报到/未入学）。
+- educationTrack + educationGradeAtStart 记开篇档；occupationMain、educationNote 写**当前**年级，须与剧情日推算或近端明示一致，禁止一边大三一边大四。
+- 开局日若在 7–8 月暑假且世界书已给年级：职业写该开篇年级「…大三在读…」；学历备注可写「暑假在读」；**禁止**用「待 9 月升大X」改掉世界书年级。
 - 学生主业写法：\`具体虚构校名 + 当前年级 · 专业\`（校名须具体，禁止「某大学大二」）；校名从人设/身份推断新编，勿套固定样板。`
 }
 
