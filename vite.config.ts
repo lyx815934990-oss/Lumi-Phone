@@ -342,6 +342,11 @@ function syncHandwritingFontsToPublicPlugin(): Plugin {
 
   const qixiModuleTtf = path.resolve(__dirname, 'src/phone/apps/qixi/qixi-letter.ttf')
   const qixiModuleWoff2 = path.resolve(__dirname, 'src/phone/apps/qixi/qixi-letter.woff2')
+  const obsModuleWoff2 = path.resolve(
+    __dirname,
+    'src/phone/apps/wechat/observationNotes/obs-aa-shige-mingxinpian.woff2',
+  )
+  const obsSrc = path.resolve(__dirname, '中文字体', 'AaShiGeMingXinPian-2.ttf')
 
   const prepareQixiModuleFont = async () => {
     const qixiSrc = copies[0]?.src
@@ -373,10 +378,45 @@ function syncHandwritingFontsToPublicPlugin(): Plugin {
     }
   }
 
+  /** 私藏侧写手记体：TTF → woff2（模块内 + public/fonts） */
+  const prepareObsHandFont = async () => {
+    if (!fs.existsSync(obsSrc)) {
+      console.warn('[hand-fonts] missing obs source', obsSrc)
+      return
+    }
+    fs.mkdirSync(destDir, { recursive: true })
+    fs.mkdirSync(path.dirname(obsModuleWoff2), { recursive: true })
+    const srcStat = fs.statSync(obsSrc)
+    let needWoff2 = !fs.existsSync(obsModuleWoff2)
+    if (!needWoff2) {
+      try {
+        needWoff2 = fs.statSync(obsModuleWoff2).mtimeMs < srcStat.mtimeMs
+      } catch {
+        needWoff2 = true
+      }
+    }
+    // 仍拷贝 ttf 到 public，兼容旧缓存；运行时优先用 woff2
+    copyOne(obsSrc, 'obs-aa-shige-mingxinpian.ttf')
+    if (!needWoff2) return
+    try {
+      const { compress } = await import('wawoff2')
+      const raw = fs.readFileSync(obsSrc)
+      const woff2 = Buffer.from(await compress(raw))
+      fs.writeFileSync(obsModuleWoff2, woff2)
+      fs.writeFileSync(path.join(destDir, 'obs-aa-shige-mingxinpian.woff2'), woff2)
+      console.log(
+        `[hand-fonts] obs woff2 ${Math.round(woff2.length / 1024)}KB (from ${Math.round(raw.length / 1024)}KB ttf)`,
+      )
+    } catch (err) {
+      console.warn('[hand-fonts] obs woff2 compress failed', err)
+    }
+  }
+
   const copy = () => {
     fs.mkdirSync(destDir, { recursive: true })
     for (const item of copies) copyOne(item.src, item.dest)
     void prepareQixiModuleFont()
+    void prepareObsHandFont()
   }
 
   return {
@@ -386,6 +426,7 @@ function syncHandwritingFontsToPublicPlugin(): Plugin {
       fs.mkdirSync(destDir, { recursive: true })
       for (const item of copies) copyOne(item.src, item.dest)
       await prepareQixiModuleFont()
+      await prepareObsHandFont()
     },
     configureServer() {
       copy()
