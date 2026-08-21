@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { CalendarClock, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { CalendarClock, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { copyTextToClipboard } from '../../../utils/copyToClipboard'
@@ -703,31 +703,16 @@ export function StoryBlock({
   }
 
   const { thinkingText, displayBody } = aiSplit
+  const [thinkingExpanded, setThinkingExpanded] = useState(false)
+  useEffect(() => {
+    setThinkingExpanded(false)
+  }, [plot.id, versionInfo.index])
 
   return (
     <>
     <motion.div layout className="group relative mb-7" transition={{ type: 'spring', stiffness: 380, damping: 32 }}>
       <div className="mb-2.5 flex items-start gap-2">
         <div className="min-w-0 flex-1 flex flex-col gap-2">
-      {thinkingText ? (
-        <details className="rounded-[14px] border border-black/[0.06] bg-white px-3 py-2">
-          <summary
-            onContextMenu={suppressSystemTextUi.onContextMenu}
-            className="cursor-pointer select-none touch-manipulation list-none text-[11px] font-medium tracking-wide text-[#8A8A8E] [-webkit-touch-callout:none] [-webkit-user-select:none] [&::-webkit-details-marker]:hidden"
-            style={suppressSystemTextUi.style}
-          >
-            Lumi 思维链
-          </summary>
-          <pre
-            onContextMenu={suppressSystemTextUi.onContextMenu}
-            className="mt-1.5 max-h-[min(40vh,280px)] overflow-y-auto whitespace-pre-wrap break-words border-t border-black/[0.04] pt-1.5 font-sans text-[12px] leading-relaxed text-[#555] select-none [-webkit-touch-callout:none] [-webkit-user-select:none]"
-            style={suppressSystemTextUi.style}
-          >
-            {thinkingText}
-          </pre>
-        </details>
-      ) : null}
-
       {timelineSnapshotText ? (
         <details className="listen-together-cn-text rounded-[14px] border border-black/[0.06] bg-white px-3 py-2">
           <summary
@@ -756,6 +741,37 @@ export function StoryBlock({
             剧情时间轴
           </span>
           <EditStoryTimeButton onClick={openStoryTimeEditor} />
+        </div>
+      ) : null}
+
+      {thinkingText ? (
+        <div className="listen-together-cn-text rounded-[14px] border border-black/[0.06] bg-white px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setThinkingExpanded((v) => !v)}
+            onContextMenu={suppressSystemTextUi.onContextMenu}
+            className="flex w-full cursor-pointer list-none items-center justify-between gap-2 select-none touch-manipulation text-left text-[11px] font-medium tracking-wide text-[#8A8A8E] [-webkit-touch-callout:none] [-webkit-user-select:none]"
+            style={suppressSystemTextUi.style}
+            aria-expanded={thinkingExpanded}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-1 rounded-full bg-[#C8C8CC]" aria-hidden />
+              思维链
+            </span>
+            <ChevronDown
+              className={`size-3.5 shrink-0 text-[#B0B0B5] transition-transform duration-200 ${thinkingExpanded ? 'rotate-180' : ''}`}
+              aria-hidden
+            />
+          </button>
+          {thinkingExpanded ? (
+            <pre
+              onContextMenu={suppressSystemTextUi.onContextMenu}
+              className="mt-1.5 max-h-[min(40vh,280px)] overflow-y-auto whitespace-pre-wrap break-words border-t border-black/[0.04] pt-1.5 font-sans text-[12px] leading-relaxed text-[#555] select-none [-webkit-touch-callout:none] [-webkit-user-select:none]"
+              style={suppressSystemTextUi.style}
+            >
+              {thinkingText}
+            </pre>
+          ) : null}
         </div>
       ) : null}
         </div>

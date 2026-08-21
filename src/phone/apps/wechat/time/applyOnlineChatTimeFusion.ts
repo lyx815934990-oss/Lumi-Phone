@@ -315,7 +315,7 @@ export async function restoreOnlineClockToStoryTime(
   }
 }
 
-/** 解析角色当前剧情时间下限（state 优先，否则线下 plot / 时间轴行锚点） */
+/** 解析角色当前剧情时间下限（state / 线下 plot / 时间轴行取较晚者） */
 export async function resolveCharacterStoryTimeFloor(characterId: string): Promise<StoryTimeFloorInfo> {
   const cid = characterId.trim()
   if (!cid) return { label: '', floorMs: null, hasFloor: false }
@@ -336,29 +336,41 @@ export async function resolveCharacterStoryTimeFloor(characterId: string): Promi
     return plotFloor
   }
 
+  const candidates: StoryTimeFloorInfo[] = []
   if (stateLabel && stateMs != null) {
-    return { label: stateLabel, floorMs: stateMs, hasFloor: true }
+    candidates.push({ label: stateLabel, floorMs: stateMs, hasFloor: true })
+  }
+  if (plotFloor?.hasFloor && plotFloor.floorMs != null) {
+    candidates.push(plotFloor)
   }
 
   // 人脉根剧情锚点：当前角色尚无「现在」时，回退到同人脉主角，避免 NPC 落到系统墙钟
-  try {
-    const self = await personaDb.getCharacter(cid)
-    const rootId = self?.generatedForCharacterId?.trim()
-    if (rootId && rootId !== cid) {
-      const rootState = await personaDb.getStoryTimelineState(rootId)
-      const rootLabel = labelFromState(rootState)
-      if (rootLabel) {
-        const floorMs = parseStoryAnchorLabelToMs(rootLabel)
-        if (floorMs != null && !looksLikeRealWallClockMs(floorMs)) {
-          return { label: rootLabel, floorMs, hasFloor: true }
+  if (!candidates.length) {
+    try {
+      const self = await personaDb.getCharacter(cid)
+      const rootId = self?.generatedForCharacterId?.trim()
+      if (rootId && rootId !== cid) {
+        const rootState = await personaDb.getStoryTimelineState(rootId)
+        const rootLabel = labelFromState(rootState)
+        if (rootLabel) {
+          const floorMs = parseStoryAnchorLabelToMs(rootLabel)
+          if (floorMs != null && !looksLikeRealWallClockMs(floorMs)) {
+            candidates.push({ label: rootLabel, floorMs, hasFloor: true })
+          }
         }
       }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
   }
 
-  if (plotFloor) return plotFloor
+  if (candidates.length) {
+    let best = candidates[0]!
+    for (const c of candidates.slice(1)) {
+      if ((c.floorMs ?? 0) > (best.floorMs ?? 0)) best = c
+    }
+    return best
+  }
 
   if (state?.currentStoryDay?.trim() || state?.currentStoryTime?.trim()) {
     const fallback = [state.currentStoryDay?.trim(), state.currentStoryTime?.trim()].filter(Boolean).join(' ')

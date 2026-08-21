@@ -1,6 +1,6 @@
 import { listMutualFriendNetworkCharacterIds } from '../mutualFriend/listMutualFriendPeers'
 import { personaDb } from '../newFriendsPersona/idb'
-import { normalizeWeChatTimeConfig } from '../time/wechatTimeUtils'
+import { normalizeWeChatTimeConfig, resolveWeChatCurrentTimeMs } from '../time/wechatTimeUtils'
 import {
   composeStoryTimelineCalendarAnchorLabel,
   createEmptyStoryTimelineState,
@@ -32,6 +32,7 @@ function stateNowMs(state: StoryTimelineState | null | undefined): number | null
 /**
  * 将源角色的剧情「现在」（及可选线上 custom 时钟）单调同步到同人脉圈其它角色/NPC。
  * 只前进、不回拨；不覆盖对方服装/物品/伏笔等状态字段。
+ * **源角色本身也会同步线上时钟**（即使无人脉同伴），避免线下已到 17 日而线上仍停在 16 日。
  */
 export async function syncNetworkStoryNowFromPrimary(params: {
   sourceCharacterId: string
@@ -59,15 +60,18 @@ export async function syncNetworkStoryNowFromPrimary(params: {
     const net = await listMutualFriendNetworkCharacterIds(ch)
     characterIds = net.characterIds
   } catch {
-    return { syncedPeerIds: [] }
+    characterIds = []
   }
-  if (characterIds.length < 2) return { syncedPeerIds: [] }
+  // 无人脉 / 解析失败时仍须同步源角色自己的线上钟
+  const idSet = new Set<string>(characterIds.map((x) => x.trim()).filter(Boolean))
+  idSet.add(sourceId)
+  const syncTargets = [...idSet]
 
   const syncClock = params.syncOnlineClock !== false
   const syncedPeerIds: string[] = []
   const wallNow = Date.now()
 
-  for (const peerId of characterIds) {
+  for (const peerId of syncTargets) {
     const pid = peerId.trim()
     if (!pid) continue
     try {
@@ -94,11 +98,16 @@ export async function syncNetworkStoryNowFromPrimary(params: {
           mode === 'custom' && typeof settings?.config?.customBaseTime === 'number'
             ? settings.config.customBaseTime
             : null
+        const peerLiveNow =
+          mode === 'custom' && settings?.config
+            ? resolveWeChatCurrentTimeMs(settings.config)
+            : peerLive
+        const effectiveLive = peerLiveNow ?? peerLive
         const needsClock =
           mode !== 'custom' ||
           settings?.timePerceptionEnabled === false ||
-          peerLive == null ||
-          peerLive < sourceNowMs
+          effectiveLive == null ||
+          effectiveLive < sourceNowMs
         const clearDetach = settings?.preferSystemClockDespiteStoryFloor === true
         if (needsClock || clearDetach) {
           await personaDb.putCharacterTimeSettings({

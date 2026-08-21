@@ -223,9 +223,9 @@ export function resolveDatingPlotDisplayFromItem(plot: PlotItem): {
   if (plot.type !== 'ai') {
     return { thinkingText: '', displayBody: String(plot.content || '') }
   }
-  const { body } = getAiPlotVersionSlices(plot)
-  const raw = String(body || plot.content || '').trim()
-  const storedCoT = plot.logicPass?.trim()
+  const slices = getAiPlotVersionSlices(plot)
+  const raw = String(slices.body || plot.content || '').trim()
+  const storedCoT = (slices.logicPass || plot.logicPass || '').trim()
   const resolved = resolveDatingAssistantDisplayText(raw)
   let thinkingText =
     (storedCoT || resolved.thinkingText || plot.planSummary?.trim() || '').trim()
