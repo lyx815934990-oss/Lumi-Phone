@@ -133,6 +133,8 @@ export function resolveWeChatChatSkinValues(
     chatInputShellBorder: ib.borderColor || WECHAT_CHAT_SKIN_DEFAULTS.chatInputShellBorder,
     chatInputShellRadius: `${ib.borderRadius ?? 6}px`,
     chatInputBtnColor: ib.buttonColor || WECHAT_CHAT_SKIN_DEFAULTS.chatInputBtnColor,
+    // 夜间等深色输入栏：输入字色跟按钮色（浅色），避免落到全局深色 --wx-text
+    chatInputTextColor: ib.buttonColor || WECHAT_CHAT_SKIN_DEFAULTS.chatInputTextColor,
   }
 }
 
@@ -148,7 +150,13 @@ export function weChatChatSkinCssProperties(
   const overrides = wechatTheme.chatSkinOverrides
   if (overrides) {
     for (const [cssVar, val] of Object.entries(overrides)) {
-      if (!cssVar.startsWith('--wx-chat-') && !cssVar.startsWith('--wx-special-')) continue
+      if (
+        !cssVar.startsWith('--wx-chat-') &&
+        !cssVar.startsWith('--wx-special-') &&
+        cssVar !== '--wx-timestamp-text'
+      ) {
+        continue
+      }
       if (!val?.trim()) continue
       out[cssVar] = val.trim()
     }
@@ -163,14 +171,20 @@ export function writeWeChatChatSkinDefaultCssVars(out: Record<string, string>): 
   }
 }
 
-/** 合并气泡包 / 主题里的 --wx-chat-* / --wx-special-* 覆写 */
+/** 合并气泡包 / 主题里的 --wx-chat-* / --wx-special-* / 时间戳覆写（不含模版标记） */
 export function mergeWeChatChatSkinOverrides(
   out: Record<string, string>,
   overrides: Record<string, string> | undefined | null,
 ): void {
   if (!overrides) return
   for (const [cssVar, val] of Object.entries(overrides)) {
-    if (!cssVar.startsWith('--wx-chat-') && !cssVar.startsWith('--wx-special-')) continue
+    if (
+      !cssVar.startsWith('--wx-chat-') &&
+      !cssVar.startsWith('--wx-special-') &&
+      cssVar !== '--wx-timestamp-text'
+    ) {
+      continue
+    }
     if (!val?.trim()) continue
     out[cssVar] = val.trim()
   }

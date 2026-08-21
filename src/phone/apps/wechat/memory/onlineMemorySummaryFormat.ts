@@ -1,8 +1,21 @@
+import { personaDb } from '../newFriendsPersona/idb'
+import {
+  formatStoryTimeClockFromMs,
+  parseStoryAnchorLabelToMs,
+} from '../time/applyOnlineChatTimeFusion'
+import { resolveCharacterStoryNowMs } from '../time/messagesTabStoryTime'
+import {
+  dualNarrativeStoryFieldsFromDelta,
+  parseDualNarrativeFieldsFromLabel,
+  type DualNarrativeStoryFields,
+} from './dualNarrativeTime'
 import {
   extractStoryTimelineRowKeywordsFromRowText,
+  formatGregorianStoryDayFromMs,
   normalizeStoryTimelineRowKeyword,
   normalizeStoryTimelineRowKeywords,
   normalizeStoryTimelineRowTitle,
+  type StoryTimelineSummaryDelta,
 } from './storyTimelineTypes'
 
 export type OnlineMemorySummaryKeywordMeta = {
@@ -73,3 +86,82 @@ export function onlineMemoryKeywordsFromSummary(meta?: OnlineMemorySummaryKeywor
   }
   return out.length ? out : undefined
 }
+
+function fieldsFromNowMs(ms: number): DualNarrativeStoryFields {
+  return dualNarrativeStoryFieldsFromDelta({
+    story_day: formatGregorianStoryDayFromMs(ms),
+    story_time: formatStoryTimeClockFromMs(ms),
+  })
+}
+
+function isAfterStoryNow(candidate: DualNarrativeStoryFields, now: DualNarrativeStoryFields): boolean {
+  const a = parseStoryAnchorLabelToMs(candidate.storyTimeLabel)
+  const b = parseStoryAnchorLabelToMs(now.storyTimeLabel)
+  return a != null && b != null && a > b
+}
+
+/** 角色时间设置 / 剧情轴上的「现在」（线上总结盖章用）。 */
+export async function resolveCharacterCurrentStoryStamp(
+  characterId: string,
+): Promise<DualNarrativeStoryFields> {
+  const cid = characterId.trim()
+  if (!cid) return {}
+  try {
+    const nowMs = await resolveCharacterStoryNowMs(cid)
+    if (typeof nowMs === 'number' && Number.isFinite(nowMs) && nowMs > 0) {
+      return fieldsFromNowMs(nowMs)
+    }
+    const state = await personaDb.getStoryTimelineState(cid)
+    return dualNarrativeStoryFieldsFromDelta({
+      story_day: state?.currentStoryDay,
+      story_time: state?.currentStoryTime,
+    })
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * 线上记忆【剧情时间】：以时间设置/剧情轴「现在」为准。
+ * 消息或模型若写出更晚的日期（例如已拨回到 2/13，材料仍停在 2/21），钳回现在。
+ */
+export async function resolveOnlineMemoryStoryStamp(params: {
+  characterId: string
+  chunkMessages?: Array<{
+    storyTimeLabel?: string | null
+    storyDay?: string | null
+    storyTime?: string | null
+  }>
+  modelDelta?: StoryTimelineSummaryDelta | null
+}): Promise<DualNarrativeStoryFields> {
+  const now = await resolveCharacterCurrentStoryStamp(params.characterId)
+  let latestMsg: DualNarrativeStoryFields = {}
+  for (const m of params.chunkMessages ?? []) {
+    const fromLabel = m.storyTimeLabel?.trim()
+      ? parseDualNarrativeFieldsFromLabel(m.storyTimeLabel)
+      : dualNarrativeStoryFieldsFromDelta({
+          story_day: m.storyDay ?? undefined,
+          story_time: m.storyTime ?? undefined,
+        })
+    if (fromLabel.storyTimeLabel) latestMsg = fromLabel
+  }
+  const model = dualNarrativeStoryFieldsFromDelta(params.modelDelta)
+  const candidates: DualNarrativeStoryFields[] = []
+  if (latestMsg.storyTimeLabel && !(now.storyTimeLabel && isAfterStoryNow(latestMsg, now))) {
+    candidates.push(latestMsg)
+  }
+  if (model.storyTimeLabel && !(now.storyTimeLabel && isAfterStoryNow(model, now))) {
+    candidates.push(model)
+  }
+  if (candidates.length) {
+    let best = candidates[0]!
+    for (const f of candidates.slice(1)) {
+      const a = parseStoryAnchorLabelToMs(best.storyTimeLabel)
+      const b = parseStoryAnchorLabelToMs(f.storyTimeLabel)
+      if (b != null && (a == null || b >= a)) best = f
+    }
+    return best
+  }
+  return now
+}
+

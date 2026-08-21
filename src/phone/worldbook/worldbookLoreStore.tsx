@@ -203,6 +203,7 @@ function schedulePersist() {
         realisticConflict: snap.builtinPresets.realisticConflict,
         gentleOlderBrother: snap.builtinPresets.gentleOlderBrother,
         autonomousSocialLife: snap.builtinPresets.autonomousSocialLife,
+        schoolCampusCommonKnowledge: snap.builtinPresets.schoolCampusCommonKnowledge,
       },
       weibo: { _reserved: true },
     }

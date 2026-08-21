@@ -3,6 +3,7 @@
 import { personaDb } from './newFriendsPersona/idb'
 import type { Character, PlayerIdentity } from './newFriendsPersona/types'
 import {
+  backfillNpcPlayerIdentityFromRootMain,
   formatPlayerIdentityDisplayName,
   getCharacterBoundPlayerIdentityId,
   getCharacterLinkedPlayerIdentityIds,
@@ -348,6 +349,27 @@ export async function resolveBoundPlayerIdentityForCharacterWorldBook(
 ): Promise<PlayerIdentity | null> {
   const b = await resolveWorldBookUserBinding(character)
   return b?.row ?? null
+}
+
+/**
+ * 人设页「绑定 user 身份」：NPC 先继承主角主绑定，再取世界书 {{user}} 锚点 / 档案主绑定。
+ * 不回退当前微信会话马甲，避免资料卡人生账本与人设页串台。
+ */
+export async function resolveCharacterBoundUserIdentity(
+  character: Character | null | undefined,
+): Promise<PlayerIdentity | null> {
+  if (!character?.id) return null
+  let fresh = character
+  const rootId = fresh.generatedForCharacterId?.trim()
+  if (rootId && !getCharacterBoundPlayerIdentityId(fresh)) {
+    await backfillNpcPlayerIdentityFromRootMain(rootId)
+    fresh = (await personaDb.getCharacter(character.id)) ?? fresh
+  }
+  const wb = await resolveWorldBookUserBinding(fresh)
+  if (wb?.row) return wb.row
+  const pid = getCharacterBoundPlayerIdentityId(fresh)
+  if (!pid) return null
+  return (await personaDb.getPlayerIdentity(pid)) ?? null
 }
 
 /**

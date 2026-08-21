@@ -103,8 +103,17 @@ export function WeChatComposerField({
       contentEditable
       suppressContentEditableWarning
       data-placeholder={placeholder || undefined}
-      className={`${className ?? ''} whitespace-pre-wrap break-words outline-none empty:before:pointer-events-none empty:before:text-[#8E8E93] empty:before:content-[attr(data-placeholder)]`}
-      style={{ ...weChatComposerScrollStyle, ...style }}
+      className={`${className ?? ''} whitespace-pre-wrap break-words outline-none empty:before:pointer-events-none empty:before:text-[color:var(--wx-chat-input-placeholder,#8E8E93)] empty:before:content-[attr(data-placeholder)]`}
+      style={{
+        ...weChatComposerScrollStyle,
+        ...style,
+        // 防止 contentEditable 继承到页面深色 --wx-text，导致夜间深底上看不见输入
+        color: style?.color ?? 'var(--wx-chat-input-text-color, var(--wx-text))',
+        caretColor:
+          (style as CSSProperties | undefined)?.caretColor ??
+          style?.color ??
+          'var(--wx-chat-input-text-color, var(--wx-text))',
+      }}
       {...rest}
       onInput={() => {
         if (composingRef.current) return

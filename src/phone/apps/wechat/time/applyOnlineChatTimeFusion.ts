@@ -201,25 +201,19 @@ export async function resolveCharacterChatMessageTimeFloor(
 
 /**
  * 将本角色线上时钟重置为设备本地时间，并解除剧情锚点对线上时钟的锁定。
- * 不改写线下摘要 / 约会剧情正文；下次线下推进 syncOnlineClock 时会重新锁定。
+ * 不改写线下摘要 / 约会剧情正文。
  *
- * 若系统墙钟早于该角色私聊最后一条消息时间戳，会钳到「最后消息 + 1 分钟」，
- * 避免新消息带着更早时间戳插回历史 / 时间戳倒序（22:16 后面出现 13:30）。
+ * 注意：不再用「会话最后一条消息」抬高「现在」。
+ * 剧情钟聊到 2028、手机仍是 2026 时，用户要的就是墙钟 2026；
+ * 新消息落库时仍会单独保证 timestamp ≥ 最后一条 + 1，避免插回历史。
  */
 export async function resetOnlineClockToSystemTime(
   characterId: string,
-): Promise<{ chosenTimeMs: number; clampedToLastMessage: boolean }> {
+): Promise<{ chosenTimeMs: number; clampedToLastMessage: boolean; wallNowMs: number }> {
   const cid = characterId.trim()
   if (!cid) throw new Error('missing_character_id')
 
   const wallNow = Date.now()
-  const chatFloor = await resolveCharacterChatMessageTimeFloor(cid)
-  let chosen = wallNow
-  let clampedToLastMessage = false
-  if (chatFloor.hasFloor && chatFloor.floorMs != null && chosen < chatFloor.floorMs) {
-    chosen = chatFloor.floorMs
-    clampedToLastMessage = true
-  }
 
   const prev = (await personaDb.getStoryTimelineState(cid)) ?? createEmptyStoryTimelineState(cid)
   const next: StoryTimelineState = {
@@ -233,21 +227,54 @@ export async function resetOnlineClockToSystemTime(
   await personaDb.putStoryTimelineState(next)
 
   const settings = await personaDb.getCharacterTimeSettings(cid)
-  // 被会话消息钳住时必须用 custom，否则 system 模式会立刻又跟墙钟跑回更早时刻
-  const mode: WeChatTimeConfig['mode'] = clampedToLastMessage ? 'custom' : 'system'
   await personaDb.putCharacterTimeSettings({
     characterId: cid,
     config: normalizeWeChatTimeConfig({
-      mode,
-      customBaseTime: chosen,
+      mode: 'system',
+      customBaseTime: wallNow,
       customAnchorRealTime: wallNow,
       timeMultiplier: settings?.config?.timeMultiplier ?? 1,
     }),
     timePerceptionEnabled: settings?.timePerceptionEnabled !== false,
-    preferSystemClockDespiteStoryFloor: !clampedToLastMessage,
+    preferSystemClockDespiteStoryFloor: true,
   })
 
-  return { chosenTimeMs: chosen, clampedToLastMessage }
+  return { chosenTimeMs: wallNow, clampedToLastMessage: false, wallNowMs: wallNow }
+}
+
+/**
+ * 将线上「现在」对齐到该角色私聊最后一条消息附近（默认最后一条 + 1 分钟）。
+ * 用于无线上剧情锚点时：用户隔了几小时才回，墙钟已推很远，想接着上一句聊、不要显得晾了很久。
+ */
+export async function alignOnlineClockToLatestChatTime(
+  characterId: string,
+): Promise<{ chosenTimeMs: number; label: string }> {
+  const cid = characterId.trim()
+  if (!cid) throw new Error('missing_character_id')
+
+  const chatFloor = await resolveCharacterChatMessageTimeFloor(cid)
+  if (!chatFloor.hasFloor || chatFloor.floorMs == null) {
+    throw new Error('no_chat_floor')
+  }
+
+  const settings = await personaDb.getCharacterTimeSettings(cid)
+  const chosen = chatFloor.floorMs
+  const now = Date.now()
+  await personaDb.putCharacterTimeSettings({
+    characterId: cid,
+    config: normalizeWeChatTimeConfig({
+      mode: 'custom',
+      customBaseTime: chosen,
+      customAnchorRealTime: now,
+      timeMultiplier: settings?.config?.timeMultiplier ?? 1,
+    }),
+    timePerceptionEnabled: settings?.timePerceptionEnabled !== false,
+    // 无线上剧情锚点场景：保持可自定义；若之后又有剧情锚点，仍允许用户再选「对齐剧情」
+    preferSystemClockDespiteStoryFloor: false,
+  })
+
+  const label = new Date(chosen).toLocaleString('zh-CN', { hour12: false })
+  return { chosenTimeMs: chosen, label }
 }
 
 /**
@@ -380,7 +407,14 @@ export async function applyOnlineChatTimeFusion(
     clamped = true
   }
   // 无论是否脱离剧情锁定：都不能早于该角色私聊最后一条消息（防时间戳倒序）
-  if (chatFloor.hasFloor && chatFloor.floorMs != null && chosen < chatFloor.floorMs) {
+  // 例外：用户已「重置为手机系统时间」时，设置页/AI「现在」必须跟墙钟；
+  // 新消息 timestamp 在落库处单独保证 ≥ 最后一条，不在这里把「现在」抬回剧情戳年份。
+  if (
+    !preferSystem &&
+    chatFloor.hasFloor &&
+    chatFloor.floorMs != null &&
+    chosen < chatFloor.floorMs
+  ) {
     chosen = chatFloor.floorMs
     clamped = true
   }

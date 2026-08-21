@@ -7,6 +7,7 @@ import {
   Edit,
   ImageDown,
   Languages,
+  MessageCircleHeart,
   RefreshCcw,
   Share,
   Star,
@@ -24,6 +25,7 @@ export type WeChatMessageActionId =
   | 'multiSelect'
   | 'quote'
   | 'translate'
+  | 'viewInnerOs'
   | 'edit'
   | 'recall'
   | 'resynthesizeVoice'
@@ -63,6 +65,7 @@ const ACTIONS: Action[] = [
   { id: 'multiSelect', label: '多选', Icon: CheckSquare },
   { id: 'quote', label: '引用', Icon: QuoteRightSvg },
   { id: 'translate', label: '翻译', Icon: Languages },
+  { id: 'viewInnerOs', label: '内心OS', Icon: MessageCircleHeart },
   { id: 'edit', label: '编辑', Icon: Edit },
   { id: 'recall', label: '撤回', Icon: CornerUpLeft },
   { id: 'resynthesizeVoice', label: '重合成', Icon: RefreshCcw },

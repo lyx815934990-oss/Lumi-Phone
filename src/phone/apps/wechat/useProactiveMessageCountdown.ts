@@ -10,6 +10,12 @@ import {
   isProactiveMessageInFlight,
   subscribeProactiveMessageInFlight,
 } from './proactivePrivateMessageEngine'
+import {
+  drawProactiveVariableIntervalSeconds,
+  isProactiveVariableIntervalEnabled,
+  resolveProactiveVariableIdleBounds,
+} from './proactiveVariableInterval'
+import { hasProactiveMessageScheduleSaved } from './proactivePrivateMessageTypes'
 
 export function useProactiveMessageCountdown(params: {
   conversationKey: string
@@ -27,9 +33,32 @@ export function useProactiveMessageCountdown(params: {
       setSettings(null)
       return
     }
-    const st = await personaDb.getChatConversationSettings(conversationKey)
+    let st = await personaDb.getChatConversationSettings(conversationKey)
+    // 非忙碌却残留忙碌档抽签时，立刻改回空闲区间，避免横幅一直显示 1 小时+
+    if (
+      st &&
+      !params.isBusyActive &&
+      isProactiveVariableIntervalEnabled(st) &&
+      hasProactiveMessageScheduleSaved(st)
+    ) {
+      const stored = st.proactiveMessageNextIntervalSeconds
+      const idleMax = resolveProactiveVariableIdleBounds(st).maxSeconds
+      if (typeof stored === 'number' && stored > idleMax) {
+        const nextSeconds = drawProactiveVariableIntervalSeconds(false, st)
+        await personaDb.upsertChatConversationSettings({
+          conversationKey,
+          peerCharacterId: st.peerCharacterId,
+          playerIdentityId: st.playerIdentityId,
+          proactiveMessageNextIntervalSeconds: nextSeconds,
+        })
+        st = (await personaDb.getChatConversationSettings(conversationKey)) ?? {
+          ...st,
+          proactiveMessageNextIntervalSeconds: nextSeconds,
+        }
+      }
+    }
     setSettings(st)
-  }, [active, conversationKey])
+  }, [active, conversationKey, params.isBusyActive])
 
   useEffect(() => {
     void reload()

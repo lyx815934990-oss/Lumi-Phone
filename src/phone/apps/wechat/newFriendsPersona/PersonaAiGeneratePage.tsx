@@ -33,6 +33,8 @@ import {
 } from './PersonaAiGenerateDossierForm'
 import { PersonaAiGeneratePreviewSheet } from './PersonaAiGeneratePreviewSheet'
 import { WeChatThemePageBackdrop } from './WeChatThemePageBackdrop'
+import { personaDb } from './idb'
+import { setLifeLedgerInlineSyncEnabled } from '../lifeMutable/inlineSync'
 
 const PAGE_BG = '#FAFAFA'
 
@@ -382,9 +384,32 @@ export function PersonaAiGeneratePage({
 
   const adoptPreview = () => {
     if (!previewOffer) return
-    finishGenerated(previewOffer.character)
-    setPreviewOffer(null)
-    setError(null)
+    const offer = previewOffer
+    void (async () => {
+      try {
+        if (offer.characterLifeSheet) {
+          await personaDb.putCharacterLifeMutable(offer.character.id, offer.characterLifeSheet)
+        }
+        if (playerIdentity?.id && offer.playerLifeSheet) {
+          await personaDb.putPlayerLifeMutable(
+            playerIdentity.id,
+            offer.character.id,
+            offer.playerLifeSheet,
+          )
+        }
+        // 新建人设默认打开人生账本「随聊更新」
+        await setLifeLedgerInlineSyncEnabled({
+          conversationCharacterId: offer.character.id,
+          playerIdentityId: playerIdentity?.id,
+          enabled: true,
+        })
+      } catch {
+        /* 账本写库失败不阻断采用人设 */
+      }
+      finishGenerated(offer.character)
+      setPreviewOffer(null)
+      setError(null)
+    })()
   }
 
   const runRegenerateSelected = async (selectedKeys: string[], guidance: string) => {

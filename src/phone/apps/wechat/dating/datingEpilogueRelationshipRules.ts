@@ -130,21 +130,33 @@ ${epilogueLines}
 /** 线下专用：比私聊更严的尾声补丁输出规则 */
 export function buildDatingWorldBookAfterPatchOutputAppendix(opts?: { isEarlyRound?: boolean }): string {
   const early = opts?.isEarlyRound
-    ? `- **首轮/早期线下**：若尾声仍写冷淡/上下级/公事距离，**禁止**在本轮 patches 里改写成暧昧、想念、心动、边界模糊、非工作主动——除非正文里**已发生**且**由玩家主动**的明确拉近（非角色单方面脑补）。无则 **patches=[]**。\n`
+    ? `- **首轮/早期线下**：若尾声仍写冷淡/上下级/公事距离，**禁止**在本轮 [EPILOGUE_PATCH] 里改写成暧昧、想念、心动、边界模糊、非工作主动——除非正文里**已发生**且**由玩家主动**的明确拉近（非角色单方面脑补）。无则写 \`[EPILOGUE] / status：无变化\`。\n`
     : ''
   return `
 ---------------------
-【同一回复内追加：尾声延展·世界书覆盖 JSON（仅在有变更时输出）】
-在你写完**全部**剧情正文之后：若且仅当**正文里已发生、且可持续**的关系/态度变化，与某一「尾声延展」条目**不一致**，才输出分隔行：
+【同一回复内必须追加：尾声延展·判断标记（每轮必交；禁止 JSON）】
+在你写完**全部**剧情正文之后，**必须另起一行**输出分隔行（必须完全一致）：
 ---WB_AFTER_PATCH---
-分隔行下一行起输出**恰好一个** JSON 对象（可用 \`\`\`json 围栏），结构：{ "patches": [{ "worldBookId", "itemId", "newContent" }] }
+分隔行之后只用 markup（禁止 JSON、禁止代码围栏）：
+
+无变化：
+[EPILOGUE]
+status：无变化
+
+有变化（可重复）：
+[EPILOGUE_PATCH]
+world_book_id：
+item_id：
+new_content：
+（替换正文）
 
 【线下剧情 · 补丁铁律（严于私聊）】
-- **禁止**「正文 OOC 升温 → 用 patches 把尾声改成暧昧来圆」；补丁须**忠实反映正文已写事实**，不是替 OOC 洗白。
+- **禁止**「正文 OOC 升温 → 用补丁把尾声改成暧昧来圆」；补丁须**忠实反映正文已写事实**，不是替 OOC 洗白。
 - **禁止**无玩家主动、无线上事实支撑，就把「冷漠/公事/上下级」条目改成「想念/暧昧/边界模糊/分量上升」。
 - 单轮最多**小幅**更新（称呼略松、多一条公事外的观察等）；**禁止**一轮内从冷淡跳到暧昧/恋人向。
-${early}- 无实质、可持续、与条目矛盾的变化 → **不要**输出 ---WB_AFTER_PATCH---。
-- 仅可改 priority=after 且已列出的 worldBookId/itemId；禁止编造 id。
+${early}- 无实质、可持续、与条目矛盾的变化 → 输出 \`[EPILOGUE] / status：无变化\`，**禁止**省略 ---WB_AFTER_PATCH--- 整段。
+- 仅可改 priority=after 且已列出的 world_book_id/item_id；禁止编造 id。
+- 漏输出分隔行会被视为未判断，客户端可能再发一次尾声请求。
 
 ${buildEpilogueExtensionArchiveToneRules()}
 ---------------------

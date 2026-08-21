@@ -181,7 +181,7 @@ export function buildChatAfterWorldBookDynamicSection(character: Character | nul
 ---
 【世界书·生效时机铁律（剧情与人设一致性）】
 - **序言介入**条目（priority=before）：角色的**恒常基底**（如先天性格模板、长期不变的立场）。用户在线上私聊、线下剧情中如何互动，**都不得**动摇这些条目所描述的「底层设定」——除非你在编辑器里手动改条目。
-- **尾声延展**条目（priority=after）：角色的**当前关系态 / 态度快照**（类似好感度层）：角色应**基于以下最新正文**对用户与情境做出合理反应；当本轮回复所体现的态度、关系、承诺与某条「尾声延展」正文**不一致或已出现可持续渐变**时，你须在输出末尾按协议提交覆盖稿；**尾声是动态快照，不是永久锁死**——持续偏离旧快照时以更新快照为准，而非用旧文否定本轮表现。
+- **尾声延展**条目（priority=after）：角色的**当前关系态 / 态度快照**（类似好感度层）：角色应**基于以下最新正文**对用户与情境做出合理反应；当本轮回复所体现的态度、关系、承诺与某条「尾声延展」正文**不一致或已出现可持续渐变**时，你须在输出末尾按协议提交覆盖稿；**无变化也须按协议输出 \`[EPILOGUE] / status：无变化\`**——**尾声是动态快照，不是永久锁死**——持续偏离旧快照时以更新快照为准，而非用旧文否定本轮表现。
 - **尾声不覆盖线下空间事实**：若系统同时注入了「最近线下剧情」，**物理在场/同室与否/门内外/肢体距离**以该块**最后一条 AI 剧情**为准；尾声里旧的「亲密同场/怀里」等描写**不得**让微信线上假装用户仍在同场被抱着——态度可仍近，空间须服从线下末尾。
 - 若系统另注「当前发言人 ≠ 档案主绑定」：尾声延展中写明的你对**主绑定玩家（第三人）**的暗恋/好感/纠结等**仍约束你的内心**；分线仅禁止把**当前窗口这位**当成主绑定，**不授权**为此对第三人感情 OOC 翻篇或与世界书正面冲突的全盘否认。
 - 下列为当前绑定人设中**已启用**的「尾声延展」条目（仅列可变层；固定层见上文世界书全文）：
@@ -192,25 +192,29 @@ ${lines}
 export function buildWorldBookAfterPatchOutputAppendix(): string {
   return `
 ---------------------
-【同一回复内追加：尾声延展·世界书覆盖 JSON（仅在有变更时输出）】
-在你写完**全部**可见聊天正文（及可选 <danmaku>、SPEAKER 等协议内容）之后：若且仅当你判断本轮回复与某一「尾声延展」条目所描述的关系态/态度**已产生可核对的变化或可持续倾向变化**（例如条目仍写「冷漠」但本轮语气已明显缓和，或连续几轮互动已比条目更亲近），则**另起一行**输出分隔行（必须完全一致）：
+【同一回复内必须追加：尾声延展·判断标记（每轮必交；禁止 JSON）】
+在你写完**全部**可见聊天正文（及可选 <danmaku>、SPEAKER 等协议内容）之后，**必须另起一行**输出分隔行（必须完全一致）：
 ---WB_AFTER_PATCH---
-分隔行下一行起输出**恰好一个** JSON 对象（可用 markdown \`\`\`json 围栏包裹），结构如下（字段名固定）：
-{
-  "patches": [
-    {
-      "characterId": "人设UUID（群聊涉及多名成员时必填；私聊单角色可省略）",
-      "worldBookId": "世界书 id",
-      "itemId": "条目 id",
-      "newContent": "替换后的条目正文全文（须仍为「尾声延展」语义；可用 {{char}} {{user}} {{id:…}} 占位符）"
-    }
-  ]
-}
-规则：
-- **仅**覆盖 **尾声延展**条目（数据字段 priority 为 after）、且上文列表或世界书全文中已存在的 worldBookId/itemId；禁止编造 id。
-- **不要**为了凑数而改写；无变化则**不要**输出 ---WB_AFTER_PATCH--- 整段。
-- **不要**在此 JSON 中修改**序言介入**条目（数据字段 priority 为 before）。
-- newContent 长度建议不超过 ${MAX_ITEM_CONTENT_CHARS} 字；精简表述即可。
+分隔行之后只用下面两种 markup 之一（禁止 JSON、禁止代码围栏、禁止解释）：
+
+① 无实质变化时（仍须交卷）：
+[EPILOGUE]
+status：无变化
+
+② 有可核对的关系态/态度变化时（可重复多个 [EPILOGUE_PATCH]）：
+[EPILOGUE_PATCH]
+character_id：（群聊涉及多名成员时必填；私聊可省略本行）
+world_book_id：（世界书 id，须与上文快照一致）
+item_id：（条目 id，须与上文快照一致）
+new_content：
+（替换后的条目正文全文；第三人称档案体；可用 {{char}} {{user}} {{id:…}}）
+
+硬性规则：
+- **每轮都必须输出**分隔行 + 上述 markup；客户端据此决定是否再发第二次尾声请求。漏输出会被视为未判断。
+- **仅**覆盖 **尾声延展**条目（priority=after）、且上文已列出的 world_book_id/item_id；禁止编造 id。
+- **不要**修改**序言介入**条目（priority=before）。
+- **不要**为了凑数而改写；无变化就写 status：无变化。
+- new_content 长度建议不超过 ${MAX_ITEM_CONTENT_CHARS} 字；精简表述即可。
 - **禁止极端化**：勿写宿命、绝对排他、交手机示弱、日常顺从等偏执献身语；{{char}} 须保持独立个体。
 
 ${buildEpilogueExtensionArchiveToneRules()}
@@ -237,7 +241,7 @@ export function buildAggregateGroupChatAfterPatchItemsSection(members: Character
   return `
 ---
 【群聊·多名 NPC 的「尾声延展」可变条目快照】
-下列条目会随剧情更新；若某成员本轮台词体现的态度/关系与下列正文不一致，可为该成员输出 patches（characterId 填该成员 id）。
+下列条目会随剧情更新；若某成员本轮台词体现的态度/关系与下列正文不一致，可为该成员输出 [EPILOGUE_PATCH]（character_id 填该成员 id）。
 ${blocks.join('\n\n')}
 `.trim()
 }
@@ -254,48 +258,198 @@ function normalizePatch(raw: unknown): WorldBookAfterPatch | null {
   return { characterId: characterId || undefined, worldBookId, itemId, newContent }
 }
 
-export function parseWorldBookAfterPatchJson(jsonStr: string): WorldBookAfterPatch[] {
+function stripOuterFence(raw: string): string {
+  return String(raw ?? '')
+    .replace(/^```(?:[\w-]*)?\s*\n?/i, '')
+    .replace(/\n?```\s*$/i, '')
+    .trim()
+}
+
+function markupFieldLine(block: string, keys: string[]): string {
+  const lines = block.split(/\r?\n/)
+  for (const key of keys) {
+    const re = new RegExp(`^\\s*${key}\\s*[:：]\\s*(.*)$`, 'i')
+    for (const line of lines) {
+      const m = re.exec(line.trim())
+      if (!m) continue
+      return (m[1] ?? '').trim()
+    }
+  }
+  return ''
+}
+
+function markupMultilineAfter(block: string, keys: string[]): string {
+  const lines = block.split(/\r?\n/)
+  const keyRe = new RegExp(`^\\s*(?:${keys.join('|')})\\s*[:：]\\s*(.*)$`, 'i')
+  const stopRe =
+    /^\s*(?:character_id|characterId|world_book_id|worldBookId|item_id|itemId|new_content|newContent|正文|status|状态)\s*[:：]/i
+  for (let i = 0; i < lines.length; i++) {
+    const m = keyRe.exec(lines[i]!.trim())
+    if (!m) continue
+    const parts: string[] = []
+    const first = (m[1] ?? '').trim()
+    if (first) parts.push(first)
+    for (let j = i + 1; j < lines.length; j++) {
+      const raw = lines[j]!
+      const t = raw.trim()
+      if (!t) {
+        parts.push('')
+        continue
+      }
+      if (stopRe.test(t) && !keyRe.test(t)) break
+      if (/^\[(?:EPILOGUE_PATCH|EPILOGUE)\]/i.test(t)) break
+      parts.push(raw)
+    }
+    return parts.join('\n').replace(/\n+$/g, '').trim()
+  }
+  return ''
+}
+
+function isNoChangeStatus(raw: string): boolean {
+  const t = String(raw ?? '').trim().toLowerCase()
+  if (!t) return false
+  return (
+    t === 'none' ||
+    t === 'unchanged' ||
+    t === 'no_change' ||
+    t === 'nochange' ||
+    t === '无变化' ||
+    t === '无需更新' ||
+    t === '不用更新' ||
+    t === '无更新' ||
+    t.includes('无变化') ||
+    t.includes('无需更新')
+  )
+}
+
+/** 解析尾声 markup（主格式）：ok=结构合法（含「无变化」） */
+export function parseWorldBookAfterPatchMarkupResult(raw: string): {
+  ok: boolean
+  patches: WorldBookAfterPatch[]
+} {
+  const text = stripOuterFence(raw)
+  if (!text) return { ok: false, patches: [] }
+
+  // 无变化：显式 [EPILOGUE] 或整段仅写「无变化」
+  if (/\[EPILOGUE\]/i.test(text)) {
+    const after = text.split(/\[EPILOGUE\]/i).slice(1).join('[EPILOGUE]')
+    const beforePatch = after.split(/\[EPILOGUE_PATCH\]/i)[0] ?? after
+    const status =
+      markupFieldLine(beforePatch, ['status', '状态', 'result', '结论']) || beforePatch.trim().split(/\r?\n/)[0] || ''
+    if (isNoChangeStatus(status) || isNoChangeStatus(beforePatch)) {
+      return { ok: true, patches: [] }
+    }
+  }
+  const compact = text.replace(/\s+/g, '')
+  if (
+    !/\[EPILOGUE_PATCH\]/i.test(text) &&
+    (isNoChangeStatus(text) || /^(?:status|状态)\s*[:：]\s*/i.test(text.trim()) && isNoChangeStatus(text.replace(/^(?:status|状态)\s*[:：]\s*/i, '')))
+  ) {
+    return { ok: true, patches: [] }
+  }
+  if (!/\[EPILOGUE_PATCH\]/i.test(text) && /无变化|无需更新/.test(compact)) {
+    return { ok: true, patches: [] }
+  }
+
+  if (!/\[EPILOGUE_PATCH\]/i.test(text)) return { ok: false, patches: [] }
+
+  const parts = text.split(/\[EPILOGUE_PATCH\]/i).slice(1)
+  const out: WorldBookAfterPatch[] = []
+  for (const part of parts) {
+    const body = part.split(/\[(?:EPILOGUE_PATCH|EPILOGUE)\]/i)[0] ?? part
+    const characterId = markupFieldLine(body, ['character_id', 'characterId', '角色id', '角色ID'])
+    const worldBookId = markupFieldLine(body, ['world_book_id', 'worldBookId', '世界书id', '世界书ID'])
+    const itemId = markupFieldLine(body, ['item_id', 'itemId', '条目id', '条目ID'])
+    const newContent =
+      markupMultilineAfter(body, ['new_content', 'newContent', '正文', '内容']) ||
+      markupFieldLine(body, ['new_content', 'newContent', '正文', '内容'])
+    const p = normalizePatch({
+      characterId: characterId || undefined,
+      worldBookId,
+      itemId,
+      newContent,
+    })
+    if (p) out.push(p)
+  }
+  // 写出了 EPILOGUE_PATCH 标签即视为已判断（哪怕某条 id 非法被丢弃）
+  return { ok: true, patches: out }
+}
+
+/** 解析尾声 JSON（兼容旧输出）：ok=结构合法（含 patches=[]） */
+export function parseWorldBookAfterPatchJsonResult(jsonStr: string): {
+  ok: boolean
+  patches: WorldBookAfterPatch[]
+} {
   const t = String(jsonStr ?? '').trim()
-  if (!t) return []
+  if (!t) return { ok: false, patches: [] }
   try {
     const root = JSON.parse(t) as { patches?: unknown }
-    const arr = root?.patches
-    if (!Array.isArray(arr)) return []
+    if (!root || typeof root !== 'object' || Array.isArray(root)) return { ok: false, patches: [] }
+    const arr = root.patches
+    if (!Array.isArray(arr)) return { ok: false, patches: [] }
     const out: WorldBookAfterPatch[] = []
     for (const x of arr) {
       const p = normalizePatch(x)
       if (p) out.push(p)
     }
-    return out
+    return { ok: true, patches: out }
   } catch {
-    return []
+    return { ok: false, patches: [] }
   }
+}
+
+export function parseWorldBookAfterPatchJson(jsonStr: string): WorldBookAfterPatch[] {
+  return parseWorldBookAfterPatchBody(jsonStr).patches
+}
+
+/** markup 优先，失败再回退旧 JSON */
+export function parseWorldBookAfterPatchBody(raw: string): {
+  ok: boolean
+  patches: WorldBookAfterPatch[]
+} {
+  const markup = parseWorldBookAfterPatchMarkupResult(raw)
+  if (markup.ok) return markup
+  let jsonBody = stripOuterFence(raw)
+  const start = jsonBody.indexOf('{')
+  const end = jsonBody.lastIndexOf('}')
+  if (start >= 0 && end > start) jsonBody = jsonBody.slice(start, end + 1)
+  return parseWorldBookAfterPatchJsonResult(jsonBody)
 }
 
 /**
  * 从模型输出中移除 WB_AFTER_PATCH 段；兼容约会文末合并记忆分隔符之后的正文。
+ * judged=true：分隔行存在且 markup/JSON 结构合法（含「无变化」），表示主回复已完成尾声判断。
  */
-export function extractWorldBookAfterPatchBlock(raw: string): { rest: string; patches: WorldBookAfterPatch[] } {
+export function extractWorldBookAfterPatchBlock(raw: string): {
+  rest: string
+  patches: WorldBookAfterPatch[]
+  judged: boolean
+} {
   const src = String(raw ?? '')
   const marker = '---WB_AFTER_PATCH---'
   const idx = src.indexOf(marker)
-  if (idx < 0) return { rest: src, patches: [] }
+  if (idx < 0) return { rest: src, patches: [], judged: false }
 
   const head = src.slice(0, idx)
   const tail = src.slice(idx + marker.length).trimStart()
 
   const memPos = findDatingMemoryDelimiterIndex(tail)
-  const jsonSection = memPos >= 0 ? tail.slice(0, memPos) : tail
-  const afterMemory = memPos >= 0 ? tail.slice(memPos) : ''
+  const obsPos = tail.indexOf('---OBS_NOTES_PATCH---')
+  const obsShortPos = tail.indexOf('---OBS---')
+  const lifePos = tail.indexOf('---LIFE_LEDGER_PATCH---')
+  let cut = tail.length
+  if (memPos >= 0 && memPos < cut) cut = memPos
+  if (obsPos >= 0 && obsPos < cut) cut = obsPos
+  if (obsShortPos >= 0 && obsShortPos < cut) cut = obsShortPos
+  if (lifePos >= 0 && lifePos < cut) cut = lifePos
+  const section = cut < tail.length ? tail.slice(0, cut) : tail
+  const afterSection = cut < tail.length ? tail.slice(cut) : ''
 
-  let jsonBody = jsonSection.trim()
-  if (jsonBody.startsWith('```')) {
-    jsonBody = jsonBody.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
-  }
-
-  const patches = parseWorldBookAfterPatchJson(jsonBody)
-  const rest = head.trimEnd() + (afterMemory ? (head.endsWith('\n') ? '' : '\n') + afterMemory.trimStart() : '')
-  return { rest, patches }
+  const { ok, patches } = parseWorldBookAfterPatchBody(section)
+  const rest =
+    head.trimEnd() +
+    (afterSection ? (head.endsWith('\n') ? '' : '\n') + afterSection.trimStart() : '')
+  return { rest, patches, judged: ok }
 }
 
 function patchItemContent(

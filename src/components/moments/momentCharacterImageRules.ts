@@ -73,7 +73,7 @@ const NO_REF_CHARACTER_APPEARANCE_BLOCK_RULE = `
 `.trim()
 
 const SUBJECT_FRONT_SELFIE_TEMPLATE =
-  '[wx-selfie|who={{char}}] selfie shot, grey t-shirt, bedroom, soft morning light, lips slightly pursed, light blush on cheeks'
+  '[wx-selfie|who={{char}}] selfie shot, grey t-shirt, bedroom, soft morning light, half-lidded gaze, soft pout, closed mouth'
 
 const SUBJECT_MIRROR_SELFIE_TEMPLATE =
   '[wx-selfie|who={{char}}] mirror selfie shot, lifting grey t-shirt, midriff visible, bathroom mirror, warm overhead light'
@@ -81,8 +81,9 @@ const SUBJECT_MIRROR_SELFIE_TEMPLATE =
 const SUBJECT_MIRROR_SELFIE_NO_REF_EXAMPLE = SUBJECT_MIRROR_SELFIE_TEMPLATE
 
 const SELFIE_EXPRESSION_WRITING_GUIDE = `
-  - **神态**：用 **3～6 个可见 tag**（lips slightly pursed, light blush on cheeks, gaze averted downward）；**禁止**心理/气质词。
-  - **禁止示例**：moist eyes, dreamy gaze, shy and obedient, vulnerable aura, hot breath in the air, timid expression, feeling ashamed。
+  - **神态**：用 **3～6 个可见 tag**（half-lidded gaze, soft pout, closed mouth, light blush on ear tip）；**禁止**心理/气质空词。
+  - **默认气质（硬性）**：偏冷淡半阖眼、不大笑；**禁止** gentle smile / soft smile / warm smile / clear dark eyes / bright eyes（客户端也会压掉，但仍勿写）。
+  - **禁止示例**：moist eyes, dreamy gaze, shy and obedient, vulnerable aura, hot breath in the air, timid expression, feeling ashamed, boyfriend-material smile。
 ${IMAGE_PROMPT_LIGHTING_CONTEXT_RULE}
   - **动作/穿搭**：lifting shirt, grey t-shirt, peace sign 等 comma tag；**禁止** holding phone / phone visible。
 `.trim()

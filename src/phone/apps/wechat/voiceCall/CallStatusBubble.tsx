@@ -3,17 +3,7 @@ import { Phone } from 'lucide-react'
 import { Pressable } from '../../../components/Pressable'
 import { CssCallStatusShell } from '../cssSkinShells'
 import { useChatSkinEngine } from '../WeChatChatSkinEngineContext'
-
-function pad2(n: number) {
-  return String(n).padStart(2, '0')
-}
-
-function fmtDuration(sec: number) {
-  const s = Math.max(0, Math.floor(sec))
-  const mm = Math.floor(s / 60)
-  const ss = s % 60
-  return `${pad2(mm)}:${pad2(ss)}`
-}
+import { formatCallStatusLabel, formatTwitterCallStatusLabel, type CallStatusKind } from './callStatusLabel'
 
 export type CallStatusBubbleData =
   | { status: 'rejected' }
@@ -22,19 +12,32 @@ export type CallStatusBubbleData =
 
 export function CallStatusBubble({
   data,
+  /** true = 用户发起的通话（右对齐气泡侧） */
+  initiatedBySelf = true,
   onClickDuration,
+  /** X 风格：居中胶囊 + 专用文案 */
+  twitterStyle = false,
 }: {
   data: CallStatusBubbleData
+  initiatedBySelf?: boolean
   onClickDuration?: () => void
+  twitterStyle?: boolean
 }) {
   const chatSkinEngine = useChatSkinEngine()
-  const text =
-    data.status === 'rejected'
-      ? '已拒接'
-      : data.status === 'no_answer'
-        ? '对方未应答'
-        : `通话时长 ${fmtDuration(data.durationSec)}`
+  const status = data.status as CallStatusKind
+  const text = twitterStyle
+    ? formatTwitterCallStatusLabel(
+        status,
+        initiatedBySelf,
+        data.status === 'duration' ? data.durationSec : 0,
+      )
+    : formatCallStatusLabel(
+        status,
+        initiatedBySelf,
+        data.status === 'duration' ? data.durationSec : 0,
+      )
   const clickable = data.status === 'duration' && !!onClickDuration
+  const mutedMissed = twitterStyle && status !== 'duration'
 
   const content =
     chatSkinEngine === 'css' ? (
@@ -46,10 +49,17 @@ export function CallStatusBubble({
         data-wx-msg-kind="voice-call"
         data-wx-special-card
         data-wx-special-status={data.status}
-        className="flex items-center gap-2 rounded-[14px] px-3 py-2"
+        data-wx-call-initiator={initiatedBySelf ? 'self' : 'other'}
+        className={
+          twitterStyle
+            ? 'flex items-center gap-2 rounded-full px-3 py-1.5'
+            : 'flex items-center gap-2 rounded-[14px] px-3 py-2'
+        }
         style={{
           background: 'var(--wx-special-call-bg, var(--wx-other-bubble-bg, #f2f2f7))',
-          color: 'var(--wx-special-call-text, var(--wx-other-bubble-text, rgba(28,28,30,0.75)))',
+          color: mutedMissed
+            ? 'var(--wx-special-call-muted, #536471)'
+            : 'var(--wx-special-call-text, var(--wx-other-bubble-text, rgba(28,28,30,0.75)))',
         }}
       >
         <Phone
@@ -57,7 +67,7 @@ export function CallStatusBubble({
           className="size-4 shrink-0"
           style={{ color: 'color-mix(in oklab, currentColor 88%, transparent)' }}
         />
-        <div data-wx-special-part="label" className="text-[14px]">
+        <div data-wx-special-part="label" className={twitterStyle ? 'text-[13px]' : 'text-[14px]'}>
           {text}
         </div>
       </div>
@@ -71,4 +81,3 @@ export function CallStatusBubble({
     </Pressable>
   )
 }
-

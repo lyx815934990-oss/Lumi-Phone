@@ -13,10 +13,89 @@ export const WECHAT_CLASSIC = {
   quoteBg: '#EBEBEB',
   bubbleRadiusPx: 8,
   tailTopPx: 14,
+  /** 微信 8.x 暗黑模式近似色 */
+  chatBgNight: '#111111',
+  headerBgNight: '#111111',
+  inputBgNight: '#1E1E1E',
+  inputShellNight: '#2C2C2C',
+  textNight: '#FFFFFF',
+  mutedNight: 'rgba(255,255,255,0.45)',
+  otherBubbleNight: '#2C2C2C',
+  /** 夜间己方气泡：比日间 #95EC69 更沉，避免暗底下过亮 */
+  selfBubbleNight: '#28C445',
+  borderNight: 'rgba(255,255,255,0.08)',
+  /** 夜间壁纸压暗遮罩（叠在背景图上） */
+  wallpaperDimNight: 'rgba(0, 0, 0, 0.52)',
+  /** 夜间居中时间戳：深灰底 + 浅字（浅灰底过亮） */
+  timestampBgNight: '#4A4A4A',
+  timestampTextNight: '#FFFFFF',
 } as const
 
-/** 聊天气泡最大宽：100vw − 左右 24px − 对方头像列 80px（40 头像 + 12 间距 + 28 缓冲） */
-export const WECHAT_CHAT_BUBBLE_MAX_CLASS = 'max-w-[calc(100vw-24px-24px-80px)]'
+/** 套用微信 App 主题时写入的特殊气泡 / 输入壳变量（含夜间） */
+export function wechatClassicSpecialSkinOverrides(night: boolean): Record<string, string> {
+  const wash = night ? WECHAT_CLASSIC.otherBubbleNight : '#FFFFFF'
+  const text = night ? WECHAT_CLASSIC.textNight : WECHAT_CLASSIC.text
+  const muted = night ? WECHAT_CLASSIC.mutedNight : '#888888'
+  const bar = night ? WECHAT_CLASSIC.inputBgNight : WECHAT_CLASSIC.inputBg
+  const shell = night ? WECHAT_CLASSIC.inputShellNight : '#FFFFFF'
+  const shellBorder = night ? WECHAT_CLASSIC.borderNight : '#e5e5e5'
+  const green = night ? WECHAT_CLASSIC.selfBubbleNight : WECHAT_CLASSIC.selfBubble
+  return {
+    '--wx-chat-input-shell-bg': shell,
+    '--wx-chat-input-shell-border': shellBorder,
+    '--wx-chat-input-btn-color': text,
+    '--wx-chat-input-text-color': text,
+    '--wx-chat-input-placeholder': night ? 'rgba(255,255,255,0.4)' : '#8e8e93',
+    // 居中时间戳：日间浅灰底深灰字；夜间深灰底浅字
+    '--wx-timestamp-text': night ? WECHAT_CLASSIC.timestampTextNight : '#999999',
+    '--wx-chat-timestamp-bg': night ? WECHAT_CLASSIC.timestampBgNight : '#f2f2f2',
+    '--wx-special-rp-bg': '#FA9D3B',
+    '--wx-special-rp-border': '#FA9D3B',
+    '--wx-special-rp-accent': '#FFFFFF',
+    '--wx-special-rp-text': '#FFFFFF',
+    '--wx-special-rp-tag': 'rgba(255,255,255,0.7)',
+    '--wx-special-tf-bg': wash,
+    '--wx-special-tf-accent-pending': WECHAT_CLASSIC.wechatGreen,
+    '--wx-special-tf-accent-accepted': WECHAT_CLASSIC.wechatGreen,
+    '--wx-special-tf-accent-returned': muted,
+    '--wx-special-tf-amount': text,
+    '--wx-special-tf-muted': muted,
+    '--wx-special-voice-bg-self': green,
+    '--wx-special-voice-bg-other': wash,
+    '--wx-special-voice-border-self': 'transparent',
+    '--wx-special-voice-border-other': 'transparent',
+    '--wx-special-voice-play-bg': night ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.06)',
+    /** 夜间语音条 / 转文字面板正文：统一白字（对方深灰气泡尤其依赖） */
+    '--wx-special-voice-text-self': night ? '#FFFFFF' : WECHAT_CLASSIC.text,
+    '--wx-special-voice-text-other': night ? '#FFFFFF' : WECHAT_CLASSIC.text,
+    '--wx-special-voice-wave-active-self': night ? '#FFFFFF' : WECHAT_CLASSIC.text,
+    '--wx-special-voice-wave-active-other': text,
+    '--wx-special-voice-wave-idle': night ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.22)',
+    '--wx-special-voice-duration': night ? '#FFFFFF' : muted,
+    '--wx-special-voice-toggle-bg': night ? 'rgba(255,255,255,0.14)' : '#E5E5E5',
+    '--wx-special-voice-toggle-text': night ? '#FFFFFF' : '#4B5563',
+    '--wx-special-voice-panel-border-self': night ? 'rgba(255,255,255,0.12)' : '#7ed957',
+    '--wx-special-voice-panel-border-other': night ? 'rgba(255,255,255,0.12)' : '#ececec',
+    '--wx-special-voice-panel-divider': night ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.1)',
+    '--wx-special-loc-pin': text,
+    '--wx-special-loc-title': text,
+    '--wx-special-loc-muted': muted,
+    '--wx-special-loc-distance': muted,
+    '--wx-special-loc-bg': bar,
+    '--wx-special-loc-border': wash,
+    '--wx-special-call-bg': wash,
+    '--wx-special-call-text': text,
+    '--wx-special-call-muted': muted,
+    '--wx-special-call-border': 'transparent',
+    '--wx-special-fav-bg': bar,
+    '--wx-special-fav-border': wash,
+    '--wx-special-fav-title': text,
+    '--wx-special-fav-muted': muted,
+  }
+}
+
+/** 聊天气泡最大宽：左右边距 24×2 + 两侧头像列（头像+12 间距）各一列 */
+export const WECHAT_CHAT_BUBBLE_MAX_CLASS = 'max-w-[calc(100vw-24px-24px-40px-12px-12px-40px)]'
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))
@@ -786,11 +865,11 @@ export function WechatCardTail({ color, topPx = WECHAT_CLASSIC.tailTopPx }: { co
   )
 }
 
-/** 微信经典语音波形：圆点 + 双弧线（右向；己方镜像为左向） */
+/** 微信经典语音波形：圆点 + 双弧线（右向；己方镜像为左向）；颜色跟 currentColor */
 export function WechatVoiceWaveIcon({ isSelf, className = 'h-4 w-6' }: { isSelf: boolean; className?: string }) {
   return (
     <svg
-      className={`${className} shrink-0 text-[#191919]`}
+      className={`${className} shrink-0`}
       viewBox="0 0 18 16"
       fill="none"
       aria-hidden

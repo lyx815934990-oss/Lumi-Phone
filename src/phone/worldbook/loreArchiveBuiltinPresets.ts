@@ -12,6 +12,7 @@ import { PASSIONATE_DIRECT_BALL_APPENDIX } from './passionateDirectBallAppendix'
 import { REALISTIC_CONFLICT_APPENDIX } from './realisticConflictAppendix'
 import { GENTLE_OLDER_BROTHER_APPENDIX } from './gentleOlderBrotherAppendix'
 import { AUTONOMOUS_SOCIAL_LIFE_APPENDIX } from './autonomousSocialLifeAppendix'
+import { SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX } from './schoolCampusCommonKnowledgeAppendix'
 
 /** 档案室系统内置预设（仅开关，正文不对用户展示） */
 export type LoreArchiveBuiltinPresetId =
@@ -27,6 +28,7 @@ export type LoreArchiveBuiltinPresetId =
   | 'realisticConflict'
   | 'gentleOlderBrother'
   | 'autonomousSocialLife'
+  | 'schoolCampusCommonKnowledge'
 
 export type LoreArchiveBuiltinPresetToggles = Partial<Record<LoreArchiveBuiltinPresetId, boolean>>
 
@@ -41,7 +43,7 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
     id: 'lumiDoctrineOfLove',
     title: 'Lumi 高质量爱情观',
     description:
-      '系统内置：约束角色对玩家的具象付出、安全感、情绪托底与灵魂尊重。开启后注入 AI，正文不可查看或编辑。',
+      '系统内置：约束角色对玩家的具象付出、安全感、情绪托底与灵魂尊重；已并入「已确认恋人·专一与托底」（原男德，男性恋人时生效）。开启后注入 AI，正文不可查看或编辑。',
   },
   {
     id: 'activeConfession',
@@ -65,13 +67,13 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
     id: 'offlineFashionStyling',
     title: '线下约会·穿搭造型描写',
     description:
-      '系统内置：拉开衣着描写层次（廓形、面料、剪裁、配饰与鞋履），禁止「深灰卫衣+黑运动裤+帆布鞋」等敷衍模板。开启后仅注入线下约会 AI，正文不可查看或编辑。',
+      '系统内置：拉开衣着描写层次（廓形、面料、剪裁、配饰与鞋履），含私密场合服装；禁止「深灰卫衣+黑运动裤+帆布鞋」等敷衍模板。开启后仅注入线下约会 AI，正文不可查看或编辑。',
   },
   {
     id: 'offlineCoupleIntimacyPoses',
     title: '耳后三厘米经济特区',
     description:
-      '系统内置：专治「人贴在一起时只会复读三个动词」。开启后仅注入线下约会 AI，正文不可查看或编辑。',
+      '系统内置：专治「人贴在一起时只会复读三个动词」。含推拉退进、指舌调情、追吻眼神与认真吻闭眼、软直贴耳蜜语（好舒服/好可爱/还想要，禁油腻小作文、禁侮辱）与细触感。开启后仅注入线下约会 AI，正文不可查看或编辑。',
   },
   {
     id: 'cuisineRecipeAtlas',
@@ -109,6 +111,12 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
     description:
       '系统内置：多元化自主生活 + 群像社交。线上会主动报备日常碎片，线下也有行程与他人痕迹；避免写成没朋友、没社交、无所事事。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
   },
+  {
+    id: 'schoolCampusCommonKnowledge',
+    title: '校园与升学常识',
+    description:
+      '系统内置：高中纪律处分、艺考暑假封闭集训、联考/校考与招录比例、高考查分志愿与录取时间线、大学课表与大三下起实习等常识。适合学生/艺考生/大学生剧情。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+  },
 ]
 
 export function resolveLoreArchiveBuiltinPresetToggles(
@@ -128,6 +136,7 @@ export function resolveLoreArchiveBuiltinPresetToggles(
     realisticConflict: raw?.realisticConflict === true,
     gentleOlderBrother: raw?.gentleOlderBrother === true,
     autonomousSocialLife: raw?.autonomousSocialLife === true,
+    schoolCampusCommonKnowledge: raw?.schoolCampusCommonKnowledge === true,
   }
 }
 
@@ -150,6 +159,7 @@ export function buildWechatReplyRomanceSections(
   if (resolved.realisticConflict) parts.push(REALISTIC_CONFLICT_APPENDIX)
   if (resolved.gentleOlderBrother) parts.push(GENTLE_OLDER_BROTHER_APPENDIX)
   if (resolved.autonomousSocialLife) parts.push(AUTONOMOUS_SOCIAL_LIFE_APPENDIX)
+  if (resolved.schoolCampusCommonKnowledge) parts.push(SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX)
   return parts.filter(Boolean).join('\n\n')
 }
 
@@ -161,7 +171,7 @@ export function buildWechatThinkingChainRomanceSteps(
   let stepNo = 5
   if (resolved.lumiDoctrineOfLove) {
     steps.push(
-      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「Lumi 高质量爱情观」（与人设/全局档案同级；硬底线不可破；条文已在输出协议；禁止复述）`,
+      `- 第${['五', '六', '七', '八', '九', '十'][stepNo - 5] ?? String(stepNo)}步：内化「Lumi 高质量爱情观」（含已确认恋人·专一与托底；与人设/全局档案同级；硬底线不可破；条文已在输出协议；禁止复述）`,
     )
     stepNo += 1
   }
@@ -213,6 +223,12 @@ export function buildWechatThinkingChainRomanceSteps(
     )
     stepNo += 1
   }
+  if (resolved.schoolCampusCommonKnowledge) {
+    steps.push(
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六'][stepNo - 5] ?? String(stepNo)}步：若本轮涉校园/艺考/高考/大学：内化「校园与升学常识」（纪律处分、艺考集训与招录、查分志愿时间线、课表与实习；条文在输出协议；禁复述）`,
+    )
+    stepNo += 1
+  }
   return steps.join('\n')
 }
 
@@ -248,7 +264,7 @@ ${OFFLINE_DATING_FASHION_STYLING_APPENDIX}`)
   }
   if (resolved.offlineCoupleIntimacyPoses) {
     parts.push(`【耳后三厘米经济特区】
-写亲密时用下面菜单：具体姿势 + 脸上的反应 + 嘴里的短句；禁空词（很动情/电流）、禁跳过前戏、禁哑巴动作、禁羞辱伴侣。关系阶段仍听其他设定：
+写亲密时用下面菜单：具体姿势 + 脸上的反应 + 贴耳蜜语（软、直、带喘；禁油腻小作文、禁侮辱）；含指舌互动与追吻（追时眼神有性张力，认真吻默认闭眼）；禁空词（很动情/电流）、禁跳过前戏、禁哑巴动作、禁羞辱伴侣。关系阶段仍听其他设定：
 ${OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX}`)
   }
   if (resolved.cuisineRecipeAtlas) {
@@ -281,6 +297,11 @@ ${GENTLE_OLDER_BROTHER_APPENDIX}`)
 生活与群像硬约束：多元化自主日常；可辨认他人；线上宜主动报备具体碎片；禁止没朋友、没社交、无所事事的真空人设：
 ${AUTONOMOUS_SOCIAL_LIFE_APPENDIX}`)
   }
+  if (resolved.schoolCampusCommonKnowledge) {
+    parts.push(`【校园与升学常识】
+校园/艺考/高考/大学剧情常识锚点：高中纪律与处分、艺考暑假封闭集训、联考校考与招录、查分志愿录取时间线、大学课表与实习节奏：
+${SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX}`)
+  }
   return parts.join('\n\n')
 }
 
@@ -295,6 +316,7 @@ const BUILTIN_PRESETS_ONLINE: LoreArchiveBuiltinPresetId[] = [
   'realisticConflict',
   'gentleOlderBrother',
   'autonomousSocialLife',
+  'schoolCampusCommonKnowledge',
 ]
 
 /** 仅线下约会 / VN 额外注入的内置预设 */

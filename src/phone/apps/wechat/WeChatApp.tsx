@@ -27,6 +27,12 @@ import {
   type WeChatFocusGroupChatDetail,
   type WeChatFocusPersonaChatDetail,
 } from './wechatFocusChatNavigation'
+import {
+  WECHAT_SHORTCUT_PAGE_EVENT,
+  consumeWeChatShortcutPageId,
+  isWeChatShortcutPageId,
+  type WeChatShortcutPageDetail,
+} from './wechatShortcutPageNavigation'
 import { wxFillToStyle } from './wechatThemeFillStyle'
 import { resolvePublicImageUrl } from '../../../publicAssetUrl'
 import { WeChatTitleUnreadText } from './wechatUnreadCountText'
@@ -37,6 +43,7 @@ import { Pressable } from '../../components/Pressable'
 import {
   DEFAULT_CUSTOMIZATION,
   type WeChatBubbleTheme,
+  type WeChatShortcutPageId,
   type WeChatTabId,
   type WeChatTheme,
   type WxFillMode,
@@ -101,6 +108,8 @@ import { RedPacketHistoryPage } from './redPacket/RedPacketHistoryPage'
 import { WeChatProfileEditModal } from './WeChatProfileEditModal'
 import { MemoryTraceModal } from './MemoryTraceModal'
 import { WorldBookAfterPatchNoticeHost } from './WorldBookAfterPatchNoticeHost'
+import { LifeLedgerPatchNoticeHost } from './LifeLedgerPatchNoticeHost'
+import { ObservationNotesPatchNoticeHost } from './ObservationNotesPatchNoticeHost'
 import { DatingPlotCompletionToastHost } from './dating/DatingPlotCompletionToastHost'
 import { getLastMemoryTrace, hydrateMemoryTraceFromIndexedDb, subscribeLastMemoryTrace } from './memoryTraceStore'
 import { ChatThemeProvider, useChatTheme } from './ChatThemeContext'
@@ -141,7 +150,7 @@ import {
 import { resolveWorldBookUserBinding } from './charUserPlaceholders'
 import { buildFriendRequestNonPrimaryBindingBias } from './wechatFriendRequestSessionBias'
 import { resolveCanonicalCharacterId } from './wechatGlobalCharacterRegistry'
-import { contactEntryFromCharacter } from './wechatPersonaContactsSync'
+import { contactEntryFromCharacter, resolveWeChatContactListDisplayName } from './wechatPersonaContactsSync'
 import { pruneCharacterVoiceMappings } from '../voiceprint/characterVoiceMapStorage'
 import { applyWechatContactRemovalDataClear } from './wechatContactRemoval'
 import { resolveCharacterAvatarUrl, resolveWeChatContactAvatarUrl } from '../../utils/characterAvatarUrl'
@@ -152,12 +161,29 @@ import { loadShowChatPresenceDot } from './chatRoom/chatPresenceDotStorage'
 import { WeChatBubblePresetCards } from './WeChatBubblePresetCards'
 import {
   WECHAT_BUBBLE_PRESETS,
+  TWITTER_X_PRESET_MARK,
+  TWITTER_X_NIGHT_MARK,
+  WECHAT_CLASSIC_PRESET_MARK,
+  WECHAT_CLASSIC_NIGHT_MARK,
   type WeChatBubblePreset,
+  isTwitterXNightMode,
+  isTwitterXPresetActive,
+  isWechatClassicNightMode,
   isWeChatBubblePresetCssPackId,
   migrateMislabeledLumiDefaultBubble,
   resolveEffectiveChatInputBarForBubble,
   resolvePreviewWechatThemeForBubble,
+  resolveTwitterXPreset,
+  resolveTwitterXThemePatch,
+  resolveWechatClassicPreset,
+  resolveWechatClassicThemePatch,
 } from './wechatBubblePresets'
+import {
+  TWITTER_X_FONT_STACK,
+  TWITTER_X_NUM_FONT_STACK,
+  twitterXSpecialSkinOverrides,
+} from './wechatBubbleTwitterUi'
+import { wechatClassicSpecialSkinOverrides } from './wechatBubbleWechatUi'
 import { buildWeChatChatSkinExport, buildWeChatChatSkinAiPrompt, WECHAT_CHAT_SKIN_EXPORT_UI_ENABLED } from './wechatChatSkinExport'
 import { WeChatChatSkinPreviewPanel } from './WeChatChatSkinPreviewPanel'
 import { WeChatBubbleSideFontField } from './WeChatBubbleSideFontField'
@@ -1141,6 +1167,88 @@ function ThemePanel({
           return
         }
       }
+      // Twitter / X：写入预设标记 + 白/黑聊天室底，保留夜间勾选状态
+      if (preset.id === 'twitter-x') {
+        const night = isTwitterXNightMode(wechatTheme)
+        const resolved = resolveTwitterXPreset(night)
+        if (resolved.chatThemePatch) updateChatTheme(resolved.chatThemePatch)
+        const nextBubble: WeChatBubbleTheme = {
+          ...resolved.bubble,
+          selfFont: activeBubble.selfFont ?? null,
+          otherFont: activeBubble.otherFont ?? null,
+        }
+        const marks = {
+          [TWITTER_X_PRESET_MARK]: '1',
+          [TWITTER_X_NIGHT_MARK]: night ? '1' : '0',
+          ...twitterXSpecialSkinOverrides(night),
+        }
+        const themePatch = resolveTwitterXThemePatch(night, wechatTheme.chatRoomDefaultBg)
+        if (bubbleScope === 'global') {
+          setWeChatTheme({
+            bubbleGlobal: nextBubble,
+            selfBubbleText: resolved.selfBubbleText,
+            otherBubbleText: resolved.otherBubbleText,
+            ...themePatch,
+            fontFamily: TWITTER_X_FONT_STACK,
+            numberFontFamily: TWITTER_X_NUM_FONT_STACK,
+            chatSkinOverrides: marks,
+            chatSkinScopedCss: '',
+            chatSkinEngine: 'structured',
+          })
+          return
+        }
+        setWeChatTheme({
+          bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: nextBubble },
+          selfBubbleText: resolved.selfBubbleText,
+          otherBubbleText: resolved.otherBubbleText,
+          ...themePatch,
+          fontFamily: TWITTER_X_FONT_STACK,
+          numberFontFamily: TWITTER_X_NUM_FONT_STACK,
+          chatSkinOverrides: marks,
+          chatSkinScopedCss: '',
+          chatSkinEngine: 'structured',
+        })
+        return
+      }
+      // 微信 App：写入预设标记 + 灰/黑聊天室底，保留夜间勾选状态
+      if (preset.id === 'wechat-app-classic') {
+        const night = isWechatClassicNightMode(wechatTheme)
+        const resolved = resolveWechatClassicPreset(night)
+        if (resolved.chatThemePatch) updateChatTheme(resolved.chatThemePatch)
+        const nextBubble: WeChatBubbleTheme = {
+          ...resolved.bubble,
+          selfFont: activeBubble.selfFont ?? null,
+          otherFont: activeBubble.otherFont ?? null,
+        }
+        const marks = {
+          [WECHAT_CLASSIC_PRESET_MARK]: '1',
+          [WECHAT_CLASSIC_NIGHT_MARK]: night ? '1' : '0',
+          ...wechatClassicSpecialSkinOverrides(night),
+        }
+        const themePatch = resolveWechatClassicThemePatch(night, wechatTheme.chatRoomDefaultBg)
+        if (bubbleScope === 'global') {
+          setWeChatTheme({
+            bubbleGlobal: nextBubble,
+            selfBubbleText: resolved.selfBubbleText,
+            otherBubbleText: resolved.otherBubbleText,
+            ...themePatch,
+            chatSkinOverrides: marks,
+            chatSkinScopedCss: '',
+            chatSkinEngine: 'structured',
+          })
+          return
+        }
+        setWeChatTheme({
+          bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: nextBubble },
+          selfBubbleText: resolved.selfBubbleText,
+          otherBubbleText: resolved.otherBubbleText,
+          ...themePatch,
+          chatSkinOverrides: marks,
+          chatSkinScopedCss: '',
+          chatSkinEngine: 'structured',
+        })
+        return
+      }
       if (preset.chatThemePatch) {
         if (preset.id === 'wechat-app-default') {
           updateChatTheme({
@@ -1192,7 +1300,109 @@ function ThemePanel({
       bubbleScope,
       setWeChatTheme,
       updateChatTheme,
+      wechatTheme,
+    ],
+  )
+
+  const setTwitterXNightMode = useCallback(
+    (night: boolean) => {
+      const resolved = resolveTwitterXPreset(night)
+      if (resolved.chatThemePatch) updateChatTheme(resolved.chatThemePatch)
+      const nextBubble: WeChatBubbleTheme = {
+        ...resolved.bubble,
+        selfFont: activeBubble.selfFont ?? null,
+        otherFont: activeBubble.otherFont ?? null,
+      }
+      const marks = {
+        [TWITTER_X_PRESET_MARK]: '1',
+        [TWITTER_X_NIGHT_MARK]: night ? '1' : '0',
+        ...twitterXSpecialSkinOverrides(night),
+      }
+      const themePatch = resolveTwitterXThemePatch(night, wechatTheme.chatRoomDefaultBg)
+      if (bubbleScope === 'global') {
+        setWeChatTheme({
+          bubbleGlobal: nextBubble,
+          selfBubbleText: resolved.selfBubbleText,
+          otherBubbleText: resolved.otherBubbleText,
+          ...themePatch,
+          fontFamily: TWITTER_X_FONT_STACK,
+          numberFontFamily: TWITTER_X_NUM_FONT_STACK,
+          chatSkinOverrides: marks,
+          chatSkinScopedCss: '',
+          chatSkinEngine: 'structured',
+        })
+        return
+      }
+      setWeChatTheme({
+        bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: nextBubble },
+        selfBubbleText: resolved.selfBubbleText,
+        otherBubbleText: resolved.otherBubbleText,
+        ...themePatch,
+        fontFamily: TWITTER_X_FONT_STACK,
+        numberFontFamily: TWITTER_X_NUM_FONT_STACK,
+        chatSkinOverrides: marks,
+        chatSkinScopedCss: '',
+        chatSkinEngine: 'structured',
+      })
+    },
+    [
+      activeBubble.otherFont,
+      activeBubble.selfFont,
+      bubbleRole,
+      bubbleScope,
+      setWeChatTheme,
+      updateChatTheme,
       wechatTheme.bubbleByRole,
+      wechatTheme.chatRoomDefaultBg,
+    ],
+  )
+
+  const setWechatClassicNightMode = useCallback(
+    (night: boolean) => {
+      const resolved = resolveWechatClassicPreset(night)
+      if (resolved.chatThemePatch) updateChatTheme(resolved.chatThemePatch)
+      const nextBubble: WeChatBubbleTheme = {
+        ...resolved.bubble,
+        selfFont: activeBubble.selfFont ?? null,
+        otherFont: activeBubble.otherFont ?? null,
+      }
+      const marks = {
+        [WECHAT_CLASSIC_PRESET_MARK]: '1',
+        [WECHAT_CLASSIC_NIGHT_MARK]: night ? '1' : '0',
+        ...wechatClassicSpecialSkinOverrides(night),
+      }
+      const themePatch = resolveWechatClassicThemePatch(night, wechatTheme.chatRoomDefaultBg)
+      if (bubbleScope === 'global') {
+        setWeChatTheme({
+          bubbleGlobal: nextBubble,
+          selfBubbleText: resolved.selfBubbleText,
+          otherBubbleText: resolved.otherBubbleText,
+          ...themePatch,
+          chatSkinOverrides: marks,
+          chatSkinScopedCss: '',
+          chatSkinEngine: 'structured',
+        })
+        return
+      }
+      setWeChatTheme({
+        bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: nextBubble },
+        selfBubbleText: resolved.selfBubbleText,
+        otherBubbleText: resolved.otherBubbleText,
+        ...themePatch,
+        chatSkinOverrides: marks,
+        chatSkinScopedCss: '',
+        chatSkinEngine: 'structured',
+      })
+    },
+    [
+      activeBubble.otherFont,
+      activeBubble.selfFont,
+      bubbleRole,
+      bubbleScope,
+      setWeChatTheme,
+      updateChatTheme,
+      wechatTheme.bubbleByRole,
+      wechatTheme.chatRoomDefaultBg,
     ],
   )
 
@@ -2497,6 +2707,8 @@ function ThemePanel({
                         wechatTheme={wechatTheme}
                         bubbleScope={bubbleScope}
                         onApply={applyBubblePreset}
+                        onTwitterNightChange={setTwitterXNightMode}
+                        onWechatNightChange={setWechatClassicNightMode}
                       />
                     </div>
                   </div>
@@ -3314,26 +3526,49 @@ function WeChatAppInner({ onBack }: Props) {
     wechatAccountProfile?.nickname,
   ])
 
+  const [personaListDisplayNameByCharId, setPersonaListDisplayNameByCharId] = useState<Record<string, string>>({})
+  useEffect(() => {
+    let cancelled = false
+    const contacts = state.wechatPersonaContacts
+    const load = async () => {
+      const next: Record<string, string> = {}
+      await Promise.all(
+        contacts.map(async (c) => {
+          const ch = await personaDb.getCharacter(c.characterId)
+          next[c.characterId] = resolveWeChatContactListDisplayName(ch, c.remarkName)
+        }),
+      )
+      if (!cancelled) setPersonaListDisplayNameByCharId(next)
+    }
+    void load()
+    const onStorage = () => void load()
+    window.addEventListener('wechat-storage-changed', onStorage)
+    return () => {
+      cancelled = true
+      window.removeEventListener('wechat-storage-changed', onStorage)
+    }
+  }, [state.wechatPersonaContacts])
+
   const weChatMergedContacts = useMemo((): ComponentProps<typeof WeChatContactsInstagram>['contacts'] => {
     const persona = state.wechatPersonaContacts.map((c) => ({
       id: c.id,
-      remarkName: c.remarkName,
+      remarkName: personaListDisplayNameByCharId[c.characterId] || c.remarkName,
       avatarUrl: resolveCharacterAvatarUrl({ avatarUrl: c.avatarUrl }) || undefined,
       isStarred: c.isStarred,
     }))
     return [weChatSelfAccountContact, ...persona, ...WECHAT_DEFAULT_CONTACTS]
-  }, [state.wechatPersonaContacts, weChatSelfAccountContact])
+  }, [state.wechatPersonaContacts, weChatSelfAccountContact, personaListDisplayNameByCharId])
 
   // 记忆管理需要用 characterId 作为主键，否则会出现“聊天可读到记忆，但记忆页显示 0 条”
   const memoryManageContacts = useMemo((): ComponentProps<typeof WeChatContactsInstagram>['contacts'] => {
     const persona = state.wechatPersonaContacts.map((c) => ({
       id: c.characterId,
-      remarkName: c.remarkName,
+      remarkName: personaListDisplayNameByCharId[c.characterId] || c.remarkName,
       avatarUrl: resolveCharacterAvatarUrl({ avatarUrl: c.avatarUrl }) || undefined,
       isStarred: c.isStarred,
     }))
     return [WECHAT_LUMI_ASSISTANT_CONTACT, ...persona]
-  }, [state.wechatPersonaContacts])
+  }, [state.wechatPersonaContacts, personaListDisplayNameByCharId])
 
   const [route, setRoute] = useState<WxRoute>({ name: 'tabs', tab: 'messages' })
   const [pendingNewFriendRequests, setPendingNewFriendRequests] = useState<FriendRequest[]>([])
@@ -3431,12 +3666,66 @@ function WeChatAppInner({ onBack }: Props) {
     setRoute({ name: 'chat', chat: { kind: 'group', groupId: id } })
   }, [])
 
+  const openShortcutPage = useCallback((pageId: WeChatShortcutPageId) => {
+    switch (pageId) {
+      case 'tab-messages':
+        setRoute({ name: 'tabs', tab: 'messages' })
+        break
+      case 'tab-contacts':
+        setRoute({ name: 'tabs', tab: 'contacts' })
+        break
+      case 'tab-dates':
+        setRoute({ name: 'tabs', tab: 'dates' })
+        break
+      case 'tab-discover':
+        setRoute({ name: 'tabs', tab: 'discover' })
+        break
+      case 'tab-profile':
+        setRoute({ name: 'tabs', tab: 'profile' })
+        break
+      case 'new-friends-persona':
+        setRoute({ name: 'new-friends-persona', source: 'profile' })
+        break
+      case 'memory-manage':
+        setRoute({ name: 'memory-manage' })
+        break
+      case 'favorites':
+        setRoute({ name: 'favorites' })
+        break
+      case 'album':
+        setRoute({ name: 'album' })
+        break
+      case 'sticker-center':
+        setRoute({ name: 'sticker-center' })
+        break
+      case 'add-friend':
+        setRoute({ name: 'add-friend' })
+        break
+      case 'contacts-group-chats':
+        setRoute({ name: 'contacts-group-chats' })
+        break
+      case 'wallet-cards':
+        setRoute({ name: 'wallet-cards' })
+        break
+      case 'player-identities':
+        setRoute({ name: 'player-identities' })
+        break
+      case 'switch-account':
+        setRoute({ name: 'switch-account' })
+        break
+      default:
+        break
+    }
+  }, [])
+
   useEffect(() => {
     const pending = consumeWeChatFocusPersonaChatId()
     if (pending) openPersonaChatByCharacterId(pending)
     const pendingGroup = consumeWeChatFocusGroupChatId()
     if (pendingGroup) openGroupChatByGroupId(pendingGroup)
-  }, [openGroupChatByGroupId, openPersonaChatByCharacterId])
+    const pendingPage = consumeWeChatShortcutPageId()
+    if (pendingPage) openShortcutPage(pendingPage)
+  }, [openGroupChatByGroupId, openPersonaChatByCharacterId, openShortcutPage])
 
   useEffect(() => {
     const onFocusChat = (e: Event) => {
@@ -3457,6 +3746,16 @@ function WeChatAppInner({ onBack }: Props) {
     window.addEventListener(WECHAT_FOCUS_GROUP_CHAT_EVENT, onFocusGroup as EventListener)
     return () => window.removeEventListener(WECHAT_FOCUS_GROUP_CHAT_EVENT, onFocusGroup as EventListener)
   }, [openGroupChatByGroupId])
+
+  useEffect(() => {
+    const onShortcutPage = (e: Event) => {
+      const ce = e as CustomEvent<WeChatShortcutPageDetail>
+      const pageId = ce.detail?.pageId ?? consumeWeChatShortcutPageId()
+      if (isWeChatShortcutPageId(pageId)) openShortcutPage(pageId)
+    }
+    window.addEventListener(WECHAT_SHORTCUT_PAGE_EVENT, onShortcutPage as EventListener)
+    return () => window.removeEventListener(WECHAT_SHORTCUT_PAGE_EVENT, onShortcutPage as EventListener)
+  }, [openShortcutPage])
 
   const [chatOtherTyping, setChatOtherTyping] = useState(false)
   const [chatOpponentRevealPending, setChatOpponentRevealPending] = useState(false)
@@ -3570,7 +3869,7 @@ function WeChatAppInner({ onBack }: Props) {
     }
     return {
       id: row.id,
-      /** 优先角色卡备注 / 解析缓存，避免通讯录仍是真实姓名 */
+      /** 优先角色卡备注（orphanPeerNames 已按备注 > 昵称解析） */
       remarkName: resolved || row.remarkName,
       avatarUrl: row.avatarUrl,
     }
@@ -3587,12 +3886,7 @@ function WeChatAppInner({ onBack }: Props) {
       const contactRemark = state.wechatPersonaContacts
         .find((c) => c.characterId === cid)
         ?.remarkName?.trim()
-      const name =
-        ch.remark?.trim() ||
-        contactRemark ||
-        ch.wechatNickname?.trim() ||
-        ch.name?.trim() ||
-        '聊天'
+      const name = resolveWeChatContactListDisplayName(ch, contactRemark)
       setOrphanPeerNames((prev) => (prev[cid] === name ? prev : { ...prev, [cid]: name }))
     })
     return () => {
@@ -3681,14 +3975,18 @@ function WeChatAppInner({ onBack }: Props) {
   }, [activeConversationCharacterId, state.wechatTheme])
 
   const chatMessengerHeaderVariant =
-    route.name === 'chat' && chatActiveBubble.bubbleTailStyle
-      ? chatActiveBubble.bubbleTailStyle === 'imessage'
-        ? 'imessage'
-        : chatActiveBubble.bubbleTailStyle === 'telegram'
-          ? 'telegram'
-          : chatActiveBubble.bubbleTailStyle === 'talkmaker'
-            ? 'talkmaker'
-            : 'wechat'
+    route.name === 'chat'
+      ? isTwitterXPresetActive(state.wechatTheme)
+        ? 'twitter'
+        : chatActiveBubble.bubbleTailStyle
+          ? chatActiveBubble.bubbleTailStyle === 'imessage'
+            ? 'imessage'
+            : chatActiveBubble.bubbleTailStyle === 'telegram'
+              ? 'telegram'
+              : chatActiveBubble.bubbleTailStyle === 'talkmaker'
+                ? 'talkmaker'
+                : 'wechat'
+          : null
       : null
 
   const chatMessengerFontFamily = resolveChatDisplayFontFamily(chatActiveBubble) ?? undefined
@@ -4090,7 +4388,8 @@ function WeChatAppInner({ onBack }: Props) {
           if (settingsByKey.get(convKey)?.hiddenFromMessageList) return null
           const avatarResolved =
             resolveWeChatContactAvatarUrl(c.avatarUrl, ch?.avatarUrl?.trim()) || undefined
-          return buildOne(convKey, 'persona', c.remarkName, avatarResolved, c.characterId, c.characterId)
+          const displayName = resolveWeChatContactListDisplayName(ch, c.remarkName)
+          return buildOne(convKey, 'persona', displayName, avatarResolved, c.characterId, c.characterId)
         }),
       )
       for (const row of batch) {
@@ -5710,8 +6009,13 @@ function WeChatAppInner({ onBack }: Props) {
       if (!val?.trim()) continue
       out[cssVar] = val.trim()
     }
+    if (isWechatClassicNightMode(wechatTheme)) {
+      out['--wx-chat-input-text-color'] = '#FFFFFF'
+      out['--wx-chat-input-btn-color'] = '#FFFFFF'
+      out['--wx-chat-input-placeholder'] = 'rgba(255,255,255,0.4)'
+    }
     return Object.keys(out).length ? out : null
-  }, [wechatTheme.chatSkinOverrides])
+  }, [wechatTheme])
 
   const chatRoomSkinOnAppChrome = route.name === 'chat'
   const liquidGlassChrome = chatRoomSkinOnAppChrome && isLiquidGlassMinimalPackActive(wechatTheme)
@@ -5765,6 +6069,27 @@ function WeChatAppInner({ onBack }: Props) {
           title={chatPeerContact?.remarkName ?? title}
           avatarUrl={chatPeerContact?.avatarUrl}
           fontFamily={chatMessengerFontFamily}
+          twitterNight={
+            chatMessengerHeaderVariant === 'twitter' && isTwitterXNightMode(state.wechatTheme)
+          }
+          wechatNight={
+            chatMessengerHeaderVariant === 'wechat' && isWechatClassicNightMode(state.wechatTheme)
+          }
+          twitterPresenceOn={
+            chatMessengerHeaderVariant === 'twitter' ? showChatPresenceDot : false
+          }
+          twitterPresencePeer={
+            chatMessengerHeaderVariant === 'twitter' &&
+            showChatPresenceDot &&
+            route.name === 'chat' &&
+            wxDockChat?.kind === 'persona'
+              ? {
+                  characterId: wxDockChat.characterId,
+                  name: chatPeerContact?.remarkName ?? '对方',
+                  avatarUrl: chatPeerContact?.avatarUrl,
+                }
+              : null
+          }
           onBack={() => exitChatToMessages()}
           onOpenSettings={() => setChatSettingsOpen(true)}
           onOpenTimeSettings={
@@ -5778,8 +6103,14 @@ function WeChatAppInner({ onBack }: Props) {
           showTyping={chatOtherTyping}
           pendingCount={chatPendingQueueCount}
           typingText={route.name === 'chat' && route.chat.kind === 'group' ? '成员正在输入…' : '对方正在输入…'}
-          onCenterClick={() => setChatSettingsOpen(true)}
-          titleAfterName={chatPeerPresenceDot}
+          onCenterClick={
+            chatMessengerHeaderVariant === 'twitter'
+              ? undefined
+              : () => setChatSettingsOpen(true)
+          }
+          titleAfterName={
+            chatMessengerHeaderVariant === 'twitter' ? null : chatPeerPresenceDot
+          }
           customRight={
             chatMultiSelectActive ? (
               <Pressable
@@ -6247,6 +6578,8 @@ function WeChatAppInner({ onBack }: Props) {
                     qnaContacts={anonymousQnaContacts}
                     qnaWechatCtx={anonymousQnaWechatCtx}
                     personaContacts={state.wechatPersonaContacts}
+                    playerIdentityId={playerIdentityId}
+                    wechatAccountId={currentAccountId ?? undefined}
                   />
                 </div>
               ) : (
@@ -6550,6 +6883,8 @@ function WeChatAppInner({ onBack }: Props) {
                 remarkName={route.remarkName}
                 avatarUrl={route.avatarUrl}
                 accountId={currentAccountId}
+                playerIdentityId={playerIdentityId}
+                wechatCtx={anonymousQnaWechatCtx}
                 momentContacts={momentContactsForNotices}
                 selfAccountProfile={
                   route.target.kind === 'self' ? wechatAccountProfile : undefined
@@ -7367,6 +7702,8 @@ function WeChatAppInner({ onBack }: Props) {
       />
       <MemoryTraceModal open={memoryTraceOpen} onClose={() => setMemoryTraceOpen(false)} data={memoryTraceSnapshot} />
       <WorldBookAfterPatchNoticeHost />
+      <LifeLedgerPatchNoticeHost />
+      <ObservationNotesPatchNoticeHost />
       <DatingPlotCompletionToastHost />
       <MeetVol10EpilogueNoticeHost />
       <MomentsNoticeRuntime

@@ -8,6 +8,7 @@ import {
   Radio,
   ScrollText,
   Store,
+  Feather,
 } from 'lucide-react'
 import type { WeChatPersonaContact } from '../phone/types'
 import { Suspense, useEffect, useState, type ReactNode } from 'react'
@@ -61,6 +62,11 @@ const SubconsciousArchivesApp = lazyWithRetry(() =>
 const JubenshaHallApp = lazyWithRetry(() =>
   import('./jubensha/JubenshaHallApp').then((m) => ({ default: m.JubenshaHallApp })),
 )
+const ObservationNotesHubApp = lazyWithRetry(() =>
+  import('../phone/apps/wechat/observationNotes/ObservationNotesHubApp').then((m) => ({
+    default: m.ObservationNotesHubApp,
+  })),
+)
 
 function DiscoverSuspense({
   children,
@@ -102,6 +108,7 @@ type DiscoverActionId =
   | 'weibo'
   | 'lumi-live'
   | 'subconscious-archives'
+  | 'observation-notes'
   | 'jubensha'
   | 'shop'
 
@@ -128,6 +135,10 @@ export type WeChatDiscoverInstagramProps = {
   qnaWechatCtx?: AnonymousQaWechatContext | null
   /** 剧本杀馆：微信人脉通讯录 */
   personaContacts?: WeChatPersonaContact[]
+  /** 私藏侧写：当前玩家身份 id */
+  playerIdentityId?: string | null
+  /** 私藏侧写：微信账号 id（存档作用域） */
+  wechatAccountId?: string
   onOpenParticipantProfile?: OnOpenMomentParticipantProfile
   restoreView?: 'moments' | null
   onRestoreViewConsumed?: () => void
@@ -141,6 +152,7 @@ const DISCOVER_ACTIONS: DiscoverAction[] = [
   { id: 'weibo', label: '微博广场', icon: Globe2 },
   { id: 'lumi-live', label: '浮光直播', icon: Radio },
   { id: 'subconscious-archives', label: '私语档案', icon: ScrollText },
+  { id: 'observation-notes', label: '私藏侧写', icon: Feather },
   { id: 'jubensha', label: '剧本杀馆', icon: BookOpen },
   { id: 'shop', label: '小店', icon: Store },
 ]
@@ -156,6 +168,8 @@ export function WeChatDiscoverInstagram({
   qnaContacts,
   qnaWechatCtx = null,
   personaContacts = [],
+  playerIdentityId = null,
+  wechatAccountId,
   onOpenParticipantProfile,
   restoreView = null,
   onRestoreViewConsumed,
@@ -172,6 +186,7 @@ export function WeChatDiscoverInstagram({
     | 'weibo'
     | 'lumi-live'
     | 'subconscious-archives'
+    | 'observation-notes'
     | 'jubensha'
   >('list')
   useEffect(() => {
@@ -291,6 +306,20 @@ export function WeChatDiscoverInstagram({
       </DiscoverSuspense>
     )
   }
+  if (activeView === 'observation-notes') {
+    return (
+      <DiscoverSuspense onClose={() => setActiveView('list')}>
+        <ObservationNotesHubApp
+          className={`h-full min-h-0 ${className}`}
+          onBack={() => setActiveView('list')}
+          playerIdentityId={playerIdentityId?.trim() || ''}
+          personaContacts={personaContacts}
+          accountId={wechatAccountId}
+          wechatCtx={qnaWechatCtx}
+        />
+      </DiscoverSuspense>
+    )
+  }
   if (activeView === 'jubensha') {
     return (
       <div className={`h-full min-h-0 ${className}`}>
@@ -351,6 +380,7 @@ export function WeChatDiscoverInstagram({
                       if (item.id === 'weibo') setActiveView('weibo')
                       if (item.id === 'lumi-live') setActiveView('lumi-live')
                       if (item.id === 'subconscious-archives') setActiveView('subconscious-archives')
+                      if (item.id === 'observation-notes') setActiveView('observation-notes')
                       if (item.id === 'jubensha') setActiveView('jubensha')
                     }}
                     className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors"

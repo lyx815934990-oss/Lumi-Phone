@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 import { Pressable } from '../../components/Pressable'
 import { ChatHeader, ChatHeaderStatusLine, ChatHeaderStatusOnly } from './chatRoom/ChatHeader'
+import { ChatPeerPresenceDot } from './chatRoom/ChatPeerPresenceDot'
 
 const IOS_BLUE = '#0B93F6'
 const TG_MUTED = '#707579'
@@ -66,7 +67,7 @@ function ChatTimeClockIcon({ className }: { className?: string }) {
 }
 
 export type WeChatMessengerChatHeaderProps = {
-  variant: 'wechat' | 'imessage' | 'telegram' | 'talkmaker'
+  variant: 'wechat' | 'imessage' | 'telegram' | 'talkmaker' | 'twitter'
   title: string
   avatarUrl?: string
   onBack: () => void
@@ -87,6 +88,14 @@ export type WeChatMessengerChatHeaderProps = {
   fontFamily?: string
   /** 备注名后方：在线状态圆点等 */
   titleAfterName?: ReactNode
+  /** Twitter / X：夜间顶栏色 */
+  twitterNight?: boolean
+  /** 微信 App：夜间顶栏色 */
+  wechatNight?: boolean
+  /** X 风格：在线状态绿点是否开启（仅展示，开关在聊天信息页） */
+  twitterPresenceOn?: boolean
+  /** X 风格：开启在线状态时，点击头像打开悬浮面板所需角色信息 */
+  twitterPresencePeer?: { characterId: string; name: string; avatarUrl?: string } | null
 }
 
 function TalkmakerMonitorIcon({ className }: { className?: string }) {
@@ -129,6 +138,19 @@ function WechatHealthIcon({ className }: { className?: string }) {
   )
 }
 
+function TwitterSettingsGearIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.7} aria-hidden>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+      />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  )
+}
+
 export function WeChatMessengerChatHeader({
   variant,
   title,
@@ -146,13 +168,157 @@ export function WeChatMessengerChatHeader({
   onCenterClick,
   fontFamily,
   titleAfterName,
+  twitterNight = false,
+  wechatNight = false,
+  twitterPresenceOn = false,
+  twitterPresencePeer = null,
 }: WeChatMessengerChatHeaderProps) {
-  if (variant === 'wechat') {
+  if (variant === 'twitter') {
+    const night = twitterNight
+    const fg = night ? '#E7E9EA' : '#0F1419'
+    const muted = night ? '#71767B' : '#536471'
+    const barBg = night ? '#000000' : '#FFFFFF'
+    const barBorder = night ? 'rgba(255,255,255,0.12)' : 'rgba(15,20,25,0.08)'
+    const statusLine =
+      showTyping || pendingCount > 0 ? (typingText ?? '对方正在输入…') : null
+    const iconBtn =
+      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full active:opacity-60'
+    const peer = twitterPresenceOn ? twitterPresencePeer : null
+    const centerInner = (
+      <>
+        <span className="relative shrink-0">
+          <HeaderAvatar url={avatarUrl} name={title} sizePx={36} />
+          {twitterPresenceOn ? (
+            <span
+              className="absolute bottom-0 right-0 h-2 w-2 rounded-full ring-2"
+              style={{ background: '#00BA7C', boxShadow: `0 0 0 2px ${barBg}` }}
+              aria-hidden
+            />
+          ) : null}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span
+            className="flex max-w-full items-center gap-1 truncate text-[17px] font-semibold leading-tight"
+            style={{ color: fg }}
+          >
+            <span className="truncate">{title}</span>
+            {!twitterPresenceOn ? titleAfterName : null}
+          </span>
+          {statusLine ? (
+            <span className="mt-0.5 block truncate text-[12px] leading-none" style={{ color: muted }}>
+              {statusLine}
+            </span>
+          ) : null}
+        </span>
+      </>
+    )
     return (
       <header
-        className="relative z-50 shrink-0 border-b border-gray-200 bg-[#EDEDED]"
+        className="relative z-50 shrink-0 border-b"
         style={{
           paddingTop: 'max(0px, env(safe-area-inset-top, 0px))',
+          background: barBg,
+          borderColor: barBorder,
+          ...(fontFamily ? { fontFamily } : null),
+        }}
+      >
+        <div className="flex h-12 items-center gap-1 px-1.5">
+          <Pressable
+            type="button"
+            aria-label="返回"
+            onClick={onBack}
+            className={iconBtn}
+            style={{ color: fg, minWidth: 32, minHeight: 32 }}
+          >
+            <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </Pressable>
+
+          {peer?.characterId?.trim() ? (
+            <ChatPeerPresenceDot
+              characterId={peer.characterId}
+              name={peer.name || title}
+              avatarUrl={peer.avatarUrl ?? avatarUrl}
+              renderTrigger={({ toggle, triggerRef }) => (
+                <Pressable
+                  ref={triggerRef as never}
+                  type="button"
+                  aria-label={`查看 ${title} 的在线状态`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggle()
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 py-1 text-left active:opacity-80"
+                >
+                  {centerInner}
+                </Pressable>
+              )}
+            />
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-2.5 py-1 text-left">{centerInner}</div>
+          )}
+
+          <div className="flex shrink-0 items-center gap-2" style={{ color: fg }}>
+            {customRight ?? (
+              <>
+                {onOpenTimeSettings ? (
+                  <Pressable
+                    type="button"
+                    aria-label="线上时间设置"
+                    onClick={onOpenTimeSettings}
+                    className={iconBtn}
+                    style={{ minWidth: 32, minHeight: 32 }}
+                  >
+                    <ChatTimeClockIcon className="h-[18px] w-[18px]" />
+                  </Pressable>
+                ) : null}
+                {showPsycheRadar && onOpenPsycheRadar ? (
+                  <Pressable
+                    type="button"
+                    aria-label="生理检测"
+                    onClick={onOpenPsycheRadar}
+                    className={iconBtn}
+                    style={{ minWidth: 32, minHeight: 32 }}
+                  >
+                    <PsycheMonitorIcon className="h-[18px] w-[18px]" color="currentColor" />
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  type="button"
+                  aria-label="聊天设置"
+                  onClick={onOpenSettings}
+                  className={iconBtn}
+                  style={{ minWidth: 32, minHeight: 32 }}
+                >
+                  <TwitterSettingsGearIcon className="h-[18px] w-[18px]" />
+                </Pressable>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+    )
+  }
+
+  if (variant === 'wechat') {
+    const night = wechatNight
+    const fg = night ? '#E5E5E5' : '#191919'
+    const muted = night ? 'rgba(255,255,255,0.45)' : undefined
+    const barBg = night ? '#111111' : '#EDEDED'
+    const barBorder = night ? 'rgba(255,255,255,0.08)' : undefined
+    return (
+      <header
+        className={`relative z-50 shrink-0 border-b ${night ? '' : 'border-gray-200'}`}
+        style={{
+          paddingTop: 'max(0px, env(safe-area-inset-top, 0px))',
+          background: barBg,
+          borderColor: barBorder,
+          color: fg,
+          // ChatHeader 内部读 --wx-text / --wx-text-muted
+          ['--wx-text' as string]: fg,
+          ...(muted ? { ['--wx-text-muted' as string]: muted } : null),
           ...(fontFamily ? { fontFamily } : null),
         }}
       >
@@ -162,7 +328,8 @@ export function WeChatMessengerChatHeader({
               type="button"
               aria-label="返回"
               onClick={onBack}
-              className="flex shrink-0 items-center text-[#191919] active:opacity-60"
+              className="flex shrink-0 items-center active:opacity-60"
+              style={{ color: fg }}
             >
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -176,7 +343,8 @@ export function WeChatMessengerChatHeader({
                 type="button"
                 aria-label="线上时间设置"
                 onClick={onOpenTimeSettings}
-                className="flex h-9 w-9 shrink-0 items-center justify-center text-[#191919] active:opacity-60"
+                className="flex h-9 w-9 shrink-0 items-center justify-center active:opacity-60"
+                style={{ color: fg }}
               >
                 <ChatTimeClockIcon className="h-5 w-5" />
               </Pressable>
@@ -186,7 +354,8 @@ export function WeChatMessengerChatHeader({
           <Pressable
             type="button"
             onClick={onCenterClick ?? onOpenSettings}
-            className="pointer-events-auto absolute inset-x-[88px] truncate px-2 text-center text-[17px] font-semibold text-[#191919] active:opacity-80"
+            className="pointer-events-auto absolute inset-x-[88px] truncate px-2 text-center text-[17px] font-semibold active:opacity-80"
+            style={{ color: fg }}
           >
             <ChatHeader
               contactName={title}
@@ -197,7 +366,7 @@ export function WeChatMessengerChatHeader({
             />
           </Pressable>
 
-          <div className="ml-auto flex w-[88px] shrink-0 items-center justify-end gap-5 text-[#191919]">
+          <div className="ml-auto flex w-[88px] shrink-0 items-center justify-end gap-5" style={{ color: fg }}>
             {customRight ?? (
               <>
                 {showPsycheRadar && onOpenPsycheRadar ? (
@@ -205,7 +374,8 @@ export function WeChatMessengerChatHeader({
                     type="button"
                     aria-label="生理监测"
                     onClick={onOpenPsycheRadar}
-                    className="text-[#191919] active:opacity-60"
+                    className="active:opacity-60"
+                    style={{ color: fg }}
                   >
                     <WechatHealthIcon className="h-6 w-6" />
                   </Pressable>

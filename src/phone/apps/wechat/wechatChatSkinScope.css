@@ -35,13 +35,33 @@
   --wx-special-voice-border-self: #e7e2d9;
   --wx-special-voice-border-other: #ececec;
   --wx-special-voice-play-bg: #ffffff;
-  --wx-special-voice-wave-active-self: #d4af37;
+  --wx-special-voice-text-self: #191919;
+  --wx-special-voice-text-other: #191919;
+  --wx-special-voice-wave-active-self: #191919;
   --wx-special-voice-wave-active-other: #8d8d8d;
   --wx-special-voice-wave-idle: #b6b6b6;
   --wx-special-voice-duration: #555555;
+  --wx-special-voice-toggle-bg: #e5e5e5;
+  --wx-special-voice-toggle-text: #4b5563;
+  --wx-special-voice-panel-border-self: #7ed957;
+  --wx-special-voice-panel-border-other: #ececec;
+  --wx-special-voice-panel-divider: rgba(0, 0, 0, 0.1);
 
   --wx-special-loc-pin: #d4af37;
   --wx-special-loc-title: #0a0a0a;
   --wx-special-loc-muted: #9ca3af;
   --wx-special-loc-distance: #8b7355;
+}
+
+/* 微信 App 夜间：输入框文字强制白色，避免落到全局深色 --wx-text */
+[data-wx-chat-skin-scope][data-wx-wechat-night='1'] {
+  --wx-chat-input-text-color: #ffffff;
+  --wx-chat-input-btn-color: #ffffff;
+  --wx-chat-input-placeholder: rgba(255, 255, 255, 0.4);
+  /* 加号功能面板：标签/图标白字，方块略深 */
+  --wx-plus-label-color: #ffffff;
+  --wx-plus-icon-color: #ffffff;
+  --wx-plus-tile-bg: #2c2c2c;
+  --wx-plus-dot-active: #ffffff;
+  --wx-plus-dot-idle: rgba(255, 255, 255, 0.35);
 }

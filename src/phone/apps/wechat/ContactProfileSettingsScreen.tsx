@@ -6,6 +6,7 @@ import { useCustomization } from '../../CustomizationContext'
 import { Pressable } from '../../components/Pressable'
 import { personaDb } from './newFriendsPersona/idb'
 import type { Character } from './newFriendsPersona/types'
+import { resolveWeChatContactListDisplayName } from './wechatPersonaContactsSync'
 
 export function ContactProfileSettingsScreen({
   characterId,
@@ -56,7 +57,7 @@ export function ContactProfileSettingsScreen({
         {
           id: `persona-${next.id}`,
           characterId: next.id,
-          remarkName: (next.remark?.trim() || next.wechatNickname?.trim() || next.name || '未命名').slice(0, 64),
+          remarkName: resolveWeChatContactListDisplayName(next),
           avatarUrl: next.avatarUrl?.trim() || undefined,
           isStarred: !!next.isStarred,
         },

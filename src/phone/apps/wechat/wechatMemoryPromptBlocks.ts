@@ -20,8 +20,166 @@ import { selectRecentWeChatMessagesAiRoundWindow } from './memory/memorySummaryR
 import { formatGregorianStoryDayFromMs } from './memory/storyTimelineTypes'
 import { parseStoryAnchorLabelToMs } from './time/applyOnlineChatTimeFusion'
 
-/** 线上固定注入「最近私聊轮次」：最近 N 轮对方回复（含其间用户消息） */
-export const MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS = 2
+/** 线上固定注入「最近私聊轮次」：默认最近 N 轮对方回复（含其间用户消息）；总结游标推过后仍注入 */
+export const MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS = 10
+
+/** 会话可调：固定注入轮数上限（含 0=关闭） */
+export const MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX = 16
+
+/** 读取会话设置中的固定注入轮数；未设置则用默认 {@link MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS}。 */
+export function resolveRecentPrivateInjectAiRounds(
+  settings?: { recentPrivateInjectAiRounds?: number | null } | null,
+): number {
+  const raw = settings?.recentPrivateInjectAiRounds
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return Math.max(0, Math.min(MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX, Math.floor(raw)))
+  }
+  return MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS
+}
+
+/** 未总结游标后消息（与 {@link formatUnsummarizedPrivateChatBlock} 同过滤）。 */
+export async function listUnsummarizedPrivateChatMessages(params: {
+  conversationKey: string
+  maxMessages?: number
+  minMessageTimestamp?: number
+  minStoryCalendarMs?: number | null
+  storyNowLabel?: string | null
+  lastOfflineAiPlotTs?: number | null
+  dropCrossDayEarlier?: boolean
+}): Promise<WeChatChatMessage[]> {
+  const ck = params.conversationKey.trim()
+  if (!ck) return []
+  const cursor = await personaDb.getMemorySummaryCursorTimestamp(ck)
+  const fromTs = resolveUnsummarizedFromTimestamp(cursor, params.minMessageTimestamp)
+  const lim = Math.max(
+    1,
+    Math.min(MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT, Math.floor(params.maxMessages ?? MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT)),
+  )
+  const rows = await personaDb.listWeChatChatMessagesFromTimestampAsc({
+    conversationKey: ck,
+    fromTimestampInclusive: fromTs,
+    limit: lim,
+  })
+  if (!rows.length) return []
+  const storyFloor =
+    typeof params.minStoryCalendarMs === 'number' && Number.isFinite(params.minStoryCalendarMs)
+      ? params.minStoryCalendarMs
+      : null
+  const lastOfflineTs =
+    typeof params.lastOfflineAiPlotTs === 'number' && Number.isFinite(params.lastOfflineAiPlotTs)
+      ? params.lastOfflineAiPlotTs
+      : null
+  const dropEarlier = params.dropCrossDayEarlier === true
+  const out: WeChatChatMessage[] = []
+  for (const m of rows) {
+    if (isMeetImportedWeChatMessageId(m.id)) continue
+    if (m.isRecalled) continue
+    const storyMs = parseStoryAnchorLabelToMs(m.storyTimeLabel)
+    let isPast = false
+    if (storyFloor != null && storyMs != null) {
+      isPast = storyMs < storyFloor && !sameStoryCalendarDayMs(storyMs, storyFloor)
+    } else if (storyMs == null && lastOfflineTs != null && Number.isFinite(m.timestamp)) {
+      isPast = m.timestamp < lastOfflineTs
+    }
+    if (dropEarlier && isPast) continue
+    out.push(m)
+  }
+  return out
+}
+
+/** 固定近端窗消息（与 {@link buildRecentPrivateChatRoundsWithTimeBlock} 同过滤）。 */
+export async function listRecentPrivateInjectChatMessages(params: {
+  conversationKey: string
+  retainAiRounds?: number
+  minMessageTimestamp?: number | null
+  minStoryCalendarMs?: number | null
+}): Promise<WeChatChatMessage[]> {
+  const ck = params.conversationKey.trim()
+  if (!ck) return []
+  const rounds = Math.max(
+    0,
+    Math.min(
+      MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX,
+      Math.floor(params.retainAiRounds ?? MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS),
+    ),
+  )
+  if (rounds <= 0) return []
+  try {
+    const all = await personaDb.listWeChatChatMessagesByConversationKey(ck)
+    const wallFloor =
+      typeof params.minMessageTimestamp === 'number' && Number.isFinite(params.minMessageTimestamp)
+        ? params.minMessageTimestamp
+        : null
+    const storyFloor =
+      typeof params.minStoryCalendarMs === 'number' && Number.isFinite(params.minStoryCalendarMs)
+        ? params.minStoryCalendarMs
+        : null
+    const usable = all.filter((m) => {
+      if (m.isRecalled || isMeetImportedWeChatMessageId(m.id)) return false
+      if (wallFloor != null && !(m.timestamp > wallFloor)) return false
+      if (storyFloor != null) {
+        const storyMs = parseStoryAnchorLabelToMs(m.storyTimeLabel)
+        if (
+          storyMs != null &&
+          storyMs < storyFloor &&
+          !sameStoryCalendarDayMs(storyMs, storyFloor)
+        ) {
+          return false
+        }
+      }
+      return true
+    })
+    if (!usable.length) return []
+    return selectRecentWeChatMessagesAiRoundWindow(usable, rounds)
+  } catch {
+    return []
+  }
+}
+
+/** 未总结 ∪ 固定近端：按 id 并集后按时间排序，格式化为单块注入（部分重合时用）。 */
+export async function buildMergedPrivateOnlineUnionBlock(params: {
+  conversationKey: string
+  unionMessageIds: readonly string[]
+  maxChars?: number
+}): Promise<string> {
+  const ck = params.conversationKey.trim()
+  const idSet = new Set(params.unionMessageIds.map((x) => String(x ?? '').trim()).filter(Boolean))
+  if (!ck || !idSet.size) return ''
+  try {
+    const all = await personaDb.listWeChatChatMessagesByConversationKey(ck)
+    const picked = all
+      .filter((m) => idSet.has(m.id) && !m.isRecalled && !isMeetImportedWeChatMessageId(m.id))
+      .sort((a, b) => a.timestamp - b.timestamp)
+    if (!picked.length) return ''
+    const lines: string[] = []
+    for (const m of picked) {
+      const line = formatPrivateLineUnsummarized(m, { includeTimestamp: true, maxChars: 2000 })
+      if (line) lines.push(line)
+    }
+    if (!lines.length) return ''
+    let body = lines.join('\n')
+    const charCap = Math.max(
+      800,
+      Math.min(UNSUMMARIZED_BLOCK_CHAR_HARD_MAX, Math.floor(params.maxChars ?? 14_000)),
+    )
+    if (body.length > charCap) {
+      const parts = body.split('\n')
+      while (parts.join('\n').length > charCap && parts.length > 4) parts.shift()
+      body = parts.join('\n')
+      if (body.length > charCap) body = `${body.slice(-charCap)}\n…（更早线上近端已截断）`
+    }
+    const timeHint =
+      '每条前缀：有剧情锚点写 `[剧情 …｜系统 …]`；仅系统时写 `[系统 …·落库]`。'
+    return (
+      `【板块·线上近端·未总结∪固定原文】（并集必注全文；已去重，禁止重复阅读）` +
+      `下列为未总结游标后消息与固定近端窗的并集气泡原文（${timeHint}）` +
+      `重合消息只出现一次；须承接此处原话与口吻，禁止只靠长期记忆摘要续写。\n\n` +
+      body
+    )
+  } catch {
+    return ''
+  }
+}
 
 function sameStoryCalendarDayMs(aMs: number, bMs: number): boolean {
   return formatGregorianStoryDayFromMs(aMs) === formatGregorianStoryDayFromMs(bMs)
@@ -148,7 +306,7 @@ function formatUnsummarizedDualTimePrefix(
 
 export function formatPrivateLineUnsummarized(
   m: WeChatChatMessage,
-  opts?: { includeTimestamp?: boolean },
+  opts?: { includeTimestamp?: boolean; maxChars?: number },
 ): string | null {
   if (m.isRecalled) return null
   let raw = stripWechatGroupEventNoticePrefix(String(m.content ?? '')).trim()
@@ -164,7 +322,11 @@ export function formatPrivateLineUnsummarized(
   const who = m.type === 'player' ? '用户' : '对方'
   const timePrefix =
     opts?.includeTimestamp && m.timestamp ? formatUnsummarizedDualTimePrefix(m) : ''
-  return `- ${timePrefix}[私聊・${who}] ${clipOneLine(raw)}`
+  const max =
+    typeof opts?.maxChars === 'number' && Number.isFinite(opts.maxChars)
+      ? Math.max(80, Math.floor(opts.maxChars))
+      : 220
+  return `- ${timePrefix}[私聊・${who}] ${clipOneLine(raw, max)}`
 }
 
 /**
@@ -537,8 +699,8 @@ export async function formatDatingUnsummarizedPrivateChatSplit(params: {
 }
 
 /**
- * 线上私聊：固定注入最近 N 轮「对方回复」及其间用户消息，每条带时间前缀（剧情时间优先）。
- * 不依赖总结游标——游标推过后未总结块可能为空，仍须让模型看见近端气泡时刻。
+ * 线上私聊：固定注入最近 N 轮「对方回复」及其间用户消息（与线下「必注全文」同级）。
+ * 不依赖总结游标——游标推过后未总结块可能为空，仍须让模型看见近端气泡**原话**与剧情时间。
  *
  * 约会线下生成请传入 minMessageTimestamp / minStoryCalendarMs，避免「最新几轮」仍是
  * 数日前未总结的「要离开」而线下已推进到归来之后。
@@ -558,9 +720,13 @@ export async function buildRecentPrivateChatRoundsWithTimeBlock(params: {
   const ck = params.conversationKey.trim()
   if (!ck) return ''
   const rounds = Math.max(
-    1,
-    Math.min(8, Math.floor(params.retainAiRounds ?? MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS)),
+    0,
+    Math.min(
+      MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX,
+      Math.floor(params.retainAiRounds ?? MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS),
+    ),
   )
+  if (rounds <= 0) return ''
   try {
     const all = await personaDb.listWeChatChatMessagesByConversationKey(ck)
     const wallFloor =
@@ -592,12 +758,16 @@ export async function buildRecentPrivateChatRoundsWithTimeBlock(params: {
     if (!window.length) return ''
     const lines: string[] = []
     for (const m of window) {
-      const line = formatPrivateLineUnsummarized(m, { includeTimestamp: true })
+      // 固定注入要保留近端原话，单条放宽截断（未总结块仍用默认短截）
+      const line = formatPrivateLineUnsummarized(m, { includeTimestamp: true, maxChars: 2000 })
       if (line) lines.push(line)
     }
     if (!lines.length) return ''
     let body = lines.join('\n')
-    const charCap = Math.max(400, Math.min(UNSUMMARIZED_BLOCK_CHAR_HARD_MAX, Math.floor(params.maxChars ?? 6000)))
+    const charCap = Math.max(
+      800,
+      Math.min(UNSUMMARIZED_BLOCK_CHAR_HARD_MAX, Math.floor(params.maxChars ?? 14_000)),
+    )
     if (body.length > charCap) {
       const parts = body.split('\n')
       while (parts.join('\n').length > charCap && parts.length > 4) parts.shift()
@@ -606,13 +776,16 @@ export async function buildRecentPrivateChatRoundsWithTimeBlock(params: {
     }
     const filterNote =
       wallFloor != null || storyFloor != null
-        ? '已剔除跨日早于故事「现在」/上一轮线下墙钟之前的气泡（同日较早仍保留）；'
+        ? '已剔除跨日早于故事「现在」/上一轮线下墙钟之前的气泡（同日较早仍保留）。'
         : ''
-    return [
-      `【最近私聊原文（固定最近 ${rounds} 轮对方回复，含其间用户消息）】`,
-      `每条前缀为**剧情时间**（有则优先）或**发送时系统/自定义时钟**；${filterNote}用于判断谁多久没回、间隔是否合理。`,
-      body,
-    ].join('\n')
+    const timeHint =
+      '每条前缀：有剧情锚点写 `[剧情 …｜系统 …]`（左侧为故事内时刻，须按此理解先后）；仅系统时写 `[系统 …·落库]`（真实落库，**不是**剧情时间）。'
+    return (
+      `【板块·近端·最近 ${rounds} 轮线上私聊原文】（必注全文；不依赖总结游标）` +
+      `下列为最近 ${rounds} 轮**对方角色回复**及其间用户消息的气泡原文（${timeHint}）${filterNote}` +
+      `总结入库后未总结块可能为空，仍须承接此处原话与口吻，禁止只靠长期记忆摘要续写或声称「不记得原话」。\n\n` +
+      body
+    )
   } catch {
     return ''
   }

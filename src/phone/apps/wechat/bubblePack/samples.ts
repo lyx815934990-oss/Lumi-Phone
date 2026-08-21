@@ -1,5 +1,6 @@
 import {
   IMESSAGE_BUBBLE_PRESET,
+  TWITTER_X_BUBBLE_PRESET,
   WECHAT_APP_CLASSIC_BUBBLE_PRESET,
 } from '../wechatBubblePresets'
 import { LIQUID_GLASS_MINIMAL_BUBBLE_PACK } from './liquidGlassMinimalPack'
@@ -38,8 +39,12 @@ export const SAMPLE_WECHAT_CLASSIC_BUBBLE_PACK = bubblePackFromPreset(WECHAT_APP
 /** 官方样板：iMessage */
 export const SAMPLE_IMESSAGE_BUBBLE_PACK = bubblePackFromPreset(IMESSAGE_BUBBLE_PRESET)
 
+/** 官方样板：Twitter / X */
+export const SAMPLE_TWITTER_X_BUBBLE_PACK = bubblePackFromPreset(TWITTER_X_BUBBLE_PRESET)
+
 export const OFFICIAL_BUBBLE_PACK_SAMPLES: LumiWeChatBubblePack[] = [
   SAMPLE_WECHAT_CLASSIC_BUBBLE_PACK,
   SAMPLE_IMESSAGE_BUBBLE_PACK,
+  SAMPLE_TWITTER_X_BUBBLE_PACK,
   LIQUID_GLASS_MINIMAL_BUBBLE_PACK,
 ]

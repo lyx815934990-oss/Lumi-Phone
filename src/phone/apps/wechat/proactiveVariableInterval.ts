@@ -22,8 +22,6 @@ export const PROACTIVE_VARIABLE_IDLE_PRESETS = [
   { id: 'sparse', label: '稀疏', minSeconds: 10 * 60, maxSeconds: 60 * 60 },
 ] as const
 
-const EXPLICIT_BUSY_MESSAGE_WINDOW_MS = 45 * 60 * 1000
-
 export type ProactiveVariableIdleBounds = {
   minSeconds: number
   maxSeconds: number
@@ -120,8 +118,14 @@ export function drawProactiveVariableIntervalSeconds(
   return randomIntInclusive(bounds.minSeconds, bounds.maxSeconds)
 }
 
+const EXPLICIT_BUSY_MESSAGE_WINDOW_MS = 45 * 60 * 1000
+
+/**
+ * 角色明确表示「现在在忙、过会儿再说」的硬信号。
+ * 刻意收紧：勿用「晚点再说 / 有事要…」等日常口语，避免空闲灵动间隔被误拉到 5 分钟～2 小时。
+ */
 const EXPLICIT_BUSY_TEXT_RE =
-  /(?:去忙|在忙|忙着|没空|先忙|要忙|我来忙|有事要|顾不上|晚点(?:再)?说|回头(?:再)?说|等会(?:儿)?再(?:说|聊)|暂时忙|忙一会|忙一会儿|先不聊|先不说了)/
+  /(?:我(?:现在|这会儿|这会)?(?:在忙|忙着|没空)|去忙(?:了|啦|哦)?|先忙(?:了|啦|着)?|要忙(?:去|了)?|忙着(?:呢|啊|干)|暂时忙|忙一会(?:儿)?|手头(?:正)?忙|正(?:在)?(?:忙|开会|加班)|先不(?:聊|说)了|顾不上(?:你|这|聊)?|没空(?:聊|回|理))/
 
 export function messageSignalsCharacterExplicitBusy(content: string): boolean {
   const t = String(content ?? '').trim()
@@ -152,20 +156,30 @@ export async function resolveCharacterExplicitBusyForProactive(params: {
   const gs = await personaDb.getGlobalSettings()
   if (gs.busyMode === 'character') {
     const busyRow = await personaDb.getCharacterBusySettings(params.row.peerCharacterId)
-    if (busyRow?.enabled !== false && busyRow?.isBusy && (busyRow.busyEndTime ?? 0) > params.now) {
-      return true
-    }
-  } else {
-    const kv = await personaDb.getPhoneKv(`busy-conv:${params.row.conversationKey.trim()}`)
-    const busyEnabled = typeof kv === 'boolean' ? kv : true
-    if (busyEnabled) {
-      const busyRow = await personaDb.getCharacterBusySettings(params.row.peerCharacterId)
-      if (busyRow?.isBusy && (busyRow.busyEndTime ?? 0) > params.now) return true
-    }
+    const busyFeatureOn = busyRow?.enabled !== false
+    return (
+      busyFeatureOn &&
+      !!busyRow?.isBusy &&
+      (busyRow.busyEndTime ?? 0) > params.now
+    )
   }
+  const kv = await personaDb.getPhoneKv(`busy-conv:${params.row.conversationKey.trim()}`)
+  const busyFeatureOn = typeof kv === 'boolean' ? kv : true
+  if (!busyFeatureOn) return false
+  const busyRow = await personaDb.getCharacterBusySettings(params.row.peerCharacterId)
+  return !!busyRow?.isBusy && (busyRow.busyEndTime ?? 0) > params.now
+}
 
-  const messages = await personaDb.listWeChatChatMessagesByConversationKey(params.row.conversationKey)
-  return detectCharacterExplicitBusyInMessages(messages, params.now)
+/**
+ * 灵动间隔重抽：仅「系统忙碌态未结束」才用 5 分钟～2 小时。
+ * 不因历史气泡里的「说忙」口语拉长——否则主动消息刚聊完下一轮就会抽到一两个小时。
+ * `[BUSY]` 指令仍由 ChatRoom 解析后单独强制忙碌档。
+ */
+export async function resolveProactiveVariableBusyForIntervalDraw(params: {
+  row: ChatConversationSettingsRow
+  now: number
+}): Promise<boolean> {
+  return resolveCharacterExplicitBusyForProactive(params)
 }
 
 export function isProactiveVariableIntervalEnabled(
@@ -189,6 +203,12 @@ export function resolveProactiveMessageEffectiveIntervalSeconds(
   if (isProactiveVariableIntervalEnabled(row)) {
     const stored = row.proactiveMessageNextIntervalSeconds
     if (typeof stored === 'number' && Number.isFinite(stored) && stored > 0) {
+      const busy = !!options?.characterExplicitlyBusy
+      if (!busy) {
+        const idleMax = resolveProactiveVariableIdleBounds(row).maxSeconds
+        // 非忙碌却残留忙碌档抽签（可达 2 小时）：钳回空闲上限，避免倒计时卡在 1 小时+
+        if (stored > idleMax) return idleMax
+      }
       return clampProactiveVariableIntervalSeconds(stored)
     }
     return drawProactiveVariableIntervalSeconds(!!options?.characterExplicitlyBusy, row)
@@ -230,10 +250,11 @@ export function formatProactiveVariableIntervalRangeLabel(
       >
     | null,
 ): string {
+  const idle = `约 ${formatProactiveVariableIdleRangeLabel(row)}`
   if (characterExplicitlyBusy) {
-    return '约 5 分钟～2 小时（角色忙碌中）'
+    return `${idle}（系统忙碌未结束时临时改为约 5 分钟～2 小时）`
   }
-  return `约 ${formatProactiveVariableIdleRangeLabel(row)}`
+  return idle
 }
 
 export function formatProactiveVariableIntervalCountdownHint(seconds: number): string {

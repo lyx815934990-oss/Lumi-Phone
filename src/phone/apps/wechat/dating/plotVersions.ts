@@ -1,4 +1,12 @@
-import type { StoryTimelineSummaryDelta } from '../memory/storyTimelineTypes'
+import {
+  formatStoryTimelineDeltaForDisplay,
+  upsertStoryTimelineCalendarAnchorInRowText,
+  type StoryTimelineSummaryDelta,
+} from '../memory/storyTimelineTypes'
+import {
+  normalizeDualNarrativeStoryFields,
+  type DualNarrativeStoryFields,
+} from '../memory/dualNarrativeTime'
 import type { PlotDialogueTranslation, PlotItem } from './types'
 
 /** 取 AI 剧情用于多版本存储/展示的正文与思维链（与 `StoryBlock` / `splitDatingAssistantOutput` 一致） */
@@ -210,6 +218,76 @@ export function plotWithVersionIndex(plot: PlotItem, index: number): PlotItem {
     versionTimelineDeltas,
     versionDialogueTranslations,
     versionInnerOsTranslations,
+    currentVersionIndex: i,
+  }
+}
+
+/** 保存编辑：改写当前版本的故事内公历时刻（timelineDelta / snapshot / 顶层 story*） */
+export function plotWithEditedStoryTime(
+  plot: PlotItem,
+  fields: DualNarrativeStoryFields,
+): PlotItem {
+  if (plot.type !== 'ai') return plot
+  const norm = normalizeDualNarrativeStoryFields(fields)
+  const calendarLabel = norm.storyTimeLabel?.trim() || ''
+  if (!calendarLabel) return plot
+
+  const {
+    versions,
+    versionLogicPasses,
+    versionTimelineSnapshots,
+    versionTimelineDeltas,
+    versionDialogueTranslations,
+    versionInnerOsTranslations,
+    currentVersionIndex,
+  } = getAiVersionArrays(plot)
+  const i = currentVersionIndex
+  const nextTd = [...versionTimelineDeltas]
+  const nextTs = [...versionTimelineSnapshots]
+  while (nextTd.length < versions.length) nextTd.push(undefined)
+  while (nextTs.length < versions.length) nextTs.push(undefined)
+
+  const prevDelta = nextTd[i] ?? plot.timelineDelta ?? {}
+  const nextDelta: StoryTimelineSummaryDelta = {
+    ...prevDelta,
+    story_day: norm.storyDay?.trim() || undefined,
+    story_time: norm.storyTime?.trim() || undefined,
+    ...(norm.editMode === 'range'
+      ? {
+          story_day_end: (norm.storyDayEnd || norm.storyDay)?.trim() || undefined,
+          story_time_end: (norm.storyTimeEnd || norm.storyTime)?.trim() || undefined,
+        }
+      : {
+          story_day_end: undefined,
+          story_time_end: undefined,
+        }),
+  }
+  nextTd[i] = nextDelta
+
+  const prevSnap = (nextTs[i] ?? plot.timelineSnapshot ?? '').trim()
+  const nextSnap = prevSnap
+    ? upsertStoryTimelineCalendarAnchorInRowText(prevSnap, calendarLabel)
+    : formatStoryTimelineDeltaForDisplay(nextDelta, { recordedAtMs: plot.timestamp })
+  nextTs[i] = nextSnap.trim() || undefined
+
+  const endDay = (nextDelta.story_day_end || nextDelta.story_day)?.trim()
+  const endTime = (nextDelta.story_time_end || nextDelta.story_time)?.trim()
+
+  return {
+    ...plot,
+    storyDay: endDay || undefined,
+    storyTime: endTime || undefined,
+    storyTimeLabel: calendarLabel,
+    timelineDelta: nextDelta,
+    timelineSnapshot: nextTs[i],
+    versions,
+    versionLogicPasses,
+    versionTimelineSnapshots: nextTs,
+    versionTimelineDeltas: nextTd,
+    versionDialogueTranslations,
+    versionInnerOsTranslations,
+    dialogueTranslations: versionDialogueTranslations[i],
+    innerOsTranslations: versionInnerOsTranslations[i],
     currentVersionIndex: i,
   }
 }

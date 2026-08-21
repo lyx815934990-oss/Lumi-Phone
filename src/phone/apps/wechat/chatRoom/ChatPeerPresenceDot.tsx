@@ -1,5 +1,13 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { resolveCharacterAvatarUrl } from '../../../utils/characterAvatarUrl'
 import { LUMI_SHELL, LUMI_SHELL_FONT } from '../lumiShellTheme'
@@ -24,22 +32,64 @@ const PRESENCE_DOT_LABEL: Record<FriendPresence, string> = {
   offline: '离线',
 }
 
-export function ChatPeerPresenceDot({
-  characterId,
-  name,
-  avatarUrl,
-  size = 8,
-}: {
-  characterId: string
-  name: string
-  avatarUrl?: string
-  size?: number
-}) {
+export type ChatPeerPresenceDotHandle = {
+  toggle: () => void
+  open: () => void
+  close: () => void
+}
+
+export const ChatPeerPresenceDot = forwardRef<
+  ChatPeerPresenceDotHandle,
+  {
+    characterId: string
+    name: string
+    avatarUrl?: string
+    size?: number
+    /**
+     * 自定义触发器（如 X 顶栏头像区）。
+     * 传入时不再渲染默认绿点按钮；面板锚点优先用 anchorRef，否则用 trigger 根节点。
+     */
+    renderTrigger?: (api: {
+      open: boolean
+      toggle: () => void
+      triggerRef: RefObject<HTMLElement | null>
+    }) => ReactNode
+    /** 面板定位锚点；缺省为触发按钮 */
+    anchorRef?: RefObject<HTMLElement | null>
+    /** 隐藏默认绿点但仍可通过 ref / openRequest 打开面板 */
+    hideDot?: boolean
+    /** 外部递增以打开面板 */
+    openRequest?: number
+  }
+>(function ChatPeerPresenceDot(
+  {
+    characterId,
+    name,
+    avatarUrl,
+    size = 8,
+    renderTrigger,
+    anchorRef,
+    hideDot = false,
+    openRequest,
+  },
+  ref,
+) {
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<PeerPresenceThoughtStatus>(DEFAULT_PEER_PRESENCE_THOUGHT)
-  const btnRef = useRef<HTMLButtonElement | null>(null)
+  const btnRef = useRef<HTMLElement | null>(null)
   const [panelPos, setPanelPos] = useState<{ top: number; left: number } | null>(null)
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null)
+
+  const toggle = () => setOpen((v) => !v)
+  const openPanel = () => setOpen(true)
+  const closePanel = () => setOpen(false)
+
+  useImperativeHandle(ref, () => ({ toggle, open: openPanel, close: closePanel }), [])
+
+  useEffect(() => {
+    if (openRequest == null || openRequest <= 0) return
+    setOpen(true)
+  }, [openRequest])
 
   useEffect(() => {
     setPortalRoot(
@@ -74,7 +124,7 @@ export function ChatPeerPresenceDot({
       setPanelPos(null)
       return
     }
-    const el = btnRef.current
+    const el = anchorRef?.current ?? btnRef.current
     if (!el) return
     const rect = el.getBoundingClientRect()
     const phone = document.querySelector('[data-phone-page="wechat"]') as HTMLElement | null
@@ -84,7 +134,7 @@ export function ChatPeerPresenceDot({
       ? Math.min(Math.max(12, rect.left - rootRect.left - 40), (rootRect.width || 320) - 220)
       : Math.max(12, rect.left - 40)
     setPanelPos({ top, left })
-  }, [open])
+  }, [open, anchorRef])
 
   useEffect(() => {
     if (!open) return
@@ -206,32 +256,38 @@ export function ChatPeerPresenceDot({
         )
       : null
 
+  const trigger = renderTrigger ? (
+    renderTrigger({ open, toggle, triggerRef: btnRef })
+  ) : hideDot ? null : (
+    <button
+      ref={btnRef as RefObject<HTMLButtonElement>}
+      type="button"
+      aria-label={`查看 ${name} 的在线状态`}
+      className="relative ml-1 inline-flex shrink-0 items-center justify-center rounded-full"
+      style={{ width: size + 10, height: size + 10 }}
+      onClick={(e) => {
+        e.stopPropagation()
+        e.preventDefault()
+        toggle()
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <span
+        className="rounded-full"
+        style={{
+          width: size,
+          height: size,
+          background: PRESENCE_COLOR[presence],
+          boxShadow: presence === 'online' ? '0 0 0 1px rgba(52,199,89,0.28)' : undefined,
+        }}
+      />
+    </button>
+  )
+
   return (
     <>
-      <button
-        ref={btnRef}
-        type="button"
-        aria-label={`查看 ${name} 的在线状态`}
-        className="relative ml-1 inline-flex shrink-0 items-center justify-center rounded-full"
-        style={{ width: size + 10, height: size + 10 }}
-        onClick={(e) => {
-          e.stopPropagation()
-          e.preventDefault()
-          setOpen((v) => !v)
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <span
-          className="rounded-full"
-          style={{
-            width: size,
-            height: size,
-            background: PRESENCE_COLOR[presence],
-            boxShadow: presence === 'online' ? '0 0 0 1px rgba(52,199,89,0.28)' : undefined,
-          }}
-        />
-      </button>
+      {trigger}
       {panel}
     </>
   )
-}
+})

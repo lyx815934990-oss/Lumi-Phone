@@ -10,9 +10,12 @@ import {
 } from './ContactProfileGenderIcons'
 import { ContactMomentsSnapshot } from '../../../components/moments/ContactMomentsSnapshot'
 import type { MomentContactRef } from '../../../components/moments/newMomentTypes'
+
+const EMPTY_MOMENT_CONTACTS: MomentContactRef[] = []
 import { personaDb } from './newFriendsPersona/idb'
-import type { Character } from './newFriendsPersona/types'
+import type { Character, PlayerIdentity } from './newFriendsPersona/types'
 import { WECHAT_LUMI_PEER_CHARACTER_ID, WECHAT_SELF_PEER_CHARACTER_ID } from './wechatConversationKey'
+import { resolveCharacterBoundUserIdentity } from './charUserPlaceholders'
 import type { WechatProfile } from './wechatProfileTypes'
 
 import { resolveCharacterAvatarUrl } from '../../utils/characterAvatarUrl'
@@ -28,6 +31,24 @@ import {
   UniqueIdentityQrWatermark,
   resolveIdentityQrMeta,
 } from './ContactProfileIdentityQr'
+import {
+  ContactProfileLifeLedgerEntry,
+  ContactProfileLifeLedgerSheet,
+} from './ContactProfileLifeLedgerEntry'
+import type { AnonymousQaWechatContext } from '../../../components/anonymousQa/buildAnonymousQaPersonaContext'
+import { ObservationNotesEntryCard } from './observationNotes/ObservationNotesEntryCard'
+import { ObservationNotesScreen } from './observationNotes/ObservationNotesScreen'
+import { OBS_NOTES_UPDATED_EVENT } from './observationNotes/obsNotesPatch'
+import { looksLikeLegacySampleObservationNotes } from './observationNotes/previousVersion'
+import {
+  clearObservationNotes,
+  createBlankObservationNotesDoc,
+  getObservationEntryPreview,
+  loadObservationNotes,
+  saveObservationNotes,
+  type ObservationNotesEntryPreview,
+} from './observationNotes/store'
+import type { ObservationNotesDoc } from './observationNotes/types'
 
 export type ContactProfileTarget =
   | { kind: 'lumi' }
@@ -44,6 +65,10 @@ export type ContactProfileCardScreenProps = {
   onOpenContactSettings: (characterId: string) => void
   onOpenMoments?: () => void
   accountId?: string | null
+  /** 当前玩家身份（观察笔记按 char×player 存档） */
+  playerIdentityId?: string | null
+  /** 手动更新侧写所需 */
+  wechatCtx?: AnonymousQaWechatContext | null
   momentContacts?: MomentContactRef[]
   /** 本人资料卡：当前微信马甲资料（kind === 'self' 时使用） */
   selfAccountProfile?: Pick<WechatProfile, 'nickname' | 'wechatId' | 'signature' | 'avatarUrl' | 'gender'> | null
@@ -151,14 +176,22 @@ export function ContactProfileCardScreen({
   onOpenContactSettings: _onOpenContactSettings,
   onOpenMoments,
   accountId,
-  momentContacts = [],
+  playerIdentityId: playerIdentityIdProp = null,
+  wechatCtx = null,
+  momentContacts = EMPTY_MOMENT_CONTACTS,
   selfAccountProfile = null,
 }: ContactProfileCardScreenProps) {
   const { state } = useCustomization()
   const disableTransitions = state.ui.disablePageTransitions
   const [character, setCharacter] = useState<Character | null>(null)
+  const [boundPlayerIdentity, setBoundPlayerIdentity] = useState<PlayerIdentity | null>(null)
   const [callPanelOpen, setCallPanelOpen] = useState(false)
   const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false)
+  const [lifeLedgerOpen, setLifeLedgerOpen] = useState(false)
+  const [obsNotesOpen, setObsNotesOpen] = useState(false)
+  const [obsNotesDoc, setObsNotesDoc] = useState<ObservationNotesDoc | null>(null)
+  const [obsNotesPreview, setObsNotesPreview] = useState<ObservationNotesEntryPreview | null>(null)
+  const [displayAge, setDisplayAge] = useState<number | null>(null)
 
   const isSelf = target.kind === 'self'
   const characterId =
@@ -168,18 +201,55 @@ export function ContactProfileCardScreen({
         ? WECHAT_SELF_PEER_CHARACTER_ID
         : WECHAT_LUMI_PEER_CHARACTER_ID
 
+  const obsPlayerIdentityId = useMemo(() => {
+    const bound = boundPlayerIdentity?.id?.trim()
+    if (bound) return bound
+    return playerIdentityIdProp?.trim() || ''
+  }, [boundPlayerIdentity?.id, playerIdentityIdProp])
+
   useEffect(() => {
     if (isSelf) {
       setCharacter(null)
+      setBoundPlayerIdentity(null)
+      setDisplayAge(null)
       return
     }
     let cancelled = false
     const load = async () => {
       try {
         const c = await personaDb.getCharacter(characterId)
-        if (!cancelled) setCharacter(c ?? null)
+        if (cancelled) return
+        const identity = c ? await resolveCharacterBoundUserIdentity(c) : null
+        const fresh = c ? ((await personaDb.getCharacter(c.id)) ?? c) : null
+        if (cancelled) return
+        setCharacter(fresh)
+        setBoundPlayerIdentity(identity)
+        if (c) {
+          const span = await import('./lifeMutable/load').then((m) => m.loadCharacterStorySpan(c.id))
+          const row = await personaDb.getCharacterLifeMutable(c.id)
+          const sheet = row?.sheet
+          const ageAtStart =
+            typeof sheet?.ageAtStart === 'number' && Number.isFinite(sheet.ageAtStart)
+              ? sheet.ageAtStart
+              : c.age
+          const { computeCurrentAge, resolveLifeClock } = await import('./lifeMutable/compute')
+          const clock = resolveLifeClock(sheet?.storyStartDay, span)
+          const age = computeCurrentAge({
+            ageAtStart,
+            birthdayMD: c.birthdayMD,
+            startDay: clock.startDay,
+            nowDay: clock.nowDay,
+          })
+          if (!cancelled) setDisplayAge(age ?? c.age)
+        } else if (!cancelled) {
+          setDisplayAge(null)
+        }
       } catch {
-        if (!cancelled) setCharacter(null)
+        if (!cancelled) {
+          setCharacter(null)
+          setBoundPlayerIdentity(null)
+          setDisplayAge(null)
+        }
       }
     }
     void load()
@@ -190,6 +260,62 @@ export function ContactProfileCardScreen({
       window.removeEventListener('wechat-storage-changed', onStorage)
     }
   }, [characterId, isSelf])
+
+  const reloadObsPreview = useCallback(async () => {
+    if (target.kind !== 'persona' || !obsPlayerIdentityId) {
+      setObsNotesPreview(null)
+      return
+    }
+    try {
+      const doc = await loadObservationNotes({
+        conversationCharacterId: characterId,
+        playerIdentityId: obsPlayerIdentityId,
+        charDisplayName: remarkName.trim() || character?.name?.trim() || '未命名',
+        seedIfEmpty: false,
+      })
+      setObsNotesPreview(getObservationEntryPreview(doc))
+    } catch {
+      setObsNotesPreview(null)
+    }
+  }, [target.kind, obsPlayerIdentityId, characterId, remarkName, character?.name])
+
+  useEffect(() => {
+    void reloadObsPreview()
+  }, [reloadObsPreview])
+
+  useEffect(() => {
+    const onChange = () => void reloadObsPreview()
+    window.addEventListener(OBS_NOTES_UPDATED_EVENT, onChange)
+    return () => window.removeEventListener(OBS_NOTES_UPDATED_EVENT, onChange)
+  }, [reloadObsPreview])
+
+  const openObservationNotes = useCallback(async () => {
+    if (target.kind !== 'persona' || !obsPlayerIdentityId) return
+    const charDisplayName = remarkName.trim() || character?.name?.trim() || '未命名'
+    let doc = await loadObservationNotes({
+      conversationCharacterId: characterId,
+      playerIdentityId: obsPlayerIdentityId,
+      charDisplayName,
+      seedIfEmpty: false,
+    })
+    if (doc && looksLikeLegacySampleObservationNotes(doc)) {
+      await clearObservationNotes({
+        conversationCharacterId: characterId,
+        playerIdentityId: obsPlayerIdentityId,
+      })
+      doc = null
+    }
+    if (!doc) {
+      doc = createBlankObservationNotesDoc({
+        conversationCharacterId: characterId,
+        playerIdentityId: obsPlayerIdentityId,
+        charDisplayName,
+      })
+      await saveObservationNotes(doc)
+    }
+    setObsNotesDoc(doc)
+    setObsNotesOpen(true)
+  }, [target.kind, obsPlayerIdentityId, characterId, remarkName, character?.name])
 
   const wechatNickLine = useMemo(() => {
     if (target.kind === 'lumi') return 'Lumi'
@@ -268,12 +394,12 @@ export function ContactProfileCardScreen({
     }
     const parts = [
       genderLabel(genderUi),
-      character?.age != null ? `${character.age}` : null,
+      displayAge != null ? `${displayAge}` : character?.age != null ? `${character.age}` : null,
       character?.zodiac?.trim() || null,
       character?.mbti?.trim()?.toUpperCase() || null,
     ].filter(Boolean)
     return parts.join(' / ') || '—'
-  }, [target.kind, genderUi, summaryRegion, character?.age, character?.zodiac, character?.mbti])
+  }, [target.kind, genderUi, summaryRegion, displayAge, character?.age, character?.zodiac, character?.mbti])
 
   const roleLine = useMemo(() => {
     if (target.kind === 'lumi') return '智能助理'
@@ -492,6 +618,23 @@ export function ContactProfileCardScreen({
             />
           </div>
 
+          {target.kind === 'persona' && character ? (
+            <ContactProfileLifeLedgerEntry
+              character={character}
+              playerIdentityId={boundPlayerIdentity?.id}
+              onOpen={() => setLifeLedgerOpen(true)}
+            />
+          ) : null}
+
+          {target.kind === 'persona' && obsPlayerIdentityId ? (
+            <div className="mt-3">
+              <ObservationNotesEntryCard
+                preview={obsNotesPreview}
+                onOpen={() => void openObservationNotes()}
+              />
+            </div>
+          ) : null}
+
           {/* 朋友圈 */}
           <div
             className="mt-3 overflow-hidden"
@@ -615,6 +758,28 @@ export function ContactProfileCardScreen({
           </div>
         </div>
       ) : null}
+
+      {lifeLedgerOpen && target.kind === 'persona' && character ? (
+        <ContactProfileLifeLedgerSheet
+          character={character}
+          playerIdentity={boundPlayerIdentity}
+          onClose={() => setLifeLedgerOpen(false)}
+        />
+      ) : null}
+
+      <ObservationNotesScreen
+        open={obsNotesOpen}
+        doc={obsNotesDoc}
+        onClose={() => {
+          setObsNotesOpen(false)
+          setObsNotesDoc(null)
+          void reloadObsPreview()
+        }}
+        onDocChange={setObsNotesDoc}
+        accountId={accountId}
+        wechatCtx={wechatCtx}
+        disableTransitions={disableTransitions}
+      />
     </motion.div>
   )
 }

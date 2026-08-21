@@ -91,7 +91,7 @@ function RedPacketIcon({ size = 24 }: { size?: number }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
-      className="text-black"
+      className="text-[color:var(--wx-plus-icon-color,#000)]"
     >
       <path d="M6.5 4.5h11A2 2 0 0 1 19.5 6.5v13A2 2 0 0 1 17.5 21.5h-11A2 2 0 0 1 4.5 19.5v-13A2 2 0 0 1 6.5 4.5Z" />
       {/* 上半部分 V 字 */}
@@ -113,7 +113,7 @@ function TransferArrowsIcon({ size = 24 }: { size?: number }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
-      className="text-black"
+      className="text-[color:var(--wx-plus-icon-color,#000)]"
     >
       <path d="M6 8h11" />
       <path d="M14.5 5.5 17 8l-2.5 2.5" />
@@ -147,17 +147,27 @@ function PlusMenuGridCell({
       >
         <div
           data-wx-plus-tile
-          className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[12px] bg-[#f5f5f5]"
+          className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[12px]"
+          style={{ backgroundColor: 'var(--wx-plus-tile-bg, #f5f5f5)' }}
         >
           {actionId === 'redpacket' ? (
             <RedPacketIcon size={24} />
           ) : actionId === 'transfer' ? (
             <TransferArrowsIcon size={24} />
           ) : (
-            <Icon size={24} strokeWidth={2} className="text-black" aria-hidden />
+            <Icon
+              size={24}
+              strokeWidth={2}
+              className="text-[color:var(--wx-plus-icon-color,#000)]"
+              aria-hidden
+            />
           )}
         </div>
-        <p data-wx-plus-label className="mt-2 text-center text-[12px] leading-none text-black">
+        <p
+          data-wx-plus-label
+          className="mt-2 text-center text-[12px] leading-none"
+          style={{ color: 'var(--wx-plus-label-color, #000)' }}
+        >
           {label}
         </p>
       </div>
@@ -175,17 +185,27 @@ function PlusMenuGridCell({
     >
       <div
         data-wx-plus-tile
-        className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[12px] bg-[#f5f5f5] transition-[background-color,transform,opacity] duration-100 active:scale-[0.96] active:opacity-80"
+        className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[12px] transition-[background-color,transform,opacity] duration-100 active:scale-[0.96] active:opacity-80"
+        style={{ backgroundColor: 'var(--wx-plus-tile-bg, #f5f5f5)' }}
       >
         {actionId === 'redpacket' ? (
           <RedPacketIcon size={24} />
         ) : actionId === 'transfer' ? (
           <TransferArrowsIcon size={24} />
         ) : (
-          <Icon size={24} strokeWidth={2} className="text-black" aria-hidden />
+          <Icon
+            size={24}
+            strokeWidth={2}
+            className="text-[color:var(--wx-plus-icon-color,#000)]"
+            aria-hidden
+          />
         )}
       </div>
-      <p data-wx-plus-label className="mt-2 text-center text-[12px] leading-none text-black">
+      <p
+        data-wx-plus-label
+        className="mt-2 text-center text-[12px] leading-none"
+        style={{ color: 'var(--wx-plus-label-color, #000)' }}
+      >
         {label}
       </p>
     </Pressable>
@@ -222,7 +242,12 @@ function PageDots({
           aria-label={`第 ${i + 1} 页`}
           aria-current={i === active ? 'true' : undefined}
           className="h-1.5 w-1.5 rounded-full p-0 transition-colors duration-200"
-          style={{ backgroundColor: i === active ? '#000000' : '#d4d4d4' }}
+          style={{
+            backgroundColor:
+              i === active
+                ? 'var(--wx-plus-dot-active, #000000)'
+                : 'var(--wx-plus-dot-idle, #d4d4d4)',
+          }}
           data-wx-plus-dot={i === active ? 'active' : 'idle'}
           onClick={() => onPick(i)}
         />

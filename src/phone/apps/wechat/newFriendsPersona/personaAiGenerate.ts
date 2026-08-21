@@ -32,6 +32,7 @@ import {
   type PersonaAiGenerateIssue,
   type PersonaAiGenerateResult,
 } from './personaAiGenerateRecovery'
+import { generatePersonaAiLifeLedgers } from './personaAiGenerateLifeLedger'
 
 export type { PersonaAiGenerateIssue, PersonaAiGenerateResult }
 export { PersonaAiGenerateFailure, pickPersonaAiRepairIssues } from './personaAiGenerateRecovery'
@@ -53,7 +54,8 @@ function parseModelOutput(text: string): { parsed: Record<string, unknown>; pars
 
 /** 补全/纠正：允许只返回待改字段（增量补丁） */
 function parseRepairModelOutput(text: string): { parsed: Record<string, unknown>; parseRecovered: boolean } {
-  const result = parsePersonaAiModelOutput(text)
+  // 增量补丁故意不全；勿把「缺 bio/世界书」当成截断，否则会反复提示并触发宽合并≈整卷重写
+  const result = parsePersonaAiModelOutput(text, { expectFullDossier: false })
   if (!result.parsed || Object.keys(result.parsed).length === 0) {
     throw new PersonaAiGenerateFailure('模型未返回可解析的补全标记文本', text)
   }
@@ -148,7 +150,7 @@ function assemblePersonaCharacter(parsed: Record<string, unknown>, params: Assem
       relationToUser: params.form.relationToUser,
       orientationLabel: pickStr(parsed.orientation, 48) || params.form.orientationHint.trim() || undefined,
       occupationLabel: pickStr(parsed.occupation, 48) || params.form.occupationHint.trim() || undefined,
-      includeRelationshipHistory: Boolean(historyHint),
+      includeRelationshipHistory: true,
       relationshipHistoryHint: historyHint || undefined,
     },
   )
@@ -237,13 +239,14 @@ async function callPersonaAiText(
   user: string,
   signal?: AbortSignal,
 ): Promise<string> {
+  // 不硬编码 max_tokens：走 API 设置页的最大 Token（未填则系统默认）
   return openAiCompatibleChat(
     cfg,
     [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
-    { max_tokens: 12288, signal },
+    { signal },
   )
 }
 
@@ -253,6 +256,45 @@ export function isPersonaAiAbortError(e: unknown): boolean {
   if (name === 'AbortError') return true
   const msg = e instanceof Error ? e.message : String(e)
   return /aborted|abort|The user aborted|signal is aborted/i.test(msg)
+}
+
+async function attachLifeLedgers(
+  result: PersonaAiGenerateResult,
+  params: {
+    apiConfig: ApiConfig
+    form: PersonaAiGenerateForm
+    playerIdentity?: PlayerIdentity | null
+    signal?: AbortSignal
+  },
+): Promise<PersonaAiGenerateResult> {
+  // 仅缺字段时跳过账本；过短/占位可先建开局账本（补全后再改人设即可）
+  const hasMissing = result.issues.some(
+    (i) => i.kind === 'missing_epilogue' || i.kind === 'missing_top_field',
+  )
+  if (hasMissing) {
+    return {
+      ...result,
+      lifeLedgerError: '人设仍有缺失条目，补全完整后再自动生成人生账本',
+    }
+  }
+  try {
+    const ledgers = await generatePersonaAiLifeLedgers({
+      apiConfig: params.apiConfig,
+      character: result.character,
+      form: params.form,
+      playerIdentity: params.playerIdentity,
+      signal: params.signal,
+    })
+    return {
+      ...result,
+      characterLifeSheet: ledgers.characterLifeSheet,
+      playerLifeSheet: ledgers.playerLifeSheet,
+      lifeLedgerError: undefined,
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '人生账本生成失败'
+    return { ...result, lifeLedgerError: msg }
+  }
 }
 
 export async function generatePersonaWithAi(params: {
@@ -275,7 +317,7 @@ export async function generatePersonaWithAi(params: {
     nsfwEnabled: params.form.nsfwEnabled,
     relationToUser: params.form.relationToUser,
     nsfwHint: params.form.nsfwHint,
-    includeRelationshipHistory: Boolean(params.form.relationshipHistoryHint.trim()),
+    includeRelationshipHistory: true,
     referencePersonaDirectGenerate: Boolean(params.form.referencePersonaDirectGenerate),
     referencePersonaHint: params.form.referencePersonaHint,
   })
@@ -287,10 +329,17 @@ export async function generatePersonaWithAi(params: {
   })
 
   const raw = await callPersonaAiText(cfg, system, user, params.signal)
-  return buildPersonaAiFromModelText(raw, {
+  const result = buildPersonaAiFromModelText(raw, {
     form: params.form,
     draft: params.draft,
     playerDisplayName: params.playerDisplayName,
+  })
+
+  return attachLifeLedgers(result, {
+    apiConfig: cfg,
+    form: params.form,
+    playerIdentity: params.playerIdentity,
+    signal: params.signal,
   })
 }
 
@@ -331,7 +380,7 @@ export async function repairPersonaAiWithAi(params: {
     nsfwEnabled: params.form.nsfwEnabled,
     relationToUser: params.form.relationToUser,
     mode: params.mode,
-    includeRelationshipHistory: Boolean(params.form.relationshipHistoryHint.trim()),
+    includeRelationshipHistory: true,
     referencePersonaDirectGenerate: Boolean(params.form.referencePersonaDirectGenerate),
     referencePersonaHint: params.form.referencePersonaHint,
   })
@@ -364,13 +413,23 @@ export async function repairPersonaAiWithAi(params: {
     parseRecovered,
     rawText: `${params.base.rawText}\n---repair---\n${raw}`,
   })
-  return {
+  const result: PersonaAiGenerateResult = {
     character,
     issues: mergedIssues,
     rawText: raw,
     parsedSnapshot: merged,
     parseRecovered,
+    // 补全过程中先保留旧账本；补全干净后再刷新
+    characterLifeSheet: params.base.characterLifeSheet,
+    playerLifeSheet: params.base.playerLifeSheet,
   }
+  if (mergedIssues.length > 0) return result
+  return attachLifeLedgers(result, {
+    apiConfig: cfg,
+    form: params.form,
+    playerIdentity: params.playerIdentity,
+    signal: params.signal,
+  })
 }
 
 const TOP_FIELD_REGEN_KEYS = new Set([
@@ -471,6 +530,7 @@ export async function regeneratePersonaAiSelectedParts(params: {
 
   const system = `你是中文都市向角色档案改写助手。用户对部分条目不满意，请**只重写白名单内的键值行与【段落】**，禁止 JSON，禁止输出未勾选项，**禁止输出【开场白】**。
 改写须贴合用户改写要求；仍用 {{char}}/{{user}}；第三人称档案体；中性朴实，禁止超雄 caricature。
+若重写【简介】：只写稳定气质/性格/身份印象，禁止写当前和谁怎么样、禁止写可变关系现状。
 世界书【标题】须与用户指定标题完全一致。`.trim()
 
   const user = [
@@ -516,5 +576,7 @@ export async function regeneratePersonaAiSelectedParts(params: {
     rawText: raw,
     parsedSnapshot: merged,
     parseRecovered,
+    characterLifeSheet: params.base.characterLifeSheet,
+    playerLifeSheet: params.base.playerLifeSheet,
   }
 }

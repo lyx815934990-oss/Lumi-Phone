@@ -7,11 +7,10 @@ export const PERSONA_AI_COMPACT_BOOK_TITLE = '角色人设档案'
 export const PERSONA_AI_COMPACT_BOOK_KEY = 'main'
 
 /**
- * 单本世界书固定 9 条（顺序即 item01–…）。
+ * 单本世界书固定 9 条（顺序即 item01–…），另恒含「过往感情史」序言（插在「亲密与恋爱观」后）。
  * 前 8 条默认序言介入；「对你现在」为尾声延展（可随剧情更新）。
  * 取向「可变」时另增「取向认同的当前快照」为尾声延展（插在「性格内核」后）。
  * 职业「可变」时另增「职业身份的当前快照」为尾声延展（插在「名片基础」后）。
- * 填写过往感情史时另增「过往感情史」为序言介入（插在「亲密与恋爱观」后）。
  */
 export const PERSONA_AI_COMPACT_ENTRY_NAMES = [
   '名片基础',
@@ -36,7 +35,7 @@ export const PERSONA_AI_MEETING_BOND_ENTRY_NAME: PersonaAiCompactEntryName = '�
 /** 围绕角色的具名 NPC 简要档案 */
 export const PERSONA_AI_NPC_ROSTER_ENTRY_NAME: PersonaAiCompactEntryName = '周边NPC'
 
-/** 用户填写感情史时单独抽出的序言条目（非与 {{user}} 当前关系） */
+/** 过往感情史（序言）：曾有好感/喜欢/交往过的对象，或母胎单身等；非与 {{user}} 当前关系 */
 export const PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME = '过往感情史'
 
 export type PersonaAiEpilogueEntry = { name: string; content: string }
@@ -396,14 +395,14 @@ function buildOccupationEpilogueDefault(occupationLabel?: string): string {
 function buildRelationshipHistoryDefault(hint?: string): string {
   const seed = String(hint ?? '').trim()
   if (seed) {
-    return `围绕用户种子「${seed}」扩写{{char}}的过往感情史：分手/前任余波、模式与雷区、对亲密关系的习惯影响。只写过去与第三人，禁止写成与{{user}}的当前关系；也禁止把{{user}}写成前任。`
+    return `围绕用户种子「${seed}」扩写{{char}}的过往感情史：须写清曾有好感、喜欢过、或在一起过的对象（可化名/简述关系与结局），以及分手余波、模式与雷区；若种子指向单身/无恋爱，则明确写母胎单身或从未认真喜欢过人。只写过去与第三人，禁止写成与{{user}}的当前关系；也禁止把{{user}}写成前任。`
   }
-  return `{{char}}的过往感情史侧写：重要前任或情感经历、分手余波与模式、对亲密关系的习惯影响。只写过去，禁止写成与{{user}}的当前关系。`
+  return `{{char}}的过往感情史：须写清曾有好感、喜欢过、或在一起过的对象（可化名/简述关系与结局）及留下的模式影响；若从未心动也未恋爱，则明确写「母胎单身/未认真喜欢过人」类设定。只写过去，禁止写成与{{user}}的当前关系。`
 }
 
 /**
  * 将 AI 人设写成**一本**世界书、固定条目。
- * 「对你现在」恒为尾声延展；「相遇羁绊」为序言；取向/职业「可变」时另增对应快照尾声；有感情史种子时另增「过往感情史」序言。
+ * 「对你现在」恒为尾声延展；「相遇羁绊」为序言；「过往感情史」恒为序言；取向/职业「可变」时另增对应快照尾声。
  */
 export function buildPersonaAiWorldBooks(
   characterId: string,
@@ -421,14 +420,14 @@ export function buildPersonaAiWorldBooks(
     orientationLabel?: string
     /** 顶层「职业」短标签，作职业尾声缺省正文参考 */
     occupationLabel?: string
-    /** 用户填写了感情史种子时另增「过往感情史」条目 */
+    /** 恒为 true：始终写入「过往感情史」序言条（保留参数兼容旧调用） */
     includeRelationshipHistory?: boolean
     relationshipHistoryHint?: string
   },
 ): WorldBook[] {
   const orientationMutable = opts?.orientationMutable ?? false
   const occupationMutable = opts?.occupationMutable ?? false
-  const includeHistory = opts?.includeRelationshipHistory === true
+  const includeHistory = opts?.includeRelationshipHistory !== false
   const relationToUser = String(opts?.relationToUser ?? '').trim()
   const sections = normalizePersonaAiCompactSections(sectionsOrEpilogue, { relationToUser })
   // 旧调用曾把九维对象塞进第 3 参；仅接受非空字符串作为真实姓名

@@ -41,6 +41,7 @@ import { useEditableKeyboardLift } from '../../../hooks/useEditableKeyboardLift'
 import { isAndroidWeb, keyboardScrollPaddingBottom } from '../../../hooks/keyboardInset'
 import { KeyboardBottomWhitePad } from '../../../components/KeyboardBottomWhitePad'
 import { deleteCharacterPersonaForWechatAccount } from '../wechatCharacterPersonaDelete'
+import { setLifeLedgerInlineSyncEnabled } from '../lifeMutable/inlineSync'
 import {
   collectCanonicalIdsPreservedAcrossAccounts,
   expandCanonicalIdSet,
@@ -61,6 +62,7 @@ import {
 import { ArchiveIndexTabs } from './personaEditor/ArchiveIndexTabs'
 import type { PersonaEditTabId } from './personaEditor/personaEditorTabs'
 import { BasicInfoTab } from './personaEditor/BasicInfoTab'
+import { LifeMutableTab } from './personaEditor/LifeMutableTab'
 import { BindingsInfoTab } from './personaEditor/BindingsInfoTab'
 import { ConnectionsTab } from './personaEditor/ConnectionsTab'
 import { DataTransferTab } from './personaEditor/DataTransferTab'
@@ -73,6 +75,7 @@ import {
   meetWorldbooksNeedConsolidation,
 } from '../../lumiMeet/meetWorldbookConsolidate'
 import { WorldbookTab } from './personaEditor/WorldbookTab'
+import { resolveCharacterBoundUserIdentity } from '../charUserPlaceholders'
 import { PersonaTabs } from './personaRoster/PersonaTabs'
 import { PersonaList } from './personaRoster/PersonaList'
 import { PersonaRosterAvatar } from './personaRoster/PersonaRosterAvatar'
@@ -368,7 +371,7 @@ function PersonaWeChatContactModal({
           生成微信通讯录联系人
         </p>
         <p className="mt-2 text-center text-[13px] leading-relaxed" style={{ color: sub, fontWeight: 300 }}>
-          将该主角及其人脉中的全部 NPC 一并加入微信通讯录。备注名优先使用已填写的微信昵称，否则使用角色姓名。
+          将该主角及其人脉中的全部 NPC 一并加入微信通讯录。列表展示优先用你设的联系人备注，没有备注时才用微信昵称或姓名。
         </p>
         <div className="mt-4 flex flex-col gap-2">
           <button
@@ -1890,12 +1893,10 @@ function PersonaEditPage({
   useEffect(() => {
     if (!data) return
     void (async () => {
-      const ctx = data.playerIdentityId?.trim()
-        ? await personaDb.getPlayerIdentity(data.playerIdentityId)
-        : await personaDb.getCurrentIdentity()
-      setWbIdentityCtx(ctx)
+      const bound = await resolveCharacterBoundUserIdentity(data)
+      setWbIdentityCtx(bound)
     })()
-  }, [data?.id, data?.playerIdentityId])
+  }, [data?.id, data?.playerIdentityId, data?.linkedPlayerIdentityIds, data?.generatedForCharacterId])
 
   /** 世界书 AI：同人脉下 NPC 摘要（进入世界书 Tab 时拉取；从人脉返回后切回 Tab 会刷新） */
   useEffect(() => {
@@ -2205,6 +2206,18 @@ function PersonaEditPage({
         characterName: next.name || '角色',
       })
     }
+    // 新建人设默认打开人生账本「随聊更新」
+    if (isNew) {
+      try {
+        await setLifeLedgerInlineSyncEnabled({
+          conversationCharacterId: next.id,
+          playerIdentityId: identityId || undefined,
+          enabled: true,
+        })
+      } catch {
+        /* 开关失败不阻断保存 */
+      }
+    }
     setSaving(false)
     setDirty(false)
     onSaved()
@@ -2443,6 +2456,10 @@ function PersonaEditPage({
                 }}
                 genderLabelZh={genderLabelZh}
               />
+            ) : null}
+
+            {editTab === 'life' ? (
+              <LifeMutableTab character={data} playerIdentity={wbIdentityCtx} />
             ) : null}
 
             {editTab === 'bindings' ? <BindingsInfoTab character={data} /> : null}

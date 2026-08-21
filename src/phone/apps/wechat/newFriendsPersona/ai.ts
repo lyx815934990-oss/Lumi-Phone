@@ -3,6 +3,8 @@ import {
   PERSONA_AI_AFFECTION_GUIDE_EPILOGUE_NAME,
   PERSONA_AI_MEETING_BOND_ENTRY_NAME,
   PERSONA_AI_NPC_ROSTER_ENTRY_NAME,
+  PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
+  isPersonaAiRelationshipHistoryEntryName,
 } from './personaAiWorldBooks'
 import type { Character, PlayerIdentity, WorldBook, WorldBookItem } from './types'
 import { genderLabelZh } from './utils'
@@ -1316,7 +1318,12 @@ export async function generateWorldBookItemContent(params: {
 
   const intimateSpeechExtra =
     !forId && /亲密与恋爱观|亲密口语习惯/.test(params.item.name)
-      ? `【本条特殊要求】「亲密与恋爱观」写一般亲密观与恋爱反差（指恋人写「对方」）；若含亲密口语，须「情境 + 引语」示例。非对 {{user}} 的微信聊天分寸。清水档案禁止露骨。\n`
+      ? `【本条特殊要求】「亲密与恋爱观」写一般亲密观与恋爱反差（指恋人写「对方」）；若含亲密口语，须「情境 + 引语」示例。非对 {{user}} 的微信聊天分寸。清水档案禁止露骨。过往对象/情史写在「${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}」，本条勿展开长情史。\n`
+      : ''
+
+  const relationshipHistoryExtra =
+    !forId && isPersonaAiRelationshipHistoryEntryName(params.item.name)
+      ? `【本条特殊要求】「${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}」写 {{char}} 过往：曾有好感、喜欢过、或在一起过的对象（可化名/简述关系与结局）及模式余波；若无则写明母胎单身/从未认真喜欢过人。只写过去与第三人，禁止写成与 {{user}} 的当前关系，也禁止把 {{user}} 写成前任。\n`
       : ''
 
   const orientationOriginExtra =
@@ -1372,7 +1379,7 @@ export async function generateWorldBookItemContent(params: {
     { role: 'system', content: systemContent },
     {
       role: 'user',
-      content: `${baseHint}${pronounWriterNote}${npcBlock}${context}${coherenceBlock}${wbgBlock}${styleBlock}${attitudeBookExtra}${userChatMannerExtra}${meetingBondExtra}${generalSpeechExtra}${intimateSpeechExtra}${orientationOriginExtra}${affectionGuideExtra}${npcRosterExtra}${vol05DesireExtra}${vol07ContrastExtra}${lengthHardRule}请生成本条目的正文内容。`,
+      content: `${baseHint}${pronounWriterNote}${npcBlock}${context}${coherenceBlock}${wbgBlock}${styleBlock}${attitudeBookExtra}${userChatMannerExtra}${meetingBondExtra}${generalSpeechExtra}${intimateSpeechExtra}${relationshipHistoryExtra}${orientationOriginExtra}${affectionGuideExtra}${npcRosterExtra}${vol05DesireExtra}${vol07ContrastExtra}${lengthHardRule}请生成本条目的正文内容。`,
     },
   ]
   let body = sanitizeWorldBookGeneratedBody(await openAiCompatibleChat(cfg, messages, { max_tokens: maxTokens }))

@@ -15,6 +15,7 @@ import { PASSIONATE_DIRECT_BALL_APPENDIX } from '../../../worldbook/passionateDi
 import { REALISTIC_CONFLICT_APPENDIX } from '../../../worldbook/realisticConflictAppendix'
 import { GENTLE_OLDER_BROTHER_APPENDIX } from '../../../worldbook/gentleOlderBrotherAppendix'
 import { AUTONOMOUS_SOCIAL_LIFE_APPENDIX } from '../../../worldbook/autonomousSocialLifeAppendix'
+import { SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX } from '../../../worldbook/schoolCampusCommonKnowledgeAppendix'
 import {
   CHARACTER_FREE_WILL_ILLUSION_APPENDIX,
   FAVORABILITY_SYSTEM_COT_APPENDIX,
@@ -487,7 +488,7 @@ export function buildDatingStyleSystemPrompt(
     : ''
   const intimacyPosePresetNote = resolved.offlineCoupleIntimacyPoses
     ? thinkingChainEnabled
-      ? `\n\n【档案室预设·耳后三厘米经济特区·已开启】亲密须写具体姿势、表情与短对白；禁「很动情」等空词、禁跳过前戏（详见思维链内特区条文）。`
+      ? `\n\n【档案室预设·耳后三厘米经济特区·已开启】亲密须写具体姿势、表情与贴耳蜜语（软直带喘；禁油腻小作文、禁侮辱）；禁「很动情」等空词、禁跳过前戏（详见思维链内特区条文）。`
       : `\n\n【档案室预设·耳后三厘米经济特区·已开启】\n${OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX}`
     : ''
   const cuisinePresetNote = resolved.cuisineRecipeAtlas
@@ -520,11 +521,16 @@ export function buildDatingStyleSystemPrompt(
       ? `\n\n【档案室预设·我也有自己的生活·已开启】自主日常+群像；宜有具体碎片与可辨认他人；禁没朋友/无所事事真空（详见思维链【我也有自己的生活】）。`
       : `\n\n【档案室预设·我也有自己的生活·已开启】\n${AUTONOMOUS_SOCIAL_LIFE_APPENDIX}`
     : ''
+  const schoolCampusPresetNote = resolved.schoolCampusCommonKnowledge
+    ? thinkingChainEnabled
+      ? `\n\n【档案室预设·校园与升学常识·已开启】涉校园/艺考/高考/大学时按常识锚点写（纪律处分、艺考集训招录、查分志愿、课表实习；详见思维链【校园与升学常识】）。`
+      : `\n\n【档案室预设·校园与升学常识·已开启】\n${SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX}`
+    : ''
   const shell = thinkingChainEnabled ? DATING_LUMI_SYSTEM_SHELL : DATING_LUMI_DIRECT_SHELL
   const books = thinkingChainEnabled
     ? `\n\n${buildLumiThinkingChainBooksPrompt(toggles)}`
     : ''
-  return `${shell}\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n\n${OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES}${books}${innerOsPresetNote}${fashionPresetNote}${intimacyPosePresetNote}${cuisinePresetNote}${directAnswerPresetNote}${passionateDirectPresetNote}${realisticConflictPresetNote}${gentleBrotherPresetNote}${autonomousLifePresetNote}`
+  return `${shell}\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n\n${OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES}${books}${innerOsPresetNote}${fashionPresetNote}${intimacyPosePresetNote}${cuisinePresetNote}${directAnswerPresetNote}${passionateDirectPresetNote}${realisticConflictPresetNote}${gentleBrotherPresetNote}${autonomousLifePresetNote}${schoolCampusPresetNote}`
 }
 
 /** 默认全开（与档案室内置预设默认一致） */

@@ -106,14 +106,25 @@ const CORNER_STYLE: Record<WeChatAvatarBadgeCorner, CSSProperties> = {
   br: { bottom: '-2px', right: '-2px' },
 }
 
-export function WeChatAvatarSizeGutter({ side }: { side: WeChatAvatarChromeSide }) {
+export function WeChatAvatarSizeGutter({
+  side,
+  sizePx = 40,
+}: {
+  side: WeChatAvatarChromeSide
+  /** 与可见头像边长一致，避免聚拢占位错位 */
+  sizePx?: number
+}) {
   return (
     <div
       data-wx-avatar-slot={side}
       className="relative shrink-0 self-stretch overflow-visible"
       aria-hidden
     >
-      <div data-wx-avatar-chrome={side} className="invisible h-10 w-10" />
+      <div
+        data-wx-avatar-chrome={side}
+        className="invisible"
+        style={{ width: sizePx, height: sizePx }}
+      />
     </div>
   )
 }

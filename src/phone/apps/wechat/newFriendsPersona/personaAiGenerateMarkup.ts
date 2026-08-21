@@ -111,7 +111,7 @@ export function buildPersonaAiMarkupFormatSpec(opts?: {
 }): string {
   const orientationMutable = opts?.orientationMutable ?? false
   const occupationMutable = opts?.occupationMutable ?? false
-  const includeHistory = opts?.includeRelationshipHistory ?? false
+  const includeHistory = opts?.includeRelationshipHistory !== false
   const wbNames: string[] = []
   for (const n of PERSONA_AI_COMPACT_ENTRY_NAMES) {
     wbNames.push(n)
@@ -141,7 +141,7 @@ export function buildPersonaAiMarkupFormatSpec(opts?: {
         return `【${n}】\n（取向「可变」专用尾声：约 ${Math.floor(ENTRY_TARGET_CHARS * 0.55)}–${ENTRY_TARGET_CHARS} 字；只写当下稳定自我认同，禁止写进「性格内核」）`
       }
       if (n === PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME) {
-        return `【${n}】\n（约 ${Math.floor(ENTRY_TARGET_CHARS * 0.7)}–${ENTRY_TARGET_CHARS} 字；角色过往感情/前任余波；禁止写成与 {{user}} 的当前关系；勿并入「亲密与恋爱观」）`
+        return `【${n}】\n（约 ${Math.floor(ENTRY_TARGET_CHARS * 0.7)}–${ENTRY_TARGET_CHARS} 字；须写曾有好感/喜欢/交往过的对象，或明确母胎单身/从未喜欢过人；禁止写成与 {{user}} 的当前关系；勿并入「亲密与恋爱观」）`
       }
       if (n === '名片基础' && occupationMutable) {
         return `【${n}】\n（约 ${ENTRY_TARGET_CHARS} 字；姓名气质摘要/年龄层/标签与雷点；**职业详述只写「${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}」**）`
@@ -179,7 +179,7 @@ MBTI：
 
 二、多行块（标题必须用全角【】，标题单独成行；正文写在标题下一行起，直到下一个【】）：
 【简介】
-（80–220 字，第三人称，至少 2 次 {{char}}，禁止出现 {{user}}）
+（80–220 字，第三人称，至少 2 次 {{char}}，禁止出现 {{user}}；只写稳定气质/性格/身份印象，禁止写当前和谁怎么样、禁止写可变关系现状）
 
 三、世界书条目（标题必须与下列**完全一致**，共 ${wbNames.length} 条${extraNote ? `；含 ${extraNote}` : ''}）：
 ${wbBlocks}
@@ -198,7 +198,17 @@ export type PersonaAiMarkupParseResult = {
 }
 
 /** 从模型纯文本标记解析为人设内部结构（与旧 JSON 同形，供 assemble 复用） */
-export function parsePersonaAiMarkup(text: string): PersonaAiMarkupParseResult {
+export function parsePersonaAiMarkup(
+  text: string,
+  opts?: {
+    /**
+     * true（默认）：按完整人设卷宗判定是否 partial（缺 bio/姓名/世界书条 → 可能截断）
+     * false：增量补丁模式——只返回待改字段属正常，勿标成截断
+     */
+    expectFullDossier?: boolean
+  },
+): PersonaAiMarkupParseResult {
+  const expectFull = opts?.expectFullDossier !== false
   const raw = stripModelNoise(text)
   const parsed: Record<string, unknown> = {}
   const wbByName = new Map<string, string>()
@@ -275,11 +285,11 @@ export function parsePersonaAiMarkup(text: string): PersonaAiMarkupParseResult {
 
   const expectedWb = PERSONA_AI_COMPACT_ENTRY_NAMES.length
   const gotWb = wbByName.size
+  // 完整卷宗才用「缺字段」推断截断；增量补丁故意不全，不能据此挂「输出可能被截断」
   const partial =
+    expectFull &&
     ok &&
-    (gotWb < expectedWb ||
-      !parsed.bio ||
-      !parsed.realName)
+    (gotWb < expectedWb || !parsed.bio || !parsed.realName)
 
   return { parsed, ok, partial }
 }
@@ -347,12 +357,15 @@ export function serializePersonaAiMarkup(
 }
 
 /** 尝试解析：优先标记文本，其次兼容旧 JSON */
-export function parsePersonaAiModelOutput(text: string): {
+export function parsePersonaAiModelOutput(
+  text: string,
+  opts?: { expectFullDossier?: boolean },
+): {
   parsed: Record<string, unknown>
   parseRecovered: boolean
   format: 'markup' | 'json'
 } {
-  const markup = parsePersonaAiMarkup(text)
+  const markup = parsePersonaAiMarkup(text, opts)
   if (markup.ok) {
     return {
       parsed: markup.parsed,

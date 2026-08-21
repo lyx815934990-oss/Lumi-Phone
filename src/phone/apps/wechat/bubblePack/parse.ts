@@ -226,7 +226,8 @@ function normalizeChatThemePatch(raw: unknown): ChatThemePatch | undefined {
     ibRaw.layout === 'wechat' ||
     ibRaw.layout === 'imessage' ||
     ibRaw.layout === 'telegram' ||
-    ibRaw.layout === 'talkmaker'
+    ibRaw.layout === 'talkmaker' ||
+    ibRaw.layout === 'twitter'
       ? ibRaw.layout
       : undefined
   const inputBar: NonNullable<ChatThemePatch['inputBar']> = {}

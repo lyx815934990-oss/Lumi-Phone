@@ -5,7 +5,8 @@ import {
   getWorldbookLoreEntriesSnapshot,
 } from '../../worldbook/worldbookLoreStore'
 import type { GlobalWechatPlate } from '../../worldbook/globalWorldBookTypes'
-import type { Character } from './newFriendsPersona/types'
+import { loadPairLifePromptContext } from './lifeMutable/load'
+import type { Character, PlayerIdentity } from './newFriendsPersona/types'
 import { personaDb } from './newFriendsPersona/idb'
 import {
   expandCharUserPlaceholders,
@@ -54,32 +55,52 @@ function traceOnlineUnsummarizedSnippetForDisplay(snippet: string): string {
   return stripUnsummarizedOnlineTimestampsForDisplay(raw).trim() || raw
 }
 
-/** 从本轮实际注入的长期记忆正文拆出关键词/向量段，供溯源在二次召回为空时回显 */
+/** 去掉分线标题/铁则残留，避免把「【当前微信线·…】」当成一条记忆 */
+function scrubInjectedLtmTraceItem(raw: string): string {
+  let s = sanitizeMemoryTraceDisplayText(raw).trim() || String(raw ?? '').trim()
+  if (!s) return ''
+  s = s
+    .replace(/^【(?:当前微信线|其它微信线|来源未标注|私聊记忆注入)[^】]*】\s*/gm, '')
+    .replace(/^\（向量召回条目均为已发生历史[^）]*）\s*/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return s
+}
+
+function isJunkInjectedLtmTraceItem(content: string): boolean {
+  const t = content.trim()
+  if (t.length < 8) return true
+  if (/^【(?:当前微信线|其它微信线|来源未标注|私聊记忆注入)[^】]*】$/.test(t)) return true
+  return false
+}
+
+/**
+ * 从本轮实际注入的长期记忆正文拆段，仅在「二次结构化召回为空」时回显。
+ * 注意：注入正文不含余弦分，**不得**伪造 relevanceScore=0 塞进向量轨。
+ */
 function parseInjectedLongTermMemoryForTrace(raw: string): {
   keywordHits: Array<{ keyword: string; content: string }>
-  vectorRetrievals: Array<{ relevanceScore: number; content: string }>
 } {
   const text = String(raw ?? '').trim()
-  if (!text) return { keywordHits: [], vectorRetrievals: [] }
+  if (!text) return { keywordHits: [] }
 
   const keywordHits: Array<{ keyword: string; content: string }> = []
-  const vectorRetrievals: Array<{ relevanceScore: number; content: string }> = []
 
-  const pushNumbered = (body: string, into: 'kw' | 'vec', label: string) => {
-    const cleaned = sanitizeMemoryTraceDisplayText(body).trim() || body.trim()
+  const pushNumbered = (body: string, label: string) => {
+    const cleaned = scrubInjectedLtmTraceItem(body)
     if (!cleaned) return
     const items = cleaned
       .split(/\n(?=\d+\.\s)/)
-      .map((x) => x.replace(/^\d+\.\s*/, '').trim())
-      .filter(Boolean)
+      .map((x) => scrubInjectedLtmTraceItem(x.replace(/^\d+\.\s*/, '')))
+      .filter((item) => item && !isJunkInjectedLtmTraceItem(item))
     if (!items.length) {
-      if (into === 'kw') keywordHits.push({ keyword: label, content: cleaned })
-      else vectorRetrievals.push({ relevanceScore: 0, content: cleaned })
+      if (!isJunkInjectedLtmTraceItem(cleaned)) {
+        keywordHits.push({ keyword: label, content: cleaned })
+      }
       return
     }
     for (const item of items) {
-      if (into === 'kw') keywordHits.push({ keyword: label, content: item })
-      else vectorRetrievals.push({ relevanceScore: 0, content: item })
+      keywordHits.push({ keyword: label, content: item })
     }
   }
 
@@ -90,23 +111,52 @@ function parseInjectedLongTermMemoryForTrace(raw: string): {
   while ((m = sectionRe.exec(text)) !== null) {
     matched = true
     const kind = m[1]
-    const title = m[2]?.trim() || (kind === '向量召回' ? '向量召回' : '关键词命中')
-    const body = m[3] ?? ''
-    if (kind === '向量召回') pushNumbered(body, 'vec', title)
-    else pushNumbered(body, 'kw', title)
+    const title =
+      m[2]?.trim() ||
+      (kind === '向量召回' ? '本轮注入·原向量段' : '本轮注入·原关键词段')
+    pushNumbered(m[3] ?? '', title)
   }
 
-  // 分线包装标题也可能是「【板块·向量召回·线上长期记忆（…）】」；上面已覆盖。
-  // 若仍未拆出分段但有正文，整段落到关键词轨，避免溯源双 0。
-  if (!matched) {
-    const cleaned = sanitizeMemoryTraceDisplayText(text).trim() || text
-    if (cleaned) keywordHits.push({ keyword: '本轮注入', content: cleaned })
-  } else if (!keywordHits.length && !vectorRetrievals.length) {
-    const cleaned = sanitizeMemoryTraceDisplayText(text).trim() || text
-    if (cleaned) keywordHits.push({ keyword: '本轮注入', content: cleaned })
+  if (!matched || !keywordHits.length) {
+    const cleaned = scrubInjectedLtmTraceItem(text)
+    if (cleaned && !isJunkInjectedLtmTraceItem(cleaned)) {
+      keywordHits.push({ keyword: '本轮注入', content: cleaned })
+    }
   }
 
-  return { keywordHits, vectorRetrievals }
+  return { keywordHits }
+}
+
+type TraceDeepMemory = {
+  keywordHits: MemoryTraceData['contextMatrix']['deepMemory']['keywordHits']
+  vectorRetrievals: MemoryTraceData['contextMatrix']['deepMemory']['vectorRetrievals']
+}
+
+/** 有真实相似度的结构化召回优先；注入回显永不覆盖向量轨、不写假 0% */
+function mergeStructuredRecallWithInjectedLtmFallback(
+  structured: TraceDeepMemory,
+  injectedLtm: string,
+): TraceDeepMemory {
+  const hasRealVector = structured.vectorRetrievals.some((v) => Number(v.relevanceScore) > 0)
+  const hasKeyword = structured.keywordHits.length > 0
+  if (hasRealVector || hasKeyword) {
+    return {
+      keywordHits: structured.keywordHits,
+      // 向量轨只保留 sim>0，避免 UI 出现 0% 垃圾条
+      vectorRetrievals: structured.vectorRetrievals.filter((v) => Number(v.relevanceScore) > 0),
+    }
+  }
+  const parsed = parseInjectedLongTermMemoryForTrace(injectedLtm)
+  if (!parsed.keywordHits.length) return structured
+  return {
+    keywordHits: parsed.keywordHits.map((h) => ({
+      ...h,
+      sourceLineLabel: '本轮注入（无相似度）',
+      lineRelation: 'unlabeled' as const,
+      memoryBucket: 'own' as const,
+    })),
+    vectorRetrievals: [],
+  }
 }
 
 async function fallbackUnsummarizedPrivateForTrace(params: {
@@ -544,6 +594,54 @@ async function expandTraceTextForCharacter(
   return (s: string) => expandCharUserPlaceholders(String(s ?? ''), names)
 }
 
+function appendFixedPrivateOnlineTraceRow(
+  unsChats: MemoryTraceData['contextMatrix']['recentContext']['unsummarizedChats'],
+  recentPrivate: string,
+  omitted: boolean,
+) {
+  if (omitted) return
+  const t = recentPrivate.trim()
+  if (!t) return
+  const merged = /未总结∪固定原文|并集必注/.test(t)
+  unsChats.push({
+    type: 'private',
+    source: merged ? '线上近端 · 未总结∪固定原文（已去重）' : '固定近端 · 线上原文',
+    snippet: traceOnlineUnsummarizedSnippetForDisplay(t),
+  })
+}
+
+async function loadLifeMutableBlocksForTrace(
+  character: Character | null,
+  expand: (s: string) => string,
+  sessionPlayerIdentityId?: string | null,
+): Promise<{ characterBlock: string; playerBlock: string }> {
+  const cid = character?.id?.trim() || ''
+  if (!cid) return { characterBlock: '', playerBlock: '' }
+  try {
+    // 占位 character 可能缺字段：回查完整人设再组装账本
+    let ch = character
+    if (!ch?.name?.trim() || ch.age == null) {
+      ch = (await personaDb.getCharacter(cid)) ?? character
+    }
+    if (!ch?.id) return { characterBlock: '', playerBlock: '' }
+    const pid = sessionPlayerIdentityId?.trim()
+    let player: PlayerIdentity | null = null
+    if (pid && pid !== '__none__') {
+      player = await personaDb.getPlayerIdentity(pid)
+    }
+    if (!player) player = await personaDb.getCurrentIdentity()
+    const pair = await loadPairLifePromptContext({ character: ch, playerIdentity: player })
+    const characterBlockRaw = pair.characterBlock.trim()
+    const playerBlockRaw = pair.playerBlock.trim()
+    return {
+      characterBlock: (expand(characterBlockRaw) || characterBlockRaw).trim(),
+      playerBlock: (expand(playerBlockRaw) || playerBlockRaw).trim(),
+    }
+  } catch {
+    return { characterBlock: '', playerBlock: '' }
+  }
+}
+
 function buildRecentRoundRefsForTrace(params: {
   recentPrivate: string
   recentOffline: string
@@ -559,7 +657,16 @@ function buildRecentRoundRefsForTrace(params: {
     snippet: string,
     omitted: boolean,
   ) => {
-    if (omitted) return
+    if (omitted) {
+      out.push({
+        channel,
+        label,
+        injected: false,
+        omittedBecauseUnsummarized: true,
+        snippet: '',
+      })
+      return
+    }
     const t = snippet.trim()
     if (!t) return
     out.push({
@@ -570,9 +677,19 @@ function buildRecentRoundRefsForTrace(params: {
       snippet: t,
     })
   }
-  push('private', '私聊 · 最近 6 轮参考', params.recentPrivate, params.privateOmitted)
-  push('offline', '线下 · 最近 6 轮参考', params.recentOffline, params.offlineOmitted)
-  push('meet', '遇见 · 最近 6 轮参考', params.recentMeet, params.meetOmitted)
+  const privateMerged = /未总结∪固定原文|并集必注/.test(params.recentPrivate)
+  push(
+    'private',
+    params.privateOmitted
+      ? '固定近端 · 已并入未总结（未重复注入）'
+      : privateMerged
+        ? '线上近端 · 并集（已去重）'
+        : '私聊 · 固定近端原文（必注）',
+    params.recentPrivate,
+    params.privateOmitted,
+  )
+  push('offline', '线下 · 最近 10 轮参考', params.recentOffline, params.offlineOmitted)
+  push('meet', '遇见 · 最近 10 轮参考', params.recentMeet, params.meetOmitted)
   return out
 }
 
@@ -658,7 +775,7 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
     params.unsPrivateNotes,
     params.unsGroupNotes,
     params.unsMeetNotes,
-    params.longTermMemoryNotes,
+    // 禁止把本轮已注入的长期记忆再塞进 hay：否则关键词会对注入正文二次全中，⑦暴涨、⑥仍空
   ])
   const lineScope = normalizeMemoryPromptLineScope(
     params.wechatAccountId,
@@ -684,24 +801,13 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
     /* 召回失败仍发布溯源，避免线上回复永远盖不过线下 */
   }
   const injectedLtm = params.longTermMemoryNotes?.trim() || ''
-  // 溯源优先回显「本轮实际注入」正文，避免二次召回为空 / 与注入不一致时⑥⑦双 0
+  // 结构化召回（含真实 sim）优先；禁止用「注入正文重解析 + 假 0%」盖掉向量轨
   if (injectedLtm) {
-    const parsed = parseInjectedLongTermMemoryForTrace(injectedLtm)
-    if (parsed.keywordHits.length || parsed.vectorRetrievals.length) {
-      deep = {
-        keywordHits: parsed.keywordHits.map((h) => ({
-          ...h,
-          sourceLineLabel: '本轮注入',
-          lineRelation: 'unlabeled' as const,
-          memoryBucket: 'own' as const,
-        })),
-        vectorRetrievals: parsed.vectorRetrievals.map((h) => ({
-          ...h,
-          sourceLineLabel: '本轮注入',
-          lineRelation: 'unlabeled' as const,
-          memoryBucket: 'own' as const,
-        })),
-      }
+    deep = mergeStructuredRecallWithInjectedLtmFallback(deep, injectedLtm)
+  } else {
+    deep = {
+      keywordHits: deep.keywordHits,
+      vectorRetrievals: deep.vectorRetrievals.filter((v) => Number(v.relevanceScore) > 0),
     }
   }
   const embeddingMode =
@@ -733,6 +839,11 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
   const globalWorldbook = expand(globalWorldbookRaw)
   const personaDetailOut = expand(personaDetail)
   const worldBgOut = expand(params.worldBackgroundPrompt.trim())
+  const lifeBlocks = await loadLifeMutableBlocksForTrace(
+    character,
+    expand,
+    params.sessionPlayerIdentityId,
+  )
 
   const offlinePlotRowsRaw = await listInjectedOfflinePlotTraceRowsForMemoryTrace(cid, params.charDisplayName)
   const offlinePlotRows = (offlinePlotRowsRaw.length
@@ -751,7 +862,10 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
   let currentLineRaw = params.currentLinePrivateRaw?.trim() || ''
   let crossAccountRaw = params.crossAccountPrivateRaw?.trim() || ''
 
-  if (!unsPrivateSource && !currentLineRaw) {
+  const recentPrivateNotes = params.recentPrivateAiRoundsNotes?.trim() || ''
+  const skipUnsFallbackBecauseRecent = !!recentPrivateNotes && params.dedupePrivateRecentOmitted !== true
+
+  if (!unsPrivateSource && !currentLineRaw && !skipUnsFallbackBecauseRecent) {
     const fb = await fallbackUnsummarizedPrivateForTrace({
       characterId: cid,
       conversationKey: params.conversationKey,
@@ -801,7 +915,7 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
       snippet: traceOnlineUnsummarizedSnippetForDisplay(unsPrivateSource),
     })
   }
-  if (!unsChats.some((c) => c.type === 'private' && c.snippet.trim())) {
+  if (!unsChats.some((c) => c.type === 'private' && c.snippet.trim()) && !skipUnsFallbackBecauseRecent) {
     const fb = await fallbackUnsummarizedPrivateForTrace({
       characterId: cid,
       conversationKey: params.conversationKey,
@@ -836,6 +950,11 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
       snippet: params.unsMeetNotes.trim(),
     })
   }
+  appendFixedPrivateOnlineTraceRow(
+    unsChats,
+    recentPrivateNotes,
+    params.dedupePrivateRecentOmitted === true,
+  )
 
   const storyTimelineNotesExpanded = params.storyTimelineNotes?.trim()
     ? await personaDb.expandStoryTimelineTextForDisplay(cid, params.storyTimelineNotes)
@@ -918,6 +1037,8 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
       baseDirectives: {
         persona: personaTagsFromCharacter(character),
         personaDetail: personaDetailOut,
+        lifeMutableCharacter: lifeBlocks.characterBlock || undefined,
+        lifeMutablePlayer: lifeBlocks.playerBlock || undefined,
         worldBackground: worldBgOut,
         characterWorldBook: characterWorldBook || '（未绑定或未启用人设世界书条目）',
         globalWorldbook: globalWorldbook || '（当前场景无匹配的档案室全局条目）',
@@ -994,6 +1115,7 @@ export async function publishWeChatGroupMemoryTrace(params: {
   const globalWorldbook = expand(globalWorldbookRaw)
   const personaDetailOut = expand(personaDetail)
   const worldBgOut = expand((params.worldBackgroundFirst ?? '').trim())
+  const lifeBlocks = await loadLifeMutableBlocksForTrace(primaryChar, expand)
 
   const unsChats: MemoryTraceData['contextMatrix']['recentContext']['unsummarizedChats'] = []
   if (params.groupUnsummarizedNotes.trim()) {
@@ -1048,6 +1170,8 @@ export async function publishWeChatGroupMemoryTrace(params: {
         personaDetail:
           personaDetailOut.trim() ||
           `【群聊说明】本溯源以首位发言 NPC「${params.primaryNpcDisplayName}」的人设档案为主参考；多角色台词由群聊管线分别注入。`,
+        lifeMutableCharacter: lifeBlocks.characterBlock || undefined,
+        lifeMutablePlayer: lifeBlocks.playerBlock || undefined,
         worldBackground: worldBgOut,
         characterWorldBook: characterWorldBook || '（该 NPC 未绑定或未启用人设世界书）',
         globalWorldbook: globalWorldbook || '（当前群场景无匹配的档案室全局条目）',
@@ -1101,7 +1225,6 @@ export async function publishDatingOfflineMemoryTrace(params: {
     params.unsPrivateBlock,
     params.unsGroupBlock,
     params.unsOfflineBlock,
-    params.longTermMemoryNotes,
   ])
   const memSettings = await personaDb.getMemorySettings()
   const apiPick = pickTrimmedApiUrlKey(params.apiConfig)
@@ -1109,25 +1232,14 @@ export async function publishDatingOfflineMemoryTrace(params: {
     apiConfig: apiPick,
     conversationKey: params.conversationKey?.trim() || undefined,
   }
-  let deep = await getCharacterMemoryRelevanceTraceForPromptInjection(cid, hay, recallOpts)
+  let deep: TraceDeepMemory = await getCharacterMemoryRelevanceTraceForPromptInjection(cid, hay, recallOpts)
   const injectedLtm = params.longTermMemoryNotes?.trim() || ''
   if (injectedLtm) {
-    const parsed = parseInjectedLongTermMemoryForTrace(injectedLtm)
-    if (parsed.keywordHits.length || parsed.vectorRetrievals.length) {
-      deep = {
-        keywordHits: parsed.keywordHits.map((h) => ({
-          ...h,
-          sourceLineLabel: '本轮注入',
-          lineRelation: 'unlabeled' as const,
-          memoryBucket: 'own' as const,
-        })),
-        vectorRetrievals: parsed.vectorRetrievals.map((h) => ({
-          ...h,
-          sourceLineLabel: '本轮注入',
-          lineRelation: 'unlabeled' as const,
-          memoryBucket: 'own' as const,
-        })),
-      }
+    deep = mergeStructuredRecallWithInjectedLtmFallback(deep, injectedLtm)
+  } else {
+    deep = {
+      keywordHits: deep.keywordHits,
+      vectorRetrievals: deep.vectorRetrievals.filter((v) => Number(v.relevanceScore) > 0),
     }
   }
   const embeddingMode =
@@ -1160,6 +1272,7 @@ export async function publishDatingOfflineMemoryTrace(params: {
   const globalWorldbook = expand(rawArchiveFallback) || '（当前板块无档案室条目）'
   const personaDetailOut = expand(personaDetail)
   const worldBgOut = expand(params.worldBackground.trim())
+  const lifeBlocks = await loadLifeMutableBlocksForTrace(chRow, expand)
   const offlinePlotRowsRaw = await listInjectedOfflinePlotTraceRowsForMemoryTrace(cid, params.charName)
   const offlinePlotRows = (offlinePlotRowsRaw.length
     ? offlinePlotRowsRaw
@@ -1174,8 +1287,10 @@ export async function publishDatingOfflineMemoryTrace(params: {
 
   const unsChats: MemoryTraceData['contextMatrix']['recentContext']['unsummarizedChats'] = []
   let unsPrivateForTrace = params.unsPrivateBlock.trim()
+  const datingRecentPrivate = params.recentPrivateAiRoundsNotes?.trim() || ''
+  const skipDatingUnsFallback = !!datingRecentPrivate && params.dedupePrivateRecentOmitted !== true
   // 生成路径若漏注：溯源再按角色/会话扫一遍，避免「聊天室有消息、溯源永远空」
-  if (!unsPrivateForTrace) {
+  if (!unsPrivateForTrace && !skipDatingUnsFallback) {
     try {
       const split = await formatDatingUnsummarizedPrivateChatSplit({
         conversationKey: params.conversationKey?.trim() || '',
@@ -1188,7 +1303,7 @@ export async function publishDatingOfflineMemoryTrace(params: {
       /* ignore */
     }
   }
-  if (!unsPrivateForTrace) {
+  if (!unsPrivateForTrace && !skipDatingUnsFallback) {
     try {
       const recent = await personaDb.listWeChatChatMessagesRecentByCharacter({
         characterId: cid,
@@ -1223,6 +1338,11 @@ export async function publishDatingOfflineMemoryTrace(params: {
       snippet: traceOnlineUnsummarizedSnippetForDisplay(params.unsGroupBlock),
     })
   }
+  appendFixedPrivateOnlineTraceRow(
+    unsChats,
+    datingRecentPrivate,
+    params.dedupePrivateRecentOmitted === true,
+  )
 
   const { displayBody } = resolveDatingAssistantDisplayText(params.rawAssistantOutput)
   const lastReply = stripDatingVnVoiceParamsForMemoryTrace(displayBody).trim()
@@ -1266,6 +1386,8 @@ export async function publishDatingOfflineMemoryTrace(params: {
       baseDirectives: {
         persona: [...params.identityTags].slice(0, 12),
         personaDetail: personaDetailOut.trim() || params.identityTags.join('、'),
+        lifeMutableCharacter: lifeBlocks.characterBlock || undefined,
+        lifeMutablePlayer: lifeBlocks.playerBlock || undefined,
         worldBackground: worldBgOut,
         characterWorldBook: characterWorldBook || '（未绑定或未启用人设世界书）',
         globalWorldbook: globalWorldbook,

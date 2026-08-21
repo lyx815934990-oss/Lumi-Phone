@@ -38,6 +38,10 @@ export function GroupPsycheModal({
   onDismissGenerateError,
   onClose,
   onGenerate,
+  heartWhisperSyncEnabled = false,
+  innerOsSyncEnabled = false,
+  onToggleHeartWhisperSync,
+  onToggleInnerOsSync,
 }: {
   open: boolean
   loading: boolean
@@ -46,6 +50,10 @@ export function GroupPsycheModal({
   onDismissGenerateError?: () => void
   onClose: () => void
   onGenerate: () => void
+  heartWhisperSyncEnabled?: boolean
+  innerOsSyncEnabled?: boolean
+  onToggleHeartWhisperSync?: (enabled: boolean) => void
+  onToggleInnerOsSync?: (enabled: boolean) => void
 }) {
   const err = String(generateError ?? '').trim()
   const list = archive?.characters ?? []
@@ -129,6 +137,61 @@ export function GroupPsycheModal({
                 </Pressable>
               </div>
             </div>
+
+            {onToggleHeartWhisperSync || onToggleInnerOsSync ? (
+              <div className="shrink-0 space-y-3 border-b border-gray-100/80 px-5 py-3">
+                {onToggleHeartWhisperSync ? (
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-[#1C1C1E]">每轮同步心语</p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-gray-400">
+                        开启后从下一轮群聊回复起，心语会跟气泡写在同一次请求里，结束后自动刷新本页。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={heartWhisperSyncEnabled}
+                      aria-label="每轮同步心语"
+                      onClick={() => onToggleHeartWhisperSync(!heartWhisperSyncEnabled)}
+                      className="relative h-7 w-[46px] shrink-0 rounded-full transition-colors duration-200"
+                      style={{ backgroundColor: heartWhisperSyncEnabled ? '#1C1C1E' : '#d1d1d6' }}
+                    >
+                      <span
+                        className="absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-[left] duration-200 ease-out"
+                        style={{ left: heartWhisperSyncEnabled ? 20 : 2 }}
+                        aria-hidden
+                      />
+                    </button>
+                  </div>
+                ) : null}
+                {onToggleInnerOsSync ? (
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-[#1C1C1E]">每句内心 OS</p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-gray-400">
+                        每条 NPC 文字/语音气泡带一句潜台词；长按或单击气泡查看。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={innerOsSyncEnabled}
+                      aria-label="每句内心 OS"
+                      onClick={() => onToggleInnerOsSync(!innerOsSyncEnabled)}
+                      className="relative h-7 w-[46px] shrink-0 rounded-full transition-colors duration-200"
+                      style={{ backgroundColor: innerOsSyncEnabled ? '#1C1C1E' : '#d1d1d6' }}
+                    >
+                      <span
+                        className="absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-[left] duration-200 ease-out"
+                        style={{ left: innerOsSyncEnabled ? 20 : 2 }}
+                        aria-hidden
+                      />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {err ? (
               <div className="shrink-0 border-b border-red-100/90 bg-red-50/95 px-5 py-2.5" role="alert">

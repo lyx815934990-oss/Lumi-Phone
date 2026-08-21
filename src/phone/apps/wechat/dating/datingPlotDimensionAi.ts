@@ -186,7 +186,7 @@ function buildDimensionSystemPrompt(
     ? `【档案室预设·穿搭造型·已开启】本段线下旁支同样适用（禁敷衍衣着三件套）：\n${OFFLINE_DATING_FASHION_STYLING_APPENDIX}`
     : ''
   const intimacyPoseBlock = resolvedPresets.offlineCoupleIntimacyPoses
-    ? `【档案室预设·耳后三厘米经济特区·已开启】旁支同样适用：具体姿势+表情+短蜜语；禁空词、跳过前戏、哑巴动作、羞辱：\n${OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX}`
+    ? `【档案室预设·耳后三厘米经济特区·已开启】旁支同样适用：具体姿势+表情+贴耳蜜语（软直带喘，禁油腻小作文、禁侮辱）；禁空词、跳过前戏、哑巴动作、羞辱：\n${OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX}`
     : ''
   const styleAppend = buildDatingStyleSystemAppend(
     opts.styleGenOptions

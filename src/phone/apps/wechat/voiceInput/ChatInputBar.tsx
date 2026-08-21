@@ -32,7 +32,7 @@ function SendPlaneIcon({ color }: { color?: string }) {
 }
 
 function resolveSendButtonColor(
-  layout: 'wechat' | 'imessage' | 'telegram' | 'talkmaker',
+  layout: 'wechat' | 'imessage' | 'telegram' | 'talkmaker' | 'twitter',
   sendButtonColor?: string,
 ): string {
   const custom = sendButtonColor?.trim()
@@ -40,6 +40,7 @@ function resolveSendButtonColor(
   if (layout === 'imessage') return '#0B93F6'
   if (layout === 'telegram') return '#3390EC'
   if (layout === 'talkmaker') return '#FEE500'
+  if (layout === 'twitter') return '#1D9BF0'
   return '#07C160'
 }
 
@@ -79,6 +80,7 @@ export function ChatInputBar({
   btnColor,
   borderRadius,
   borderColor,
+  backgroundColor,
   layout = 'lumi',
   sendButtonColor,
   draft,
@@ -103,7 +105,9 @@ export function ChatInputBar({
   btnColor: string
   borderRadius: number
   borderColor: string
-  layout?: 'lumi' | 'wechat' | 'imessage' | 'telegram' | 'talkmaker'
+  /** 输入胶囊底色（X 风格等） */
+  backgroundColor?: string
+  layout?: 'lumi' | 'wechat' | 'imessage' | 'telegram' | 'talkmaker' | 'twitter'
   sendButtonColor?: string
   draft: string
   sendBusy: boolean
@@ -129,9 +133,128 @@ export function ChatInputBar({
   }
   const hasDraft = draft.trim().length > 0
   const sendBtnColor =
-    layout === 'wechat' || layout === 'imessage' || layout === 'telegram' || layout === 'talkmaker'
+    layout === 'wechat' ||
+    layout === 'imessage' ||
+    layout === 'telegram' ||
+    layout === 'talkmaker' ||
+    layout === 'twitter'
       ? resolveSendButtonColor(layout, sendButtonColor)
       : undefined
+
+  if (layout === 'twitter') {
+    const shellBg = backgroundColor?.trim() || '#EFF3F4'
+    const iconColor = btnColor || '#536471'
+    const triggerBlue = sendBtnColor || '#1D9BF0'
+    return (
+      <div className="flex w-full max-w-full items-end gap-1.5 px-0.5">
+        <Pressable
+          type="button"
+          data-wx-chat-input-btn="voice"
+          aria-label={inputMode === 'text' ? '切换为语音输入' : '切换为文字输入'}
+          onClick={onToggleInputMode}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+          style={{ color: iconColor, minWidth: 32, minHeight: 32 }}
+        >
+          {inputMode === 'voice' ? (
+            <Keyboard size={20} strokeWidth={1.75} aria-hidden />
+          ) : (
+            <Mic size={20} strokeWidth={1.75} aria-hidden />
+          )}
+        </Pressable>
+
+        {inputMode === 'voice' ? (
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.98 }}
+            onPointerDown={onVoicePointerDown}
+            onPointerMove={onVoicePointerMove}
+            onPointerUp={onVoicePointerUp}
+            onPointerCancel={onVoicePointerUp}
+            data-wx-chat-input-shell
+            className="select-none flex min-h-[36px] min-w-0 flex-1 items-center justify-center text-[15px]"
+            style={{
+              borderRadius: 999,
+              backgroundColor: shellBg,
+              color: iconColor,
+              touchAction: 'none',
+            }}
+          >
+            按住说话
+          </motion.button>
+        ) : (
+          <WeChatComposerField
+            ref={textareaRef}
+            data-wx-chat-input-shell
+            className="min-h-[36px] min-w-0 flex-1 resize-none text-[15px] leading-snug outline-none"
+            style={{
+              borderRadius: 999,
+              border: 'none',
+              padding: '8px 14px',
+              backgroundColor: shellBg,
+              color: 'var(--wx-chat-input-text-color, #0F1419)',
+              maxHeight: WECHAT_COMPOSER_MAX_HEIGHT_PX,
+              ...wechatChatComposerFontStyle,
+            }}
+            placeholder="发送消息"
+            aria-label="输入消息"
+            value={draft}
+            onChange={onDraftChange}
+            onKeyDown={onComposerKeyDown}
+          />
+        )}
+
+        <Pressable
+          type="button"
+          data-wx-chat-input-btn="emoji"
+          aria-label={emojiPanelOpen ? '键盘' : '表情'}
+          onClick={onEmojiOrKeyboardClick}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+          style={{ color: iconColor, minWidth: 32, minHeight: 32 }}
+        >
+          {emojiPanelOpen ? (
+            <Keyboard size={20} strokeWidth={1.75} aria-hidden />
+          ) : (
+            <Smile size={20} strokeWidth={1.75} aria-hidden />
+          )}
+        </Pressable>
+
+        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center" style={{ minWidth: 32, minHeight: 32 }}>
+          <Pressable
+            type="button"
+            data-wx-chat-input-btn="plus"
+            aria-label={plusMenuOpen ? '收起更多功能' : '更多功能'}
+            onClick={onTogglePlus}
+            className="absolute inset-0 flex items-center justify-center rounded-full transition-opacity duration-150"
+            style={{
+              color: iconColor,
+              opacity: hasDraft ? 0 : 1,
+              pointerEvents: hasDraft ? 'none' : 'auto',
+            }}
+            tabIndex={hasDraft ? -1 : 0}
+          >
+            <Plus size={20} strokeWidth={1.75} className={plusMenuOpen ? 'rotate-45' : ''} aria-hidden />
+          </Pressable>
+          <Pressable
+            type="button"
+            data-wx-chat-input-btn="send"
+            data-wx-send-ready={planeCanAct && !sendBusy ? '1' : '0'}
+            onClick={onSend}
+            disabled={sendBusy || !planeCanAct}
+            className="absolute inset-0 flex items-center justify-center rounded-full text-white transition-opacity duration-150 active:scale-95 disabled:opacity-40"
+            style={{
+              backgroundColor: triggerBlue,
+              opacity: hasDraft ? 1 : 0,
+              pointerEvents: hasDraft ? 'auto' : 'none',
+            }}
+            aria-label="触发回复"
+            tabIndex={hasDraft ? 0 : -1}
+          >
+            <ImessageSendIcon />
+          </Pressable>
+        </div>
+      </div>
+    )
+  }
 
   if (layout === 'talkmaker') {
     return (
@@ -429,6 +552,8 @@ export function ChatInputBar({
             style={{
               maxHeight: WECHAT_COMPOSER_MAX_HEIGHT_PX,
               color: 'var(--wx-chat-input-text-color, var(--wx-text))',
+              caretColor: 'var(--wx-chat-input-text-color, var(--wx-text))',
+              WebkitTextFillColor: 'var(--wx-chat-input-text-color, var(--wx-text))',
               ...wechatChatComposerFontStyle,
             }}
             placeholder=""

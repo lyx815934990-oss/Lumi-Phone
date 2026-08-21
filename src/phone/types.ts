@@ -517,6 +517,41 @@ export type WeChatTheme = {
   }
 }
 
+/** 悬浮球可直达的微信内页面 */
+export type WeChatShortcutPageId =
+  | 'tab-messages'
+  | 'tab-contacts'
+  | 'tab-dates'
+  | 'tab-discover'
+  | 'tab-profile'
+  | 'new-friends-persona'
+  | 'memory-manage'
+  | 'favorites'
+  | 'album'
+  | 'sticker-center'
+  | 'add-friend'
+  | 'contacts-group-chats'
+  | 'wallet-cards'
+  | 'player-identities'
+  | 'switch-account'
+
+/** 桌面悬浮球：一条可跳转快捷项（桌面应用或微信内页面） */
+export type FloatingShortcutItem = {
+  /** 稳定键，用于列表增删排序 */
+  id: string
+  /** 打开桌面应用；与 wechatPage 二选一 */
+  appId?: AppSlot['id']
+  /** 打开微信内具体页面（如聊天 Tab、人设生成） */
+  wechatPage?: WeChatShortcutPageId
+}
+
+/** 桌面悬浮球（外观里开关；可自定义跳转应用） */
+export type FloatingShortcutBall = {
+  enabled: boolean
+  /** 展开后展示的快捷项，顺序即菜单顺序 */
+  shortcuts: FloatingShortcutItem[]
+}
+
 /** 布局与系统 UI（持久化到 IndexedDB `phoneKv`，玩家可切换） */
 export type UiPreferences = {
   /** 应用内顶部状态栏（时间、信号、电量），与系统状态栏无关 */
@@ -535,6 +570,8 @@ export type UiPreferences = {
   keyboardDebugSimulateOpen: boolean
   /** 聊天输入栏抬升补偿（px，允许负值微调贴边） */
   keyboardDebugInsetPx: number
+  /** 桌面悬浮球：开关与自定义跳转应用 */
+  floatingShortcutBall: FloatingShortcutBall
 }
 
 /** 由「人设生成联系人」写入，展示在微信通讯录（与内置示例联系人合并） */
@@ -972,7 +1009,7 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
     null,
     null,
   ],
-  /** 主屏第二页图标布局 */
+  /** 主屏第二页图标布局（创作者工具等） */
   desktopLayoutPage2: [null, null, null, null, null, null, null, null],
   ui: {
     showStatusBar: true,
@@ -983,6 +1020,15 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
     keyboardDebugEnabled: false,
     keyboardDebugSimulateOpen: false,
     keyboardDebugInsetPx: 0,
+    floatingShortcutBall: {
+      enabled: false,
+      shortcuts: [
+        { id: 'fs-wechat', appId: 'wechat' },
+        { id: 'fs-appearance', appId: 'appearance' },
+        { id: 'fs-api', appId: 'api' },
+        { id: 'fs-loreArchive', appId: 'loreArchive' },
+      ],
+    },
   },
   appPageStyles: {
     wechat: {

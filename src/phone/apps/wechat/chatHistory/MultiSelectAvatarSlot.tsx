@@ -51,8 +51,11 @@ export function composeMultiSelectLeading(
   multiSelectAvatar: ReactNode | undefined,
   avatarNode: ReactNode,
   showAvatarColumn = true,
+  gutterSizePx = 40,
 ): ReactNode {
-  const gutter = <div className="h-10 w-10 shrink-0" aria-hidden />
+  const gutter = (
+    <div className="shrink-0" style={{ width: gutterSizePx, height: gutterSizePx }} aria-hidden />
+  )
   const trailing = showAvatarColumn ? avatarNode : gutter
   if (!multiSelectAvatar) return trailing
   return (

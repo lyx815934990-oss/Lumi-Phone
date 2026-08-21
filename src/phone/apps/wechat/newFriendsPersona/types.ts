@@ -270,6 +270,10 @@ export type ChatConversationSettingsRow = {
   translationAutoExpand?: boolean
   /** @deprecated 不再用于设置页；译文朗读用声纹库绑定 */
   translationVoiceId?: string
+  /** 心语面板：每轮 AI 回复结束后自动刷新心语档案 */
+  heartWhisperSyncEnabled?: boolean
+  /** 心语面板：每条角色文字/语音气泡同轮生成一句内心 OS */
+  innerOsSyncEnabled?: boolean
   /** 角色每次发图张数下限 1–9；缺省 1。发图本身按语境适量（须「支持发图」开启） */
   imageRoundCountMin?: number
   /** 角色每次发图张数上限 1–9；缺省 1 */
@@ -289,6 +293,11 @@ export type ChatConversationSettingsRow = {
    * 旧档若存过概率百分比，>0 仍视为开启。
    */
   imageRoundTriggerPercent?: number
+  /**
+   * 本会话固定注入「最近 N 轮线上私聊原文」（对方回复轮数，含其间用户消息）。
+   * 不依赖总结游标；缺省 10；0 = 关闭固定注入（仍可有未总结块）。
+   */
+  recentPrivateInjectAiRounds?: number
   /** 角色私聊：是否开启主动消息（按频率在后台也可能发来新消息） */
   proactiveMessageEnabled?: boolean
   /** 主动消息间隔（秒）；缺省 7200（2 小时）；最短 30 秒 */
@@ -1143,6 +1152,11 @@ export type WeChatChatMessage = {
   translationExpanded?: boolean
   /** 译文 TTS 音频（可选） */
   translationAudioUrl?: string
+  /**
+   * 该气泡对应的一句内心 OS（嘴上 vs 心里；与心语档案整段独白不同）。
+   * 开启「每句内心 OS」后由模型同轮输出并落库。
+   */
+  innerOs?: string
   /** 同频共听邀约 / 接受 / 拒绝卡片 */
   musicSync?: WeChatMusicSyncPayload
   /** 小游戏邀约 / 接受 / 拒绝卡片 */

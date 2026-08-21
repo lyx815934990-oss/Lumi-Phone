@@ -11,7 +11,20 @@ import {
 import { flushSync } from 'react-dom'
 import { personaDb, pullPhoneKvWithLocalStorageLegacy } from './apps/wechat/newFriendsPersona/idb'
 import { wechatChatRoomBgFallbackColor } from './apps/wechat/wechatChatRoomBg'
-import { mergeWeChatBubbleGlobal, migrateMislabeledLumiDefaultBubble } from './apps/wechat/wechatBubblePresets'
+import {
+  mergeWeChatBubbleGlobal,
+  migrateMislabeledLumiDefaultBubble,
+  TWITTER_X_BUBBLE_PRESET,
+  TWITTER_X_NIGHT_BUBBLE_PRESET,
+  TWITTER_X_PRESET_MARK,
+  TWITTER_X_NIGHT_MARK,
+  WECHAT_APP_CLASSIC_BUBBLE_PRESET,
+  WECHAT_APP_CLASSIC_NIGHT_BUBBLE_PRESET,
+  WECHAT_CLASSIC_PRESET_MARK,
+  WECHAT_CLASSIC_NIGHT_MARK,
+} from './apps/wechat/wechatBubblePresets'
+import { twitterXSpecialSkinOverrides } from './apps/wechat/wechatBubbleTwitterUi'
+import { wechatClassicSpecialSkinOverrides } from './apps/wechat/wechatBubbleWechatUi'
 import { normalizeWeChatBubbleSideFont } from './apps/wechat/wechatBubbleSideFonts'
 import {
   emptyWeChatAvatarChrome,
@@ -58,6 +71,9 @@ import {
   type MusicPlayMode,
   type AppSlot,
   type UiPreferences,
+  type FloatingShortcutBall,
+  type FloatingShortcutItem,
+  type WeChatShortcutPageId,
   type AppPageStyle,
   type DockStyle,
   type DockFillMode,
@@ -75,6 +91,7 @@ import {
   DESKTOP_PAGE2_APP_IDS,
   DESKTOP_PAGE2_SLOT_COUNT,
 } from './types'
+import { isWeChatShortcutPageId } from './apps/wechat/wechatShortcutPageNavigation'
 import { migrateLegacyRootPublicUrl } from '../publicAssetUrl'
 import { LUMI_ARCHIVE_IMPORTED_EVENT } from './apps/dataArchive/constants'
 import {
@@ -145,7 +162,8 @@ function syncBubbleByRoleWithNewGlobal(
 ): Record<string, WeChatBubbleTheme> {
   const out: Record<string, WeChatBubbleTheme> = { ...bubbleByRole }
   for (const [k, role] of Object.entries(bubbleByRole)) {
-    out[k] = {
+    const synced: WeChatBubbleTheme = {
+      ...role,
       selfBubbleBg: role.selfBubbleBg === prevGlobal.selfBubbleBg ? nextGlobal.selfBubbleBg : role.selfBubbleBg,
       otherBubbleBg: role.otherBubbleBg === prevGlobal.otherBubbleBg ? nextGlobal.otherBubbleBg : role.otherBubbleBg,
       selfBubbleRadiusPx:
@@ -181,7 +199,31 @@ function syncBubbleByRoleWithNewGlobal(
         role.mergeConsecutiveAvatarGroup === prevGlobal.mergeConsecutiveAvatarGroup
           ? nextGlobal.mergeConsecutiveAvatarGroup
           : role.mergeConsecutiveAvatarGroup,
+      bubbleTailStyle:
+        role.bubbleTailStyle === prevGlobal.bubbleTailStyle
+          ? nextGlobal.bubbleTailStyle
+          : role.bubbleTailStyle,
+      messengerBubbleStyle:
+        role.messengerBubbleStyle === prevGlobal.messengerBubbleStyle
+          ? nextGlobal.messengerBubbleStyle
+          : role.messengerBubbleStyle,
     }
+    // 分侧头像：跟随全局；若全局已清除分侧字段，角色也清掉残留的 false
+    if (role.showAvatarSelf === prevGlobal.showAvatarSelf) {
+      if ('showAvatarSelf' in nextGlobal && nextGlobal.showAvatarSelf !== undefined) {
+        synced.showAvatarSelf = nextGlobal.showAvatarSelf
+      } else {
+        delete synced.showAvatarSelf
+      }
+    }
+    if (role.showAvatarOther === prevGlobal.showAvatarOther) {
+      if ('showAvatarOther' in nextGlobal && nextGlobal.showAvatarOther !== undefined) {
+        synced.showAvatarOther = nextGlobal.showAvatarOther
+      } else {
+        delete synced.showAvatarOther
+      }
+    }
+    out[k] = synced
   }
   return out
 }
@@ -206,6 +248,69 @@ function resolvePersonalCardProfileFromRaw(raw: Partial<CustomizationState>): Pr
     return normalizeProfileSlice(legacy, DEFAULT_PERSONAL_CARD_PROFILE)
   }
   return { ...DEFAULT_PERSONAL_CARD_PROFILE }
+}
+
+const FLOATING_SHORTCUT_APP_IDS: ReadonlyArray<AppSlot['id']> = [
+  'wechat',
+  'takeout',
+  'weibo',
+  'lumiMeet',
+  'api',
+  'voiceprint',
+  'dataArchive',
+  'loreArchive',
+  'recycleBin',
+  'backgroundNotify',
+  'sandbox',
+  'appearance',
+  'evolution',
+]
+
+const FLOATING_SHORTCUT_MAX = 12
+
+function isFloatingShortcutAppId(id: unknown): id is AppSlot['id'] {
+  return typeof id === 'string' && (FLOATING_SHORTCUT_APP_IDS as readonly string[]).includes(id)
+}
+
+function normalizeFloatingShortcutBall(raw: unknown): FloatingShortcutBall {
+  const d = DEFAULT_CUSTOMIZATION.ui.floatingShortcutBall
+  if (!raw || typeof raw !== 'object') {
+    return { enabled: d.enabled, shortcuts: d.shortcuts.map((s) => ({ ...s })) }
+  }
+  const o = raw as Partial<FloatingShortcutBall>
+  const list = Array.isArray(o.shortcuts) ? o.shortcuts : d.shortcuts
+  const shortcuts: FloatingShortcutItem[] = []
+  const seenApp = new Set<AppSlot['id']>()
+  const seenWxPage = new Set<WeChatShortcutPageId>()
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue
+    const rawId = (item as FloatingShortcutItem).id
+    const wechatPage = (item as FloatingShortcutItem).wechatPage
+    if (isWeChatShortcutPageId(wechatPage)) {
+      if (seenWxPage.has(wechatPage)) continue
+      seenWxPage.add(wechatPage)
+      const id =
+        typeof rawId === 'string' && rawId.trim()
+          ? rawId.trim().slice(0, 64)
+          : `fs-wx-${wechatPage}-${shortcuts.length}`
+      shortcuts.push({ id, wechatPage })
+      if (shortcuts.length >= FLOATING_SHORTCUT_MAX) break
+      continue
+    }
+    const appId = (item as FloatingShortcutItem).appId
+    if (!isFloatingShortcutAppId(appId) || seenApp.has(appId)) continue
+    seenApp.add(appId)
+    const id =
+      typeof rawId === 'string' && rawId.trim()
+        ? rawId.trim().slice(0, 64)
+        : `fs-${appId}-${shortcuts.length}`
+    shortcuts.push({ id, appId })
+    if (shortcuts.length >= FLOATING_SHORTCUT_MAX) break
+  }
+  return {
+    enabled: typeof o.enabled === 'boolean' ? o.enabled : d.enabled,
+    shortcuts,
+  }
 }
 
 function normalizeState(raw: Partial<CustomizationState>): CustomizationState {
@@ -292,6 +397,9 @@ function normalizeState(raw: Partial<CustomizationState>): CustomizationState {
         typeof raw.ui?.keyboardDebugInsetPx === 'number' && Number.isFinite(raw.ui.keyboardDebugInsetPx)
           ? Math.max(-220, Math.min(220, Math.round(raw.ui.keyboardDebugInsetPx)))
           : DEFAULT_CUSTOMIZATION.ui.keyboardDebugInsetPx,
+      floatingShortcutBall: normalizeFloatingShortcutBall(
+        (raw.ui as { floatingShortcutBall?: unknown } | undefined)?.floatingShortcutBall,
+      ),
     },
     appPageStyles: normalizeAppPageStyles(raw.appPageStyles),
     dockStyle: normalizeDockStyle(raw.dockStyle),
@@ -300,6 +408,69 @@ function normalizeState(raw: Partial<CustomizationState>): CustomizationState {
     customCss: typeof raw.customCss === 'string' ? raw.customCss : '',
     gestureEffects: normalizeGestureEffects(raw.gestureEffects),
   }
+}
+
+/**
+ * 旧版 normalize 只保留 --wx-chat- / --wx-special-，会丢掉推特/微信模版标记。
+ * 若气泡色板仍匹配对应模版，启动时回填标记，避免刷新后顶栏/无头像等布局退回默认。
+ */
+function healPresetMarksInChatSkinOverrides(
+  overrides: Record<string, string>,
+  bubbleGlobal: WeChatBubbleTheme,
+): Record<string, string> {
+  let next = overrides
+
+  const hasTwitterMark = (next[TWITTER_X_PRESET_MARK] ?? '').trim() === '1'
+  if (!hasTwitterMark) {
+    const night = wechatBubbleThemesEqual(bubbleGlobal, TWITTER_X_NIGHT_BUBBLE_PRESET.bubble)
+    const day = wechatBubbleThemesEqual(bubbleGlobal, TWITTER_X_BUBBLE_PRESET.bubble)
+    if (night || day) {
+      next = {
+        ...next,
+        [TWITTER_X_PRESET_MARK]: '1',
+        [TWITTER_X_NIGHT_MARK]: night ? '1' : '0',
+        ...twitterXSpecialSkinOverrides(night),
+      }
+    }
+  }
+
+  const hasWechatMark = (next[WECHAT_CLASSIC_PRESET_MARK] ?? '').trim() === '1'
+  if (!hasWechatMark) {
+    const night = wechatBubbleThemesEqual(bubbleGlobal, WECHAT_APP_CLASSIC_NIGHT_BUBBLE_PRESET.bubble)
+    const day = wechatBubbleThemesEqual(bubbleGlobal, WECHAT_APP_CLASSIC_BUBBLE_PRESET.bubble)
+    if (night || day) {
+      // 微信色板优先：去掉可能误回填的 Twitter 标记，避免藏头像
+      const {
+        [TWITTER_X_PRESET_MARK]: _twPreset,
+        [TWITTER_X_NIGHT_MARK]: _twNight,
+        ...rest
+      } = next
+      next = {
+        ...rest,
+        [WECHAT_CLASSIC_PRESET_MARK]: '1',
+        [WECHAT_CLASSIC_NIGHT_MARK]: night ? '1' : '0',
+        ...wechatClassicSpecialSkinOverrides(night),
+      }
+    }
+  } else {
+    // 已挂微信预设：按夜间标记刷新特殊气泡变量（语音条/转文字等），避免旧档缺新 key
+    const night = (next[WECHAT_CLASSIC_NIGHT_MARK] ?? '').trim() === '1'
+    next = {
+      ...next,
+      ...wechatClassicSpecialSkinOverrides(night),
+    }
+    if ((next[TWITTER_X_PRESET_MARK] ?? '').trim() === '1') {
+      // 两标记并存时以微信为准
+      const {
+        [TWITTER_X_PRESET_MARK]: _twPreset,
+        [TWITTER_X_NIGHT_MARK]: _twNight,
+        ...rest
+      } = next
+      next = rest
+    }
+  }
+
+  return next
 }
 
 function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
@@ -451,7 +622,16 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
     const out: Record<string, string> = {}
     for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
       const key = String(k ?? '').trim()
-      if (!key.startsWith('--wx-chat-') && !key.startsWith('--wx-special-')) continue
+      // 聊天皮变量 + 特殊消息 + 模版标记（推特/微信夜间等）+ 时间戳色
+      if (
+        !key.startsWith('--wx-chat-') &&
+        !key.startsWith('--wx-special-') &&
+        !key.startsWith('--wx-twitter-') &&
+        !key.startsWith('--wx-wechat-classic-') &&
+        key !== '--wx-timestamp-text'
+      ) {
+        continue
+      }
       if (typeof val !== 'string' || !val.trim()) continue
       out[key] = val.trim()
     }
@@ -581,8 +761,76 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
     chatInputBg: pick(raw.chatInputBg, base.chatInputBg),
     chatInputBorder: pick(raw.chatInputBorder, base.chatInputBorder),
     chatRoomDefaultBg: normalizeChatRoomBg(raw.chatRoomDefaultBg, base.chatRoomDefaultBg),
-    bubbleGlobal,
-    bubbleByRole,
+    ...((): {
+      bubbleGlobal: WeChatBubbleTheme
+      bubbleByRole: Record<string, WeChatBubbleTheme>
+      chatSkinOverrides: Record<string, string>
+    } => {
+      let overrides = healPresetMarksInChatSkinOverrides(
+        normalizeChatSkinOverrides(raw.chatSkinOverrides),
+        bubbleGlobal,
+      )
+      let nextGlobal = bubbleGlobal
+      const nextByRole = { ...bubbleByRole }
+      const wechatClassicOn = (overrides[WECHAT_CLASSIC_PRESET_MARK] ?? '').trim() === '1'
+      const wechatNightOn = (overrides[WECHAT_CLASSIC_NIGHT_MARK] ?? '').trim() === '1'
+      const looksLikeWechatClassic =
+        wechatClassicOn ||
+        (nextGlobal.bubbleTailStyle === 'wechat' &&
+          (overrides[TWITTER_X_PRESET_MARK] ?? '').trim() !== '1')
+
+      // 微信 App：清掉冲突的 Twitter 标记与残留的 showAvatarSelf/Other:false，并刷新时间戳色
+      if (looksLikeWechatClassic) {
+        const {
+          [TWITTER_X_PRESET_MARK]: _twPreset,
+          [TWITTER_X_NIGHT_MARK]: _twNight,
+          ...withoutTwitter
+        } = overrides
+        overrides = withoutTwitter
+
+        const fixAvatar = (b: WeChatBubbleTheme): WeChatBubbleTheme => ({
+          ...b,
+          showAvatar: true,
+          showAvatarSelf: true,
+          showAvatarOther: true,
+        })
+        nextGlobal = fixAvatar(nextGlobal)
+        for (const k of Object.keys(nextByRole)) {
+          const b = nextByRole[k]
+          if (b) nextByRole[k] = fixAvatar(b)
+        }
+        overrides = {
+          ...overrides,
+          [WECHAT_CLASSIC_PRESET_MARK]: '1',
+          [WECHAT_CLASSIC_NIGHT_MARK]: wechatNightOn ? '1' : '0',
+          ...wechatClassicSpecialSkinOverrides(wechatNightOn),
+        }
+      }
+
+      // 夜间己方绿从过亮 #95EC69 迁到更深的 #28C445
+      if (wechatNightOn) {
+        let touched = false
+        if (nextGlobal.selfBubbleBg === '#95EC69') {
+          nextGlobal = { ...nextGlobal, selfBubbleBg: '#28C445' }
+          touched = true
+        }
+        for (const k of Object.keys(nextByRole)) {
+          const b = nextByRole[k]
+          if (b?.selfBubbleBg === '#95EC69') {
+            nextByRole[k] = { ...b, selfBubbleBg: '#28C445' }
+            touched = true
+          }
+        }
+        if (touched) {
+          overrides = { ...overrides, ...wechatClassicSpecialSkinOverrides(true) }
+        }
+      }
+      return {
+        bubbleGlobal: nextGlobal,
+        bubbleByRole: nextByRole,
+        chatSkinOverrides: overrides,
+      }
+    })(),
     selfBubbleText: pick(raw.selfBubbleText, base.selfBubbleText),
     otherBubbleText: pick(raw.otherBubbleText, base.otherBubbleText),
     timestampStyle: ts,
@@ -592,7 +840,6 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
     pageBgByTab,
     headerByTab,
     conversationCard: normalizeFill(raw.conversationCard, base.conversationCard),
-    chatSkinOverrides: normalizeChatSkinOverrides(raw.chatSkinOverrides),
     chatSkinScopedCss:
       typeof raw.chatSkinScopedCss === 'string' ? raw.chatSkinScopedCss : '',
     // 刷新后必须保留；若历史脏数据丢了 engine，用液态玻璃 CSS 标记回填

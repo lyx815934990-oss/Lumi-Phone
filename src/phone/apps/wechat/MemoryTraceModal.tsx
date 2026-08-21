@@ -10,7 +10,7 @@ import type {
 import { lineRelationUiLabel } from './wechatMemoryLineScope'
 import { MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS } from './memory/memorySummaryRetention'
 import { parseStoryTimelineInjectBodyForTrace } from './memory/storyTimelineTypes'
-import { stripUnsummarizedOnlineTimestampsForDisplay, sanitizeMemoryTraceDisplayText } from './memoryTraceDisplaySanitize'
+import { stripUnsummarizedOnlineTimestampsForDisplay, sanitizeMemoryTraceDisplayText, parsePersonaWorldBookForTraceDisplay } from './memoryTraceDisplaySanitize'
 import { listArchiveWorldbookTracePills } from '../../worldbook/buildWorldbookContext'
 import {
   getLoreArchiveBuiltinPresetTogglesSnapshot,
@@ -92,6 +92,7 @@ type AccordionId =
   | 'personaWb'
   | 'globalWb'
   | 'persona'
+  | 'life'
   | 'network'
   | 'wbAfter'
 
@@ -117,6 +118,7 @@ function InjectionOverview(props: {
     unsChat: number
     ltmVector: number
     ltmKeyword: number
+    lifeLedger: boolean
     personaWb: boolean
     globalWb: boolean
     wbAfter: boolean
@@ -137,15 +139,16 @@ function InjectionOverview(props: {
   return (
     <div className="rounded-2xl border border-neutral-100/90 bg-gradient-to-b from-[#FBF8F1] to-white p-4 shadow-sm">
       <p className="text-[10px] font-medium uppercase tracking-[0.28em] text-neutral-400">本轮参考</p>
-      <p className="mt-1 text-[13px] font-semibold text-neutral-800">七板块记忆 · 世界书 · 尾声</p>
+      <p className="mt-1 text-[13px] font-semibold text-neutral-800">记忆注入 · 档案账本 · 世界书</p>
       <div className="mt-3 flex flex-wrap gap-2">
         {chip(`① 当前状态`, c.state > 0)}
         {chip(`② 历史摘要 ${c.vectorPlot}`, c.vectorPlot > 0)}
         {chip(`③ 线下摘要 ${c.recentSummary}`, c.recentSummary > 0)}
         {chip(`④ 线下原文 ${c.offlineFull}`, c.offlineFull > 0)}
-        {chip(`⑤ 未总结 ${c.unsChat}`, c.unsChat > 0)}
+        {chip(`⑤ 线上近端 ${c.unsChat}`, c.unsChat > 0)}
         {chip(`⑥ 长期向量 ${c.ltmVector}`, c.ltmVector > 0)}
         {chip(`⑦ 关键词 ${c.ltmKeyword}`, c.ltmKeyword > 0)}
+        {chip('人生账本', c.lifeLedger)}
         {chip('人设世界书', c.personaWb)}
         {chip('档案室世界书', c.globalWb)}
         {chip('尾声延展', c.wbAfter)}
@@ -318,7 +321,17 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
         ...row,
         body: String(row.content ?? '').trim() || traceText(row.content),
       }))
-      .filter((row) => row.body)
+      .filter((row) => {
+        if (!row.body) return false
+        // 向量轨只展示真实相似度；0% / 分线标题垃圾不进列表
+        if (!(Number(row.relevanceScore) > 0)) return false
+        const t = row.body.trim()
+        if (/^【(?:当前微信线|其它微信线|来源未标注|私聊记忆注入)/.test(t) && t.length < 120) {
+          return false
+        }
+        return true
+      })
+      .sort((a, b) => Number(b.relevanceScore) - Number(a.relevanceScore))
   }, [matrix?.deepMemory.vectorRetrievals])
 
   const ltmKeywordRows = useMemo(() => {
@@ -331,6 +344,10 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
   }, [matrix?.deepMemory.keywordHits])
 
   const personaWbText = traceText(matrix?.baseDirectives.characterWorldBook)
+  const personaWbBooks = useMemo(
+    () => parsePersonaWorldBookForTraceDisplay(String(matrix?.baseDirectives.characterWorldBook ?? '')),
+    [matrix?.baseDirectives.characterWorldBook],
+  )
   const globalWbNames = useMemo(() => {
     const stored = matrix?.baseDirectives.worldbooks ?? []
     if (stored.length > 0) return stored
@@ -348,11 +365,17 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
   }, [matrix?.baseDirectives.worldbooks])
   const globalWbText = traceText(matrix?.baseDirectives.globalWorldbook)
   const personaDetailText = traceText(matrix?.baseDirectives.personaDetail)
+  /** 账本正文：避免二次重度清洗把标题旁白洗没后误判为空；有原文就展示 */
+  const lifeCharacterRaw = String(matrix?.baseDirectives.lifeMutableCharacter ?? '').trim()
+  const lifePlayerRaw = String(matrix?.baseDirectives.lifeMutablePlayer ?? '').trim()
+  const lifeCharacterText = lifeCharacterRaw ? traceText(lifeCharacterRaw) || lifeCharacterRaw : ''
+  const lifePlayerText = lifePlayerRaw ? traceText(lifePlayerRaw) || lifePlayerRaw : ''
+  const hasLifeLedger = !!(lifeCharacterText || lifePlayerText)
   const worldBgText = traceText(matrix?.baseDirectives.worldBackground)
 
   const hasPersonaWb =
-    !!personaWbText &&
-    !/^\(未绑定|^（未绑定|^无$|未启用人设世界书/.test(personaWbText)
+    personaWbBooks.length > 0 ||
+    (!!personaWbText && !/^\(未绑定|^（未绑定|^无$|未启用人设世界书/.test(personaWbText))
   const hasGlobalWb =
     globalWbNames.length > 0 ||
     (!!globalWbText &&
@@ -374,6 +397,7 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
     unsChat: unsChatRows.length,
     ltmVector: ltmVectorRows.length,
     ltmKeyword: ltmKeywordRows.length,
+    lifeLedger: hasLifeLedger,
     personaWb: hasPersonaWb,
     globalWb: hasGlobalWb,
     wbAfter: hasWbAfter,
@@ -391,6 +415,7 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
       else if (overviewCounts.unsChat > 0) prefer.push('m5')
       else if (overviewCounts.offlineFull > 0) prefer.push('m4')
       else prefer.push('m1', 'm5')
+      if (hasLifeLedger || personaDetailText) prefer.push('persona')
       setExpanded(new Set(prefer))
     }, 0)
     return () => window.clearTimeout(t)
@@ -548,7 +573,7 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                 <div className="flex flex-col items-center justify-center px-2 py-16 text-center">
                   <p className="text-[15px] font-semibold text-neutral-800">暂无思维溯源记录</p>
                   <p className="mt-3 max-w-[300px] text-[13px] leading-relaxed text-neutral-500">
-                    生成一轮 AI 回复后，这里会按七板块记忆、世界书与尾声延展展示本轮实际注入的参考内容。
+                    生成一轮 AI 回复后，这里会按记忆注入、角色档案与人生账本、世界书与尾声延展展示本轮实际注入的参考内容。
                   </p>
                 </div>
               ) : null}
@@ -652,8 +677,8 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                     </AccordionRow>
 
                     <AccordionRow
-                      titleEn="⑤ UNSUMMARIZED"
-                      titleZh="未总结 · 线上私聊 / 群聊"
+                      titleEn="⑤ ONLINE NEAR"
+                      titleZh="未总结 / 固定近端 · 线上私聊"
                       expanded={isExpanded('m5')}
                       onToggle={() => toggleAccordion('m5')}
                       badge={<CountBadge n={unsChatRows.length} />}
@@ -678,8 +703,15 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                           ))}
                         </ul>
                       ) : (
-                        <EmptyHint text="本轮无未总结线上私聊 / 群聊摘录。" />
+                        <EmptyHint text="本轮无未总结 / 固定近端线上原文。" />
                       )}
+                      {(matrix?.recentContext.recentRoundRefs ?? []).some(
+                        (r) => r.channel === 'private' && r.omittedBecauseUnsummarized,
+                      ) ? (
+                        <p className="mt-2 px-1 text-[12px] leading-relaxed text-neutral-500">
+                          固定近端窗已与未总结重合，本轮只注入一份（未重复占用 token）。
+                        </p>
+                      ) : null}
                     </AccordionRow>
 
                     <AccordionRow
@@ -704,7 +736,7 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                                     <p className="text-[13px] leading-[1.65] text-neutral-800">{row.body}</p>
                                   </div>
                                   <span className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-emerald-800">
-                                    {pct(row.relevanceScore)}
+                                    sim {pct(row.relevanceScore)}
                                   </span>
                                 </div>
                               </TraceCard>
@@ -712,7 +744,7 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                           ))}
                         </ul>
                       ) : (
-                        <EmptyHint text="本轮无线上长期记忆向量召回（至多 5 条）。" />
+                        <EmptyHint text="本轮无线上长期记忆向量召回（短 query + 词面增强后仍未达门槛；至多 5 条）。若⑦很多而⑥为空，多半是记忆尚未补齐 embedding。" />
                       )}
                     </AccordionRow>
 
@@ -768,6 +800,92 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                   >
                     <div className="border-b border-neutral-50 bg-neutral-50/60 px-4 py-2.5">
                       <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-neutral-400">
+                        Persona · Life Ledger
+                      </p>
+                      <p className="mt-0.5 text-[13px] font-semibold text-neutral-700">角色档案 · 人生账本</p>
+                    </div>
+
+                    <AccordionRow
+                      titleEn="PERSONA · LEDGER"
+                      titleZh="档案与可变人生"
+                      expanded={isExpanded('persona')}
+                      onToggle={() => toggleAccordion('persona')}
+                      badge={
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            hasLifeLedger || personaDetailText
+                              ? 'bg-amber-50 text-amber-900'
+                              : 'bg-neutral-100 text-neutral-500'
+                          }`}
+                        >
+                          {hasLifeLedger ? '账本已注入' : personaDetailText ? '有档案' : '暂无'}
+                        </span>
+                      }
+                    >
+                      <div className="space-y-4 px-1">
+                        <div>
+                          <SectionLabel>角色档案</SectionLabel>
+                          {personaDetailText ? (
+                            <TraceCard>
+                              <TraceBody text={personaDetailText} maxClass="max-h-[min(40vh,400px)]" />
+                            </TraceCard>
+                          ) : matrix.baseDirectives.persona.length ? (
+                            <div className="flex flex-wrap gap-2">
+                              {matrix.baseDirectives.persona.map((t) => (
+                                <span
+                                  key={t}
+                                  className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-[12px] text-neutral-700"
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <EmptyHint text="无人设档案正文。" />
+                          )}
+                        </div>
+                        <div>
+                          <SectionLabel>人生账本 · 角色本线</SectionLabel>
+                          {lifeCharacterText ? (
+                            <TraceCard tone="amber">
+                              <pre className="mt-1 max-h-[min(36vh,320px)] overflow-y-auto whitespace-pre-wrap break-words font-sans text-[13px] leading-[1.65] text-neutral-800 [scrollbar-width:thin]">
+                                {lifeCharacterText}
+                              </pre>
+                            </TraceCard>
+                          ) : (
+                            <EmptyHint text="本轮未写入角色人生账本。请再发一轮私聊后查看；若仍为空，检查该角色是否已建档。" />
+                          )}
+                        </div>
+                        <div>
+                          <SectionLabel>人生账本 · 玩家本线</SectionLabel>
+                          {lifePlayerText ? (
+                            <TraceCard>
+                              <pre className="mt-1 max-h-[min(28vh,240px)] overflow-y-auto whitespace-pre-wrap break-words font-sans text-[13px] leading-[1.65] text-neutral-800 [scrollbar-width:thin]">
+                                {lifePlayerText}
+                              </pre>
+                            </TraceCard>
+                          ) : (
+                            <EmptyHint text="本轮未写入玩家本线账本（未绑定身份或玩家账本为空时常见）。" />
+                          )}
+                        </div>
+                        {worldBgText ? (
+                          <div>
+                            <SectionLabel>世界背景</SectionLabel>
+                            <TraceCard>
+                              <p className="text-[13px] leading-[1.65] text-neutral-800">{worldBgText}</p>
+                            </TraceCard>
+                          </div>
+                        ) : null}
+                      </div>
+                    </AccordionRow>
+                  </motion.div>
+
+                  <motion.div
+                    variants={itemVariants}
+                    className="overflow-hidden rounded-2xl border border-neutral-100 bg-white shadow-sm"
+                  >
+                    <div className="border-b border-neutral-50 bg-neutral-50/60 px-4 py-2.5">
+                      <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-neutral-400">
                         World Books · Epilogue
                       </p>
                       <p className="mt-0.5 text-[13px] font-semibold text-neutral-700">世界书与尾声</p>
@@ -789,7 +907,39 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                       }
                     >
                       <div className="px-1">
-                        {hasPersonaWb ? (
+                        {personaWbBooks.length > 0 ? (
+                          <div className="max-h-[min(52vh,560px)] space-y-4 overflow-y-auto [scrollbar-width:thin]">
+                            {personaWbBooks.map((book, bi) => (
+                              <div key={`${book.title}-${bi}`} className="space-y-2">
+                                <p className="px-0.5 text-[12px] font-semibold tracking-wide text-neutral-700">
+                                  {book.title}
+                                </p>
+                                <div className="space-y-2">
+                                  {book.entries.map((entry, ei) => (
+                                    <div
+                                      key={`${entry.name}-${ei}`}
+                                      className="rounded-xl border border-neutral-100 bg-neutral-50/70 px-3 py-2.5"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-neutral-900">
+                                          {entry.name}
+                                        </p>
+                                        <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 ring-1 ring-neutral-200/80">
+                                          {entry.priority}
+                                        </span>
+                                      </div>
+                                      {entry.content ? (
+                                        <p className="mt-1.5 whitespace-pre-wrap text-[12.5px] leading-[1.65] text-neutral-700">
+                                          {entry.content}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : hasPersonaWb ? (
                           <TraceCard>
                             <TraceBody text={personaWbText} maxClass="max-h-[min(40vh,400px)]" />
                           </TraceCard>
@@ -1007,42 +1157,6 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                             {data.lastReply}
                           </p>
                         </div>
-                      </div>
-                    </AccordionRow>
-
-                    <AccordionRow
-                      titleEn="PERSONA CARD"
-                      titleZh="角色档案"
-                      expanded={isExpanded('persona')}
-                      onToggle={() => toggleAccordion('persona')}
-                    >
-                      <div className="space-y-4 px-1">
-                        {personaDetailText ? (
-                          <TraceCard>
-                            <TraceBody text={personaDetailText} maxClass="max-h-[min(40vh,400px)]" />
-                          </TraceCard>
-                        ) : matrix.baseDirectives.persona.length ? (
-                          <div className="flex flex-wrap gap-2">
-                            {matrix.baseDirectives.persona.map((t) => (
-                              <span
-                                key={t}
-                                className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-[12px] text-neutral-700"
-                              >
-                                {t}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <EmptyHint text="无人设档案正文。" />
-                        )}
-                        {worldBgText ? (
-                          <div>
-                            <SectionLabel>世界背景</SectionLabel>
-                            <TraceCard>
-                              <p className="text-[13px] leading-[1.65] text-neutral-800">{worldBgText}</p>
-                            </TraceCard>
-                          </div>
-                        ) : null}
                       </div>
                     </AccordionRow>
 

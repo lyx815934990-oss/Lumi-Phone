@@ -897,7 +897,7 @@ export function PersonaAiGenerateDossierForm({
               <CollapsiblePresetZone
                 en="Romance History"
                 zh="感情史"
-                summary={form.relationshipHistoryHint.trim() || undefined}
+                summary={form.relationshipHistoryHint.trim() || '生成时必写「过往感情史」条目'}
                 presets={
                   <PillRow>
                     {PERSONA_AI_RELATIONSHIP_HISTORY_PRESETS.map((kw) => (
@@ -920,7 +920,7 @@ export function PersonaAiGenerateDossierForm({
                         : form.relationshipHistoryHint
                     }
                     onChange={(v) => patch({ relationshipHistoryHint: v })}
-                    placeholder="补充感情史细节…"
+                    placeholder="可选：写清曾有好感/喜欢/交往过的对象，或母胎单身等；不填也会生成该条目"
                     maxLength={240}
                     rows={2}
                   />

@@ -231,7 +231,7 @@ export function ProactiveMessageVariableIntervalControl({
       </Pressable>
 
       <p className="mt-2 text-[11px] leading-relaxed text-[#8e8e8e]">
-        每次主动消息触发后，会在该区间内重新随机下一次等待。角色说忙或开启忙碌后，系统仍会自动拉长到约{' '}
+        每次主动消息触发后，会在该区间内重新随机下一次等待。仅系统忙碌未结束或模型输出 [BUSY] 时，才会临时拉长到约{' '}
         <span style={numStyle}>5 分钟～2 小时</span>。
       </p>
     </div>

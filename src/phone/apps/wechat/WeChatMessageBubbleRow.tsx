@@ -12,6 +12,7 @@ import {
   telegramBubbleCornerRadius,
 } from './wechatBubbleTelegramUi'
 import { ImessageBubbleTail, imessageBubbleCornerRadius } from './wechatBubbleImessageUi'
+import { twitterBubbleCornerRadius } from './wechatBubbleTwitterUi'
 import { WechatBubbleTail } from './wechatBubbleWechatUi'
 import { TalkmakerInlineReplyBlock, TelegramInlineReplyBlock } from './wechatMessengerSpecialBubbles'
 import {
@@ -43,9 +44,7 @@ import {
 import { isLiquidGlassMinimalPackActive } from './bubblePack/liquidGlassMinimalPack'
 import { normalizeBubbleBadge } from './bubbleBadge'
 
-/** 聊天气泡最大宽：100vw - 左右基准线 24px×2 - 头像列预留 80px（40 头像 + 12 间距 + 28 冗余） */
-const CHAT_BUBBLE_MAX = 'max-w-[calc(100vw-24px-24px-80px)]'
-/** 主题抽屉等窄容器内预览：不超过父宽，公式与聊天一致 */
+/** 主题抽屉等窄容器内预览：不超过父宽 */
 const PREVIEW_BUBBLE_MAX = 'max-w-[min(100%,calc(100vw-24px-24px-80px))]'
 
 /** 气泡内嵌引用预览（与微信一致：宽度随气泡，不超出） */
@@ -180,6 +179,8 @@ export type WeChatMessageBubbleRowProps = {
   onOtherAvatarClick?: () => void
   /** 长按气泡触发操作面板（微信一致） */
   onBubbleLongPress?: (anchorRect: DOMRect) => void
+  /** 短按气泡（如 X 风格揭晓时间）；与长按共存时由 long-press hook 区分 */
+  onBubbleTap?: () => void
   /** 面板打开时，气泡显示选中态 */
   bubbleSelected?: boolean
   /** 多选模式：替换头像槽位为复选框 */
@@ -195,6 +196,12 @@ export type WeChatMessageBubbleRowProps = {
   translationText?: string
   translationExpanded?: boolean
   onTranslationToggle?: () => void
+  /** X / 聚拢簇：影响非对称圆角 */
+  bubbleCluster?: 'single' | 'first' | 'middle' | 'last'
+  /** 头像边长；缺省 40；X 风格对方 28 */
+  avatarSizePx?: number
+  /** X 风格文字气泡排版 */
+  twitterStyle?: boolean
 }
 
 function BubbleMessageTail({
@@ -320,6 +327,7 @@ export function WeChatMessageBubbleRow({
   groupRankShowBesideNickname = true,
   onOtherAvatarClick,
   onBubbleLongPress,
+  onBubbleTap,
   bubbleSelected = false,
   multiSelectAvatar,
   replyPreview,
@@ -329,6 +337,9 @@ export function WeChatMessageBubbleRow({
   translationText,
   translationExpanded = false,
   onTranslationToggle,
+  bubbleCluster = 'single',
+  avatarSizePx,
+  twitterStyle = false,
 }: WeChatMessageBubbleRowProps) {
   const { state: customizationState } = useCustomization()
   const liquidGlassEnter = isLiquidGlassMinimalPackActive(customizationState.wechatTheme)
@@ -345,8 +356,8 @@ export function WeChatMessageBubbleRow({
   const showBubbleBadge = Boolean(bubbleBadge?.enabled && bubbleBadge.text.trim())
   const contentRef = useRef<HTMLDivElement>(null)
   const singleLine = useMessageBubbleSingleLine(contentRef, messageText)
-  /** 聊天 40px；预览同尺寸以对齐规则一致 */
-  const avatarPx = variant === 'chat' ? 40 : 40
+  /** 聊天默认 40px；X 风格对方 28 */
+  const avatarPx = avatarSizePx ?? (variant === 'chat' ? 40 : 40)
   /** css 引擎：清空微信/iMessage/Telegram/Talkmaker 主题尾巴与排版差异，只留原始壳给 scopedCss */
   const cssSkin = useChatSkinEngine() === 'css'
   const liquidGlassCssTail = cssSkin && Boolean(showBubbleTail)
@@ -376,6 +387,15 @@ export function WeChatMessageBubbleRow({
     singleLine && reserveAvatarGutter && !isTalkmakerTail && !translationOpen,
   )
   const isAltMessengerTail = isImessageTail || isTelegramTail || isTalkmakerTail
+  /** 微信 App 头像无描边（官方一致）；其它主题保留细边框 */
+  const avatarBorder =
+    tailStyle === 'wechat' ? 'none' : '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)'
+  /**
+   * 微信主题双方都占头像列：气泡最长不得超过「对侧头像框内侧」。
+   * 对侧预留 = 头像边长 + 与气泡间距 12；外边距仍为 24。
+   */
+  const wechatDualAvatarLayout = Boolean(tailStyle === 'wechat' && showAvatar && !twitterStyle)
+  const wechatOppositeGutterPx = wechatDualAvatarLayout ? avatarPx + 12 : 0
   const showTail =
     showBubbleTail &&
     !multiSelectAvatar &&
@@ -389,11 +409,13 @@ export function WeChatMessageBubbleRow({
   const bubbleRadiusPx = isSelf ? bubble.selfBubbleRadiusPx : bubble.otherBubbleRadiusPx
   const bubbleRadius = cssSkin
     ? `${bubbleRadiusPx}px`
-    : isTelegramTail || isTalkmakerTail
-      ? telegramBubbleCornerRadius(isSelf, bubbleRadiusPx, showTail)
-      : isImessageTail
-        ? imessageBubbleCornerRadius(isSelf, bubbleRadiusPx, showTail)
-        : `${bubbleRadiusPx}px`
+    : twitterStyle
+      ? twitterBubbleCornerRadius(isSelf, bubbleCluster, bubbleRadiusPx, 4)
+      : isTelegramTail || isTalkmakerTail
+        ? telegramBubbleCornerRadius(isSelf, bubbleRadiusPx, showTail)
+        : isImessageTail
+          ? imessageBubbleCornerRadius(isSelf, bubbleRadiusPx, showTail)
+          : `${bubbleRadiusPx}px`
   const solidChatBg = variant === 'chat' ? chatSolidBubbleBg?.trim() : ''
   let bubbleBgChatResolved = solidChatBg ? solidChatBg : bubbleBgChat
   let bubbleTextResolved = variant === 'chat' ? bubbleTextChat : bubbleTextPreview
@@ -405,24 +427,28 @@ export function WeChatMessageBubbleRow({
 
   const textCls = cssSkin
     ? 'text-[15px]'
-    : isWechatTail
-      ? 'text-[15.5px]'
-      : isAltMessengerTail || variant === 'chat'
-        ? isTalkmakerTail
-          ? 'text-[15px]'
-          : 'text-[16px]'
-        : 'text-[14px]'
+    : twitterStyle
+      ? 'text-[15px]'
+      : isWechatTail
+        ? 'text-[15.5px]'
+        : isAltMessengerTail || variant === 'chat'
+          ? isTalkmakerTail
+            ? 'text-[15px]'
+            : 'text-[16px]'
+          : 'text-[14px]'
   const bubblePadCls = cssSkin
     ? 'p-0'
-    : isTelegramTail
-      ? 'px-3 py-2'
-      : isTalkmakerTail
+    : twitterStyle
+      ? 'px-[14px] py-[10px]'
+      : isTelegramTail
         ? 'px-3 py-2'
-        : isImessageTail
-          ? 'px-4 py-2.5'
-          : isWechatTail
-            ? 'px-3 py-2.5'
-            : 'px-3 py-2'
+        : isTalkmakerTail
+          ? 'px-3 py-2'
+          : isImessageTail
+            ? 'px-4 py-2.5'
+            : isWechatTail
+              ? 'px-3 py-2.5'
+              : 'px-3 py-2'
   const talkmakerTimeLabel =
     isTalkmakerTail && typeof messageTimestampMs === 'number'
       ? formatTalkmakerExternalTime(messageTimestampMs)
@@ -437,7 +463,7 @@ export function WeChatMessageBubbleRow({
         : null
   const messageBodyVisible = messageText.replace(/\u200b/g, '').trim().length > 0
   const messageBody = messageBodyVisible ? (
-    <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+    <span className="whitespace-pre-wrap break-words">
       <WeChatChatMixedText
         text={messageText}
         templateFont={useFullStackFont}
@@ -458,7 +484,13 @@ export function WeChatMessageBubbleRow({
       ? 'cursor-pointer transition-transform duration-150 ease-out active:scale-95'
       : ''
 
-  const bubbleMax = variant === 'chat' ? CHAT_BUBBLE_MAX : PREVIEW_BUBBLE_MAX
+  // 两侧都用 w-fit + 外层 max-w 限宽。对方若只设 max-w、无 w-fit，在无头像（如 Twitter）+
+  // overflow-wrap:anywhere + 链路 min-w-0 时，会按 min-content 收成竖条，宽窄不定。
+  const bubbleMax = variant === 'chat'
+    ? 'w-fit max-w-full'
+    : isSelf
+      ? 'w-fit max-w-full'
+      : PREVIEW_BUBBLE_MAX
   const rowAlign = alignWithAvatarMid ? 'items-center' : 'items-start'
   const selfChatAvatarSrc = variant === 'chat' && isSelf ? chatSelfAvatarUrl?.trim() : ''
   const otherChatAvatarSrc = variant === 'chat' && !isSelf ? chatOtherAvatarUrl?.trim() : ''
@@ -475,10 +507,11 @@ export function WeChatMessageBubbleRow({
   )
 
   const { bind } = useWeChatLongPress({
-    enabled: variant === 'chat' && !!onBubbleLongPress,
+    enabled: variant === 'chat' && (!!onBubbleLongPress || !!onBubbleTap),
     ms: 500,
     moveThresholdPx: 10,
     onLongPress: () => onLongPress(),
+    onTap: onBubbleTap,
   })
 
   const translationTrimmed = translationText?.trim() || ''
@@ -734,17 +767,23 @@ export function WeChatMessageBubbleRow({
 
   if (variant === 'chat') {
     if (!isSelf) {
+      const otherRowInsetStyle: CSSProperties = wechatDualAvatarLayout
+        ? { marginLeft: 24, marginRight: 24 + wechatOppositeGutterPx }
+        : { marginLeft: 24, marginRight: 24 }
       return (
-        <div className={`w-full max-w-full shrink-0 overflow-visible ${rowClassName}`}>
+        <div className={`flex w-full max-w-full shrink-0 justify-start overflow-visible ${rowClassName}`}>
           {!showAvatar && !multiSelectAvatar ? (
-            <div className="ml-[24px] mr-auto min-w-0">{renderedBubble}</div>
+            <div className="w-fit min-w-0 max-w-[75%]" style={otherRowInsetStyle}>
+              {renderedBubble}
+            </div>
           ) : showAvatarVisual || multiSelectAvatar ? (
             <div
-              className={`ml-[24px] mr-auto flex max-w-full flex-row gap-[12px] ${
+              className={`flex min-w-0 max-w-full flex-1 flex-row gap-[12px] ${
                 !multiSelectAvatar && (chatOtherSenderNickname?.trim() || (rankBeside && chatOtherAvatarRankBadge))
                   ? 'items-start'
                   : rowAlign
               }`}
+              style={otherRowInsetStyle}
             >
               {composeMultiSelectLeading(
                 multiSelectAvatar,
@@ -756,21 +795,25 @@ export function WeChatMessageBubbleRow({
                     alt=""
                     width={avatarPx}
                     height={avatarPx}
-                    className={`h-10 w-10 shrink-0 object-cover ${avatarMotionCls}`}
+                    className={`shrink-0 object-cover ${avatarMotionCls}`}
                     style={{
+                      width: avatarPx,
+                      height: avatarPx,
                       borderRadius: `${bubble.avatarRadiusPx}px`,
-                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                      border: avatarBorder,
                     }}
                     onClick={onOtherAvatarClick}
                     aria-hidden
                   />
                 ) : (
                   <div
-                    className={`h-10 w-10 shrink-0 ${avatarMotionCls}`}
+                    className={`shrink-0 ${avatarMotionCls}`}
                     style={{
+                      width: avatarPx,
+                      height: avatarPx,
                       borderRadius: `${bubble.avatarRadiusPx}px`,
                       background: 'rgba(0,0,0,0.06)',
-                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                      border: avatarBorder,
                     }}
                     onClick={onOtherAvatarClick}
                     aria-hidden
@@ -785,21 +828,25 @@ export function WeChatMessageBubbleRow({
                       alt=""
                       width={avatarPx}
                       height={avatarPx}
-                      className={`h-10 w-10 shrink-0 object-cover ${avatarMotionCls}`}
+                      className={`shrink-0 object-cover ${avatarMotionCls}`}
                       style={{
+                        width: avatarPx,
+                        height: avatarPx,
                         borderRadius: `${bubble.avatarRadiusPx}px`,
-                        border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                        border: avatarBorder,
                       }}
                       onClick={onOtherAvatarClick}
                       aria-hidden
                     />
                   ) : (
                     <div
-                      className={`h-10 w-10 shrink-0 ${avatarMotionCls}`}
+                      className={`shrink-0 ${avatarMotionCls}`}
                       style={{
+                        width: avatarPx,
+                        height: avatarPx,
                         borderRadius: `${bubble.avatarRadiusPx}px`,
                         background: 'rgba(0,0,0,0.06)',
-                        border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                        border: avatarBorder,
                       }}
                       onClick={onOtherAvatarClick}
                       aria-hidden
@@ -808,6 +855,7 @@ export function WeChatMessageBubbleRow({
                 </ChatGroupSpeakerRankOnAvatar>
               ),
               showAvatarColumn,
+              avatarPx,
               )}
               <div className="flex min-w-0 flex-1 flex-col items-start gap-[3px]">
                 {!multiSelectAvatar && rankBeside ? (
@@ -826,17 +874,21 @@ export function WeChatMessageBubbleRow({
               </div>
             </div>
           ) : reserveAvatarGutter ? (
-            <div className={`ml-[24px] mr-auto flex max-w-full flex-row ${rowAlign} gap-[12px]`}>
+            <div
+              className={`flex min-w-0 max-w-full flex-1 flex-row ${rowAlign} gap-[12px]`}
+              style={otherRowInsetStyle}
+            >
               {composeMultiSelectLeading(
                 multiSelectAvatar,
                 rankBeside || !chatOtherAvatarRankBadge ? (
-                  <WeChatAvatarSizeGutter side="other" />
+                  <WeChatAvatarSizeGutter side="other" sizePx={avatarPx} />
                 ) : (
                   <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge}>
-                    <div className="h-10 w-10 shrink-0" aria-hidden />
+                    <div className="shrink-0" style={{ width: avatarPx, height: avatarPx }} aria-hidden />
                   </ChatGroupSpeakerRankOnAvatar>
                 ),
               showAvatarColumn,
+              avatarPx,
               )}
               <div className="flex min-w-0 flex-1 flex-col items-start gap-[3px]">
                 {!multiSelectAvatar && rankBeside ? (
@@ -846,7 +898,9 @@ export function WeChatMessageBubbleRow({
               </div>
             </div>
           ) : (
-            <div className="ml-[24px] mr-auto min-w-0">{renderedBubble}</div>
+            <div className="w-fit min-w-0 max-w-[75%]" style={otherRowInsetStyle}>
+              {renderedBubble}
+            </div>
           )}
         </div>
       )
@@ -855,23 +909,31 @@ export function WeChatMessageBubbleRow({
     if (isTalkmakerTail) {
       return (
         <div
-          className={`flex w-full max-w-full shrink-0 items-end justify-end gap-[4px] overflow-visible ${rowClassName}`}
+          className={`flex w-full max-w-full shrink-0 items-end justify-end gap-[4px] overflow-visible px-4 ${rowClassName}`}
         >
           {chatAccessory}
-          <div className="mr-[24px] ml-auto min-w-0">{renderedBubble}</div>
+          <div className="w-fit min-w-0 max-w-[75%]">{renderedBubble}</div>
         </div>
       )
     }
 
+    const selfRowInsetStyle: CSSProperties | undefined = wechatDualAvatarLayout
+      ? { paddingLeft: 24 + wechatOppositeGutterPx, paddingRight: 24 }
+      : undefined
+    const selfGroupMax = wechatDualAvatarLayout ? 'max-w-full' : 'max-w-[75%]'
+
     return (
       <div
-        className={`flex w-full max-w-full shrink-0 items-end justify-end gap-[4px] overflow-visible ${rowClassName}`}
+        className={`flex w-full max-w-full shrink-0 items-end justify-end gap-[4px] overflow-visible ${
+          wechatDualAvatarLayout ? '' : 'px-4'
+        } ${rowClassName}`}
+        style={selfRowInsetStyle}
       >
         {chatAccessory}
         {!showAvatar && !multiSelectAvatar ? (
-          <div className="mr-[24px] ml-auto min-w-0">{bubbleBlock}</div>
+          <div className={`w-fit min-w-0 ${selfGroupMax}`}>{bubbleBlock}</div>
         ) : showAvatarVisual || multiSelectAvatar ? (
-          <div className={`mr-[24px] ml-auto flex max-w-full flex-row ${rowAlign} gap-[12px]`}>
+          <div className={`flex w-fit min-w-0 ${selfGroupMax} flex-row ${rowAlign} gap-[12px]`}>
             {bubbleBlock}
             {composeMultiSelectLeading(
               multiSelectAvatar,
@@ -883,17 +945,21 @@ export function WeChatMessageBubbleRow({
                   alt=""
                   width={avatarPx}
                   height={avatarPx}
-                  className="h-10 w-10 shrink-0 object-cover"
+                  className="shrink-0 object-cover"
                   style={{
+                    width: avatarPx,
+                    height: avatarPx,
                     borderRadius: `${bubble.avatarRadiusPx}px`,
-                    border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                    border: avatarBorder,
                   }}
                   aria-hidden
                 />
               ) : (
                 <div
-                  className="h-10 w-10 shrink-0"
+                  className="shrink-0"
                   style={{
+                    width: avatarPx,
+                    height: avatarPx,
                     borderRadius: `${bubble.avatarRadiusPx}px`,
                     background: 'rgba(0,0,0,0.04)',
                   }}
@@ -909,17 +975,21 @@ export function WeChatMessageBubbleRow({
                     alt=""
                     width={avatarPx}
                     height={avatarPx}
-                    className="h-10 w-10 shrink-0 object-cover"
+                    className="shrink-0 object-cover"
                     style={{
+                      width: avatarPx,
+                      height: avatarPx,
                       borderRadius: `${bubble.avatarRadiusPx}px`,
-                      border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                      border: avatarBorder,
                     }}
                     aria-hidden
                   />
                 ) : (
                   <div
-                    className="h-10 w-10 shrink-0"
+                    className="shrink-0"
                     style={{
+                      width: avatarPx,
+                      height: avatarPx,
                       borderRadius: `${bubble.avatarRadiusPx}px`,
                       background: 'rgba(0,0,0,0.04)',
                     }}
@@ -929,25 +999,27 @@ export function WeChatMessageBubbleRow({
               </ChatGroupSpeakerRankOnAvatar>
                 ),
               showAvatarColumn,
+              avatarPx,
               )}
           </div>
         ) : reserveAvatarGutter ? (
-          <div className={`mr-[24px] ml-auto flex max-w-full flex-row ${rowAlign} gap-[12px]`}>
+          <div className={`flex w-fit min-w-0 ${selfGroupMax} flex-row ${rowAlign} gap-[12px]`}>
             {bubbleBlock}
             {composeMultiSelectLeading(
               multiSelectAvatar,
               rankBeside || !chatSelfAvatarRankBadge ? (
-                <WeChatAvatarSizeGutter side="self" />
+                <WeChatAvatarSizeGutter side="self" sizePx={avatarPx} />
               ) : (
                 <ChatGroupSpeakerRankOnAvatar chromeSide="self" rankBadge={chatSelfAvatarRankBadge}>
-                  <div className="h-10 w-10 shrink-0" aria-hidden />
+                  <div className="shrink-0" style={{ width: avatarPx, height: avatarPx }} aria-hidden />
                 </ChatGroupSpeakerRankOnAvatar>
                 ),
               showAvatarColumn,
+              avatarPx,
               )}
           </div>
         ) : (
-          <div className="mr-[24px] ml-auto min-w-0">{bubbleBlock}</div>
+          <div className={`w-fit min-w-0 ${selfGroupMax}`}>{bubbleBlock}</div>
         )}
       </div>
     )
@@ -956,15 +1028,17 @@ export function WeChatMessageBubbleRow({
   /* ---------- preview（主题面板）：与聊天相同像素规则，宽度随容器 ---------- */
   if (!isSelf) {
     return (
-      <div className={`w-full max-w-full shrink-0 overflow-x-hidden ${rowClassName}`}>
+      <div className={`flex w-full max-w-full shrink-0 justify-start overflow-x-hidden ${rowClassName}`}>
         {!showAvatar ? (
-          <div className="ml-[24px] mr-auto min-w-0">{bubbleBlock}</div>
+          <div className="ml-[24px] mr-[24px] w-fit min-w-0 max-w-[75%]">{bubbleBlock}</div>
         ) : showAvatarVisual ? (
-          <div className={`ml-[24px] mr-auto flex max-w-full flex-row ${rowAlign} gap-[12px]`}>
+          <div className={`ml-[24px] mr-[24px] flex max-w-full flex-row ${rowAlign} gap-[12px]`}>
             <WeChatAvatarChromeWrap side="other">
             <div
-              className="h-10 w-10 shrink-0"
+              className="shrink-0"
               style={{
+                width: avatarPx,
+                height: avatarPx,
                 borderRadius: `${bubble.avatarRadiusPx}px`,
                 background: 'rgba(0,0,0,0.06)',
               }}
@@ -974,28 +1048,30 @@ export function WeChatMessageBubbleRow({
             {bubbleBlock}
           </div>
         ) : reserveAvatarGutter ? (
-          <div className={`ml-[24px] mr-auto flex max-w-full flex-row ${rowAlign} gap-[12px]`}>
-            <WeChatAvatarSizeGutter side="other" />
+          <div className={`ml-[24px] mr-[24px] flex max-w-full flex-row ${rowAlign} gap-[12px]`}>
+            <WeChatAvatarSizeGutter side="other" sizePx={avatarPx} />
             {bubbleBlock}
           </div>
         ) : (
-          <div className="ml-[24px] mr-auto min-w-0">{bubbleBlock}</div>
+          <div className="ml-[24px] mr-[24px] w-fit min-w-0 max-w-[75%]">{bubbleBlock}</div>
         )}
       </div>
     )
   }
 
   return (
-    <div className={`flex w-full max-w-full shrink-0 items-end justify-end overflow-x-hidden ${rowClassName}`}>
+    <div className={`flex w-full max-w-full shrink-0 items-end justify-end overflow-x-hidden px-4 ${rowClassName}`}>
       {!showAvatar ? (
-        <div className="mr-[24px] ml-auto min-w-0">{bubbleBlock}</div>
+        <div className="w-fit min-w-0 max-w-[75%]">{bubbleBlock}</div>
       ) : showAvatarVisual ? (
-        <div className={`mr-[24px] ml-auto flex max-w-full flex-row ${rowAlign} gap-[12px]`}>
+        <div className={`flex w-fit min-w-0 max-w-[75%] flex-row ${rowAlign} gap-[12px]`}>
           {bubbleBlock}
           <WeChatAvatarChromeWrap side="self">
           <div
-            className="h-10 w-10 shrink-0"
+            className="shrink-0"
             style={{
+              width: avatarPx,
+              height: avatarPx,
               borderRadius: `${bubble.avatarRadiusPx}px`,
               background: 'rgba(0,0,0,0.04)',
             }}
@@ -1004,12 +1080,12 @@ export function WeChatMessageBubbleRow({
           </WeChatAvatarChromeWrap>
         </div>
       ) : reserveAvatarGutter ? (
-        <div className={`mr-[24px] ml-auto flex max-w-full flex-row ${rowAlign} gap-[12px]`}>
+        <div className={`flex w-fit min-w-0 max-w-[75%] flex-row ${rowAlign} gap-[12px]`}>
           {bubbleBlock}
-          <WeChatAvatarSizeGutter side="self" />
+          <WeChatAvatarSizeGutter side="self" sizePx={avatarPx} />
         </div>
       ) : (
-        <div className="mr-[24px] ml-auto min-w-0">{bubbleBlock}</div>
+        <div className="w-fit min-w-0 max-w-[75%]">{bubbleBlock}</div>
       )}
     </div>
   )

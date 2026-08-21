@@ -21,6 +21,11 @@ import {
 import { CommitOnReleaseRangeInput } from './CommitOnReleaseRangeInput'
 import { resolveProactiveMessageIntervalSeconds, hasProactiveMessageScheduleSaved } from '../proactivePrivateMessageTypes'
 import {
+  MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS,
+  MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX,
+  resolveRecentPrivateInjectAiRounds,
+} from '../wechatMemoryPromptBlocks'
+import {
   drawProactiveVariableIntervalSeconds,
   formatProactiveVariableIntervalRangeLabel,
   formatProactiveVariableIdleRangeLabel,
@@ -28,6 +33,11 @@ import {
   resolveCharacterExplicitBusyForProactive,
   resolveProactiveVariableIdleBounds,
 } from '../proactiveVariableInterval'
+import {
+  isLifeLedgerInlineSyncEnabled,
+  setLifeLedgerInlineSyncEnabled,
+  LIFE_LEDGER_INLINE_SYNC_CHANGED_EVENT,
+} from '../lifeMutable/inlineSync'
 import { ProactiveMessageIntervalControl } from './ProactiveMessageIntervalControl'
 import {
   ProactiveMessageVariableIntervalControl,
@@ -96,11 +106,20 @@ function WxSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 function SettingsListCard({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="mx-4 mt-4 overflow-hidden rounded-[12px] bg-white"
+      className="mx-4 mt-2 overflow-hidden rounded-[12px] bg-white"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
     >
       {children}
     </div>
+  )
+}
+
+function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <p className="mx-6 mt-5 text-[13px] text-[#8e8e8e]">{title}</p>
+      <SettingsListCard>{children}</SettingsListCard>
+    </section>
   )
 }
 
@@ -276,6 +295,7 @@ export function ChatSettingsScreen({
   const [linkedNetworkRootId, setLinkedNetworkRootId] = useState<string | null>(null)
   const [showPresenceDot, setShowPresenceDot] = useState(false)
   const [peerPresenceAutoUpdate, setPeerPresenceAutoUpdate] = useState(false)
+  const [lifeLedgerInlineSync, setLifeLedgerInlineSync] = useState(false)
   const chatBgFileRef = useRef<HTMLInputElement | null>(null)
   const chatAvatarFileRef = useRef<HTMLInputElement | null>(null)
 
@@ -334,6 +354,13 @@ export function ChatSettingsScreen({
     } catch {
       setPeerPresenceAutoUpdate(false)
     }
+    try {
+      setLifeLedgerInlineSync(
+        await isLifeLedgerInlineSyncEnabled(peerCharacterId, playerIdentityId),
+      )
+    } catch {
+      setLifeLedgerInlineSync(false)
+    }
   }, [conversationKey, peerCharacterId, playerIdentityId])
 
   useEffect(() => {
@@ -343,7 +370,11 @@ export function ChatSettingsScreen({
   useEffect(() => {
     const onChange = () => void load()
     window.addEventListener('wechat-storage-changed', onChange)
-    return () => window.removeEventListener('wechat-storage-changed', onChange)
+    window.addEventListener(LIFE_LEDGER_INLINE_SYNC_CHANGED_EVENT, onChange)
+    return () => {
+      window.removeEventListener('wechat-storage-changed', onChange)
+      window.removeEventListener(LIFE_LEDGER_INLINE_SYNC_CHANGED_EVENT, onChange)
+    }
   }, [load])
 
   const defaults = useMemo(
@@ -443,6 +474,8 @@ export function ChatSettingsScreen({
           | 'replyVoiceLanguage'
           | 'translationSyncEnabled'
           | 'translationLanguage'
+          | 'heartWhisperSyncEnabled'
+          | 'innerOsSyncEnabled'
           | 'imageRoundTriggerPercent'
           | 'imageRoundCountMin'
           | 'imageRoundCountMax'
@@ -457,6 +490,7 @@ export function ChatSettingsScreen({
           | 'proactiveMessageVariableIntervalMinSeconds'
           | 'proactiveMessageVariableIntervalMaxSeconds'
           | 'proactiveMessageNextIntervalSeconds'
+          | 'recentPrivateInjectAiRounds'
         >
       > & {
         clearStickerRoundTriggerPercent?: boolean
@@ -486,6 +520,11 @@ export function ChatSettingsScreen({
   const emojiProbSummary = summarizeEmojiProbabilitySettings(effective)
   const imageGenSummary = summarizeChatImageGenSettings(effective)
   const voiceStored = effective.voiceRoundTriggerPercent
+  const recentInjectRoundsCommitted = resolveRecentPrivateInjectAiRounds(effective)
+  const [recentInjectRoundsDraft, setRecentInjectRoundsDraft] = useState(recentInjectRoundsCommitted)
+  useEffect(() => {
+    setRecentInjectRoundsDraft(recentInjectRoundsCommitted)
+  }, [recentInjectRoundsCommitted])
   const proactiveEnabled = effective.proactiveMessageEnabled ?? false
   const proactiveVariableEnabled = isProactiveVariableIntervalEnabled(effective)
   const proactiveIntervalSeconds = resolveProactiveMessageIntervalSeconds(effective)
@@ -511,7 +550,16 @@ export function ChatSettingsScreen({
     return () => {
       cancelled = true
     }
-  }, [proactiveEnabled, proactiveVariableEnabled, effective, conversationKey])
+  }, [
+    proactiveEnabled,
+    proactiveVariableEnabled,
+    effective,
+    conversationKey,
+    effectiveBusyEnabled,
+    characterBusy?.isBusy,
+    characterBusy?.busyEndTime,
+    characterBusy?.enabled,
+  ])
 
   const toggleProactiveMessage = useCallback(async () => {
     const next = !proactiveEnabled
@@ -544,11 +592,8 @@ export function ChatSettingsScreen({
     async (bounds: ReturnType<typeof resolveProactiveVariableIdleBounds>) => {
       setProactiveVariableIntervalSaving(true)
       try {
-        const explicitBusy = await resolveCharacterExplicitBusyForProactive({
-          row: effective,
-          now: Date.now(),
-        })
-        const nextSeconds = drawProactiveVariableIntervalSeconds(explicitBusy, {
+        // 保存区间始终按「空闲自定义范围」抽下一次；忙碌拉长只在触达后的下一轮调度里生效
+        const nextSeconds = drawProactiveVariableIntervalSeconds(false, {
           proactiveMessageVariableIntervalMinSeconds: bounds.minSeconds,
           proactiveMessageVariableIntervalMaxSeconds: bounds.maxSeconds,
         })
@@ -562,7 +607,7 @@ export function ChatSettingsScreen({
         setProactiveVariableIntervalSaving(false)
       }
     },
-    [effective, patch],
+    [patch],
   )
 
   const toggleProactiveVariableInterval = useCallback(async () => {
@@ -599,6 +644,16 @@ export function ChatSettingsScreen({
     setPeerPresenceAutoUpdate(next)
     await savePeerPresenceAutoUpdate(conversationKey, next)
   }, [conversationKey, peerPresenceAutoUpdate])
+
+  const toggleLifeLedgerInlineSync = useCallback(async () => {
+    const next = !lifeLedgerInlineSync
+    setLifeLedgerInlineSync(next)
+    await setLifeLedgerInlineSyncEnabled({
+      conversationCharacterId: peerCharacterId,
+      playerIdentityId,
+      enabled: next,
+    })
+  }, [lifeLedgerInlineSync, peerCharacterId, playerIdentityId])
 
   const togglePin = useCallback(async () => {
     const next = !effective.isPinned
@@ -971,8 +1026,8 @@ export function ChatSettingsScreen({
           </div>
         </div>
 
-        {/* 功能列表 */}
-        <SettingsListCard>
+        {/* 外观 */}
+        <SettingsSection title="聊天外观">
           <ListRow onClick={() => setStub('chat-avatar')} borderBottom>
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">本聊天我的头像</span>
@@ -982,7 +1037,56 @@ export function ChatSettingsScreen({
             </div>
             <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
           </ListRow>
-          <ListRow stacked borderBottom={false}>
+          <ListRow onClick={() => setStub('chat-bg')} borderBottom>
+            <span className="text-[16px] text-black">设置当前聊天背景</span>
+            <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
+          </ListRow>
+          <ListRow borderBottom>
+            <div className="min-w-0 flex-1 pr-3">
+              <span className="text-[16px] text-black">显示在线状态</span>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">备注旁显示在线圆点，点击可查看状态与想法</p>
+            </div>
+            <WxSwitch on={showPresenceDot} onToggle={() => void toggleShowPresenceDot()} />
+          </ListRow>
+          <ListRow>
+            <div className="min-w-0 flex-1 pr-3">
+              <span className="text-[16px] text-black">自行更新在线与想法</span>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">每轮回复结束按本轮内容判断是否更新</p>
+            </div>
+            <WxSwitch on={peerPresenceAutoUpdate} onToggle={() => void togglePeerPresenceAutoUpdate()} />
+          </ListRow>
+        </SettingsSection>
+
+        {/* 消息 */}
+        <SettingsSection title="消息与提醒">
+          <ListRow onClick={() => setFindHistoryOpen(true)} borderBottom>
+            <span className="text-[16px] text-black">查找聊天记录</span>
+            <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
+          </ListRow>
+          <ListRow borderBottom>
+            <span className="text-[16px] text-black">消息免打扰</span>
+            <WxSwitch on={effective.isMuted} onToggle={() => void toggleMute()} />
+          </ListRow>
+          <ListRow borderBottom>
+            <span className="text-[16px] text-black">通知提醒</span>
+            <WxSwitch on={effectiveNotifyEnabled} onToggle={() => void toggleNotify()} />
+          </ListRow>
+          <ListRow borderBottom>
+            <span className="text-[16px] text-black">置顶聊天</span>
+            <WxSwitch on={effective.isPinned} onToggle={() => void togglePin()} />
+          </ListRow>
+          <ListRow>
+            <span className="text-[16px] text-black">弹幕模式</span>
+            <WxSwitch
+              on={effective.isDanmakuMode}
+              onToggle={() => void patch({ isDanmakuMode: !effective.isDanmakuMode })}
+            />
+          </ListRow>
+        </SettingsSection>
+
+        {/* 语言 */}
+        <SettingsSection title="回复语言">
+          <ListRow stacked>
             <button
               type="button"
               aria-expanded={replyLangOpen}
@@ -990,7 +1094,7 @@ export function ChatSettingsScreen({
               className="flex w-full items-start justify-between gap-3 text-left"
             >
               <div className="min-w-0 flex-1">
-                <p className="text-[16px] font-semibold text-black">回复语言与翻译</p>
+                <p className="text-[16px] text-black">文字、语音与翻译</p>
                 <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
                   {replyLangOpen
                     ? '设定角色文字与语音消息的输出语言，以及气泡下方译文。'
@@ -1014,39 +1118,10 @@ export function ChatSettingsScreen({
               </div>
             ) : null}
           </ListRow>
-        </SettingsListCard>
+        </SettingsSection>
 
-        <SettingsListCard>
-          <ListRow onClick={() => setFindHistoryOpen(true)} borderBottom>
-            <span className="text-[16px] text-black">查找聊天记录</span>
-            <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
-          </ListRow>
-          <ListRow borderBottom>
-            <span className="text-[16px] text-black">消息免打扰</span>
-            <WxSwitch on={effective.isMuted} onToggle={() => void toggleMute()} />
-          </ListRow>
-          <ListRow borderBottom>
-            <div className="min-w-0 flex-1 pr-3">
-              <span className="text-[16px] text-black">显示在线状态</span>
-              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                开启后，备注旁显示在线圆点；点击可查看状态与想法
-              </p>
-            </div>
-            <WxSwitch on={showPresenceDot} onToggle={() => void toggleShowPresenceDot()} />
-          </ListRow>
-          <ListRow borderBottom>
-            <div className="min-w-0 flex-1 pr-3">
-              <span className="text-[16px] text-black">自行更新在线与想法</span>
-              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                开启后，每轮回复结束按本轮内容判断是否更新在线状态与想法
-              </p>
-            </div>
-            <WxSwitch on={peerPresenceAutoUpdate} onToggle={() => void togglePeerPresenceAutoUpdate()} />
-          </ListRow>
-          <ListRow borderBottom>
-            <span className="text-[16px] text-black">通知提醒</span>
-            <WxSwitch on={effectiveNotifyEnabled} onToggle={() => void toggleNotify()} />
-          </ListRow>
+        {/* 节奏 */}
+        <SettingsSection title="角色节奏">
           <ListRow borderBottom>
             <span className="text-[16px] text-black">开启忙碌</span>
             <WxSwitch on={effectiveBusyEnabled} onToggle={() => void toggleBusy()} />
@@ -1066,7 +1141,7 @@ export function ChatSettingsScreen({
                     <div className="min-w-0 flex-1">
                       <span className="text-[15px] font-medium text-black">灵动间隔</span>
                       <p className="mt-1 text-[11px] leading-relaxed text-[#8e8e8e]">
-                        像真人聊天一样不固定节奏：空闲时在自定义区间内随机触达；角色说忙或开启忙碌后，下次等待自动拉长到数分钟～数小时。
+                        空闲时在自定义区间内随机触达；角色忙碌时下次等待会拉长。
                       </p>
                     </div>
                     <WxSwitch
@@ -1083,6 +1158,11 @@ export function ChatSettingsScreen({
                           : `约 ${formatProactiveVariableIdleRangeLabel(effective)}`}
                         {proactiveScheduleSaved ? ' · 每次触达后重新随机' : ' · 须保存灵动间隔后才开始倒计时'}
                       </p>
+                      {proactiveVariableBusyHint ? (
+                        <p className="mt-1 text-[11px] leading-relaxed text-[#b45309]">
+                          角色正处于系统忙碌倒计时。你设的空闲区间仍然有效；忙碌结束后会回到该区间。也可关掉上方「开启忙碌」。
+                        </p>
+                      ) : null}
                       <ProactiveMessageVariableIntervalControl
                         savedBounds={proactiveVariableIdleBounds}
                         scheduleSaved={proactiveScheduleSaved}
@@ -1102,19 +1182,8 @@ export function ChatSettingsScreen({
               ) : null}
             </ListRow>
           ) : null}
-          <ListRow borderBottom>
-            <span className="text-[16px] text-black">置顶聊天</span>
-            <WxSwitch on={effective.isPinned} onToggle={() => void togglePin()} />
-          </ListRow>
-          <ListRow borderBottom>
-            <span className="text-[16px] text-black">弹幕模式</span>
-            <WxSwitch
-              on={effective.isDanmakuMode}
-              onToggle={() => void patch({ isDanmakuMode: !effective.isDanmakuMode })}
-            />
-          </ListRow>
           {linkedChatModeAvailable ? (
-            <ListRow borderBottom>
+            <ListRow>
               <div className="flex min-w-0 flex-1 items-center">
                 <span className="text-[16px] text-black">联动聊天模式</span>
                 <LinkedChatModeHelpButton />
@@ -1135,7 +1204,7 @@ export function ChatSettingsScreen({
               />
             </ListRow>
           ) : (
-            <ListRow borderBottom>
+            <ListRow>
               <div className="min-w-0 flex-1 pr-2">
                 <div className="flex items-center">
                   <span className="text-[16px] text-[#b0b0b0]">联动聊天模式</span>
@@ -1147,11 +1216,60 @@ export function ChatSettingsScreen({
               </div>
             </ListRow>
           )}
+        </SettingsSection>
+
+        {/* 心语 */}
+        <SettingsSection title="心语与内心">
+          <ListRow borderBottom>
+            <div className="min-w-0 flex-1 pr-3">
+              <span className="text-[16px] text-black">每轮同步心语</span>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                下一轮起，整段心语跟气泡写在同一次请求里
+              </p>
+            </div>
+            <WxSwitch
+              on={effective.heartWhisperSyncEnabled === true}
+              onToggle={() =>
+                void patch({ heartWhisperSyncEnabled: !(effective.heartWhisperSyncEnabled === true) })
+              }
+            />
+          </ListRow>
+          <ListRow>
+            <div className="min-w-0 flex-1 pr-3">
+              <span className="text-[16px] text-black">每句内心 OS</span>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                每条文字/语音气泡带一句潜台词，长按或单击查看
+              </p>
+            </div>
+            <WxSwitch
+              on={effective.innerOsSyncEnabled === true}
+              onToggle={() => void patch({ innerOsSyncEnabled: !(effective.innerOsSyncEnabled === true) })}
+            />
+          </ListRow>
+        </SettingsSection>
+
+        <SettingsSection title="人生账本">
+          <ListRow>
+            <div className="min-w-0 flex-1 pr-3">
+              <span className="text-[16px] text-black">同请求更新账本</span>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                开启后主回复顺带判断本轮新事实（与尾声同一次请求）。老角色请到人生账本点「按记忆对齐」（世界书 + 身份 + 近端 10 轮，不读长期记忆）；本开关不会自动扫完以前的聊天。
+              </p>
+            </div>
+            <WxSwitch
+              on={lifeLedgerInlineSync}
+              onToggle={() => void toggleLifeLedgerInlineSync()}
+            />
+          </ListRow>
+        </SettingsSection>
+
+        {/* 回复能力 */}
+        <SettingsSection title="回复能力">
           <ListRow borderBottom>
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">回复思维链（CoT）</span>
               <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                开启后为本会话注入后台推演步骤；下方「开启忙碌 / 转发聊天记录 / 微博私信截图 / 换头像背景 / 支持发图」开了哪些，会额外加对应功能判定。更细致但更耗 token；关闭仍保留换行分条、语音与表情包等输出格式。
+                注入后台推演步骤，更细致但更耗 token；关闭仍保留换行分条等输出格式
               </p>
             </div>
             <WxSwitch
@@ -1159,12 +1277,63 @@ export function ChatSettingsScreen({
               onToggle={() => void patch({ showThinkingChain: !effective.showThinkingChain })}
             />
           </ListRow>
+          <ListRow stacked borderBottom>
+            <div className="w-full">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <span className="text-[16px] text-black">固定注入近端原文</span>
+                  <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                    主回复必注最近 N 轮对方回复原文（含其间用户消息），不依赖总结游标；每条带剧情时间。总结后也能接上原话。
+                    <span style={phoneNumStyle}>0</span> = 关闭。
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
+                  <span className="text-[14px] text-[#576b95]">
+                    <span style={phoneNumStyle}>{recentInjectRoundsDraft}</span> 轮
+                  </span>
+                  {typeof effective.recentPrivateInjectAiRounds === 'number' &&
+                  effective.recentPrivateInjectAiRounds !== MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS ? (
+                    <button
+                      type="button"
+                      className="text-[12px] text-[#576b95]"
+                      onClick={() =>
+                        void patch({
+                          recentPrivateInjectAiRounds: MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS,
+                        })
+                      }
+                    >
+                      恢复默认
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              <CommitOnReleaseRangeInput
+                min={0}
+                max={MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX}
+                step={1}
+                value={recentInjectRoundsCommitted}
+                onDraftChange={setRecentInjectRoundsDraft}
+                onCommit={(n) => void patch({ recentPrivateInjectAiRounds: n })}
+                className="mt-2 w-full accent-black"
+                aria-label="固定注入近端原文轮数"
+              />
+              <div className="mt-1 flex justify-between text-[11px] text-[#8e8e8e]">
+                <span>
+                  <span style={phoneNumStyle}>0</span> 关闭
+                </span>
+                <span>
+                  默认 <span style={phoneNumStyle}>{MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS}</span>
+                </span>
+                <span>
+                  <span style={phoneNumStyle}>{MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX}</span> 最大
+                </span>
+              </div>
+            </div>
+          </ListRow>
           <ListRow borderBottom>
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">转发聊天记录卡片</span>
-              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                开启后角色可在剧情需要时输出伪造私聊记录卡片（举证/吃瓜等）；日常闲聊默认不必开。
-              </p>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">剧情需要时可输出伪造私聊记录卡片</p>
             </div>
             <WxSwitch
               on={effective.forwardHistoryCardEnabled}
@@ -1175,7 +1344,7 @@ export function ChatSettingsScreen({
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">微博私信截图</span>
               <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                开启后角色可把「微博私信」对话合成截图发到本聊天（吃瓜/举证）；关闭则不注入协议，省 token。
+                角色可把微博私信对话合成截图发到本聊天
               </p>
             </div>
             <WxSwitch
@@ -1189,7 +1358,7 @@ export function ChatSettingsScreen({
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">换头像 / 朋友圈背景</span>
               <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                开启后允许角色响应用户发图，输出 <span className="font-mono text-[11px]">换头像</span> / <span className="font-mono text-[11px]">换背景</span> 等指令；关闭则不注入相关协议。
+                允许角色响应用户发图，输出换头像 / 换背景指令
               </p>
             </div>
             <WxSwitch
@@ -1197,11 +1366,11 @@ export function ChatSettingsScreen({
               onToggle={() => void patch({ profileImageChangeEnabled: !effective.profileImageChangeEnabled })}
             />
           </ListRow>
-          <ListRow borderBottom>
+          <ListRow>
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">网络玩梗词库</span>
               <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                开启后注入玩梗句式灵感：轻松/调情/互损轮次会要求至少一点梗感；对方难过或认真倾诉时自动收梗。气质仍服从人设。
+                轻松轮次加点梗感；对方认真倾诉时自动收梗
               </p>
             </div>
             <WxSwitch
@@ -1209,14 +1378,10 @@ export function ChatSettingsScreen({
               onToggle={() => void patch({ internetMemeLexiconEnabled: !effective.internetMemeLexiconEnabled })}
             />
           </ListRow>
-          <ListRow onClick={() => setStub('chat-bg')} borderBottom>
-            <span className="text-[16px] text-black">设置当前聊天背景</span>
-            <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
-          </ListRow>
-          <ListRow onClick={() => setStub('voice')} borderBottom>
-            <span className="text-[16px] text-black">主动语音电话</span>
-            <Phone className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
-          </ListRow>
+        </SettingsSection>
+
+        {/* 媒体 */}
+        <SettingsSection title="媒体发送">
           <ListRow onClick={() => setEmojiProbOpen(true)} borderBottom>
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">表情包发送概率</span>
@@ -1228,8 +1393,8 @@ export function ChatSettingsScreen({
             <div>
               <span className="text-[16px] text-black">语音消息每轮触发概率</span>
               <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                设定该轮回复<strong className="font-normal text-[#666]">会不会出现</strong>语音（门槛概率，不是条数上限）。命中后同一轮可发<strong className="font-normal text-[#666]">多条</strong>语音并与文字穿插。未定制时系统默认约{' '}
-                <span style={phoneNumStyle}>{VOICE_PROTOCOL_DEFAULT_ROUND_TRIGGER_PERCENT}%</span>。
+                该轮会不会出现语音（门槛，不是条数）。未定制时默认约{' '}
+                <span style={phoneNumStyle}>{VOICE_PROTOCOL_DEFAULT_ROUND_TRIGGER_PERCENT}%</span>
               </p>
               <RoundTriggerPercentControl
                 stored={voiceStored}
@@ -1241,9 +1406,7 @@ export function ChatSettingsScreen({
           <ListRow borderBottom>
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">支持发图</span>
-              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                开启后角色可按语境适量发图；关闭后不注入发图/生图提示词，也不展示图片占位。
-              </p>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">关闭后不注入发图协议，也不展示图片占位</p>
             </div>
             <WxSwitch
               on={isCharacterImageSendSupported(effective.imageRoundTriggerPercent)}
@@ -1263,9 +1426,14 @@ export function ChatSettingsScreen({
             </div>
             <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
           </ListRow>
-        </SettingsListCard>
+          <ListRow onClick={() => setStub('voice')}>
+            <span className="text-[16px] text-black">主动语音电话</span>
+            <Phone className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
+          </ListRow>
+        </SettingsSection>
 
-        <SettingsListCard>
+        {/* 管理 */}
+        <SettingsSection title="聊天管理">
           <ListRow
             onClick={() => {
               if (!personaEditTargetId) {
@@ -1279,20 +1447,15 @@ export function ChatSettingsScreen({
             <span className="text-[16px] text-black">聊天设定</span>
             <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
           </ListRow>
-          <ListRow
-            onClick={() => setClearOpen(true)}
-            borderBottom
-          >
+          <ListRow onClick={() => setClearOpen(true)} borderBottom>
             <span className="text-[16px] text-black">清空聊天记录</span>
             <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
           </ListRow>
           <ListRow onClick={() => setStub('complaint')}>
-            <span className="text-[16px] text-black">
-              投诉
-            </span>
+            <span className="text-[16px] text-black">投诉</span>
             <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
           </ListRow>
-        </SettingsListCard>
+        </SettingsSection>
 
         <div className="h-5 shrink-0" style={{ minHeight: 'max(20px, env(safe-area-inset-bottom, 0px))' }} />
       </div>

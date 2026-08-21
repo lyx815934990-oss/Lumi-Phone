@@ -396,8 +396,8 @@ export function VoiceMessageBubble({
   const restText = transcriptText.trim().slice(1)
 
   const bubbleClass = isUser
-    ? 'bg-[var(--wx-self-bubble-bg,#95EC69)] text-[#191919]'
-    : 'bg-[var(--wx-other-bubble-bg,#FFFFFF)] text-[#191919]'
+    ? 'bg-[var(--wx-self-bubble-bg,#95EC69)] text-[color:var(--wx-special-voice-text-self,var(--wx-self-bubble-text,#191919))]'
+    : 'bg-[var(--wx-other-bubble-bg,#FFFFFF)] text-[color:var(--wx-special-voice-text-other,var(--wx-other-bubble-text,#191919))]'
 
   const wechatVoiceWidth = wechatVoiceBubbleWidthPx(duration)
   const wechatRadius = bubble?.selfBubbleRadiusPx ?? WECHAT_CLASSIC.bubbleRadiusPx
@@ -526,11 +526,15 @@ export function VoiceMessageBubble({
               fitContent
               panelClassName={
                 isUser
-                  ? 'border-[#7ed957] bg-[var(--wx-self-bubble-bg,#95EC69)] text-[#191919]'
-                  : 'border-[#ececec] bg-[var(--wx-other-bubble-bg,#ffffff)] text-[#191919]'
+                  ? 'border-[color:var(--wx-special-voice-panel-border-self,#7ed957)] bg-[var(--wx-self-bubble-bg,#95EC69)] text-[color:var(--wx-special-voice-text-self,var(--wx-self-bubble-text,#191919))]'
+                  : 'border-[color:var(--wx-special-voice-panel-border-other,#ececec)] bg-[var(--wx-other-bubble-bg,#ffffff)] text-[color:var(--wx-special-voice-text-other,var(--wx-other-bubble-text,#191919))]'
               }
-              dividerClassName="border-black/10"
-              firstCharClassName="text-[#191919]"
+              dividerClassName="border-[color:var(--wx-special-voice-panel-divider,rgba(0,0,0,0.1))]"
+              firstCharClassName={
+                isUser
+                  ? 'text-[color:var(--wx-special-voice-text-self,var(--wx-self-bubble-text,#191919))]'
+                  : 'text-[color:var(--wx-special-voice-text-other,var(--wx-other-bubble-text,#191919))]'
+              }
               bottomRadiusPx={wechatRadius}
             />
           </div>
@@ -542,7 +546,11 @@ export function VoiceMessageBubble({
               <button
                 type="button"
                 onClick={(e) => toggleTranscript(e)}
-                className="shrink-0 rounded bg-[#E5E5E5] px-2 py-0.5 text-[12px] text-gray-600 active:opacity-70"
+                className="shrink-0 rounded px-2 py-0.5 text-[12px] active:opacity-70"
+                style={{
+                  background: 'var(--wx-special-voice-toggle-bg, #E5E5E5)',
+                  color: 'var(--wx-special-voice-toggle-text, #4B5563)',
+                }}
               >
                 转文字
               </button>

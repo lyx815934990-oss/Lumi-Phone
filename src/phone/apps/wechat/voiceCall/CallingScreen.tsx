@@ -1,64 +1,36 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, Mic, MicOff, PhoneOff, Volume2, VolumeX } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Pressable } from '../../../components/Pressable'
-
-function fallbackBgStyle(backgroundImage?: string): React.CSSProperties {
-  const url = (backgroundImage ?? '').trim()
-  if (url) {
-    return {
-      backgroundImage: `url(${url})`,
-      backgroundPosition: 'center',
-      backgroundRepeat: 'no-repeat',
-      backgroundSize: 'cover',
-    }
-  }
-  return {
-    backgroundImage:
-      'radial-gradient(1200px 700px at 20% 10%, rgba(255,255,255,0.95) 0%, rgba(245,245,247,0.82) 46%, rgba(240,240,242,0.88) 100%)',
-  }
-}
-
-function useLoopingDots(active: boolean) {
-  const [dots, setDots] = useState('')
-  useEffect(() => {
-    if (!active) {
-      setDots('')
-      return
-    }
-    let i = 0
-    const id = window.setInterval(() => {
-      i = (i + 1) % 4
-      setDots('.'.repeat(i))
-    }, 620)
-    return () => window.clearInterval(id)
-  }, [active])
-  return dots
-}
+import { VC, VC_UI_FONT, vcLiquidGlassDark } from './voiceCallTheme'
 
 export type CallDecision = 'ACCEPT' | 'REJECT' | 'NO_ANSWER'
 
 export function CallingScreen({
   open,
+  minimized = false,
   peerAvatarUrl,
   peerRemarkName,
-  backgroundImage,
+  backgroundImage: _backgroundImage,
   onCancel,
+  onMinimize,
   onDecision,
   requestDecision,
 }: {
   open: boolean
+  minimized?: boolean
   peerAvatarUrl?: string
   peerRemarkName: string
   backgroundImage?: string
   onCancel: () => void
+  onMinimize?: () => void
   onDecision: (d: CallDecision) => void
-  /** 页面出现即调用一次 */
   requestDecision: () => Promise<CallDecision>
 }) {
   const [phase, setPhase] = useState<'waiting' | 'resolved'>('waiting')
-  const dots = useLoopingDots(open && phase === 'waiting')
+  const [muted, setMuted] = useState(false)
+  const [speakerOn, setSpeakerOn] = useState(true)
   const mountedRef = useRef(false)
   const openSeqRef = useRef(0)
   const decisionRequestedRef = useRef(false)
@@ -74,13 +46,15 @@ export function CallingScreen({
   }, [onDecision])
 
   const peerName = useMemo(() => peerRemarkName.trim() || '对方', [peerRemarkName])
-  const bgStyle = useMemo(() => fallbackBgStyle(backgroundImage), [backgroundImage])
+  const avatar = peerAvatarUrl?.trim() || ''
 
   useEffect(() => {
     if (!open) {
       setPhase('waiting')
       mountedRef.current = false
       decisionRequestedRef.current = false
+      setMuted(false)
+      setSpeakerOn(true)
       return
     }
     if (decisionRequestedRef.current) return
@@ -101,7 +75,7 @@ export function CallingScreen({
     }
   }, [open])
 
-  if (!open) return null
+  if (!open || minimized) return null
 
   return (
     <AnimatePresence>
@@ -110,52 +84,124 @@ export function CallingScreen({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[285] flex h-full w-full flex-col"
-        style={{ background: '#fff' }}
+        transition={{ duration: 0.2 }}
+        className="fixed inset-0 z-[285] flex h-full w-full flex-col overflow-hidden"
+        style={{ background: VC.ink, fontFamily: VC_UI_FONT }}
       >
-        <div className="absolute inset-0" aria-hidden style={bgStyle} />
-        <div className="absolute inset-0" aria-hidden style={{ background: 'rgba(255,255,255,0.62)', backdropFilter: 'blur(18px)' }} />
+        {/* 头像高斯模糊铺满 + 40% 黑蒙层 */}
+        <div className="absolute inset-0 overflow-hidden" aria-hidden>
+          {avatar ? (
+            <img
+              src={avatar}
+              alt=""
+              className="h-full w-full scale-110 object-cover"
+              style={{ filter: 'blur(50px)', transform: 'scale(1.25)' }}
+            />
+          ) : (
+            <div className="h-full w-full" style={{ background: 'linear-gradient(160deg, #2a2a2e 0%, #101012 100%)' }} />
+          )}
+          <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.4)' }} />
+        </div>
 
-        <header className="relative z-[1] flex shrink-0 items-center justify-end px-4" style={{ paddingTop: 'max(12px, env(safe-area-inset-top, 0px))' }}>
+        <header
+          className="relative z-[2] flex shrink-0 items-center justify-between px-3"
+          style={{ paddingTop: 'max(12px, env(safe-area-inset-top, 0px))' }}
+        >
           <Pressable
             type="button"
-            aria-label="关闭"
+            aria-label="取消呼叫"
             onClick={onCancel}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-[#1c1c1e] shadow-sm active:scale-[0.97]"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-white/90 active:opacity-70"
           >
-            <X className="size-5" strokeWidth={2} />
+            <ChevronLeft className="size-6" strokeWidth={1.8} />
           </Pressable>
-        </header>
-
-        <main className="relative z-[1] flex min-h-0 flex-1 flex-col items-center justify-center px-6">
-          {peerAvatarUrl?.trim() ? (
-            <img src={peerAvatarUrl.trim()} alt="" className="h-[96px] w-[96px] rounded-full object-cover shadow-[0_8px_26px_rgba(0,0,0,0.10)]" />
-          ) : (
-            <div className="flex h-[96px] w-[96px] items-center justify-center rounded-full bg-white/80 text-[#b3b3b3] shadow-[0_8px_26px_rgba(0,0,0,0.10)]">
-              ?
-            </div>
-          )}
-          <p className="mt-5 text-[20px] font-semibold text-[#1c1c1e]">{peerName}</p>
-          <p className="mt-2 text-[14px] text-[#1c1c1e]/60">
-            正在等待对方接听
-            <span className="inline-block w-[28px] text-left">{dots || '\u00A0'}</span>
-            <span className="ml-0.5 inline-block h-[14px] w-[1px] align-middle" style={{ background: 'rgba(28,28,30,0.20)' }} />
-          </p>
-        </main>
-
-        <footer className="relative z-[1] shrink-0 px-6 pb-[max(18px,env(safe-area-inset-bottom,0px))] pt-4">
-          <div className="mx-auto w-full max-w-[520px]">
+          {onMinimize ? (
             <Pressable
               type="button"
-              onClick={onCancel}
-              className="flex h-12 w-full items-center justify-center rounded-2xl bg-[#ff3b30] text-[16px] font-semibold text-white shadow-sm active:scale-[0.98]"
+              aria-label="挂起通话"
+              onClick={onMinimize}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-white/80 active:opacity-70"
             >
-              取消
+              <ChevronDown className="size-5" strokeWidth={1.8} />
+            </Pressable>
+          ) : (
+            <span className="h-10 w-10" />
+          )}
+        </header>
+
+        <main className="relative z-[1] flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-8">
+          {avatar ? (
+            <img
+              src={avatar}
+              alt=""
+              className="h-[120px] w-[120px] rounded-full object-cover"
+              style={{ border: '2px solid #fff', boxShadow: '0 12px 36px rgba(0,0,0,0.28)' }}
+            />
+          ) : (
+            <div
+              className="flex h-[120px] w-[120px] items-center justify-center rounded-full text-[36px] font-semibold text-white/50"
+              style={{ border: '2px solid #fff', background: 'rgba(255,255,255,0.08)' }}
+            >
+              {peerName.slice(0, 1)}
+            </div>
+          )}
+          <p className="mt-5 text-[20px] font-semibold text-white">{peerName}</p>
+          <p
+            className="mt-2 text-[14px] text-white/70"
+            style={{ animation: phase === 'waiting' ? 'vc-status-breathe 2s ease-in-out infinite' : undefined }}
+          >
+            正在等待对方接听…
+          </p>
+          <p className="mt-1.5 text-[12px] text-white/45">你发起的语音通话</p>
+        </main>
+
+        <footer
+          className="relative z-[2] shrink-0 px-5"
+          style={{ paddingBottom: 'max(22px, env(safe-area-inset-bottom, 0px))' }}
+        >
+          <div
+            className="mx-auto flex w-full max-w-[360px] items-center justify-between px-6 py-4"
+            style={vcLiquidGlassDark({ borderRadius: 28 })}
+          >
+            <Pressable
+              type="button"
+              aria-label={muted ? '取消静音' : '静音'}
+              onClick={() => setMuted((v) => !v)}
+              className="flex h-12 w-12 items-center justify-center rounded-full text-white/90 active:scale-[0.96]"
+              style={{ background: muted ? 'rgba(255,255,255,0.14)' : 'transparent' }}
+            >
+              {muted ? <MicOff className="size-5" strokeWidth={1.7} /> : <Mic className="size-5" strokeWidth={1.7} />}
+            </Pressable>
+
+            <Pressable
+              type="button"
+              aria-label="挂断"
+              onClick={onCancel}
+              className="flex h-[72px] w-[72px] items-center justify-center rounded-full text-white active:scale-[0.96]"
+              style={{ background: VC.endRed, boxShadow: '0 8px 24px rgba(255,59,48,0.35)' }}
+            >
+              <PhoneOff className="size-7" strokeWidth={2} />
+            </Pressable>
+
+            <Pressable
+              type="button"
+              aria-label={speakerOn ? '关闭免提' : '开启免提'}
+              onClick={() => setSpeakerOn((v) => !v)}
+              className="flex h-12 w-12 items-center justify-center rounded-full text-white/90 active:scale-[0.96]"
+              style={{ background: speakerOn ? 'rgba(255,255,255,0.14)' : 'transparent' }}
+            >
+              {speakerOn ? <Volume2 className="size-5" strokeWidth={1.7} /> : <VolumeX className="size-5" strokeWidth={1.7} />}
             </Pressable>
           </div>
         </footer>
+
+        <style>{`
+          @keyframes vc-status-breathe {
+            0%, 100% { opacity: 0.55; }
+            50% { opacity: 0.92; }
+          }
+        `}</style>
       </motion.div>
     </AnimatePresence>
   )
 }
-

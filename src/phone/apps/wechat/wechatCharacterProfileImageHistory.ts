@@ -79,7 +79,7 @@ export function buildCharacterProfileImageCatalogBlock(character: Character | nu
 
   const blocks: string[] = [
     '【你的微信头像 / 朋友圈背景 · 当前与历史】',
-    'system 之后若注入配图：第 1 张通常是你的微信头像，第 2 张是朋友圈主页顶部背景。',
+    'system 之后若注入配图：通常先是你的微信头像；若你自定义过朋友圈主页背景，其后会再注入该背景图（默认站内封面不会注入）。',
     '请你根据对话自行判断：若要把用户刚发的图设为资料图，口语回应后输出 `换头像` 或 `换背景`；若要换回原始/历史图，输出 `恢复头像 original` / `恢复头像 1` 或 `恢复背景 original` / `恢复背景 1`（数字对应下列序号）。换背景/头像不是发朋友圈动态——禁止用 `发朋友圈` 代替换背景。',
   ]
 
@@ -113,9 +113,13 @@ export function buildCharacterSelfProfileVisionParts(
   if (avatar?.trim()) {
     out.push({ label: '下图：你当前的微信头像', url: avatar.trim() })
   }
-  const cover = resolveMomentsCoverDisplayUrl(ch.momentsCoverUrl)
-  if (cover?.trim()) {
-    out.push({ label: '下图：你朋友圈主页顶部背景图', url: cover.trim() })
+  // 默认站内封面对角色身份无信息量，且相对路径发给远端中转会触发 base64 误解析；仅注入自定义背景
+  const coverRaw = ch.momentsCoverUrl?.trim()
+  if (coverRaw && !isDefaultMomentsCoverUrl(coverRaw)) {
+    const cover = resolveMomentsCoverDisplayUrl(coverRaw)
+    if (cover?.trim()) {
+      out.push({ label: '下图：你朋友圈主页顶部背景图', url: cover.trim() })
+    }
   }
   return out
 }

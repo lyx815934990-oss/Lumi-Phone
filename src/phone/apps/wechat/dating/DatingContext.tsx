@@ -55,6 +55,7 @@ import { isStoryNowCalendarAfterOfflineLast } from './loadOfflineDatingPlotsForW
 import { resolveOnlineMessageTimeBoundsForConversation } from '../wechatCrossChannelTimeline'
 import { getAiPlotActiveTimelineDelta } from './plotTimelineDelta'
 import { formatPlotPromptTimeBracket } from './plotStoryTimeLabel'
+import { persistPlotStoryTimeEdit } from './updatePlotStoryTime'
 import { loadStoryTimelinePromptBlock, rebuildStoryTimelineFromDatingPlots } from '../memory/storyTimelinePersist'
 import { resolveStoryCalendarAnchorFloorMs, resolveStoryCalendarAnchorFromPlotItems, resolveStoryCalendarAnchorFromPlots, resolveDatingPlotChronologyFloorLabel, mergeOnlineStoryNowWithOfflineFloor, pickLatestStoryCalendarLabel, STORY_TIMELINE_CALENDAR_CHRONOLOGY_RULES } from '../memory/storyTimelineCalendarContext'
 import {
@@ -184,6 +185,22 @@ import { buildUserReactionPromptBlock, summarizeUserReactionForSlimRetry } from 
 import type { Character, PlayerIdentity, ScheduleTable } from '../newFriendsPersona/types'
 import { formatWorldBackgroundForPrompt } from '../newFriendsPersona/worldBackgroundFormat'
 import { buildCharacterCard, buildPhysiquePromptSectionForCharacter, buildScheduleSection, buildWorldBookText } from '../wechatChatAi'
+import { loadPairLifePromptContext } from '../lifeMutable/load'
+import { isLifeLedgerInlineSyncEnabled } from '../lifeMutable/inlineSync'
+import {
+  applyLifeLedgerInlinePatches,
+  buildLifeLedgerPatchOutputAppendix,
+  extractLifeLedgerPatchBlock,
+  LIFE_LEDGER_PATCH_UPDATED_EVENT,
+} from '../lifeMutable/lifeLedgerPatch'
+import {
+  applyObservationNotesPatchesFromAi,
+  buildObservationNotesPatchOutputAppendix,
+  extractObservationNotesPatchBlock,
+  isObservationNotesAutoUpdateEnabled,
+} from '../observationNotes'
+import { loadObservationNotesPromptBlock } from '../observationNotes/promptBlock'
+import { rebuildObservationNotesFromDatingPlotList } from '../observationNotes/plotRevert'
 import { buildWorldbookContext } from '../../../worldbook/buildWorldbookContext'
 import { getWorldbookLoreEntriesSnapshot } from '../../../worldbook/worldbookLoreStore'
 import { resolveEffectiveDanmakuVisuals } from '../danmakuResolve'
@@ -241,6 +258,10 @@ import {
 type DatingAiGenResult = {
   text: string
   worldBookAfterRevertEntries?: WorldBookAfterRevertEntry[]
+  /** 主回复已输出合法 ---WB_AFTER_PATCH--- JSON（含 patches=[]） */
+  worldBookEpilogueJudged?: boolean
+  /** 本轮成功写入私藏侧写时的回滚快照 */
+  observationNotesRevert?: import('../observationNotes/plotRevert').ObservationNotesPlotRevert
 }
 
 const STORAGE_KEY = 'wechat-dating-archives-v1'
@@ -467,6 +488,11 @@ type Ctx = {
   setPlotVersionIndex: (plotId: string, index: number) => void
   /** 删除一条剧情节点 */
   deletePlotItem: (plotId: string) => void
+  /** 手改某段 AI 剧情的故事发生时间，并同步线下摘要【本轮锚点】 */
+  updatePlotStoryTime: (
+    plotId: string,
+    fields: import('../memory/dualNarrativeTime').DualNarrativeStoryFields,
+  ) => Promise<{ ok: true } | { ok: false; reason: string }>
   /** 对当前版本正文重新 peel + 补全缺失对白/内心译文（不重写剧情） */
   backfillPlotTranslations: (plotId: string) => Promise<void>
   regenerateAiPlot: (
@@ -1401,6 +1427,8 @@ async function finalizeDatingMemoryAfterAiReply(params: {
   skipMemoryRoundBump?: boolean
   /** 本轮模型 inline 尾声补丁是否已成功写库 */
   worldBookInlinePatchApplied?: boolean
+  /** 主回复已输出合法 ---WB_AFTER_PATCH--- JSON（含 patches=[]） */
+  worldBookEpilogueJudged?: boolean
   /** 落库后的完整 plot 列表，用于重建剧情时间轴行表（覆盖重新生成，不重复 append） */
   plotsAfterAi?: PlotItem[]
   /** 本轮刚生成平行事件时传入对应 plot id，rebuild 成功后弹 toast */
@@ -1591,6 +1619,7 @@ async function finalizeDatingMemoryAfterAiReply(params: {
         latestRoundBody: latestRoundBodyForEpilogue,
         displayName: params.char.realName,
         inlinePatchApplied: params.worldBookInlinePatchApplied,
+        inlineEpilogueJudged: params.worldBookEpilogueJudged,
         epiloguePatchesApplied,
         datingContext: {
           isEarlyRound: aiPlotCountInSnapshot <= 1,
@@ -1619,7 +1648,17 @@ async function finalizeDatingMemoryAfterAiReply(params: {
 function buildPlayerIdentityPromptBlock(
   identity: PlayerIdentity | null,
   datingCharacterName: string,
-  injectCaps?: { worldBookMaxChars?: number; bioMaxChars?: number },
+  injectCaps?: {
+    worldBookMaxChars?: number
+    bioMaxChars?: number
+    lifeOverlay?: {
+      name?: string
+      age?: number
+      gender?: PlayerIdentity['gender']
+      identity?: string
+    } | null
+    lifeBlock?: string
+  },
 ): string {
   const deixisRule =
     `指代规则：玩家台词里的「你/你的」默认指向约会对象（${datingCharacterName}）一方；「我/我的」指玩家本人。` +
@@ -1630,23 +1669,30 @@ function buildPlayerIdentityPromptBlock(
       `亦**禁止**臆造 {{user}} 的体质/忌口/口味（如胃不好、不能吃辣）；无明文依据时勿写成永久设定。${deixisRule}`
     )
   }
-  const name = identity.name?.trim()
-  const role = identity.identity?.trim()
+  const name = injectCaps?.lifeOverlay?.name?.trim() || identity.name?.trim()
+  const role =
+    injectCaps?.lifeOverlay?.identity?.trim() || identity.identity?.trim()
   const head = name ? `称呼参考（供对白称呼，非旁白代词硬性规定）：${name}；` : ''
   const occ = role ? `职业/身份：${role}；` : ''
   const bioCap = injectCaps?.bioMaxChars ?? 2000
-  const detailCard = `\n【用户身份档案·细节】\n${buildCharacterCard(identity, { bioMaxChars: bioCap })}`
+  const detailCard = `\n【用户身份档案·细节】\n${buildCharacterCard(identity, {
+    bioMaxChars: bioCap,
+    lifeOverlay: injectCaps?.lifeOverlay,
+  })}`
+  const lifeBlock = injectCaps?.lifeBlock?.trim()
+    ? `\n【用户身份可变人生·本角色线】\n${injectCaps.lifeBlock.trim()}`
+    : ''
   const wbBlock = (() => {
     const cap = injectCaps?.worldBookMaxChars ?? 4200
     const t = buildWorldBookText(identity, Math.max(400, cap), { voice: 'player_identity' }).trim()
     return t ? `\n【用户身份·世界书】\n${t}` : ''
   })()
   const occupationIronRule = role
-    ? `【玩家身份铁律·最高优先级】凡描写**玩家本人（{{user}}）**的社会身份、职业、称谓、与 ${datingCharacterName}/NPC 的关系（如同事/员工/练习生/学生），**必须以本卡「职业/身份：${role}」及下方【用户身份·世界书】为准**。**禁止**擅自改写成公司员工、正式职员、打工人、办公室同事等与本卡矛盾的设定；**禁止**因 ${datingCharacterName} 的世界书、人脉网或长期记忆里出现模糊「上班/工作」字样，就把 {{user}} 默认当成 ${datingCharacterName} 的同事或下属——除非玩家身份卡或玩家世界书**明确**如此。\n`
-    : `【玩家身份铁律】凡涉及**玩家本人（{{user}}）**的身份与职业，须以本卡与【用户身份·世界书】为准；无写明的职务**禁止**臆造（尤其禁止默认写成 ${datingCharacterName} 的公司员工）。\n`
+    ? `【玩家身份铁律·最高优先级】凡描写**玩家本人（{{user}}）**的社会身份、职业、称谓、与 ${datingCharacterName}/NPC 的关系（如同事/员工/练习生/学生），**必须以本卡「职业/身份：${role}」及下方【用户身份·世界书】/可变人生为准**。**禁止**擅自改写成公司员工、正式职员、打工人、办公室同事等与本卡矛盾的设定；**禁止**因 ${datingCharacterName} 的世界书、人脉网或长期记忆里出现模糊「上班/工作」字样，就把 {{user}} 默认当成 ${datingCharacterName} 的同事或下属——除非玩家身份卡或玩家世界书**明确**如此。\n`
+    : `【玩家身份铁律】凡涉及**玩家本人（{{user}}）**的身份与职业，须以本卡与【用户身份·世界书】/可变人生为准；无写明的职务**禁止**臆造（尤其禁止默认写成 ${datingCharacterName} 的公司员工）。\n`
   const playerFactIronRule =
     `【玩家事实铁律·最高优先级】{{user}} 的体质/健康（胃不好、体弱、过敏等）、忌口与口味（不能吃辣、不喝冰等）、习惯癖好、家庭/过往细节：` +
-    `**仅可**使用本卡、【用户身份·世界书】、本轮玩家输入、或近期剧情/记忆中**明文已出现**的内容。` +
+    `**仅可**使用本卡、【用户身份·世界书】、【可变人生·本角色线】、本轮玩家输入、或近期剧情/记忆中**明文已出现**的内容。` +
     `**禁止**为写「体贴恋人」套模板臆造上述设定（尤禁默认「胃不好不能吃辣」）；无依据时改写为当场询问、或只写通用关心（天气、早点睡），勿落成永久人设。\n`
   return (
     `【用户身份卡 · 须完整参考（高于约会对象档案中对玩家的模糊猜测）】` +
@@ -1656,6 +1702,7 @@ function buildPlayerIdentityPromptBlock(
     `若当轮 user 里的「约会对象·世界书」或 system 档案室条目中，写明**玩家本人**的在校社团职务、职级等，且与本卡已知信息无矛盾，**一律以该条文为准**；**禁止**因本卡「职业/身份」栏未写而忽略，也**禁止**把条文里归玩家一方的职务改写到约会对象「${datingCharacterName}」头上；**若约会对象侧条文与本卡冲突，以本【用户身份卡】为准**。\n` +
     `${deixisRule}` +
     detailCard +
+    lifeBlock +
     wbBlock
   )
 }
@@ -2089,17 +2136,11 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   /** 身份卡/人设世界书：不再按千字级硬砍；仍设软顶以防极端条目撑爆请求体 */
   const promptWbCap = Math.min(refCap, Math.max(8000, 320 + Math.round(targetChars * 6)))
   const promptBioCap = Math.min(refCap, Math.max(4000, 220 + Math.round(targetChars * 3)))
-  const identityBlock = buildPlayerIdentityPromptBlock(playerIdentity ?? null, character.realName, {
+  let identityBlock = buildPlayerIdentityPromptBlock(playerIdentity ?? null, character.realName, {
     worldBookMaxChars: promptWbCap,
     bioMaxChars: promptBioCap,
   })
-  const pg = playerIdentity?.gender
-  const playerGenderPronounReminder =
-    pg === 'male'
-      ? `【当轮强提醒】用户身份卡性别为**男**：凡指**玩家本人**（含约会对象/NPC **对白**背称、约会对象 **OS** 里「想约谁、怕谁生气」**当对象=玩家**、以及「卫总」等**即玩家**时的第三人称）必须用「**他**」，**禁止**用「她」；**禁止**因场上有女性或「总裁」称谓而把玩家写成女性人称。\n`
-      : pg === 'female'
-        ? `【当轮强提醒】用户身份卡性别为**女**：凡指**玩家本人**必须用「**她**」，**禁止**用「他」。\n`
-        : ''
+  let playerGenderPronounReminder = ''
   const styleAppend = buildDatingStyleSystemAppend(genOptions)
   const onlineInjectScope = onlineCtx?.onlineInjectScope
   const onlineTemporalScopeRule = onlineInjectScope
@@ -2246,13 +2287,66 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     : ''
   const charWbCap = Math.min(refCap, Math.max(8000, 380 + Math.round(targetChars * 6)))
   const charWbgCap = Math.min(refCap, Math.max(4000, 260 + Math.round(targetChars * 3)))
-  const [npcNetworkBlock, mainCharRow] = await Promise.all([
+  const mainCharRow = await personaDb.getCharacter(character.id).catch(() => null)
+  const lifeCharForClock =
+    mainCharRow ??
+    ({
+      id: character.id,
+      createdAt: 0,
+      updatedAt: 0,
+      name: character.realName,
+      gender: 'other' as const,
+      age: null,
+      birthdayMD: '',
+      zodiac: '',
+      identity: (character.identityTags ?? []).join('、'),
+      worldBooks: [],
+    } satisfies Character)
+  const [npcNetworkBlock, lifePair, observationNotesBlock] = await Promise.all([
     loadDatingNpcNetworkPromptBlock({
       mainCharacterId: character.id,
       mainRealName: character.realName,
     }),
-    personaDb.getCharacter(character.id).catch(() => null),
+    loadPairLifePromptContext({
+      character: lifeCharForClock,
+      playerIdentity: playerIdentity ?? null,
+    }).catch(() => ({
+      characterOverlay: null,
+      playerOverlay: null,
+      characterBlock: '',
+      playerBlock: '',
+    })),
+    (() => {
+      const pid = playerIdentity?.id?.trim()
+      if (!pid || pid === '__none__') return Promise.resolve('')
+      return isObservationNotesAutoUpdateEnabled(character.id, pid)
+        .then((autoOn) =>
+          loadObservationNotesPromptBlock({
+            conversationCharacterId: character.id,
+            playerIdentityId: pid,
+            includePreviousVersion: autoOn,
+            playerIdentity: playerIdentity ?? null,
+            playerDisplayName: playerIdentity?.name,
+          }),
+        )
+        .catch(() => '')
+    })(),
   ])
+  identityBlock = buildPlayerIdentityPromptBlock(playerIdentity ?? null, character.realName, {
+    worldBookMaxChars: promptWbCap,
+    bioMaxChars: promptBioCap,
+    lifeOverlay: lifePair.playerOverlay,
+    lifeBlock: lifePair.playerBlock,
+  })
+  {
+    const pg = lifePair.playerOverlay?.gender || playerIdentity?.gender
+    playerGenderPronounReminder =
+      pg === 'male'
+        ? `【当轮强提醒】用户身份卡性别为**男**：凡指**玩家本人**（含约会对象/NPC **对白**背称、约会对象 **OS** 里「想约谁、怕谁生气」**当对象=玩家**、以及「卫总」等**即玩家**时的第三人称）必须用「**他**」，**禁止**用「她」；**禁止**因场上有女性或「总裁」称谓而把玩家写成女性人称。\n`
+        : pg === 'female'
+          ? `【当轮强提醒】用户身份卡性别为**女**：凡指**玩家本人**必须用「**她**」，**禁止**用「他」。\n`
+          : ''
+  }
   let datingCharWorldBg = ''
   let datingCharWb = ''
   try {
@@ -2320,6 +2414,20 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     mainCharRow && hasChatAfterWorldBookItems(mainCharRow)
       ? `\n\n${buildChatAfterWorldBookDynamicSection(mainCharRow)}\n\n${buildDatingWorldBookAfterPatchOutputAppendix({ isEarlyRound: earlyDatingRound })}`
       : ''
+  let lifeLedgerAppendix = ''
+  let observationNotesAppendix = ''
+  try {
+    const pid = playerIdentity?.id?.trim()
+    if (mainCharRow?.id && pid && (await isLifeLedgerInlineSyncEnabled(mainCharRow.id, pid))) {
+      lifeLedgerAppendix = `\n\n${buildLifeLedgerPatchOutputAppendix({ hasPlayerLine: true })}`
+    }
+    if (mainCharRow?.id && pid && (await isObservationNotesAutoUpdateEnabled(mainCharRow.id, pid))) {
+      observationNotesAppendix = `\n\n${buildObservationNotesPatchOutputAppendix()}`
+    }
+  } catch {
+    lifeLedgerAppendix = ''
+    observationNotesAppendix = ''
+  }
   const epilogueRelationshipBaselineBlock = buildDatingEpilogueRelationshipBaselineBlock(mainCharRow, {
     historyPlotCount: aiPlotCount,
     hasOnlineWechatFacts: hasOnlineWechatFacts,
@@ -2360,17 +2468,24 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     (datingArchiveBlock
       ? `\n\n${datingArchiveBlock}\n\n${worldBookRoleLockReminder}\n`
       : '\n') +
-    `${wbAfterBlock}\n\n` +
+    `${wbAfterBlock}${observationNotesAppendix}${lifeLedgerAppendix}\n\n` +
     `${styleAppend}\n\n` +
     `${PROSE_FORBIDDEN_LEXICON_PROMPT}\n\n` +
     `${combinedMemNote}`
   const datingCharProfileBlock = mainCharRow
     ? `【约会对象·档案与简介${
         mainCharacterOffstage ? '（缺席模式：仅供边界参考，**本轮正文禁止该角色出场**）' : ''
-      }】\n${buildCharacterCard(mainCharRow, { bioMaxChars: promptBioCap })}\n\n`
+      }】\n${buildCharacterCard(mainCharRow, {
+        bioMaxChars: promptBioCap,
+        lifeOverlay: lifePair.characterOverlay,
+      })}\n${lifePair.characterBlock ? `${lifePair.characterBlock}\n` : ''}${
+        observationNotesBlock.trim() ? `${observationNotesBlock.trim()}\n` : ''
+      }\n`
     : `【约会对象·档案与简介${
         mainCharacterOffstage ? '（缺席模式：仅供边界参考，**本轮正文禁止该角色出场**）' : ''
-      }】\n角色信息：姓名=${character.realName}；标签=${character.identityTags.join('、') || '无'}；座右铭=${character.motto || '无'}；设定摘要=${character.prompt}\n\n`
+      }】\n角色信息：姓名=${character.realName}；标签=${character.identityTags.join('、') || '无'}；座右铭=${character.motto || '无'}；设定摘要=${character.prompt}\n${lifePair.characterBlock ? `${lifePair.characterBlock}\n` : ''}${
+        observationNotesBlock.trim() ? `${observationNotesBlock.trim()}\n` : ''
+      }\n`
   const datingScheduleBlock = buildScheduleSection({
     playerIdentity: (playerIdentity?.schedule as ScheduleTable | undefined) ?? null,
     character: (mainCharRow?.schedule as ScheduleTable | undefined) ?? null,
@@ -2383,17 +2498,21 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     : calendarAdvanced
       ? `【效力层级·续写】本轮在已定事实之上推进剧情：` +
         `**【界面生成设置】**（人称、上帝/侧幕、导演模式、目标字数、剧情时间推进）为当轮**最高优先级硬约束** > ` +
-        `输出格式硬约束 > 玩家身份铁律 > **约会对象·档案与人设世界书 = 全局档案室世界书**（同级最高设定）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
+        `输出格式硬约束 > 玩家身份铁律 > **约会对象·档案与私藏侧写与可变人生账本与人设世界书 = 全局档案室世界书**` +
+        `（同级最高设定；侧写规范 char 如何看待/称呼/对待 user，账本规范本线当前年龄/身份/资产等剧情事实）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
         `文风禁词与内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
         `剧情时间轴·当前状态 = 尚未总结·私聊/群聊（末尾最新） > **最近剧情（跳时后作往事，不得压过当前地点）** > 时间轴语义召回/近端摘要 > 向量长期记忆。` +
         `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；玩家输入决定当轮方向，**不得**改写已定事实；角色在边界内可自主行动。` +
+        `**私藏侧写例外**：侧写是 char 对玩家的**当前了解**（会变）；与玩家本轮反应冲突时以玩家当前反应为准，可承认旧印象并更新（含亲密偏好），答卷覆盖对应字段，禁止用过时侧写抬杠。` +
         `若时间推进已锁定：不得因旧稿节奏或笼统「禁跳时」而缩小/取消跨度；须「间隔带过→主事件落点」。\n\n`
       : `【效力层级·续写】本轮在已定事实之上推进剧情：` +
         `**【界面生成设置】**（人称、上帝/侧幕、导演模式、目标字数、剧情时间推进）为当轮**最高优先级硬约束** > ` +
-        `输出格式硬约束 > 玩家身份铁律 > **约会对象·档案与人设世界书 = 全局档案室世界书**（同级最高设定）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
+        `输出格式硬约束 > 玩家身份铁律 > **约会对象·档案与私藏侧写与可变人生账本与人设世界书 = 全局档案室世界书**` +
+        `（同级最高设定；侧写规范 char 如何看待/称呼/对待 user，账本规范本线当前年龄/身份/资产等剧情事实）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
         `文风禁词与内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
         `剧情时间轴·当前状态 > 尚未总结·私聊/群聊（末尾最新）=最近剧情（末尾最新） > 时间轴语义召回/近端摘要 > 向量长期记忆。` +
         `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；玩家输入决定当轮方向，**不得**改写已定事实；角色在边界内可自主行动。` +
+        `**私藏侧写例外**：侧写是 char 对玩家的**当前了解**（会变）；与玩家本轮反应冲突时以玩家当前反应为准，可承认旧印象并更新（含亲密偏好），答卷覆盖对应字段，禁止用过时侧写抬杠。` +
         `若时间推进已锁定：不得因旧稿节奏或笼统「禁跳时」而缩小/取消跨度；须「间隔带过→主事件落点」。\n\n`
   const biasBlock = initialBias
     ? isRegenerateTurn
@@ -2586,7 +2705,9 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   })
   const trimmed = expandCharUserPlaceholders(out.trim(), charUserNames)
   const wbExtract = extractWorldBookAfterPatchBlock(trimmed)
-  const trimmedForPlot = wbExtract.rest
+  const obsExtract = extractObservationNotesPatchBlock(wbExtract.rest)
+  const lifeExtract = extractLifeLedgerPatchBlock(obsExtract.rest)
+  const trimmedForPlot = lifeExtract.rest
   let wbAfterAppliedToDb = false
   let worldBookAfterRevertEntries: WorldBookAfterRevertEntry[] | undefined
   const filteredWbPatches =
@@ -2614,6 +2735,57 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     } catch {
       /* 约会剧情：世界书补丁写库失败不影响正文落档 */
     }
+  }
+  let observationNotesRevert: DatingAiGenResult['observationNotesRevert']
+  try {
+    const pid = playerIdentity?.id?.trim()
+    if (
+      mainCharRow &&
+      pid &&
+      obsExtract.patches.length &&
+      (await isObservationNotesAutoUpdateEnabled(mainCharRow.id, pid))
+    ) {
+      const obsApplied = await applyObservationNotesPatchesFromAi({
+        conversationCharacterId: mainCharRow.id,
+        playerIdentityId: pid,
+        charDisplayName: character.realName,
+        patches: obsExtract.patches,
+        playerDisplayName: playerIdentity?.name?.trim() || playerIdentity?.wechatNickname?.trim() || undefined,
+      })
+      if (obsApplied.applied && obsApplied.revert) {
+        observationNotesRevert = obsApplied.revert
+      }
+    }
+  } catch {
+    /* 约会剧情：私藏侧写补丁写库失败不影响正文落档 */
+  }
+  try {
+    const pid = playerIdentity?.id?.trim()
+    if (
+      mainCharRow &&
+      pid &&
+      lifeExtract.patches.length &&
+      (await isLifeLedgerInlineSyncEnabled(mainCharRow.id, pid))
+    ) {
+      const lifeResult = await applyLifeLedgerInlinePatches({
+        character: mainCharRow,
+        playerIdentity: playerIdentity ?? null,
+        patches: lifeExtract.patches,
+      })
+      if (lifeResult.applied) {
+        window.dispatchEvent(
+          new CustomEvent(LIFE_LEDGER_PATCH_UPDATED_EVENT, {
+            detail: {
+              appliedPatchCount: Math.max(1, lifeResult.appliedCount),
+              changedLabels: lifeResult.changedLabels,
+              source: 'model_inline',
+            },
+          }),
+        )
+      }
+    }
+  } catch {
+    /* 约会剧情：人生账本补丁写库失败不影响正文落档 */
   }
   const traceBody = splitDatingAiResponseAndUnifiedMemoryJson(trimmedForPlot).plotRaw
   const chatAfterProtocol = !!(mainCharRow && hasChatAfterWorldBookItems(mainCharRow))
@@ -2662,7 +2834,12 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   } catch {
     /* 思维溯源写入失败不影响剧情 */
   }
-  return { text: trimmedForPlot, worldBookAfterRevertEntries }
+  return {
+    text: trimmedForPlot,
+    worldBookAfterRevertEntries,
+    worldBookEpilogueJudged: wbExtract.judged === true,
+    observationNotesRevert,
+  }
 }
 
 export function DatingProvider({ children }: { children: ReactNode }) {
@@ -3694,6 +3871,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             ),
             ...storyFields,
             worldBookAfterRevertEntries: wbRevertNew.length ? wbRevertNew : undefined,
+            observationNotesRevert: aiGen.observationNotesRevert,
           }
           const plotsWithAi = [...plotsForModel, aiPlot]
           // 先落库正文让列表立刻可见；配图后台补上，避免干等生图数分钟
@@ -3768,6 +3946,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
               char,
               memoryTurnAiPlotId: aiPlot.id,
               worldBookInlinePatchApplied: Boolean(wbRevertNew.length),
+              worldBookEpilogueJudged: aiGen.worldBookEpilogueJudged === true,
               notifyParallelSummaryForPlotId: parallelGeneratedPlotId,
               userText: msg,
             })
@@ -4021,6 +4200,35 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     [apiConfig, applyArchivePatch, currentCharacter.id, enqueueRegenerateBranches],
   )
 
+  const updatePlotStoryTime = useCallback(
+    async (
+      plotId: string,
+      fields: import('../memory/dualNarrativeTime').DualNarrativeStoryFields,
+    ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+      const charId = currentCharacter.id
+      if (!charId) return { ok: false, reason: '角色未就绪' }
+      const archive = archivesRef.current[charId]
+      const plot = archive?.plots.find((p) => p.id === plotId)
+      if (!plot || plot.type !== 'ai' || !archive) {
+        return { ok: false, reason: '未找到可编辑的剧情' }
+      }
+      const result = await persistPlotStoryTimeEdit({
+        characterId: charId,
+        plot,
+        fields,
+        apiConfig,
+        nextPlots: archive.plots,
+      })
+      if (!result.ok) return result
+      await applyArchivePatch(charId, (p) => ({
+        ...p,
+        plots: p.plots.map((x) => (x.id === plotId ? result.plot : x)),
+      }))
+      return { ok: true }
+    },
+    [apiConfig, applyArchivePatch, currentCharacter.id],
+  )
+
   const backfillPlotTranslations = useCallback(
     async (plotId: string) => {
       const charId = currentCharacter.id
@@ -4190,6 +4398,15 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         } catch (timelineRevertErr) {
           console.warn('[dating] story timeline revert before regenerate failed', timelineRevertErr)
         }
+        try {
+          await rebuildObservationNotesFromDatingPlotList({
+            characterId: char.id,
+            prevPlots: archive.plots,
+            nextPlots: before,
+          })
+        } catch (obsRevertErr) {
+          console.warn('[dating] observation notes revert before regenerate failed', obsRevertErr)
+        }
         await clearOfflinePlotContextVectorsForCharacter(char.id)
         const [{ datingExtras: turnExtras, memoryGather }, onlineCtx] = await Promise.all([
           buildDatingTurnModelExtras({
@@ -4301,6 +4518,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           systemRecordedAt: plotTsRegen,
           ...regenStory,
           worldBookAfterRevertEntries: nextRevert.length ? nextRevert : undefined,
+          observationNotesRevert: aiGenRegen.observationNotesRevert,
         }
         await applyArchivePatch(charId, (p) => ({
           ...p,
@@ -4338,6 +4556,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             memoryTurnAiPlotId: plotId,
             skipMemoryRoundBump: true,
             worldBookInlinePatchApplied: Boolean(nextRevert.length),
+            worldBookEpilogueJudged: aiGenRegen.worldBookEpilogueJudged === true,
           })
           linkedNpcNames = memResult.linkedNpcNames
           const extraRevert = sanitizeWorldBookAfterRevertEntries(memResult.epilogueRevertEntries)
@@ -4559,6 +4778,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     updatePlotItem,
     setPlotVersionIndex,
     deletePlotItem,
+    updatePlotStoryTime,
     backfillPlotTranslations,
     regenerateAiPlot,
     generatePlotDimension,

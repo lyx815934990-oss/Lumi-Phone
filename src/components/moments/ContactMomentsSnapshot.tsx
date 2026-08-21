@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Pressable } from '../../phone/components/Pressable'
 
@@ -20,6 +20,9 @@ type ContactMomentsSnapshotProps = {
   onOpenArchive: () => void
 }
 
+const EMPTY_MOMENT_CONTACTS: MomentContactRef[] = []
+const EMPTY_BLOCKED = new Set<string>()
+
 function SnapshotImageCell({ src }: { src: string }) {
   const resolved = useResolvedMomentImages([src])
   const displaySrc = resolved[0]?.trim() ?? ''
@@ -35,7 +38,7 @@ function SnapshotImageCell({ src }: { src: string }) {
       {displaySrc ? (
         <img src={displaySrc} alt="" className="size-full object-cover" />
       ) : (
-        <div className="size-full animate-pulse" style={{ background: 'rgba(16,16,18,0.05)' }} />
+        <div className="size-full" style={{ background: 'rgba(16,16,18,0.05)' }} />
       )}
     </div>
   )
@@ -59,40 +62,62 @@ function SnapshotCell({ cell }: { cell: ContactMomentSnapshotCell }) {
   )
 }
 
+function cellsFingerprint(cells: ContactMomentSnapshotCell[]): string {
+  return cells.map((c) => (c.kind === 'image' ? `i:${c.id}:${c.src}` : `t:${c.id}:${c.preview}`)).join('|')
+}
+
 export function ContactMomentsSnapshot({
   characterId,
   accountId,
-  momentContacts = [],
-  blockedCharacterIds,
+  momentContacts = EMPTY_MOMENT_CONTACTS,
+  blockedCharacterIds = EMPTY_BLOCKED,
   onOpenArchive,
 }: ContactMomentsSnapshotProps) {
   const [cells, setCells] = useState<ContactMomentSnapshotCell[]>([])
-  const [loading, setLoading] = useState(true)
+  /** 仅首次拉取显示占位，避免 storage 事件反复把板块打回骨架导致跳动 */
+  const [initialLoading, setInitialLoading] = useState(true)
+  const hasLoadedOnceRef = useRef(false)
+  const momentContactsRef = useRef(momentContacts)
+  const blockedRef = useRef(blockedCharacterIds)
+  momentContactsRef.current = momentContacts
+  blockedRef.current = blockedCharacterIds
 
   const refresh = useCallback(async () => {
-    setLoading(true)
+    const showSkeleton = !hasLoadedOnceRef.current
+    if (showSkeleton) setInitialLoading(true)
     try {
       const all = await loadUserMoments(accountId)
-      setCells(
-        pickContactMomentSnapshots(
-          all,
-          characterId,
-          momentContacts,
-          blockedCharacterIds ?? new Set(),
-        ),
+      const next = pickContactMomentSnapshots(
+        all,
+        characterId,
+        momentContactsRef.current,
+        blockedRef.current,
       )
+      setCells((prev) => (cellsFingerprint(prev) === cellsFingerprint(next) ? prev : next))
     } catch {
-      setCells([])
+      setCells((prev) => (prev.length === 0 ? prev : []))
     } finally {
-      setLoading(false)
+      hasLoadedOnceRef.current = true
+      setInitialLoading(false)
     }
-  }, [accountId, blockedCharacterIds, characterId, momentContacts])
+  }, [accountId, characterId])
 
   useEffect(() => {
     void refresh()
-    const onStorage = () => void refresh()
+    let timer: number | null = null
+    const onStorage = () => {
+      // wechat-storage-changed 很密：合并成一次静默刷新，避免板块闪烁
+      if (timer != null) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        timer = null
+        void refresh()
+      }, 280)
+    }
     window.addEventListener('wechat-storage-changed', onStorage)
-    return () => window.removeEventListener('wechat-storage-changed', onStorage)
+    return () => {
+      if (timer != null) window.clearTimeout(timer)
+      window.removeEventListener('wechat-storage-changed', onStorage)
+    }
   }, [refresh])
 
   return (
@@ -108,19 +133,19 @@ export function ContactMomentsSnapshot({
         </div>
 
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {loading ? (
+          <div className="flex min-h-[58px] min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            {initialLoading ? (
               Array.from({ length: 3 }).map((_, i) => (
                 <div
                   key={i}
-                  className="size-[58px] shrink-0 animate-pulse rounded-[14px]"
+                  className="size-[58px] shrink-0 rounded-[14px]"
                   style={{ background: 'rgba(16,16,18,0.05)' }}
                 />
               ))
             ) : cells.length ? (
               cells.map((cell) => <SnapshotCell key={cell.id} cell={cell} />)
             ) : (
-              <p className="py-3.5 text-[12px] text-[#8B8B8F]">暂无可见动态</p>
+              <p className="text-[12px] text-[#8B8B8F]">暂无可见动态</p>
             )}
           </div>
           <ChevronRight className="size-4 shrink-0 text-[#C4C4C6]" strokeWidth={1.5} aria-hidden />

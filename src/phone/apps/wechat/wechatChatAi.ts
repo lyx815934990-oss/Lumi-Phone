@@ -27,6 +27,22 @@ import { loadPulseCharacterFollowingPromptBlock } from '../lumiPulse/pulseFollow
 import { loadUserPulseStatusPromptBlock } from './messagesPulse/userPulseStatusStorage'
 import { loadUserMurmursPromptBlock } from './messagesPulse/murmurStorage'
 import {
+  buildObservationNotesPatchOutputAppendix,
+  extractObservationNotesPatchBlock,
+  isObservationNotesAutoUpdateEnabled,
+  type ObservationNotesFieldPatch,
+} from './observationNotes'
+import { loadObservationNotesPromptBlock, loadObservationNotesInitialFillFlag } from './observationNotes/promptBlock'
+import { needsObservationJudgementFill } from './observationNotes/obsNotesPatch'
+import { loadObservationNotes } from './observationNotes/store'
+import { loadPairLifePromptContext } from './lifeMutable/load'
+import { isLifeLedgerInlineSyncEnabled } from './lifeMutable/inlineSync'
+import {
+  buildLifeLedgerPatchOutputAppendix,
+  extractLifeLedgerPatchBlock,
+  type LifeLedgerInlinePatch,
+} from './lifeMutable/lifeLedgerPatch'
+import {
   buildMemorySummaryCharGenderDirective,
   buildMemorySummaryIdentityRosterBlock,
   normalizeMemorySummaryBodyAfterModel,
@@ -37,6 +53,7 @@ import {
   parseFlatMemorySummaryProseOutput,
   stripFlatMemorySummaryStorageMarkers,
 } from './memory/memorySummaryProseFormat'
+import { resolveCharacterCurrentStoryStamp } from './memory/onlineMemorySummaryFormat'
 import {
   hasTimelineDeltaContent,
   normalizeStoryTimelineRowKeyword,
@@ -84,6 +101,7 @@ import {
   buildWechatReplyOutputLanguageAppendix,
   buildWechatSyncTranslationAppendix,
 } from './wechatChatLanguage'
+import { buildWechatInnerOsSyncAppendix } from './wechatInnerOsSync'
 import { buildWeChatPulseDmScreenshotOutputBlock } from './pulse/pulseDmScreenshotAiDirective'
 import { splitRawByForwardHistory } from './chatHistory/parseForwardHistoryXml'
 import type { WeChatChatHistoryPayload } from './newFriendsPersona/types'
@@ -141,6 +159,7 @@ import {
   WECHAT_CHARACTER_PROFILE_IMAGE_APPLY_IMAGE_ROUND_HINT,
   buildCharacterSelfProfileVisionParts,
 } from './wechatCharacterProfileImageApply'
+import { resolveVisionImageUrlToDataUrl } from './wechatVisionImageResolve'
 import {
   WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX,
 } from './wechatCharacterProfileUpdateApply'
@@ -153,6 +172,9 @@ import { WECHAT_HEART_WHISPER_SYSTEM_PROMPT } from './wechatHeartWhisperPrompt'
 import {
   parseGroupHeartWhisperOutput,
   parseHeartWhisperOutput,
+  extractInlineHeartWhisperBlock,
+  buildWechatHeartWhisperInlineSyncAppendix,
+  type GroupHeartWhisperEntry,
 } from './wechatHeartWhisperFormat'
 import { WECHAT_CHARACTER_PSYCHE_SYSTEM_PROMPT } from './wechatCharacterPsychePrompt'
 import type { CharacterPsychePageSummaries } from './characterPsyche/characterPsycheSummaries'
@@ -574,6 +596,13 @@ const CHARACTER_CARD_MOTTO_MAX = 160
 export type BuildCharacterCardOptions = {
   /** 简介截断上限；默认 1200 字 */
   bioMaxChars?: number
+  /** 可变人生叠层：用本线当前姓名/年龄/性别/职业覆盖建档卡展示（不改库） */
+  lifeOverlay?: {
+    name?: string
+    age?: number
+    gender?: import('./newFriendsPersona/types').Gender
+    identity?: string
+  } | null
 }
 
 function clipCharacterCardField(raw: string, max: number): string {
@@ -589,16 +618,21 @@ export function buildCharacterCard(
 ): string {
   if (!character) return ''
   const c = character
+  const ov = opts?.lifeOverlay
   const bioMax = Math.max(80, opts?.bioMaxChars ?? CHARACTER_CARD_BIO_DEFAULT_MAX)
+  const displayName = ov?.name?.trim() || c.name || '未命名'
+  const displayAge = typeof ov?.age === 'number' && Number.isFinite(ov.age) ? ov.age : c.age
+  const displayGender = ov?.gender || c.gender
+  const displayIdentity = ov?.identity?.trim() || c.identity
   const bits = [
-    `姓名/常用称呼：${c.name || '未命名'}`,
-    `性别：${genderLabelZh(c.gender)}`,
-    typeof c.age === 'number' ? `年龄：${c.age}` : '',
+    `姓名/常用称呼：${displayName}`,
+    `性别：${genderLabelZh(displayGender)}`,
+    typeof displayAge === 'number' ? `年龄：${displayAge}` : '',
     c.height?.trim() ? `身高：${c.height.trim()}` : '',
     c.weight?.trim() ? `体重：${c.weight.trim()}` : '',
     c.birthdayMD ? `生日：${c.birthdayMD}` : '',
     c.zodiac ? `星座：${c.zodiac}` : '',
-    c.identity ? `身份：${c.identity}` : '',
+    displayIdentity ? `身份：${displayIdentity}` : '',
     c.mbti ? `MBTI：${c.mbti}` : '',
     c.wechatNickname ? `微信昵称：${c.wechatNickname}` : '',
     c.wechatSignature ? `微信签名：${c.wechatSignature}` : '',
@@ -645,12 +679,16 @@ export function buildWeChatPlayerThirdPersonPronounIronRule(playerIdentity: Play
   return `\n【第三人称·用户本人】身份卡为**非二元/其它**：背称用户优先用「其」、职位或「对方」，避免错配「他/她」。\n`
 }
 
-function buildPlayerIdentitySection(playerIdentity: PlayerIdentity | null): string {
+function buildPlayerIdentitySection(
+  playerIdentity: PlayerIdentity | null,
+  opts?: { lifeOverlay?: BuildCharacterCardOptions['lifeOverlay']; lifeBlock?: string },
+): string {
   if (!playerIdentity) return ''
-  const card = buildCharacterCard(playerIdentity)
+  const card = buildCharacterCard(playerIdentity, { lifeOverlay: opts?.lifeOverlay })
   const wb = buildWorldBookText(playerIdentity, WORLD_BOOK_MAX_CHARS, { voice: 'player_identity' })
   let s = `\n\n---\n【玩家身份档案】\n${card}\n`
   s += buildWeChatPlayerThirdPersonPronounIronRule(playerIdentity)
+  if (opts?.lifeBlock?.trim()) s += `\n---\n${opts.lifeBlock.trim()}\n`
   if (wb.trim()) s += `\n---\n【玩家身份世界书】\n${wb}\n`
   return s
 }
@@ -691,6 +729,31 @@ function buildUnsummarizedMeetSection(notes?: string): string {
   const t = notes?.trim()
   if (!t) return ''
   return `\n\n---\n【尚未写入长期记忆的遇见临时会话片段（本地游标之后；**末尾最新优先**）】\n${t}\n`
+}
+
+function buildRecentPrivateAiRoundsSection(notes?: string): string {
+  const t = notes?.trim()
+  if (!t) return ''
+  // 块内已含【板块·近端·最近 N 轮线上私聊原文】标题时，与线下必注块同级直接挂上
+  if (/【板块·近端·最近\s*\d+\s*轮线上私聊原文】/.test(t)) {
+    return `\n\n---\n${t}\n`
+  }
+  return (
+    `\n\n---\n【板块·近端·最近线上私聊原文】（必注全文；不依赖总结游标；每条须带剧情时间前缀）\n` +
+    `${t}\n`
+  )
+}
+
+function buildRecentOfflineAiRoundsSection(notes?: string): string {
+  const t = notes?.trim()
+  if (!t) return ''
+  return `\n\n---\n【板块·近端·最近线下剧情原文参考】（可能已写入长期记忆；仅供承接口吻，非待总结材料）\n${t}\n`
+}
+
+function buildRecentMeetAiRoundsSection(notes?: string): string {
+  const t = notes?.trim()
+  if (!t) return ''
+  return `\n\n---\n【板块·近端·最近遇见原文参考】（可能已写入长期记忆；仅供承接口吻，非待总结材料）\n${t}\n`
 }
 
 export function buildScheduleSection(params: { playerIdentity: ScheduleTable | null; character: ScheduleTable | null }): string {
@@ -796,6 +859,19 @@ export function buildSystemContent(params: {
   mutualFriendChainNotes?: string
   /** 用户微信状态（在线/心情/气泡/当日行程）；由 materialize 自动装载亦可手传 */
   userPulseStatusNotes?: string
+  /**
+   * Char 对 User 的私藏侧写（与可变人生账本同级最高设定：规范「怎么看待/称呼/对待」）；
+   * materialize 未手传时会按角色/身份自动装载。
+   */
+  userDeepCognitionNotes?: string
+  /** 角色本线可变人生块（年龄/资产等剧情事实；由 materialize 自动装载） */
+  lifeMutableCharacterBlock?: string
+  /** 玩家本角色线可变人生块 */
+  lifeMutablePlayerBlock?: string
+  /** 叠到角色档案卡上的当前姓名/年龄/性别/职业 */
+  lifeOverlayCharacter?: BuildCharacterCardOptions['lifeOverlay']
+  /** 叠到玩家身份卡上的本线当前值 */
+  lifeOverlayPlayer?: BuildCharacterCardOptions['lifeOverlay']
 }): string {
   const worldBookIdentity = params.worldBookPlayerIdentity ?? params.playerIdentity
   const expandNames = resolveCharUserNamesForPrompt({
@@ -861,6 +937,9 @@ export function buildSystemContent(params: {
   const unsPriv = buildUnsummarizedPrivateSection(params.unsummarizedPrivateNotes)
   const unsGrp = buildUnsummarizedGroupSection(params.unsummarizedGroupNotes)
   const unsMeet = buildUnsummarizedMeetSection(params.unsummarizedMeetNotes)
+  const recentPriv = buildRecentPrivateAiRoundsSection(params.recentPrivateAiRoundsNotes)
+  const recentOff = buildRecentOfflineAiRoundsSection(params.recentOfflineAiRoundsNotes)
+  const recentMeet = buildRecentMeetAiRoundsSection(params.recentMeetAiRoundsNotes)
   const offlinePlots = params.offlineDatingPlotsContext?.trim()
     ? `\n\n---\n${params.offlineDatingPlotsContext.trim()}\n`
     : ''
@@ -900,7 +979,10 @@ export function buildSystemContent(params: {
         forFriendRequest:
           !!params.friendRequestAdjudication || !!params.nonPrimarySpeakerLine,
       })
-    : buildPlayerIdentitySection(params.playerIdentity)
+    : buildPlayerIdentitySection(params.playerIdentity, {
+        lifeOverlay: params.lifeOverlayPlayer,
+        lifeBlock: params.lifeMutablePlayerBlock,
+      })
   const userPulse = params.userPulseStatusNotes?.trim()
     ? `\n\n---\n${params.userPulseStatusNotes.trim()}\n`
     : ''
@@ -912,15 +994,21 @@ export function buildSystemContent(params: {
     ? ''
     : isRegenBias
       ? `\n\n---\n【效力层级·重新回复】本轮对上一气泡不满意重写。` +
-        `「本轮回复偏向」为**内容最高优先级**；其次服从**角色档案、人设世界书与全局档案室世界书**（三者同级）；` +
+        `「本轮回复偏向」为**内容最高优先级**；其次服从**角色档案、私藏侧写、可变人生账本、人设世界书与全局档案室世界书**` +
+        `（同级最高设定；侧写规范 char 如何看待/称呼/对待 user，账本规范本线年龄/身份/资产等剧情事实，世界书管性格禁忌与关系站位）；` +
         `输出格式硬约束（换行分条/禁 JSON/Markdown）次之；` +
         `不得捏造与「尚未总结」「剧情时间轴·当前状态」「尾声延展」明文冲突的已定事实。\n`
       : `\n\n---\n【效力层级·微信私聊｜七板块记忆参考】` +
-        `**角色档案 + 人设世界书 + 全局档案室世界书**（同级最高设定）> 输出格式硬约束 > 玩家身份铁律 > 世界背景/NPC网/尾声延展·关系 > ` +
+        `**角色档案 + 私藏侧写 + 可变人生账本 + 人设世界书 + 全局档案室世界书**` +
+        `（同级最高设定；侧写＝char 对 user 的稳定认知与对待方式；账本＝本线当前年龄/身份/资产等剧情事实；世界书＝性格禁忌与关系站位）> 输出格式硬约束 > 玩家身份铁律 > 世界背景/NPC网/尾声延展·关系 > ` +
         `内置恋爱参考（与上列同级硬底线） > ` +
-        `①剧情时间轴·当前状态 > ⑤未总结·线上私聊原文（末尾最新）> ④近端·最近2轮线下剧情原文 > ` +
-        `③近端·更早5轮线下摘要 > ②向量召回·历史剧情摘要（至多5）> ⑥向量召回·线上长期记忆（至多5）≈ ⑦关键词命中·线上长期记忆。` +
-        `人设与全局档案冲突时取更具体硬约束；本轮用户消息决定接话方向，**不得**改写已定事实。\n`
+        `①剧情时间轴·当前状态 > ⑤未总结·线上私聊原文（末尾最新）> 近端·固定线上私聊原文（必注全文；轮数可调）> ④近端·最近2轮线下剧情原文 > ` +
+        `③近端·更早5轮线下摘要 > ②向量召回·历史剧情摘要（至多5）> ` +
+        `⑥向量召回·线上长期记忆（至多5）≈ ⑦关键词命中·线上长期记忆。` +
+        `人设与全局档案冲突时取更具体硬约束；本轮用户消息决定接话方向，**不得**改写已定事实。` +
+        `**私藏侧写例外**：侧写只是 char 对 user 的**当前了解**（会变）。` +
+        `若与用户本轮反应/自述冲突，**一切以用户当前反应为准**——接话可承认旧印象并更新认知（「我以为…我记住了」类），` +
+        `并在侧写答卷覆盖对应字段（含食物、称呼、亲密偏好等）；禁止用过时侧写抬杠。\n`
 
   const linkedExpand = (raw: string) =>
     expandLinkedMemoryPlaceholders(raw, {
@@ -931,26 +1019,29 @@ export function buildSystemContent(params: {
   const appendLinkPreview = (expanded: string) =>
     linkPreviewBlock ? `${expanded}\n\n---\n${linkPreviewBlock}\n` : expanded
 
-  /** 记忆尾部：当前态 → 尚未总结/近端摘录 → 召回 → 长期记忆（低） */
+  /** 记忆尾部：当前态 → 尚未总结/近端摘录 → 召回 → 长期记忆（私藏侧写已提到档案同级，不再塞记忆尾） */
   const memoryTail =
     `${timelineCurrent}${crossChannelTimeline}` +
-    `${unsPriv}${unsGrp}${unsMeet}${offlinePlots}` +
-    `${meetEncounter}${meetContinuity}${groupChatsRecent}` +
+    `${unsPriv}${recentPriv}${unsGrp}${unsMeet}${offlinePlots}${recentOff}` +
+    `${meetEncounter}${meetContinuity}${recentMeet}${groupChatsRecent}` +
     `${timelineRecall}${memScopeFence}${mem}`
 
   if (isLumiAssistant) {
     // 助手模式：不注入「虚构沙盒」免责声明；记忆顺序与人设模式对齐。
+    const deepCognition = params.userDeepCognitionNotes?.trim()
+      ? `\n\n---\n${params.userDeepCognitionNotes.trim()}\n`
+      : ''
     const raw =
       `${LUMI_ASSISTANT_SYSTEM_PROMPT}${earlyOutput}` +
       `${pi}${userPulse}${loreBlock}` +
-      `${memoryTail}` +
+      `${deepCognition}${memoryTail}` +
       `${altProbe}${replyBias}${currentTime}${schedule}${peerLine}`
     return appendLinkPreview(linkedExpand(raw))
   }
 
   const wb =
     params.worldBookTextForPrompt?.trim() ?? buildWorldBookText(params.character)
-  const card = buildCharacterCard(params.character)
+  const card = buildCharacterCard(params.character, { lifeOverlay: params.lifeOverlayCharacter })
   const wbg = params.worldBackgroundPrompt?.trim()
   let extra = ''
   if (params.character) {
@@ -958,6 +1049,12 @@ export function buildSystemContent(params: {
       extra += `\n\n---\n${wbUserDirective.trim()}\n`
     }
     extra += `\n\n---\n【角色档案摘要】\n${card}\n`
+    if (params.lifeMutableCharacterBlock?.trim()) {
+      extra += `\n---\n${params.lifeMutableCharacterBlock.trim()}\n`
+    }
+    if (params.userDeepCognitionNotes?.trim()) {
+      extra += `\n---\n${params.userDeepCognitionNotes.trim()}\n`
+    }
     if (wbg) {
       extra += `\n---\n【世界背景（次于档案与世界书、人设世界书；若与下方世界书冲突，以世界书为准）】\n${wbg}\n`
     }
@@ -980,8 +1077,8 @@ export function buildSystemContent(params: {
     params.promptMode === 'persona' ? params.mutualFriendChainNotes?.trim() || '' : ''
   const mutualFriendChainBlock = mutualFriendChain ? `\n\n---\n${mutualFriendChain}\n` : ''
   /**
-   * 效力层级（高→低，无导演意图/无独立文风层）：
-   * 重新回复偏向（若有）→ 角色档案/人设世界书/全局档案室（同级）→ 输出格式硬约束 → 玩家身份 →
+   * 效力层级（高→低）：
+   * 重新回复偏向（若有）→ 角色档案/私藏侧写/可变人生账本/人设世界书/全局档案室（同级）→ 输出格式硬约束 → 玩家身份 →
    * NPC/尾声 → 时间轴·当前状态 → 尚未总结/线下末尾 → 语义召回/近端 → 向量长期记忆
    */
   const rawMain =
@@ -1000,37 +1097,79 @@ export async function materializeSystemContent(params: BuildSystemContentParams)
   const worldBookTextForPrompt = params.character
     ? await buildWorldBookTextForPrompt(params.character)
     : ''
-  const [networkNpcPronounBlock, networkRelationshipsBlock, pulseFollowingBlock, userPulseStatusNotes, userMurmurNotes] =
-    await Promise.all([
-      params.character && params.promptMode === 'persona'
-        ? buildPrivateChatNetworkNpcPronounBlock({
-            character: params.character,
-            playerThirdPersonRule: buildWeChatPlayerThirdPersonPronounIronRule(params.playerIdentity),
-          })
+  const cognitionPid =
+    params.playerIdentity?.id?.trim() || params.worldBookPlayerIdentity?.id?.trim() || ''
+  const [
+    networkNpcPronounBlock,
+    networkRelationshipsBlock,
+    pulseFollowingBlock,
+    userPulseStatusNotes,
+    userMurmurNotes,
+    userDeepCognitionNotes,
+    lifePair,
+  ] = await Promise.all([
+    params.character && params.promptMode === 'persona'
+      ? buildPrivateChatNetworkNpcPronounBlock({
+          character: params.character,
+          playerThirdPersonRule: buildWeChatPlayerThirdPersonPronounIronRule(params.playerIdentity),
+        })
+      : Promise.resolve(''),
+    params.character && params.promptMode === 'persona'
+      ? loadPrivateChatNetworkRelationshipsBlock({
+          character: params.character,
+          sessionPlayerIdentityId: params.playerIdentity?.id,
+        })
+      : Promise.resolve(''),
+    params.character && params.promptMode === 'persona'
+      ? loadPulseCharacterFollowingPromptBlock({
+          characterId: params.character.id,
+        })
+      : Promise.resolve(''),
+    params.userPulseStatusNotes?.trim()
+      ? Promise.resolve(params.userPulseStatusNotes.trim())
+      : loadUserPulseStatusPromptBlock({
+          playerIdentityId: params.playerIdentity?.id,
+          displayName: params.playerDisplayName,
+        }),
+    loadUserMurmursPromptBlock({
+      playerIdentityId: params.playerIdentity?.id,
+      displayName: params.playerDisplayName,
+      viewerCharacterId: params.character?.id,
+    }),
+    params.userDeepCognitionNotes?.trim()
+      ? Promise.resolve(params.userDeepCognitionNotes.trim())
+      : params.character && params.promptMode === 'persona' && cognitionPid && cognitionPid !== '__none__'
+        ? (async () => {
+            const autoOn = await isObservationNotesAutoUpdateEnabled(
+              params.character!.id,
+              cognitionPid,
+            ).catch(() => false)
+            return loadObservationNotesPromptBlock({
+              conversationCharacterId: params.character!.id,
+              playerIdentityId: cognitionPid,
+              includePreviousVersion: autoOn,
+              playerIdentity: params.playerIdentity,
+              playerDisplayName: params.playerDisplayName,
+            })
+          })()
         : Promise.resolve(''),
-      params.character && params.promptMode === 'persona'
-        ? loadPrivateChatNetworkRelationshipsBlock({
-            character: params.character,
-            sessionPlayerIdentityId: params.playerIdentity?.id,
-          })
-        : Promise.resolve(''),
-      params.character && params.promptMode === 'persona'
-        ? loadPulseCharacterFollowingPromptBlock({
-            characterId: params.character.id,
-          })
-        : Promise.resolve(''),
-      params.userPulseStatusNotes?.trim()
-        ? Promise.resolve(params.userPulseStatusNotes.trim())
-        : loadUserPulseStatusPromptBlock({
-            playerIdentityId: params.playerIdentity?.id,
-            displayName: params.playerDisplayName,
-          }),
-      loadUserMurmursPromptBlock({
-        playerIdentityId: params.playerIdentity?.id,
-        displayName: params.playerDisplayName,
-        viewerCharacterId: params.character?.id,
-      }),
-    ])
+    params.character
+      ? loadPairLifePromptContext({
+          character: params.character,
+          playerIdentity: params.playerIdentity,
+        }).catch(() => ({
+          characterOverlay: null,
+          playerOverlay: null,
+          characterBlock: '',
+          playerBlock: '',
+        }))
+      : Promise.resolve({
+          characterOverlay: null,
+          playerOverlay: null,
+          characterBlock: '',
+          playerBlock: '',
+        }),
+  ])
   const mergedNetworkRelationships = [networkRelationshipsBlock, pulseFollowingBlock]
     .map((s) => s.trim())
     .filter(Boolean)
@@ -1045,6 +1184,11 @@ export async function materializeSystemContent(params: BuildSystemContentParams)
     networkNpcPronounBlock,
     networkRelationshipsBlock: mergedNetworkRelationships || undefined,
     userPulseStatusNotes: mergedUserPulseNotes || undefined,
+    userDeepCognitionNotes: userDeepCognitionNotes || undefined,
+    lifeMutableCharacterBlock: params.lifeMutableCharacterBlock ?? lifePair.characterBlock,
+    lifeMutablePlayerBlock: params.lifeMutablePlayerBlock ?? lifePair.playerBlock,
+    lifeOverlayCharacter: params.lifeOverlayCharacter ?? lifePair.characterOverlay,
+    lifeOverlayPlayer: params.lifeOverlayPlayer ?? lifePair.playerOverlay,
   })
   const wbIden = params.worldBookPlayerIdentity ?? params.playerIdentity ?? null
   return expandSystemPromptPlaceholders(raw, {
@@ -1278,8 +1422,25 @@ export type WeChatPeerReplyResult = {
   rawText?: string
   /** 模型在本轮末尾提交的「尾声延展」世界书覆盖（若有；priority=after） */
   worldBookPatches?: WorldBookAfterPatch[]
+  /**
+   * 主回复已输出合法 ---WB_AFTER_PATCH--- 标记（含「无变化」）。
+   * 为 true 时跳过每轮二次尾声请求。
+   */
+  worldBookEpilogueJudged?: boolean
+  /** 主回复末尾「私藏侧写」补丁（若有） */
+  observationNotesPatches?: ObservationNotesFieldPatch[]
+  /** 主回复已输出合法 ---OBS_NOTES_PATCH--- 标记（含「无变化」） */
+  observationNotesJudged?: boolean
+  /** 主回复末尾「人生账本」补丁（若有） */
+  lifeLedgerPatches?: LifeLedgerInlinePatch[]
+  /** 主回复已输出合法 ---LIFE_LEDGER_PATCH--- 标记（含「无变化」） */
+  lifeLedgerJudged?: boolean
   /** 共同好友链：主回复末尾标记块（已从可见气泡剥离） */
   mutualFriendChain?: MutualFriendChainPayload | null
+  /** 同轮主回复末尾剥离的心语档案（每轮同步心语） */
+  heartWhisper?: HeartWhisper
+  /** 群聊同轮主回复末尾剥离的心语条目 */
+  groupHeartWhisperEntries?: GroupHeartWhisperEntry[]
 }
 export const WECHAT_RECALL_ACTION_TOKEN = '[__RECALL__]'
 
@@ -1332,11 +1493,50 @@ function parsePlainChunkToWeChatBubbles(raw: string): { bubbles: string[]; danma
 export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyResult {
   const { plotRaw } = splitDatingAiResponseAndUnifiedMemoryJson(String(raw ?? ''))
   const t0 = stripAssistantFence(plotRaw)
-  if (!t0) return { bubbles: [], worldBookPatches: undefined }
+  if (!t0) {
+    return {
+      bubbles: [],
+      worldBookPatches: undefined,
+      worldBookEpilogueJudged: false,
+      observationNotesPatches: undefined,
+      observationNotesJudged: false,
+      lifeLedgerPatches: undefined,
+      lifeLedgerJudged: false,
+    }
+  }
   const { text: withoutMutualFriend, payload: mutualFriendFromRaw } = parseMutualFriendChainMarkers(t0)
   const { visible: noThinking, thinking } = extractThinkingBlock(withoutMutualFriend || t0)
-  const { rest: afterWbPatch, patches: worldBookPatches } = extractWorldBookAfterPatchBlock(noThinking)
-  const parts = splitRawByForwardHistory(afterWbPatch)
+  const {
+    rest: afterHeartWhisper,
+    privateFields: inlineHeartWhisperFields,
+    groupEntries: inlineGroupHeartWhisper,
+  } = extractInlineHeartWhisperBlock(noThinking)
+  const inlineHeartWhisper = inlineHeartWhisperFields
+    ? {
+        timestamp: formatHeartWhisperTimestamp(Date.now()),
+        location: inlineHeartWhisperFields.location,
+        action: inlineHeartWhisperFields.action,
+        outfit: inlineHeartWhisperFields.outfit,
+        innerThoughts: inlineHeartWhisperFields.innerThoughts,
+        userImpression: inlineHeartWhisperFields.userImpression,
+      }
+    : undefined
+  const {
+    rest: afterObsNotes,
+    patches: observationNotesPatches,
+    judged: observationNotesJudged,
+  } = extractObservationNotesPatchBlock(afterHeartWhisper)
+  const {
+    rest: afterWbPatch,
+    patches: worldBookPatches,
+    judged: worldBookEpilogueJudged,
+  } = extractWorldBookAfterPatchBlock(afterObsNotes)
+  const {
+    rest: afterLifeLedger,
+    patches: lifeLedgerPatches,
+    judged: lifeLedgerJudged,
+  } = extractLifeLedgerPatchBlock(afterWbPatch)
+  const parts = splitRawByForwardHistory(afterLifeLedger)
   const orderedSegments: WeChatPeerReplyOrderedSegment[] = []
   const bubbles: string[] = []
   const danmakuMerged: string[] = []
@@ -1357,7 +1557,20 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
   }
 
   if (!orderedSegments.length && !bubbles.length) {
-    return { bubbles: [], thinking, danmakuLines: danmakuMerged, worldBookPatches, orderedSegments }
+    return {
+      bubbles: [],
+      thinking,
+      danmakuLines: danmakuMerged,
+      worldBookPatches,
+      worldBookEpilogueJudged,
+      observationNotesPatches: observationNotesPatches.length ? observationNotesPatches : undefined,
+      observationNotesJudged,
+      lifeLedgerPatches: lifeLedgerPatches.length ? lifeLedgerPatches : undefined,
+      lifeLedgerJudged,
+      orderedSegments,
+      heartWhisper: inlineHeartWhisper,
+      groupHeartWhisperEntries: inlineGroupHeartWhisper ?? undefined,
+    }
   }
 
   const sanitizedBubbles = sanitizeCharacterMediaImageGenBubbles(bubbles)
@@ -1383,8 +1596,15 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
     thinking,
     danmakuLines: danmakuMerged,
     worldBookPatches,
+    worldBookEpilogueJudged,
+    observationNotesPatches: observationNotesPatches.length ? observationNotesPatches : undefined,
+    observationNotesJudged,
+    lifeLedgerPatches: lifeLedgerPatches.length ? lifeLedgerPatches : undefined,
+    lifeLedgerJudged,
     forwardHistory: forwardHistory ?? undefined,
     mutualFriendChain: mutualFriendFromRaw ?? mfStrip.payload,
+    heartWhisper: inlineHeartWhisper,
+    groupHeartWhisperEntries: inlineGroupHeartWhisper ?? undefined,
   }
 }
 
@@ -1455,6 +1675,9 @@ function buildWechatOutputProtocolAppendix(
   translationSyncEnabled?: boolean,
   translationLanguage?: string,
   translationDedicatedApi?: boolean,
+  innerOsSyncEnabled?: boolean,
+  heartWhisperSyncEnabled?: boolean,
+  heartWhisperKind: 'private' | 'group' = 'private',
 ): string {
   const toggles = getLoreArchiveBuiltinPresetTogglesSnapshot()
   const output = buildWechatReplyOutputAppendix(toggles)
@@ -1472,7 +1695,10 @@ function buildWechatOutputProtocolAppendix(
           dedicatedApi: translationDedicatedApi === true,
         })
       : ''
-  const withLang = [output, lang, syncTr].filter(Boolean).join('\n\n')
+  const syncOs = innerOsSyncEnabled === true ? buildWechatInnerOsSyncAppendix() : ''
+  const syncHw =
+    heartWhisperSyncEnabled === true ? buildWechatHeartWhisperInlineSyncAppendix(heartWhisperKind) : ''
+  const withLang = [output, lang, syncOs, syncTr, syncHw].filter(Boolean).join('\n\n')
   if (!includeThinkingChain) return withLang
   return `${withLang}\n\n${buildWechatThinkingChainAppendix(toggles)}`
 }
@@ -1506,6 +1732,10 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   translationLanguage?: string
   /** true：翻译副接口；false：聊天模型写 [译] */
   translationDedicatedApi?: boolean
+  /** 每条气泡同轮输出 `[内心OS]` */
+  innerOsSyncEnabled?: boolean
+  /** 每轮主回复末尾同轮产出心语 XML */
+  heartWhisperSyncEnabled?: boolean
 }): string {
   const profileBlock = params.characterWechatProfileBlock?.trim()
   const pinCatalog = params.characterMomentsPinCatalog?.trim()
@@ -1541,6 +1771,9 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
       translationDedicatedApi: params.translationDedicatedApi,
     },
   )
+  const syncOsBlock = params.innerOsSyncEnabled === true ? buildWechatInnerOsSyncAppendix() : ''
+  const syncHwBlock =
+    params.heartWhisperSyncEnabled === true ? buildWechatHeartWhisperInlineSyncAppendix('private') : ''
   const syncTrBlock =
     params.translationSyncEnabled === true
       ? buildWechatSyncTranslationAppendix(params.translationLanguage, {
@@ -1567,7 +1800,10 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
             : undefined,
         })
       : ''
-  const langAppend = [langBlock, syncTrBlock].filter(Boolean).map((s) => `\n\n${s}`).join('')
+  const langAppend = [langBlock, syncOsBlock, syncTrBlock, syncHwBlock]
+    .filter(Boolean)
+    .map((s) => `\n\n${s}`)
+    .join('')
   const profileStateBlock = profileBlock ? `\n\n${profileBlock}` : ''
   return appendWorldBookAfterPatchOutputRules(
     params.character,
@@ -1663,17 +1899,35 @@ async function callWeChatPeerReplyChat(
   },
 ): Promise<string> {
   const memUrls = (opts.memoryMomentImages ?? []).map((u) => u.trim()).filter(Boolean)
-  const selfParts = opts.characterSelfProfileVisionParts ?? []
-  const userAvatarUrl = opts.playerWechatAvatarUrl?.trim() || ''
+  const selfPartsRaw = opts.characterSelfProfileVisionParts ?? []
+  const userAvatarUrlRaw = opts.playerWechatAvatarUrl?.trim() || ''
+
+  const selfPartsResolved = (
+    await Promise.all(
+      selfPartsRaw.map(async (part) => {
+        const dataUrl = await resolveVisionImageUrlToDataUrl(part.url)
+        return dataUrl ? { ...part, url: dataUrl } : null
+      }),
+    )
+  ).filter((p): p is NonNullable<typeof p> => !!p)
+
+  const userAvatarUrl = userAvatarUrlRaw
+    ? (await resolveVisionImageUrlToDataUrl(userAvatarUrlRaw)) || ''
+    : ''
+
+  const memUrlsResolved = (
+    await Promise.all(memUrls.map((u) => resolveVisionImageUrlToDataUrl(u)))
+  ).filter((u): u is string => !!u)
+
   const visionBlocks: Array<{ message: Record<string, unknown> | null }> = []
-  if (selfParts.length) {
-    visionBlocks.push({ message: buildSelfProfileVisionUserMessage(selfParts) })
+  if (selfPartsResolved.length) {
+    visionBlocks.push({ message: buildSelfProfileVisionUserMessage(selfPartsResolved) })
   }
   if (userAvatarUrl) {
     visionBlocks.push({ message: buildUserChatAvatarVisionUserMessage(userAvatarUrl) })
   }
-  if (memUrls.length) {
-    visionBlocks.push({ message: buildMemoryMomentImagesUserMessage(memUrls) })
+  if (memUrlsResolved.length) {
+    visionBlocks.push({ message: buildMemoryMomentImagesUserMessage(memUrlsResolved) })
   }
 
   const chatOpts = {
@@ -1729,6 +1983,10 @@ export async function requestWeChatPeerReplyBubbles(params: {
   translationLanguage?: string
   /** true：API 设置「翻译」副接口开启；false：由聊天模型写 [译] */
   translationDedicatedApi?: boolean
+  /** 每条气泡同轮产出 `[内心OS]` */
+  innerOsSyncEnabled?: boolean
+  /** 每轮主回复末尾同轮产出心语 XML */
+  heartWhisperSyncEnabled?: boolean
   includeForwardHistoryCard?: boolean
   includePulseDmScreenshot?: boolean
   includeProfileImageChange?: boolean
@@ -1896,11 +2154,70 @@ export async function requestWeChatPeerReplyBubbles(params: {
           translationSyncEnabled: params.translationSyncEnabled === true,
           translationLanguage: params.translationLanguage,
           translationDedicatedApi: params.translationDedicatedApi === true,
+          innerOsSyncEnabled: params.innerOsSyncEnabled === true,
+          heartWhisperSyncEnabled: params.heartWhisperSyncEnabled === true,
           includeForwardHistoryCard: params.includeForwardHistoryCard === true,
           includePulseDmScreenshot: params.includePulseDmScreenshot === true,
           includeProfileImageChange: params.includeProfileImageChange === true,
           includeInternetMemeLexicon: params.includeInternetMemeLexicon === true,
         })
+  let earlyOutputAppendix = outputAppendix
+  if (
+    !params.friendRequestAdjudication &&
+    !isLumi &&
+    params.promptMode === 'persona' &&
+    params.character?.id &&
+    params.playerIdentity?.id
+  ) {
+    try {
+      const autoOn = await isObservationNotesAutoUpdateEnabled(
+        params.character.id,
+        params.playerIdentity.id,
+      )
+      if (autoOn) {
+        const [initialFill, needJudgement] = await Promise.all([
+          loadObservationNotesInitialFillFlag({
+            conversationCharacterId: params.character.id,
+            playerIdentityId: params.playerIdentity.id,
+          }).catch(() => true),
+          loadObservationNotes({
+            conversationCharacterId: params.character.id,
+            playerIdentityId: params.playerIdentity.id,
+            charDisplayName: 'TA',
+            seedIfEmpty: false,
+          })
+            .then((d) => (d ? needsObservationJudgementFill(d) : true))
+            .catch(() => true),
+        ])
+        earlyOutputAppendix = `${outputAppendix}\n\n${buildObservationNotesPatchOutputAppendix({
+          initialFill: initialFill || needJudgement,
+        })}`
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (
+    !params.friendRequestAdjudication &&
+    !isLumi &&
+    params.promptMode === 'persona' &&
+    params.character?.id &&
+    params.playerIdentity?.id
+  ) {
+    try {
+      const lifeOn = await isLifeLedgerInlineSyncEnabled(
+        params.character.id,
+        params.playerIdentity.id,
+      )
+      if (lifeOn) {
+        earlyOutputAppendix = `${earlyOutputAppendix}\n\n${buildLifeLedgerPatchOutputAppendix({
+          hasPlayerLine: true,
+        })}`
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   const base = await materializeSystemContent({
     character: params.character,
     playerIdentity: params.playerIdentity,
@@ -1933,7 +2250,7 @@ export async function requestWeChatPeerReplyBubbles(params: {
     worldBookPlayerIdentity: params.worldBookPlayerIdentity,
     worldBookUserLineLabel: params.worldBookUserLineLabel,
     sharedLinkPreviewBlock: params.sharedLinkPreviewBlock,
-    earlyOutputAppendix: outputAppendix,
+    earlyOutputAppendix: earlyOutputAppendix,
     mutualFriendChainNotes: params.mutualFriendChainNotes,
   })
   const memoryMomentImages = (params.longTermMemoryMomentImages ?? [])
@@ -1997,9 +2314,16 @@ export async function requestWeChatPeerReplyBubbles(params: {
     thinking: parsed.thinking,
     danmakuLines: parsed.danmakuLines,
     worldBookPatches: parsed.worldBookPatches,
+    worldBookEpilogueJudged: parsed.worldBookEpilogueJudged,
+    observationNotesPatches: parsed.observationNotesPatches,
+    observationNotesJudged: parsed.observationNotesJudged,
+    lifeLedgerPatches: parsed.lifeLedgerPatches,
+    lifeLedgerJudged: parsed.lifeLedgerJudged,
     forwardHistory: parsed.forwardHistory,
     rawText: text,
     mutualFriendChain: parsed.mutualFriendChain,
+    heartWhisper: parsed.heartWhisper,
+    groupHeartWhisperEntries: parsed.groupHeartWhisperEntries,
   }
 }
 
@@ -2259,6 +2583,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   translationSyncEnabled?: boolean
   translationLanguage?: string
   translationDedicatedApi?: boolean
+  innerOsSyncEnabled?: boolean
+  heartWhisperSyncEnabled?: boolean
   includeForwardHistoryCard?: boolean
   includePulseDmScreenshot?: boolean
   includeProfileImageChange?: boolean
@@ -2445,6 +2771,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
         translationSyncEnabled: params.translationSyncEnabled === true,
         translationLanguage: params.translationLanguage,
         translationDedicatedApi: params.translationDedicatedApi === true,
+        innerOsSyncEnabled: params.innerOsSyncEnabled === true,
+        heartWhisperSyncEnabled: params.heartWhisperSyncEnabled === true,
         includeForwardHistoryCard: params.includeForwardHistoryCard === true,
         includePulseDmScreenshot: params.includePulseDmScreenshot === true,
         includeProfileImageChange: params.includeProfileImageChange === true,
@@ -2515,8 +2843,15 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       thinking: p0.thinking,
       danmakuLines: p0.danmakuLines,
       worldBookPatches: p0.worldBookPatches,
+      worldBookEpilogueJudged: p0.worldBookEpilogueJudged,
+      observationNotesPatches: p0.observationNotesPatches,
+      observationNotesJudged: p0.observationNotesJudged,
+      lifeLedgerPatches: p0.lifeLedgerPatches,
+      lifeLedgerJudged: p0.lifeLedgerJudged,
       forwardHistory: p0.forwardHistory,
       mutualFriendChain: p0.mutualFriendChain,
+      heartWhisper: p0.heartWhisper,
+      groupHeartWhisperEntries: p0.groupHeartWhisperEntries,
     }
   } catch {
     logConsole(
@@ -2540,8 +2875,15 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
         thinking: p1.thinking,
         danmakuLines: p1.danmakuLines,
         worldBookPatches: p1.worldBookPatches,
+        worldBookEpilogueJudged: p1.worldBookEpilogueJudged,
+        observationNotesPatches: p1.observationNotesPatches,
+        observationNotesJudged: p1.observationNotesJudged,
+        lifeLedgerPatches: p1.lifeLedgerPatches,
+        lifeLedgerJudged: p1.lifeLedgerJudged,
         forwardHistory: p1.forwardHistory,
         mutualFriendChain: p1.mutualFriendChain,
+        heartWhisper: p1.heartWhisper,
+        groupHeartWhisperEntries: p1.groupHeartWhisperEntries,
       }
     }
     try {
@@ -2611,8 +2953,15 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       thinking: p2.thinking,
       danmakuLines: p2.danmakuLines,
       worldBookPatches: p2.worldBookPatches,
+      worldBookEpilogueJudged: p2.worldBookEpilogueJudged,
+      observationNotesPatches: p2.observationNotesPatches,
+      observationNotesJudged: p2.observationNotesJudged,
+      lifeLedgerPatches: p2.lifeLedgerPatches,
+      lifeLedgerJudged: p2.lifeLedgerJudged,
       forwardHistory: p2.forwardHistory,
       mutualFriendChain: p2.mutualFriendChain,
+      heartWhisper: p2.heartWhisper,
+      groupHeartWhisperEntries: p2.groupHeartWhisperEntries,
     }
   }
 }
@@ -2777,7 +3126,7 @@ function normalizeGroupImpressionOnUser(raw: string, userAliases: string[]): str
   return s.trim()
 }
 
-function mergeGroupPsycheArchive(
+export function mergeGroupPsycheArchive(
   roster: { charId: string; name: string; avatarUrl: string; npcPronoun: '他' | '她' }[],
   entries: GroupPsycheModelEntry[],
   nowMs: number,
@@ -3434,6 +3783,8 @@ export async function requestSimpleOnlineMemorySummary(params: {
   meetTranscript?: ChatTranscriptTurn[]
   peerFallback?: string
   peerCharacterId?: string
+  /** 角色时间设置/剧情轴「现在」；摘要剧情日须用此时点 */
+  storyNowLabel?: string | null
 }): Promise<MemoryAutoSummaryAttempt> {
   const cfg = params.apiConfig
   if (!cfg?.apiUrl?.trim() || !cfg.apiKey?.trim() || !cfg.modelId?.trim()) {
@@ -3446,6 +3797,17 @@ export async function requestSimpleOnlineMemorySummary(params: {
       ? formatUnifiedMemoryOnlineBlock(params.meetTranscript, peer)
       : ''
   const genderAppendix = await buildMemorySummaryPeerGenderAppendix(params.peerCharacterId)
+  let nowLabel = String(params.storyNowLabel ?? '').trim()
+  if (!nowLabel && params.peerCharacterId?.trim()) {
+    try {
+      nowLabel = (await resolveCharacterCurrentStoryStamp(params.peerCharacterId)).storyTimeLabel?.trim() || ''
+    } catch {
+      nowLabel = ''
+    }
+  }
+  const nowLine = nowLabel
+    ? `【剧情现在】当前故事时间为 **${nowLabel}**。摘要若写日期必须用这一天，**禁止**写成更晚的公历日（含材料里旧消息戳/线下末条若已超前）。\n\n`
+    : ''
   const materialParts = [
     `【微信私聊摘录（未总结）】\n${onlineBlock}`,
     meetBlock ? `【遇见会话摘录（未总结）】\n${meetBlock}` : '',
@@ -3455,6 +3817,7 @@ export async function requestSimpleOnlineMemorySummary(params: {
     {
       role: 'user',
       content:
+        `${nowLine}` +
         `以下是尚未总结的线上聊天材料，请**仅**基于下列内容输出三行结构（【摘要标题】【摘要关键词】【摘要正文】）：\n\n` +
         `${materialParts.join('\n\n')}\n\n` +
         `【指称】摘录标签「我」=玩家、「对方」= {{char}}；正文须第三人称：玩家只许 {{user}}，对方只许 {{char}}，禁止第一人称「我」及真名/昵称汉字。${genderAppendix}`,
@@ -4615,6 +4978,10 @@ export type WeChatGroupMultiSpeakerResult = {
   thinking?: string
   danmakuLines?: string[]
   worldBookPatches?: WorldBookAfterPatch[]
+  /** 主回复已输出合法尾声判断 JSON（含 patches=[]） */
+  worldBookEpilogueJudged?: boolean
+  /** 同轮主回复末尾剥离的群心语条目 */
+  groupHeartWhisperEntries?: GroupHeartWhisperEntry[]
 }
 
 export function buildWeChatGroupMultiSpeakerSystem(params: {
@@ -4651,6 +5018,8 @@ export function buildWeChatGroupMultiSpeakerSystem(params: {
   translationSyncEnabled?: boolean
   translationLanguage?: string
   translationDedicatedApi?: boolean
+  innerOsSyncEnabled?: boolean
+  heartWhisperSyncEnabled?: boolean
 }): string {
   const isLumi = params.promptMode === 'lumi-assistant'
   const archiveInject = resolveWorldbookLoreInjection({
@@ -4733,6 +5102,9 @@ export function buildWeChatGroupMultiSpeakerSystem(params: {
         params.translationSyncEnabled === true,
         params.translationLanguage,
         params.translationDedicatedApi === true,
+        params.innerOsSyncEnabled === true,
+        params.heartWhisperSyncEnabled === true,
+        'group',
       )
 
   if (isLumi) {
@@ -4838,10 +5210,28 @@ export function parseWeChatGroupMultiSpeakerModelText(
 ): WeChatGroupMultiSpeakerResult {
   const t0 = stripAssistantFence(raw)
   const { visible: noThinking, thinking } = extractThinkingBlock(t0)
-  const { rest: afterWbPatch, patches: wbPatches } = extractWorldBookAfterPatchBlock(noThinking)
+  const {
+    rest: afterHeartWhisper,
+    groupEntries: inlineGroupHeartWhisper,
+  } = extractInlineHeartWhisperBlock(noThinking)
+  const {
+    rest: afterWbPatch,
+    patches: wbPatches,
+    judged: worldBookEpilogueJudged,
+  } = extractWorldBookAfterPatchBlock(afterHeartWhisper)
   const { visible, danmakuLines } = extractDanmakuBlock(afterWbPatch)
   const normalized = visible.replace(/\\n/g, '\n').trim()
-  if (!normalized) return { orderedItems: [], segments: [], thinking, danmakuLines, worldBookPatches: wbPatches }
+  if (!normalized) {
+    return {
+      orderedItems: [],
+      segments: [],
+      thinking,
+      danmakuLines,
+      worldBookPatches: wbPatches,
+      worldBookEpilogueJudged,
+      groupHeartWhisperEntries: inlineGroupHeartWhisper ?? undefined,
+    }
+  }
 
   const lines = normalized
     .split(/\r?\n/)
@@ -4972,7 +5362,15 @@ export function parseWeChatGroupMultiSpeakerModelText(
   const hasMeta = orderedItems.some((x) => x.kind === 'meta')
   if (!segments.length) {
     if (hasMeta) {
-      return { orderedItems, segments: [], thinking, danmakuLines, worldBookPatches: wbPatches }
+      return {
+        orderedItems,
+        segments: [],
+        thinking,
+        danmakuLines,
+        worldBookPatches: wbPatches,
+        worldBookEpilogueJudged,
+        groupHeartWhisperEntries: inlineGroupHeartWhisper ?? undefined,
+      }
     }
     const plain = parseWeChatPeerReplyWithThinking(normalized)
     const id = fallbackId
@@ -4996,12 +5394,22 @@ export function parseWeChatGroupMultiSpeakerModelText(
       thinking: plain.thinking ?? thinking,
       danmakuLines: plain.danmakuLines?.length ? plain.danmakuLines : danmakuLines,
       worldBookPatches: wbPatches,
+      worldBookEpilogueJudged: worldBookEpilogueJudged || plain.worldBookEpilogueJudged === true,
+      groupHeartWhisperEntries: inlineGroupHeartWhisper ?? plain.groupHeartWhisperEntries,
     }
   }
 
   const dbgBubbles = orderedItems.filter((x) => x.kind === 'bubble').map((x) => `<<SPEAKER:${x.characterId}>>${x.text}`)
   logWeChatAiReplyDebug('group-multi', normalized, dbgBubbles)
-  return { orderedItems, segments, thinking, danmakuLines, worldBookPatches: wbPatches }
+  return {
+    orderedItems,
+    segments,
+    thinking,
+    danmakuLines,
+    worldBookPatches: wbPatches,
+    worldBookEpilogueJudged,
+    groupHeartWhisperEntries: inlineGroupHeartWhisper ?? undefined,
+  }
 }
 
 export async function requestWeChatGroupMultiSpeakerReplyBubbles(params: {

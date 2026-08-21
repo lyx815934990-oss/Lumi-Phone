@@ -30,10 +30,95 @@ function hasPersonSubject(prompt: string): boolean {
 }
 
 const ANIME_FACE_SUFFIX =
-  'beautiful anime face, detailed expressive eyes, delicate facial features, well-proportioned face, attractive, clean linework, NOT ugly, NOT deformed face, NOT bad anatomy'
+  [
+    'beautiful anime face',
+    'sharp defined jawline, high cheekbones, slim face',
+    'natural straight brows partly covered by bangs',
+    'heavy-lidded hooded eyes with thin double eyelids, almond-shaped, slightly downturned outer corners, deep-set',
+    'dark irises, half-lidded sultry gaze looking straight into the camera',
+    'calm slightly indifferent melancholic expression, soft catchlights, bedroom-eyes sexual tension without smiling big',
+    'high straight nose bridge, refined tip',
+    'relaxed lips, soft pout, closed mouth',
+    'attractive, clean linework',
+    'NOT ugly, NOT deformed face, NOT bad anatomy, NOT glass-skin, NOT k-pop idol polish',
+  ].join(', ')
 
+/** 写实默认五官：对齐「冷淡半阖眼 + 自然肤质 + 性张力」自拍效果（非韩系爱豆抛光） */
 const REALISTIC_FACE_SUFFIX =
-  'beautiful face, detailed facial features, symmetrical face, clear eyes, natural skin texture, attractive, NOT ugly, NOT deformed face, NOT bad anatomy'
+  [
+    'beautiful face',
+    'sharp defined jawline, high cheekbones, slim face',
+    'cool pale skin with natural texture, not glass-skin, not K-pop idol polish',
+    'natural straight brows partly covered by bangs',
+    'eyes are the focus: heavy-lidded hooded eyes with thin double eyelids, almond-shaped, slightly downturned outer corners, deep-set',
+    'dark brown irises, half-lidded sultry gaze looking straight into the camera',
+    'calm, slightly indifferent and melancholic, soft catchlights, bedroom-eyes sexual tension without smiling big',
+    'high straight nose bridge, refined narrow tip',
+    'relaxed lips, soft pout, closed mouth',
+    'intimate close facial framing when face is visible',
+    'attractive, soft desaturated cinematic light on face',
+    'NOT ugly, NOT deformed face, NOT bad anatomy, NOT plastic skin, NOT korean drama idol face',
+  ].join(', ')
+
+/**
+ * 去掉会把脸拉成「温柔爱豆 / 清澈双眼 / 浅笑」的冲突 tag，避免盖过默认五官后缀。
+ * 仅在即将注入 REALISTIC/ANIME_FACE_SUFFIX 时调用。
+ */
+function neutralizeSoftIdolFaceConflictTags(prompt: string): string {
+  let s = prompt
+  const drop: RegExp[] = [
+    /\bslight\s+gentle\s+smile\b/gi,
+    /\bgentle\s+smile\b/gi,
+    /\bsoft\s+smile\b/gi,
+    /\bwarm\s+smile\b/gi,
+    /\bboyfriend[\s-]?material\b/gi,
+    /\bbright\s+smile\b/gi,
+    /\bbig\s+smile\b/gi,
+    /\bsmiling\s+(?:softly|gently|warmly)\b/gi,
+    /\bclear\s+dark\s+eyes\b/gi,
+    /\bbright\s+(?:clear\s+)?eyes\b/gi,
+    /\blarge\s+(?:sparkling\s+)?eyes\b/gi,
+    /\binnocent\s+(?:eyes|look|gaze)\b/gi,
+    /\bcute\s+(?:smile|gaze|look)\b/gi,
+    /\bglass[\s-]?skin\b/gi,
+    /\bk-?pop\s+idol\b/gi,
+    /\bhandsome\s+nose\b/gi,
+    /\bstraight\s+handsome\s+nose\b/gi,
+  ]
+  for (const re of drop) s = s.replace(re, '')
+  // 非标准性别 tag → 标准 danbooru 位
+  s = s.replace(/\b1man\b/gi, '1boy')
+  // 空壳「smile」若无 bedroom/pout 语境则弱化成 closed mouth（避免默认浅笑）
+  if (!/\b(?:bedroom[- ]eyes|half[- ]lidded|soft pout|closed mouth|without smiling)\b/i.test(s)) {
+    s = s.replace(/\bslight\s+smile\b/gi, 'closed mouth soft pout')
+    s = s.replace(/\bsmile\b/gi, 'closed mouth')
+  }
+  return s
+    .replace(/\s+/g, ' ')
+    .replace(/,\s*,+/g, ',')
+    .replace(/^,\s*|\s*,$/g, '')
+    .trim()
+}
+
+/** 「十分帅气的男生」——仅男生主体露脸时前置 */
+const EXTREMELY_HANDSOME_YOUNG_MAN_PREFIX =
+  'extremely handsome young man, strikingly good-looking, very attractive male face, sharp masculine features'
+
+function looksLikeMaleSubjectPrompt(prompt: string): boolean {
+  const p = prompt.trim()
+  if (!p) return false
+  if (/\b(?:1girl|2girls?|young woman|1woman)\b/i.test(p)) return false
+  return /\b(?:1boy|1man|young man|handsome (?:young )?man|male)\b/i.test(p)
+}
+
+function shouldAppendDefaultFaceAesthetic(prompt: string, hasReference: boolean): boolean {
+  if (!isCharacterMediaCharacterFaceVisiblePrompt(prompt)) return false
+  if (isCharacterMediaHandsOnlyNoFaceComposition(prompt)) return false
+  if (isCharacterMediaSoloBodyPartCloseupPrompt(prompt)) return false
+  // 有强参考图时仍补表情/眼型审美，避免参考图表情偏「浅笑爱豆」时整脸塌成温柔风
+  void hasReference
+  return true
+}
 
 const ANIME_ANTI_REALISTIC =
   'NOT photorealistic, NOT realistic photo, NOT DSLR, NOT 3d render, NOT hyperrealistic'
@@ -493,7 +578,7 @@ function appendCharacterMediaHandAestheticGuard(
   parts.push(HAND_AESTHETIC_GUARD)
 }
 
-/** 角色私聊/群聊/朋友圈：仅拼接风格前缀 + 模型/用户 tag；不再自动注入 POV/机位/手机镜头后缀 */
+/** 角色私聊/群聊/朋友圈：风格前缀 + 模型/用户 tag；露脸时注入默认五官审美并压制温柔爱豆冲突词 */
 export function buildCharacterMediaImagePrompt(
   prompt: string,
   settings: MomentsImageGenSettings,
@@ -511,16 +596,36 @@ export function buildCharacterMediaImagePrompt(
   const hasReference = options?.hasReferenceImage === true
   const useReferenceStyle = isReferenceMatchStyle(settings, hasReference)
   const stylePrefix = useReferenceStyle ? '' : resolveStylePrefix(settings)
-  const withStyle = stylePrefix ? `${stylePrefix}${trimmed}`.trim() : trimmed
-  const anime = !useReferenceStyle && isAnimeStyle(settings, withStyle)
+  const anime = !useReferenceStyle && isAnimeStyle(settings, stylePrefix ? `${stylePrefix}${trimmed}` : trimmed)
 
-  const parts = [withStyle]
+  const appendFace = shouldAppendDefaultFaceAesthetic(inferFrom, hasReference)
+  const sceneBody = appendFace ? neutralizeSoftIdolFaceConflictTags(trimmed) : trimmed
+  const withStyle = stylePrefix ? `${stylePrefix}${sceneBody}`.trim() : sceneBody
+
+  const parts: string[] = []
+  // 男生露脸：前置「十分帅气」
+  if (
+    appendFace &&
+    looksLikeMaleSubjectPrompt(`${inferFrom} ${sceneBody}`) &&
+    !/extremely handsome young man/i.test(withStyle)
+  ) {
+    parts.push(EXTREMELY_HANDSOME_YOUNG_MAN_PREFIX)
+  }
+  parts.push(withStyle)
   appendCharacterMediaReferenceStyleParts(parts, useReferenceStyle, hasReference, inferFrom)
   appendCharacterMediaDualIntimateCompositionGuard(parts, inferFrom)
   appendCharacterMediaSoloBodyPartCompositionGuard(parts, inferFrom)
   appendCharacterMediaHandAestheticGuard(parts, inferFrom, options?.appearanceText)
   if (!useReferenceStyle && anime && !/not photorealistic/i.test(withStyle)) {
     parts.push(ANIME_ANTI_REALISTIC)
+  }
+  if (appendFace) {
+    const blob = parts.join(', ')
+    const faceSuffix = anime ? ANIME_FACE_SUFFIX : REALISTIC_FACE_SUFFIX
+    // 避免重复堆叠（重新生成 / 用户已手写同款）
+    if (!/bedroom-eyes sexual tension|heavy-lidded hooded eyes/i.test(blob)) {
+      parts.push(faceSuffix)
+    }
   }
   return parts.join(', ')
 }
@@ -557,6 +662,12 @@ export function buildDatingPlotImagePrompt(
       parts.push(ANIME_ANTI_REALISTIC)
     }
     if (!hasReference && /脸|面部|眼神|唇|五官|face|eyes|lips|reference character|1boy|1girl/i.test(trimmed)) {
+      if (
+        looksLikeMaleSubjectPrompt(trimmed) &&
+        !/extremely handsome young man/i.test(parts.join(', '))
+      ) {
+        parts.push(EXTREMELY_HANDSOME_YOUNG_MAN_PREFIX)
+      }
       parts.push(anime ? ANIME_FACE_SUFFIX : REALISTIC_FACE_SUFFIX)
     }
   }
@@ -610,6 +721,12 @@ export function enhanceMomentsImagePrompt(
   }
 
   if (hasPersonSubject(trimmed)) {
+    if (
+      looksLikeMaleSubjectPrompt(trimmed) &&
+      !/extremely handsome young man/i.test(trimmed)
+    ) {
+      parts.push(EXTREMELY_HANDSOME_YOUNG_MAN_PREFIX)
+    }
     parts.push(anime ? ANIME_FACE_SUFFIX : REALISTIC_FACE_SUFFIX)
   }
 

@@ -7,7 +7,7 @@ import {
   collectWorldBookAfterRevertSnapshot,
   hasChatAfterWorldBookItems,
   listChatAfterWorldBookItems,
-  parseWorldBookAfterPatchJson,
+  parseWorldBookAfterPatchBody,
   WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT,
   type WorldBookAfterPatch,
 } from './worldBookAfterPatch'
@@ -32,12 +32,6 @@ const RECENT_TRANSCRIPT_MAX_CHARS = 6000
 const LATEST_REPLY_MAX_CHARS = 2500
 const SUMMARY_CONTEXT_MAX_CHARS = 10000
 const PER_ROUND_BODY_MAX_CHARS = 4500
-
-function stripJsonFence(raw: string): string {
-  const t = raw.trim()
-  const m = t.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  return m ? m[1].trim() : t
-}
 
 function formatEpilogueRowsForPrompt(characters: Character[]): string {
   const blocks: string[] = []
@@ -66,25 +60,27 @@ function buildWorldBookAfterSyncSystemPrompt(): string {
 - **应更新**：条目仍写「冷漠/疏离/持续损人」但近几轮已明显缓和，或双方已确认恋人而条目仍是恋爱前高冷模板；称呼、边界、内心分量出现**可核对**的渐变或跃迁；关系阶段（同事→暧昧→恋人等）有实质推进。
 - **已确认恋人**：条目须反映在意/心软（可保留嘴硬），禁止长期快照仍写「对用户只会嘲讽、无温柔」。
 - **勿更新**：单轮嘴硬/玩笑/情绪波动，尚不足以改写长期快照；与当前条目仍兼容的细微语气变化。
-- **勿凑数**：无实质变化则 patches 为 []。
+- **勿凑数**：无实质变化则输出无变化标记。
 - **勿极端化**：禁止把普通亲近/查岗玩笑写成宿命、绝对排他、交手机示弱、日常顺从等偏执献身稿；{{char}} 须保持独立个体。
 - 优先更新「对 {{user}} 的当前态度」；其它条目仅在材料中有明确对应事实时更新。
-- newContent 须仍为第三人称档案体「尾声延展」语义；指角色本人用 {{char}}，指玩家用 {{user}}；禁止第一人称台词。
-- 仅可修改上文已列出的 worldBookId/itemId；禁止编造 id。
+- new_content 须仍为第三人称档案体「尾声延展」语义；指角色本人用 {{char}}，指玩家用 {{user}}；禁止第一人称台词。
+- 仅可修改上文已列出的 world_book_id/item_id；禁止编造 id。
 
 ${buildEpilogueExtensionArchiveToneRules()}
 
-【输出】只输出一个 JSON 对象，禁止 markdown 围栏与解释：
-{
-  "patches": [
-    {
-      "characterId": "人设UUID（多角色时必填；单角色可省略）",
-      "worldBookId": "世界书 id",
-      "itemId": "条目 id",
-      "newContent": "替换后的条目正文全文"
-    }
-  ]
-}
+【输出】禁止 JSON、禁止代码围栏、禁止解释。只输出下列 markup 之一：
+
+无变化：
+[EPILOGUE]
+status：无变化
+
+有变化（可重复多个）：
+[EPILOGUE_PATCH]
+character_id：（多角色时必填；单角色可省略）
+world_book_id：
+item_id：
+new_content：
+（替换后的条目正文全文）
 `.trim()
 }
 
@@ -97,25 +93,27 @@ function buildWorldBookAfterPerRoundSystemPrompt(): string {
 - **应更新**：条目仍写「冷漠/疏离/持续损人」但本轮已明显缓和或双方已确认恋人；称呼、边界、内心分量出现**可核对**的渐变或跃迁；关系阶段有实质推进（含好感→暧昧→**已确认恋人**）。
 - **已确认恋人却仍写恋爱前高冷毒舌模板**：若本轮/近况已明确在一起，而条目仍只写「对用户冷淡嘲讽、无心软」→ **必须更新**为恋人向态度（可保留嘴硬底色，但须写入在意/心软/会哄或会接住）。
 - **勿更新**：单轮嘴硬/玩笑/情绪波动，尚不足以改写长期快照；与当前条目仍兼容的细微语气变化。
-- **勿凑数**：无实质变化则 patches 为 []。
+- **勿凑数**：无实质变化则输出无变化标记。
 - **勿极端化**：禁止把普通亲近/查岗玩笑写成宿命、绝对排他、交手机示弱、日常顺从等偏执献身稿；{{char}} 须保持独立个体。
 - 勿根据「以往可能发生过」臆造；仅依据用户给出的本轮正文。
-- newContent 须仍为第三人称档案体「尾声延展」语义；指角色本人用 {{char}}，指玩家用 {{user}}；禁止第一人称台词。
-- 仅可修改上文已列出的 worldBookId/itemId；禁止编造 id。
+- new_content 须仍为第三人称档案体「尾声延展」语义；指角色本人用 {{char}}，指玩家用 {{user}}；禁止第一人称台词。
+- 仅可修改上文已列出的 world_book_id/item_id；禁止编造 id。
 
 ${buildEpilogueExtensionArchiveToneRules()}
 
-【输出】只输出一个 JSON 对象，禁止 markdown 围栏与解释：
-{
-  "patches": [
-    {
-      "characterId": "人设UUID（可省略）",
-      "worldBookId": "世界书 id",
-      "itemId": "条目 id",
-      "newContent": "替换后的条目正文全文"
-    }
-  ]
-}
+【输出】禁止 JSON、禁止代码围栏、禁止解释。只输出下列 markup 之一：
+
+无变化：
+[EPILOGUE]
+status：无变化
+
+有变化（可重复多个）：
+[EPILOGUE_PATCH]
+character_id：（可省略）
+world_book_id：
+item_id：
+new_content：
+（替换后的条目正文全文）
 `.trim()
 }
 
@@ -164,7 +162,7 @@ export async function requestWorldBookAfterPerRoundPatches(params: {
         })
       : '',
     '',
-    '请仅根据本轮正文判断尾声延展是否需要更新；无变化则 patches=[]。',
+    '请仅根据本轮正文判断尾声延展是否需要更新；无变化则输出 [EPILOGUE] / status：无变化。',
   ]
     .filter(Boolean)
     .join('\n')
@@ -177,12 +175,7 @@ export async function requestWorldBookAfterPerRoundPatches(params: {
     throw new Error('尾声判断模型返回为空')
   }
 
-  let jsonBody = stripJsonFence(raw)
-  const start = jsonBody.indexOf('{')
-  const end = jsonBody.lastIndexOf('}')
-  if (start >= 0 && end > start) jsonBody = jsonBody.slice(start, end + 1)
-
-  let patches = parseWorldBookAfterPatchJson(jsonBody)
+  let patches = parseWorldBookAfterPatchBody(raw).patches
   if (params.datingContext && patches.length) {
     patches = filterDatingWorldBookAfterPatches(patches, ch, {
       historyPlotCount: params.datingContext.historyPlotCount ?? 0,
@@ -231,8 +224,9 @@ function maybeNotifyOfflineEpilogueNoChange(
 }
 
 /**
- * 每轮 AI 落库后：若主回复未 inline 补丁、尾段 JSON 未带 epilogue_patches，则额外请求一次尾声判断。
- * 模型返回 patches=[] 时为 no_change（线下约会会 toast 提示「无需更新」）。
+ * 每轮 AI 落库后：若主回复未完成尾声判断（无合法 ---WB_AFTER_PATCH--- markup）、
+ * 且未 inline 写库、尾段 JSON 未带 epilogue_patches，则额外请求一次尾声判断。
+ * 模型主回复已输出「无变化」或合法 [EPILOGUE_PATCH] 时视为已判断，不再二次请求。
  */
 export async function finalizeWorldBookAfterPerAiRound(params: {
   apiConfig: ApiConfig | null
@@ -241,6 +235,11 @@ export async function finalizeWorldBookAfterPerAiRound(params: {
   displayName?: string
   /** 主聊天回复内联 worldBookPatches 已成功写库 */
   inlinePatchApplied?: boolean
+  /**
+   * 主回复已输出合法 ---WB_AFTER_PATCH--- 标记（含「无变化」）。
+   * 为 true 时跳过二次尾声请求。
+   */
+  inlineEpilogueJudged?: boolean
   /** 尾段 memory JSON 内 epilogue_patches 已应用条数 */
   epiloguePatchesApplied?: number
   /** 手动触发时不检查每轮开关 */
@@ -267,6 +266,9 @@ export async function finalizeWorldBookAfterPerAiRound(params: {
   }
   if (params.inlinePatchApplied) {
     return { status: 'skipped', reason: '本轮已 inline 写库' }
+  }
+  if (params.inlineEpilogueJudged) {
+    return { status: 'skipped', reason: '主回复已完成尾声判断' }
   }
   if ((params.epiloguePatchesApplied ?? 0) > 0) {
     return { status: 'skipped', reason: '尾段 JSON 已写库' }
@@ -390,7 +392,7 @@ export async function requestWorldBookAfterSyncPatches(params: {
   if (summaryBlock) {
     userParts.push('', '【自动总结材料（线上/线下/人脉）】', summaryBlock)
   }
-  userParts.push('', '请输出 JSON（无变化则 patches=[]）。')
+  userParts.push('', '请输出 markup（无变化则 [EPILOGUE] / status：无变化；禁止 JSON）。')
 
   const raw = await openAiCompatibleChat(cfg, [
     { role: 'system', content: buildWorldBookAfterSyncSystemPrompt() },
@@ -398,12 +400,7 @@ export async function requestWorldBookAfterSyncPatches(params: {
   ])
   if (!raw.trim()) return []
 
-  let jsonBody = stripJsonFence(raw)
-  const start = jsonBody.indexOf('{')
-  const end = jsonBody.lastIndexOf('}')
-  if (start >= 0 && end > start) jsonBody = jsonBody.slice(start, end + 1)
-
-  return parseWorldBookAfterPatchJson(jsonBody)
+  return parseWorldBookAfterPatchBody(raw).patches
 }
 
 /** 将补丁写入人设库；并采集写库前快照供删除/重生成回滚 */

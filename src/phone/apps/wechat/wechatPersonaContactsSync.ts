@@ -42,7 +42,7 @@ function normalizeWeChatPersonaContacts(v: unknown): WeChatPersonaContact[] {
   return out
 }
 
-/** 按 characterId 合并通讯录；后出现的条目可补全头像/星标/备注。 */
+/** 按 characterId 合并通讯录；后出现的条目覆盖备注（不按字数长短，避免短备注被昵称盖掉）。 */
 export function mergeWeChatPersonaContacts(
   primary: readonly WeChatPersonaContact[],
   ...extras: readonly (readonly WeChatPersonaContact[])[]
@@ -57,13 +57,14 @@ export function mergeWeChatPersonaContacts(
         byChar.set(cid, { ...c, characterId: cid })
         continue
       }
-      const pick =
-        (!prev.avatarUrl && c.avatarUrl) ||
-        (c.isStarred && !prev.isStarred) ||
-        c.remarkName.length > prev.remarkName.length
-          ? { ...prev, ...c, characterId: cid }
-          : { ...c, ...prev, characterId: cid }
-      byChar.set(cid, pick)
+      byChar.set(cid, {
+        ...prev,
+        ...c,
+        characterId: cid,
+        remarkName: (c.remarkName.trim() || prev.remarkName).slice(0, 64),
+        avatarUrl: c.avatarUrl?.trim() || prev.avatarUrl,
+        isStarred: Boolean(c.isStarred || prev.isStarred),
+      })
     }
   }
   ingest(primary)
@@ -128,7 +129,21 @@ export function bundleWithAccountPersonaContacts(
 }
 
 export function defaultPersonaContactRemarkFromCharacter(ch: Character): string {
-  return (ch.remark?.trim() || ch.wechatNickname?.trim() || ch.name || '未命名').slice(0, 64)
+  return resolveWeChatContactListDisplayName(ch)
+}
+
+/** 信息页 / 通讯录展示名：联系人备注 > 通讯录缓存名 > 微信昵称 > 姓名 */
+export function resolveWeChatContactListDisplayName(
+  ch: Pick<Character, 'remark' | 'wechatNickname' | 'name'> | null | undefined,
+  contactRemarkName?: string | null,
+): string {
+  return (
+    ch?.remark?.trim() ||
+    contactRemarkName?.trim() ||
+    ch?.wechatNickname?.trim() ||
+    ch?.name?.trim() ||
+    '未命名'
+  ).slice(0, 64)
 }
 
 export function contactEntryFromCharacter(

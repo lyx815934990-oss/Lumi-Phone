@@ -9,9 +9,9 @@ export type DatingPlotRetentionItem = {
 
 /**
  * 最近上下文参考：最近若干 **AI 回复轮**（不含用户单独计轮；窗口内保留其间用户输入）。
- * 与「游标上下文（待总结）」分离，仅后台注入模型，不进思维溯源。
+ * 与「游标上下文（待总结）」按消息 id 并集去重后注入；思维溯源⑤会展示去重后的线上近端。
  */
-export const MEMORY_RECENT_AI_ROUNDS_REFERENCE = 6
+export const MEMORY_RECENT_AI_ROUNDS_REFERENCE = 10
 
 /** 线上私聊固定注入「最近线下剧情」：最近 N 轮 AI 剧情原文（含其间玩家输入；不依赖总结游标）。 */
 export const MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS = 2

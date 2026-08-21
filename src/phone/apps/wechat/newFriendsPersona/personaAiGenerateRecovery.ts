@@ -10,12 +10,14 @@ import {
   buildPersonaAiRelationContextRules,
   PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS,
   buildPersonaAiCompactEntryLengthRules,
+  buildPersonaAiBioRules,
 } from './personaAiGeneratePrompt'
 import {
   composePersonaAiIdentityArcSeed,
   type PersonaAiGenerateForm,
 } from './personaAiGenerateTypes'
 import type { Character, Gender, PlayerIdentity } from './types'
+import type { LifeMutableSheet } from '../lifeMutable/types'
 import {
   PERSONA_AI_COMPACT_BOOK_TITLE,
   PERSONA_AI_COMPACT_ENTRY_NAMES,
@@ -74,10 +76,10 @@ const TOP_ISSUE_ID_TO_KEY: Record<string, string> = {
 export function buildPersonaAiRepairAllowlist(issues: PersonaAiGenerateIssue[]): PersonaAiRepairAllowlist {
   const topKeys = new Set<string>()
   const wbNames = new Set<string>()
-  let allowBroadMerge = false
+  let hasParse = false
   for (const i of issues) {
     if (i.kind === 'parse') {
-      allowBroadMerge = true
+      hasParse = true
       continue
     }
     if (i.id.startsWith('wb-') || i.id.startsWith('ep-')) {
@@ -89,6 +91,8 @@ export function buildPersonaAiRepairAllowlist(issues: PersonaAiGenerateIssue[]):
     if (mapped) topKeys.add(mapped)
     else if (i.id.startsWith('top-')) topKeys.add(i.id.slice(4))
   }
+  // 已有明确缺失/过短字段时只按白名单增量合并；宽合并仅留给「只有截断/解析、没有具体条目」的抢救
+  const allowBroadMerge = hasParse && topKeys.size === 0 && wbNames.size === 0
   return { topKeys, wbNames, allowBroadMerge }
 }
 
@@ -98,14 +102,16 @@ export function pickPersonaAiRepairIssues(
   mode: 'complete' | 'fix',
 ): PersonaAiGenerateIssue[] {
   if (mode === 'complete') {
-    return issues.filter(
-      (i) =>
-        i.kind === 'missing_epilogue' ||
-        i.kind === 'missing_top_field' ||
-        i.kind === 'parse',
+    const missing = issues.filter(
+      (i) => i.kind === 'missing_epilogue' || i.kind === 'missing_top_field',
     )
+    // 已有具体缺失项时不要把「截断」带进补全名单（否则宽合并/提示像整卷重生成）
+    if (missing.length > 0) return missing
+    return issues.filter((i) => i.kind === 'parse')
   }
-  return issues.filter((i) => i.kind === 'placeholder_field' || i.kind === 'parse')
+  const weak = issues.filter((i) => i.kind === 'placeholder_field')
+  if (weak.length > 0) return weak
+  return issues.filter((i) => i.kind === 'parse')
 }
 
 export type PersonaAiGenerateResult = {
@@ -114,6 +120,12 @@ export type PersonaAiGenerateResult = {
   rawText: string
   parsedSnapshot: Record<string, unknown>
   parseRecovered: boolean
+  /** 开局人生账本·角色本线（二次请求生成；可选） */
+  characterLifeSheet?: LifeMutableSheet
+  /** 开局人生账本·玩家本角色线（有绑定身份时） */
+  playerLifeSheet?: LifeMutableSheet | null
+  /** 二次请求建账本失败时的可读原因（不阻断采用人设） */
+  lifeLedgerError?: string
 }
 
 export class PersonaAiGenerateFailure extends Error {
@@ -537,14 +549,6 @@ export function auditPersonaAiGenerateResult(
   meta: { parsed: Record<string, unknown>; parseRecovered: boolean; rawText: string },
 ): PersonaAiGenerateIssue[] {
   const issues: PersonaAiGenerateIssue[] = []
-  if (meta.parseRecovered) {
-    issues.push({
-      id: 'parse-truncated',
-      kind: 'parse',
-      label: '输出可能被截断',
-      detail: '模型标记文本未完整结束，已尽量抢救已写出的字段；建议补全或纠正。',
-    })
-  }
 
   for (const row of TOP_FIELD_AUDIT) {
     const v = meta.parsed[row.key]
@@ -678,37 +682,35 @@ export function auditPersonaAiGenerateResult(
     }
   }
 
-  if (form.relationshipHistoryHint.trim()) {
-    const historyContent =
-      pickPersonaAiRelationshipHistoryContent(
-        Array.isArray(meta.parsed.worldBookEntries)
-          ? (meta.parsed.worldBookEntries as PersonaAiEpilogueEntry[])
-          : [],
-      ) ||
-      (() => {
-        const book = findCompactPersonaBook(character)
-        for (const it of book?.items ?? []) {
-          if (isPersonaAiRelationshipHistoryEntryName(String(it.name ?? ''))) {
-            return String(it.content ?? '').trim()
-          }
+  const historyContent =
+    pickPersonaAiRelationshipHistoryContent(
+      Array.isArray(meta.parsed.worldBookEntries)
+        ? (meta.parsed.worldBookEntries as PersonaAiEpilogueEntry[])
+        : [],
+    ) ||
+    (() => {
+      const book = findCompactPersonaBook(character)
+      for (const it of book?.items ?? []) {
+        if (isPersonaAiRelationshipHistoryEntryName(String(it.name ?? ''))) {
+          return String(it.content ?? '').trim()
         }
-        return ''
-      })()
-    if (!historyContent) {
-      issues.push({
-        id: `wb-${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}`,
-        kind: 'missing_epilogue',
-        label: `世界书 · ${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}`,
-        detail: '填写了感情史时须单独输出该条目',
-      })
-    } else if (isWeakFieldValue(historyContent, Math.floor(PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS * 0.35))) {
-      issues.push({
-        id: `wb-${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}`,
-        kind: 'placeholder_field',
-        label: `世界书 · ${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}`,
-        detail: '内容过短或为占位稿',
-      })
-    }
+      }
+      return ''
+    })()
+  if (!historyContent) {
+    issues.push({
+      id: `wb-${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}`,
+      kind: 'missing_epilogue',
+      label: `世界书 · ${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}`,
+      detail: '须单独输出该条目（好感/喜欢/交往对象，或母胎单身等）',
+    })
+  } else if (isWeakFieldValue(historyContent, Math.floor(PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS * 0.35))) {
+    issues.push({
+      id: `wb-${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}`,
+      kind: 'placeholder_field',
+      label: `世界书 · ${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}`,
+      detail: '内容过短或为占位稿',
+    })
   }
 
   const book = findCompactPersonaBook(character)
@@ -727,6 +729,24 @@ export function auditPersonaAiGenerateResult(
       label: '世界书条目标题不规范',
       detail: `有 ${extras} 条标题无法归并到 ${PERSONA_AI_COMPACT_ENTRY_NAMES.length} 条模板，可能重复；纠正时请只输出标准标题`,
     })
+  }
+
+  if (meta.parseRecovered) {
+    const hasContentGaps = issues.some(
+      (i) =>
+        i.kind === 'missing_epilogue' ||
+        i.kind === 'missing_top_field' ||
+        i.kind === 'placeholder_field',
+    )
+    // 字段已齐时不再单独挂「截断」，避免只剩这一条时点补全变成宽合并≈整卷重写
+    if (hasContentGaps) {
+      issues.unshift({
+        id: 'parse-truncated',
+        kind: 'parse',
+        label: '输出可能被截断',
+        detail: '模型标记文本未完整结束，已尽量抢救已写出的字段；建议补全或纠正。',
+      })
+    }
   }
 
   return issues
@@ -798,7 +818,7 @@ export function buildPersonaAiRepairSystemPrompt(opts: {
   referencePersonaHint?: string
 }): string {
   const rel = opts.relationToUser?.trim() || '普通熟人'
-  const includeHistory = opts.includeRelationshipHistory === true
+  const includeHistory = opts.includeRelationshipHistory !== false
   const occupationMutable = opts.occupationMutable === true
   const refDirect =
     Boolean(opts.referencePersonaDirectGenerate) && Boolean((opts.referencePersonaHint ?? '').trim())
@@ -820,7 +840,7 @@ export function buildPersonaAiRepairSystemPrompt(opts: {
     ? `职业详述写在尾声「${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}」，「名片基础」勿展开职业长段；禁止因勾选可变写成开局职业悬空。`
     : '职业详述写在「名片基础」。'
   const historyHostLine = includeHistory
-    ? `过往感情史写在序言「${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}」；禁止写成与 {{user}} 当前关系。`
+    ? `过往感情史写在序言「${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}」（好感/喜欢/交往对象，或母胎单身等）；禁止写成与 {{user}} 当前关系。`
     : ''
   const refNpcLine = refDirect
     ? `\n【直接生成 · 周边NPC】参考「${refSeed}」：**不设 3–5 上限**，原著开篇/日常圈具名配角尽量写全；每人须含原著身份/学年、年龄或年级、与 {{char}} 关系；配角彼此有原著关系（室友/好感/死党等）须双方互相写清；若 {{user}} 为同作相关角色，每人还须写「对 {{user}}」（护短配角禁止当陌生人）；禁止保安/编辑部/便利店等都市魔改。\n`
@@ -838,6 +858,7 @@ ${entryList}
 角色用 {{char}}、绑定玩家用 {{user}}，禁止写汉字真名。
 与 {{user}} 的关系为「${rel}」；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」勿把 {{user}} 写成暗恋/性幻想对象；${orientHostLine} ${occupationHostLine}${historyHostLine ? ` ${historyHostLine}` : ''}
 「相遇羁绊」只写如何相识的过程，禁止写当前关系标签/态度总结；「对你现在」独占当前关系与态度，须先读懂关系原文「${rel}」的投入程度并对齐；原文未表达好感时禁止补写成潜在心动、嘴硬心软或暗中关注；两处禁止整段互相复述。
+${buildPersonaAiBioRules()}
 ${buildPersonaAiIntimatePartnerWordingRules()}
 ${opts.nsfwEnabled ? 'NSFW 已开启：补写「亲密与恋爱观」须直白描绘；指恋人写「对方」；禁止超雄 caricature。' : 'NSFW 未开启：补写「亲密与恋爱观」须清水恋爱观，禁止露骨；指恋人写「对方」。'}
 ${opts.orientationMutable ? `${buildPersonaAiOrientationMutableSemanticsRule(true)}` : ''}
@@ -943,7 +964,7 @@ export function buildPersonaAiRepairUserPrompt(params: {
   }
   lines.push(
     '',
-    '纠正/补全须遵守：完整参考上方【绑定玩家身份】与世界书；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」指恋人写「对方」；「相遇羁绊」只写相识过程，禁止写当前关系/态度；「对你现在」明确指 {{user}} 当前态度；{{user}} 身体描写须与绑定玩家性别一致。',
+    '纠正/补全须遵守：完整参考上方【绑定玩家身份】与世界书；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」指恋人写「对方」；「相遇羁绊」只写相识过程，禁止写当前关系/态度；「对你现在」明确指 {{user}} 当前态度；补写【简介】只写稳定名片，禁止写当前和谁怎么样；{{user}} 身体描写须与绑定玩家性别一致。',
     `补写世界书条目约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字；描述用中性词，禁止超雄/极端用语与八股油腻形容词。`,
     '**全局禁止**：不得出现超雄、极端、病态 caricature，也不得堆砌花里胡哨网文标签。',
     '**只输出白名单内的键值行与【段落】**；禁止 JSON；禁止重复「已完整·勿改」内容。',

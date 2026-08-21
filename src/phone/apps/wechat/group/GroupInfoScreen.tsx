@@ -162,7 +162,12 @@ export function GroupInfoScreen({
       partial: Partial<
         Pick<
           ChatConversationSettingsRow,
-          'chatBackground' | 'isDanmakuMode' | 'showGroupMemberNicknameInChat' | 'showGroupRankBadgesInChat'
+          | 'chatBackground'
+          | 'isDanmakuMode'
+          | 'showGroupMemberNicknameInChat'
+          | 'showGroupRankBadgesInChat'
+          | 'heartWhisperSyncEnabled'
+          | 'innerOsSyncEnabled'
         >
       >,
     ) => {
@@ -1130,7 +1135,7 @@ export function GroupInfoScreen({
               }
             />
           </div>
-          <div className="flex w-full items-center justify-between bg-white px-4 py-3">
+          <div className="flex w-full items-center justify-between border-b border-[#F3F4F6] bg-white px-4 py-3">
             <div className="min-w-0 flex-1 pr-3">
               <p className="text-[16px] text-[#111827]">弹幕模式</p>
               <p className="mt-0.5 text-[12px] text-[#9CA3AF]">
@@ -1142,6 +1147,38 @@ export function GroupInfoScreen({
               onToggle={() =>
                 void patchConvSettings({
                   isDanmakuMode: !(convSettings?.isDanmakuMode ?? false),
+                })
+              }
+            />
+          </div>
+          <div className="flex w-full items-center justify-between border-b border-[#F3F4F6] bg-white px-4 py-3">
+            <div className="min-w-0 flex-1 pr-3">
+              <p className="text-[16px] text-[#111827]">每轮同步心语</p>
+              <p className="mt-0.5 text-[12px] text-[#9CA3AF]">
+                开启后从下一轮群聊回复起，心语跟气泡写在同一次请求里，结束后自动刷新心语页。
+              </p>
+            </div>
+            <WxSwitch
+              on={convSettings?.heartWhisperSyncEnabled === true}
+              onToggle={() =>
+                void patchConvSettings({
+                  heartWhisperSyncEnabled: !(convSettings?.heartWhisperSyncEnabled === true),
+                })
+              }
+            />
+          </div>
+          <div className="flex w-full items-center justify-between bg-white px-4 py-3">
+            <div className="min-w-0 flex-1 pr-3">
+              <p className="text-[16px] text-[#111827]">每句内心 OS</p>
+              <p className="mt-0.5 text-[12px] text-[#9CA3AF]">
+                开启后每条角色文字/语音气泡带一句潜台词；长按「内心 OS」或单击气泡查看。
+              </p>
+            </div>
+            <WxSwitch
+              on={convSettings?.innerOsSyncEnabled === true}
+              onToggle={() =>
+                void patchConvSettings({
+                  innerOsSyncEnabled: !(convSettings?.innerOsSyncEnabled === true),
                 })
               }
             />

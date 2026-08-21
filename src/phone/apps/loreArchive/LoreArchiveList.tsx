@@ -1,12 +1,13 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
+  ChevronDown,
   FolderClosed,
   Lock,
   Plus,
   Search,
   X,
 } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { LoreArchiveTag, LoreEntry } from '../../worldbook/loreArchiveTypes'
 import {
   LORE_ARCHIVE_BUILTIN_PRESETS,
@@ -191,6 +192,12 @@ export function LoreArchiveList({
   const [filterTagId, setFilterTagId] = useState<string | null>(null)
   const [filterScene, setFilterScene] = useState<'global' | 'online' | 'offline' | null>(null)
   const [filterEnabled, setFilterEnabled] = useState<'on' | 'off' | null>(null)
+  /** 「全部」默认收起系统区；点进「系统」分区时默认展开 */
+  const [systemSectionOpen, setSystemSectionOpen] = useState(() => segment === 'system')
+
+  useEffect(() => {
+    if (segment === 'system') setSystemSectionOpen(true)
+  }, [segment])
 
   const tagById = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags])
   const systemEnabledCount = LORE_ARCHIVE_BUILTIN_PRESETS.filter((p) => builtinPresets[p.id]).length
@@ -433,35 +440,82 @@ export function LoreArchiveList({
 
         {showSystem ? (
           <section className={showMine ? 'mb-4' : 'mb-2'}>
-            <p style={laCatalogLabelStyle} className="mb-1.5 px-0.5">
-              系统世界书 · {systemEnabledCount}/{systemTotal}
-            </p>
-            {filteredSystem.length === 0 ? (
-              <p className="py-4 text-center text-[13px]" style={{ color: LA.mist }}>
-                没有符合筛选的系统档案
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-1.5">
-                {filteredSystem.map((preset) => {
-                  const enabled = builtinPresets[preset.id] === true
-                  return (
-                    <CatalogRow
-                      key={preset.id}
-                      accent={LA.mist}
-                      muted
-                      onOpen={() => onOpenSystem(preset)}
-                      title={preset.title}
-                      titleTrailing={
-                        <Lock className="size-3.5 shrink-0" strokeWidth={1.5} style={{ color: LA.mist }} />
-                      }
-                      enabled={enabled}
-                      toggleLabel={`启用 ${preset.title}`}
-                      onToggle={() => onSetBuiltinPresetEnabled(preset.id, !enabled)}
-                    />
-                  )
-                })}
-              </ul>
-            )}
+            <button
+              type="button"
+              onClick={() => setSystemSectionOpen((v) => !v)}
+              aria-expanded={systemSectionOpen}
+              className="mb-1.5 flex w-full items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-colors"
+              style={{
+                borderColor: LA.hairline,
+                background: systemSectionOpen ? LA.card : 'rgba(243,242,240,0.85)',
+              }}
+            >
+              <span
+                className="inline-flex size-6 shrink-0 items-center justify-center rounded-lg border"
+                style={{
+                  borderColor: systemSectionOpen ? LA.ink : LA.hairline,
+                  background: systemSectionOpen ? LA.ink : LA.card,
+                  color: systemSectionOpen ? '#fff' : LA.mist,
+                }}
+                aria-hidden
+              >
+                <ChevronDown
+                  className={`size-3.5 transition-transform duration-200 ${
+                    systemSectionOpen ? 'rotate-0' : '-rotate-90'
+                  }`}
+                  strokeWidth={2.25}
+                />
+              </span>
+              <span className="min-w-0 flex-1" style={laCatalogLabelStyle}>
+                系统世界书 · {systemEnabledCount}/{systemTotal}
+              </span>
+              <span className="shrink-0 text-[11px] font-medium" style={{ color: LA.mist }}>
+                {systemSectionOpen ? '收起' : '展开'}
+              </span>
+            </button>
+            <AnimatePresence initial={false}>
+              {systemSectionOpen ? (
+                <motion.div
+                  key="system-presets"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.22, ease: laEase }}
+                  className="overflow-hidden"
+                >
+                  {filteredSystem.length === 0 ? (
+                    <p className="py-4 text-center text-[13px]" style={{ color: LA.mist }}>
+                      没有符合筛选的系统档案
+                    </p>
+                  ) : (
+                    <ul className="flex flex-col gap-1.5">
+                      {filteredSystem.map((preset) => {
+                        const enabled = builtinPresets[preset.id] === true
+                        return (
+                          <CatalogRow
+                            key={preset.id}
+                            accent={LA.mist}
+                            muted
+                            onOpen={() => onOpenSystem(preset)}
+                            title={preset.title}
+                            titleTrailing={
+                              <Lock
+                                className="size-3.5 shrink-0"
+                                strokeWidth={1.5}
+                                style={{ color: LA.mist }}
+                              />
+                            }
+                            enabled={enabled}
+                            toggleLabel={`启用 ${preset.title}`}
+                            onToggle={() => onSetBuiltinPresetEnabled(preset.id, !enabled)}
+                          />
+                        )
+                      })}
+                    </ul>
+                  )}
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </section>
         ) : null}
 

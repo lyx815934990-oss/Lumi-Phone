@@ -565,6 +565,7 @@ export function WeChatChatSkinPreviewPanel({
           sendButtonColor={inputBar.sendButtonColor}
           borderRadius={inputBar.borderRadius}
           borderColor={inputBar.borderColor}
+          backgroundColor={inputBar.backgroundColor}
           draft=""
           sendBusy={false}
           planeCanAct={false}

@@ -4,6 +4,12 @@ import type { WeChatBubbleTheme, WeChatTheme } from '../../types'
 import { wechatChatRoomBgToStyle } from './wechatChatRoomBg'
 import {
   type WeChatBubblePreset,
+  isTwitterXNightMode,
+  isTwitterXPresetActive,
+  isWechatClassicNightMode,
+  isWechatClassicPresetActive,
+  resolveTwitterXPreset,
+  resolveWechatClassicPreset,
   wechatBubblePresetMatchesActive,
 } from './wechatBubblePresets'
 import { bubbleTemplateFontFamily } from './wechatBubbleTemplateFonts'
@@ -11,11 +17,15 @@ import { bubbleTemplateFontFamily } from './wechatBubbleTemplateFonts'
 function MiniBubbleSwatch({
   selfBg,
   otherBg,
+  selfText,
+  otherText,
   chatRoomDefaultBg,
   fontFamily,
 }: {
   selfBg: string
   otherBg: string
+  selfText: string
+  otherText: string
   chatRoomDefaultBg: WeChatBubblePreset['chatRoomDefaultBg']
   fontFamily?: string
 }) {
@@ -30,13 +40,13 @@ function MiniBubbleSwatch({
       >
         <span
           className="inline-block max-w-[72px] rounded-[6px] px-2 py-1 text-[10px] leading-snug"
-          style={{ background: otherBg, color: '#191919', boxShadow: '0 0 0 1px rgba(0,0,0,0.04)' }}
+          style={{ background: otherBg, color: otherText, boxShadow: '0 0 0 1px rgba(0,0,0,0.04)' }}
         >
           对方
         </span>
         <span
           className="inline-block max-w-[72px] rounded-[6px] px-2 py-1 text-[10px] leading-snug"
-          style={{ background: selfBg, color: '#191919' }}
+          style={{ background: selfBg, color: selfText }}
         >
           我方
         </span>
@@ -53,6 +63,8 @@ export function WeChatBubblePresetCards({
   wechatTheme,
   bubbleScope,
   onApply,
+  onTwitterNightChange,
+  onWechatNightChange,
 }: {
   presets: WeChatBubblePreset[]
   activeBubble: WeChatBubbleTheme
@@ -61,6 +73,10 @@ export function WeChatBubblePresetCards({
   wechatTheme: WeChatTheme
   bubbleScope: 'global' | 'role'
   onApply: (preset: WeChatBubblePreset) => void
+  /** Twitter / X 卡片上的夜间模式勾选 */
+  onTwitterNightChange?: (night: boolean) => void
+  /** 微信 App 卡片上的夜间模式勾选 */
+  onWechatNightChange?: (night: boolean) => void
 }) {
   return (
     <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -73,6 +89,20 @@ export function WeChatBubblePresetCards({
           wechatTheme,
           bubbleScope,
         )
+        const showTwitterNightSwatch =
+          preset.id === 'twitter-x' &&
+          isTwitterXPresetActive(wechatTheme) &&
+          isTwitterXNightMode(wechatTheme)
+        const showWechatNightSwatch =
+          preset.id === 'wechat-app-classic' &&
+          isWechatClassicPresetActive(wechatTheme) &&
+          isWechatClassicNightMode(wechatTheme)
+        const swatchPreset =
+          preset.id === 'twitter-x'
+            ? resolveTwitterXPreset(showTwitterNightSwatch)
+            : preset.id === 'wechat-app-classic'
+              ? resolveWechatClassicPreset(showWechatNightSwatch)
+              : preset
         return (
           <Pressable
             key={preset.id}
@@ -90,14 +120,16 @@ export function WeChatBubblePresetCards({
               selfBg={
                 preset.id === 'lumi-liquid-glass'
                   ? 'rgba(255,255,255,0.42)'
-                  : preset.bubble.selfBubbleBg
+                  : swatchPreset.bubble.selfBubbleBg
               }
               otherBg={
                 preset.id === 'lumi-liquid-glass'
                   ? 'rgba(255,255,255,0.32)'
-                  : preset.bubble.otherBubbleBg
+                  : swatchPreset.bubble.otherBubbleBg
               }
-              chatRoomDefaultBg={preset.chatRoomDefaultBg}
+              selfText={swatchPreset.selfBubbleText}
+              otherText={swatchPreset.otherBubbleText}
+              chatRoomDefaultBg={swatchPreset.chatRoomDefaultBg}
               fontFamily={
                 preset.bubble.bubbleTailStyle
                   ? bubbleTemplateFontFamily(preset.bubble.bubbleTailStyle)
@@ -120,6 +152,48 @@ export function WeChatBubblePresetCards({
                 </span>
               ) : null}
             </p>
+            {preset.id === 'twitter-x' && onTwitterNightChange ? (
+              <label
+                className="mt-2 flex items-center gap-1.5 text-[11px]"
+                style={{ color: 'var(--wx-text-muted)' }}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={isTwitterXPresetActive(wechatTheme) && isTwitterXNightMode(wechatTheme)}
+                  onChange={(e) => {
+                    e.stopPropagation()
+                    onTwitterNightChange(e.target.checked)
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-3.5 w-3.5 accent-[#1DA1F2]"
+                />
+                夜间模式
+              </label>
+            ) : null}
+            {preset.id === 'wechat-app-classic' && onWechatNightChange ? (
+              <label
+                className="mt-2 flex items-center gap-1.5 text-[11px]"
+                style={{ color: 'var(--wx-text-muted)' }}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={
+                    isWechatClassicPresetActive(wechatTheme) && isWechatClassicNightMode(wechatTheme)
+                  }
+                  onChange={(e) => {
+                    e.stopPropagation()
+                    onWechatNightChange(e.target.checked)
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-3.5 w-3.5 accent-[#07C160]"
+                />
+                夜间模式
+              </label>
+            ) : null}
           </Pressable>
         )
       })}

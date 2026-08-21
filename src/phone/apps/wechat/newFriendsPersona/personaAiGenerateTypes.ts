@@ -68,7 +68,7 @@ export type PersonaAiGenerateForm = {
   presentUserIdentity: string
   /** 当前选中的身份弧预设 id；对换/手改后置空，避免按钮假选中 */
   identityArcPresetId: string
-  /** 过往感情史（有内容时单独写入世界书「过往感情史」序言条） */
+  /** 过往感情史种子（可选；无论是否填写，世界书恒含「过往感情史」序言条） */
   relationshipHistoryHint: string
   /** 恋爱 / 亲密态度方向 */
   loveAttitudeHint: string
@@ -693,8 +693,11 @@ export const PERSONA_AI_GAP_MOE_PRESETS = [
 ] as const
 
 export const PERSONA_AI_RELATIONSHIP_HISTORY_PRESETS = [
+  '母胎单身，从未喜欢过人',
   '母胎单身',
   '暂无恋爱经历',
+  '有过暗恋/好感，未表白',
+  '喜欢过但未在一起',
   '谈过一段，和平分手',
   '被伤到，现在慢热',
   '有过暧昧没成',

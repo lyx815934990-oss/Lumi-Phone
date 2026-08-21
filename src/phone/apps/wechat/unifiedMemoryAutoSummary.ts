@@ -57,6 +57,8 @@ import {
   formatOnlineMemorySummaryStorageBody,
   onlineMemoryKeywordsFromSummary,
   resolveMemorySummaryRowKeywordsFromParsed,
+  resolveOnlineMemoryStoryStamp,
+  resolveCharacterCurrentStoryStamp,
 } from './memory/onlineMemorySummaryFormat'
 import {
   getCharacterLinkedPlayerIdentityIds,
@@ -809,6 +811,15 @@ export async function applyUnifiedMemoryFromParsedSummary(
   if (!primaryBody.trim() && primaryBodyRaw.trim()) {
     primaryBody = primaryBodyRaw.trim().slice(0, 2000)
   }
+  const hadOfflineTagEarly = gather.hadOfflinePrior || opts.tagOfflineIncludesNewAiTurn
+  const storyStamp =
+    opts.onlineOnly === true || !hadOfflineTagEarly
+      ? await resolveOnlineMemoryStoryStamp({
+          characterId: cid,
+          chunkMessages: gather.chunkMessages,
+          modelDelta: summary.primary.timeline,
+        })
+      : dualNarrativeStoryFieldsFromDelta(summary.primary.timeline)
   if (primaryBody) {
     const resolvedRowKeywords = resolveMemorySummaryRowKeywordsFromParsed({
       rowKeywords: summary.primary.rowKeywords,
@@ -818,12 +829,11 @@ export async function applyUnifiedMemoryFromParsedSummary(
       memorySupplementKeywords: summary.primary.memorySupplementKeywords,
       content: summary.primary.content,
     })
-    const storyForBody = dualNarrativeStoryFieldsFromDelta(summary.primary.timeline)
-    if (summary.primary.rowTitle || resolvedRowKeywords.length > 0 || storyForBody.storyTimeLabel) {
+    if (summary.primary.rowTitle || resolvedRowKeywords.length > 0 || storyStamp.storyTimeLabel) {
       primaryBody = formatOnlineMemorySummaryStorageBody(primaryBody, {
         rowTitle: summary.primary.rowTitle,
         rowKeywords: resolvedRowKeywords,
-        storyTimeLabel: storyForBody.storyTimeLabel,
+        storyTimeLabel: storyStamp.storyTimeLabel,
       }).slice(0, 4000)
     }
   }
@@ -952,9 +962,10 @@ export async function applyUnifiedMemoryFromParsedSummary(
         memoryTriggerEmotionNeed: summary.primary.memoryTriggerEmotionNeed,
         memorySupplementKeywords: summary.primary.memorySupplementKeywords,
       })
-    const storyFields = dualNarrativeStoryFieldsFromDelta(
-      timelineDelta ?? summary.primary.timeline,
-    )
+    const storyFields =
+      opts.onlineOnly === true || !hadOfflineTag
+        ? storyStamp
+        : dualNarrativeStoryFieldsFromDelta(timelineDelta ?? summary.primary.timeline)
     await personaDb.upsertCharacterMemory({
       id: `mem-${now}-${Math.random().toString(36).slice(2, 9)}`,
       characterId: cid,
@@ -1453,6 +1464,7 @@ export async function runUnifiedAutoMemorySummaryAfterThreshold(params: {
             params.onlineOnly || !gather.hadMeet ? [] : gather.meetTranscript,
           peerFallback: gather.characterRealName,
           peerCharacterId: gather.characterId,
+          storyNowLabel: (await resolveCharacterCurrentStoryStamp(gather.characterId)).storyTimeLabel,
         })
         return {
           bundle: { primary: attempt.summary, linked: [] as UnifiedMemorySummaryWithLinkedResult['linked'] },

@@ -13,6 +13,10 @@ import {
   clearPhoneGlobalFont,
   uploadPhoneGlobalFont,
 } from '../phoneGlobalFont'
+import {
+  WECHAT_SHORTCUT_PAGE_OPTIONS,
+  labelForWeChatShortcutPage,
+} from '../apps/wechat/wechatShortcutPageNavigation'
 
 type Props = {
   onBack: () => void
@@ -37,6 +41,7 @@ type SectionKey =
   | 'pageStyles'
   | 'gestureEffects'
   | 'appIcons'
+  | 'floatingBall'
 
 type StyleCropTarget =
   | { kind: 'headerBg'; appId: AppSlot['id'] }
@@ -166,6 +171,8 @@ export function CustomizeScreen({ onBack }: Props) {
         return '点击动效和拖尾'
       case 'appIcons':
         return '应用名称与图标'
+      case 'floatingBall':
+        return '桌面悬浮球'
       case 'nav':
       default:
         return '外观与文案'
@@ -355,6 +362,11 @@ export function CustomizeScreen({ onBack }: Props) {
               onClick={() => setSection('profile')}
             />
             <NavCard title="桌面组件" desc="Dock 样式与桌面布局重置" onClick={() => setSection('music')} />
+            <NavCard
+              title="桌面悬浮球"
+              desc="开启后显示可拖动悬浮球，自定义跳转应用或微信内页面"
+              onClick={() => setSection('floatingBall')}
+            />
             <NavCard
               title="高定桌面组件库"
               desc="长按桌面 → 右上角 + 添加组件（库已清空待重做）"
@@ -1378,6 +1390,220 @@ export function CustomizeScreen({ onBack }: Props) {
                   清空 CSS
                 </Pressable>
               </div>
+            </div>
+          </div>
+        ) : section === 'floatingBall' ? (
+          <div className="space-y-3">
+            <SettingToggle
+              label="启用桌面悬浮球"
+              description="开启后在任意页面显示可拖动悬浮球，点开可跳转应用或微信内页面"
+              checked={ui.floatingShortcutBall?.enabled === true}
+              onChange={(v) =>
+                setUi({
+                  floatingShortcutBall: {
+                    enabled: v,
+                    shortcuts: ui.floatingShortcutBall?.shortcuts ?? [],
+                  },
+                })
+              }
+            />
+            <div
+              className="rounded-[14px] border p-3"
+              style={{
+                borderColor: theme.border,
+                backgroundColor: appearanceStyle.cardBg || theme.surface,
+              }}
+            >
+              <p className="text-[12px] font-medium" style={{ color: theme.text }}>
+                快捷跳转（最多 12 个）
+              </p>
+              <p className="mt-1 text-[11px] leading-snug" style={{ color: theme.textMuted }}>
+                按列表顺序展示；每个应用 / 微信页面只能添加一次。
+              </p>
+              <div className="mt-3 space-y-2">
+                {(ui.floatingShortcutBall?.shortcuts ?? []).map((item, index, list) => {
+                  const label = item.wechatPage
+                    ? labelForWeChatShortcutPage(item.wechatPage)
+                    : apps.find((a) => a.id === item.appId)?.label ?? item.appId ?? '快捷'
+                  const iconAppId: AppSlot['id'] = item.appId ?? 'wechat'
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2 rounded-[12px] border px-2 py-2"
+                      style={{ borderColor: theme.border, background: theme.surfaceMuted }}
+                    >
+                      <AppIconTile appId={iconAppId} bgSize={36} glyphSize={24} />
+                      <span className="min-w-0 flex-1 truncate text-[13px]" style={{ color: theme.text }}>
+                        {label}
+                      </span>
+                      <Pressable
+                        onClick={() => {
+                          if (index <= 0) return
+                          const next = [...list]
+                          ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
+                          setUi({
+                            floatingShortcutBall: {
+                              enabled: ui.floatingShortcutBall?.enabled === true,
+                              shortcuts: next,
+                            },
+                          })
+                        }}
+                        className="rounded-lg border px-2 py-1 text-[11px]"
+                        style={{
+                          borderColor: theme.border,
+                          color: theme.textMuted,
+                          opacity: index <= 0 ? 0.35 : 1,
+                        }}
+                        aria-label="上移"
+                      >
+                        ↑
+                      </Pressable>
+                      <Pressable
+                        onClick={() => {
+                          if (index >= list.length - 1) return
+                          const next = [...list]
+                          ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
+                          setUi({
+                            floatingShortcutBall: {
+                              enabled: ui.floatingShortcutBall?.enabled === true,
+                              shortcuts: next,
+                            },
+                          })
+                        }}
+                        className="rounded-lg border px-2 py-1 text-[11px]"
+                        style={{
+                          borderColor: theme.border,
+                          color: theme.textMuted,
+                          opacity: index >= list.length - 1 ? 0.35 : 1,
+                        }}
+                        aria-label="下移"
+                      >
+                        ↓
+                      </Pressable>
+                      <Pressable
+                        onClick={() => {
+                          setUi({
+                            floatingShortcutBall: {
+                              enabled: ui.floatingShortcutBall?.enabled === true,
+                              shortcuts: list.filter((s) => s.id !== item.id),
+                            },
+                          })
+                        }}
+                        className="rounded-lg border px-2 py-1 text-[11px]"
+                        style={{ borderColor: theme.border, color: '#b42318' }}
+                        aria-label="移除"
+                      >
+                        移除
+                      </Pressable>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            <div
+              className="rounded-[14px] border p-3"
+              style={{
+                borderColor: theme.border,
+                backgroundColor: appearanceStyle.cardBg || theme.surface,
+              }}
+            >
+              <p className="text-[12px] font-medium" style={{ color: theme.text }}>
+                添加微信页面
+              </p>
+              <p className="mt-1 text-[11px] leading-snug" style={{ color: theme.textMuted }}>
+                直接进入微信内指定页（聊天 / 人设 / 钱包等）
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {WECHAT_SHORTCUT_PAGE_OPTIONS.filter(
+                  (p) =>
+                    !(ui.floatingShortcutBall?.shortcuts ?? []).some((s) => s.wechatPage === p.id) &&
+                    (ui.floatingShortcutBall?.shortcuts?.length ?? 0) < 12,
+                ).map((p) => (
+                  <Pressable
+                    key={p.id}
+                    onClick={() => {
+                      const current = ui.floatingShortcutBall?.shortcuts ?? []
+                      if (current.length >= 12 || current.some((s) => s.wechatPage === p.id)) return
+                      setUi({
+                        floatingShortcutBall: {
+                          enabled: ui.floatingShortcutBall?.enabled === true,
+                          shortcuts: [
+                            ...current,
+                            {
+                              id: `fs-wx-${p.id}-${Date.now().toString(36)}`,
+                              wechatPage: p.id,
+                            },
+                          ],
+                        },
+                      })
+                    }}
+                    className="flex items-center gap-2 rounded-[12px] border px-2 py-2 text-left"
+                    style={{ borderColor: theme.border, background: theme.surfaceMuted }}
+                  >
+                    <AppIconTile appId="wechat" bgSize={32} glyphSize={20} />
+                    <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: theme.text }}>
+                      {p.label.replace(/^微信·/, '')}
+                    </span>
+                  </Pressable>
+                ))}
+              </div>
+            </div>
+            <div
+              className="rounded-[14px] border p-3"
+              style={{
+                borderColor: theme.border,
+                backgroundColor: appearanceStyle.cardBg || theme.surface,
+              }}
+            >
+              <p className="text-[12px] font-medium" style={{ color: theme.text }}>
+                添加应用
+              </p>
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {apps
+                  .filter(
+                    (a) =>
+                      !(ui.floatingShortcutBall?.shortcuts ?? []).some((s) => !s.wechatPage && s.appId === a.id) &&
+                      (ui.floatingShortcutBall?.shortcuts?.length ?? 0) < 12,
+                  )
+                  .map((a) => (
+                    <Pressable
+                      key={a.id}
+                      onClick={() => {
+                        const current = ui.floatingShortcutBall?.shortcuts ?? []
+                        if (
+                          current.length >= 12 ||
+                          current.some((s) => !s.wechatPage && s.appId === a.id)
+                        ) {
+                          return
+                        }
+                        setUi({
+                          floatingShortcutBall: {
+                            enabled: ui.floatingShortcutBall?.enabled === true,
+                            shortcuts: [
+                              ...current,
+                              { id: `fs-${a.id}-${Date.now().toString(36)}`, appId: a.id },
+                            ],
+                          },
+                        })
+                      }}
+                      className="flex flex-col items-center gap-1 rounded-[12px] border px-1 py-2"
+                      style={{ borderColor: theme.border, background: theme.surfaceMuted }}
+                    >
+                      <AppIconTile appId={a.id} bgSize={40} glyphSize={26} />
+                      <span
+                        className="w-full truncate text-center text-[10px]"
+                        style={{ color: theme.textMuted }}
+                      >
+                        {a.label}
+                      </span>
+                    </Pressable>
+                  ))}
+              </div>
+              {(ui.floatingShortcutBall?.shortcuts?.length ?? 0) >= 12 ? (
+                <p className="mt-2 text-[11px]" style={{ color: theme.textMuted }}>
+                  已达上限，请先移除后再添加。
+                </p>
+              ) : null}
             </div>
           </div>
         ) : (

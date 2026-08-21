@@ -63,14 +63,45 @@ function Skeleton() {
   )
 }
 
-function EmptyHint() {
+function EmptyHint({ syncEnabled }: { syncEnabled?: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center px-4 py-20 text-center">
       <p className="font-serif text-[14px] text-gray-800">尚未生成心语</p>
       <p className="mt-3 max-w-[260px] text-[12px] leading-relaxed text-gray-400">
-        点击右上角「生成心语」，基于最近一轮对话解码 TA 此刻的内心侧写。
+        {syncEnabled
+          ? '已开启每轮同步。下一轮角色回复会在同一次请求里生成心语；也可点右上角立即解码。'
+          : '点击右上角「生成心语」，基于最近一轮对话解码 TA 此刻的内心侧写。'}
       </p>
     </div>
+  )
+}
+
+/** 心语面板内嵌开关（与聊天信息页 WxSwitch 视觉接近） */
+function WhisperSwitch({
+  on,
+  onToggle,
+  label,
+}: {
+  on: boolean
+  onToggle: () => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={onToggle}
+      className="relative h-7 w-[46px] shrink-0 rounded-full transition-colors duration-200"
+      style={{ backgroundColor: on ? '#1C1C1E' : '#d1d1d6' }}
+    >
+      <span
+        className="absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-[left] duration-200 ease-out"
+        style={{ left: on ? 20 : 2 }}
+        aria-hidden
+      />
+    </button>
   )
 }
 
@@ -96,6 +127,10 @@ export function HeartWhisperModal({
   onDismissGenerateError,
   onClose,
   onGenerate,
+  heartWhisperSyncEnabled = false,
+  innerOsSyncEnabled = false,
+  onToggleHeartWhisperSync,
+  onToggleInnerOsSync,
 }: {
   open: boolean
   loading: boolean
@@ -106,6 +141,12 @@ export function HeartWhisperModal({
   onDismissGenerateError?: () => void
   onClose: () => void
   onGenerate: () => void
+  /** 每轮 AI 回复后自动刷新整段心语档案 */
+  heartWhisperSyncEnabled?: boolean
+  /** 每条角色气泡同轮生成一句内心 OS */
+  innerOsSyncEnabled?: boolean
+  onToggleHeartWhisperSync?: (enabled: boolean) => void
+  onToggleInnerOsSync?: (enabled: boolean) => void
 }) {
   const err = String(generateError ?? '').trim()
   const [resonating, setResonating] = useState(false)
@@ -209,6 +250,41 @@ export function HeartWhisperModal({
               </div>
             </div>
 
+            {onToggleHeartWhisperSync || onToggleInnerOsSync ? (
+              <div className="relative shrink-0 space-y-3 border-t border-gray-100 px-7 py-3.5">
+                {onToggleHeartWhisperSync ? (
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 pr-1">
+                      <p className="text-[13px] font-medium text-[#1C1C1E]">每轮同步心语</p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-gray-400">
+                        开启后从下一轮角色回复起，心语会跟气泡写在同一次请求里，结束后自动刷新本页。
+                      </p>
+                    </div>
+                    <WhisperSwitch
+                      on={heartWhisperSyncEnabled}
+                      onToggle={() => onToggleHeartWhisperSync(!heartWhisperSyncEnabled)}
+                      label="每轮同步心语"
+                    />
+                  </div>
+                ) : null}
+                {onToggleInnerOsSync ? (
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 pr-1">
+                      <p className="text-[13px] font-medium text-[#1C1C1E]">每句内心 OS</p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-gray-400">
+                        开启后每条角色文字/语音气泡带一句潜台词；长按「内心 OS」或单击气泡查看（与上方整段心语不同）。
+                      </p>
+                    </div>
+                    <WhisperSwitch
+                      on={innerOsSyncEnabled}
+                      onToggle={() => onToggleInnerOsSync(!innerOsSyncEnabled)}
+                      label="每句内心 OS"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {err ? (
               <div className="relative shrink-0 px-7 pb-4">
                 <div className="rounded-2xl bg-red-50/80 px-4 py-3" role="alert">
@@ -308,7 +384,7 @@ export function HeartWhisperModal({
               ) : loading ? (
                 <Skeleton />
               ) : (
-                <EmptyHint />
+                <EmptyHint syncEnabled={heartWhisperSyncEnabled} />
               )}
             </div>
           </motion.div>

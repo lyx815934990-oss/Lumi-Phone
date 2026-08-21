@@ -338,3 +338,63 @@ export function parseGroupHeartWhisperOutput(raw: string): GroupHeartWhisperEntr
     '群聊心语解析失败：模型未返回约定的 <heart_whisper_group> XML（可能混入思维链、截断或仍输出 JSON）。请重试或更换模型。',
   )
 }
+
+function matchXmlBlockAnywhere(
+  src: string,
+  tag: string,
+): { index: number; length: number; text: string } | null {
+  const closed = new RegExp(`<${tag}\\b[\\s\\S]*?<\\/${tag}\\s*>`, 'i')
+  const m = src.match(closed)
+  if (m && typeof m.index === 'number') {
+    return { index: m.index, length: m[0].length, text: m[0] }
+  }
+  const open = new RegExp(`<${tag}\\b[\\s\\S]*$`, 'i')
+  const m2 = src.match(open)
+  if (m2 && typeof m2.index === 'number') {
+    return { index: m2.index, length: m2[0].length, text: m2[0] }
+  }
+  return null
+}
+
+/** 从主回复正文剥离同轮心语 XML，避免当成可见气泡 */
+export function extractInlineHeartWhisperBlock(raw: string): {
+  rest: string
+  privateFields: HeartWhisperFields | null
+  groupEntries: GroupHeartWhisperEntry[] | null
+} {
+  const src = String(raw ?? '')
+  const gm = matchXmlBlockAnywhere(src, 'heart_whisper_group')
+  if (gm) {
+    const rest = `${src.slice(0, gm.index)}${src.slice(gm.index + gm.length)}`.replace(/\n{3,}/g, '\n\n').trim()
+    try {
+      const groupEntries = parseGroupHeartWhisperOutput(gm.text)
+      return { rest, privateFields: null, groupEntries: groupEntries.length ? groupEntries : null }
+    } catch {
+      return { rest, privateFields: null, groupEntries: null }
+    }
+  }
+  const pm = matchXmlBlockAnywhere(src, 'heart_whisper')
+  if (pm) {
+    const rest = `${src.slice(0, pm.index)}${src.slice(pm.index + pm.length)}`.replace(/\n{3,}/g, '\n\n').trim()
+    try {
+      return { rest, privateFields: parseHeartWhisperOutput(pm.text), groupEntries: null }
+    } catch {
+      return { rest, privateFields: null, groupEntries: null }
+    }
+  }
+  return { rest: src, privateFields: null, groupEntries: null }
+}
+
+/** 注入主回复：与气泡、内心 OS 同一次请求末尾输出心语档案 */
+export function buildWechatHeartWhisperInlineSyncAppendix(kind: 'private' | 'group'): string {
+  const format =
+    kind === 'group' ? WECHAT_GROUP_HEART_WHISPER_MARKUP_FORMAT : WECHAT_HEART_WHISPER_MARKUP_FORMAT
+  return `【同步心语档案 · 同轮硬项】
+本会话已开启「每轮同步心语」。你必须在**全部用户可见气泡**以及可选的 \`[内心OS]\` / \`[译]\` 行都写完之后，再追加一段心语 XML。
+- 心语是本轮整段回复结束后的整体状态（地点/着装/动作/独白/对你看法）。
+- 与每条气泡的 \`[内心OS]\` 不同：OS 只写那一句的潜台词；心语写整轮结束后的档案。
+- XML **不算**可见气泡，禁止把标签写进聊天正文。
+- ${kind === 'group' ? '群聊须输出 <heart_whisper_group>，名单中每位 NPC 一段 <character>。' : '私聊须输出完整 <heart_whisper>，五个子标签都要有实质内容并闭合。'}
+
+${format}`
+}

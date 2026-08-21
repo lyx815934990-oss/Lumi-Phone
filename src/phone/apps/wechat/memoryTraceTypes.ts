@@ -186,6 +186,10 @@ export type MemoryTraceData = {
       persona: string[]
       /** 与人设编辑一致的完整档案正文（含体态、简介、开场白等） */
       personaDetail: string
+      /** 角色可变人生账本注入正文（与主回复同源） */
+      lifeMutableCharacter?: string
+      /** 玩家身份可变人生账本注入正文（本角色线） */
+      lifeMutablePlayer?: string
       worldBackground: string
       /** 角色卡上启用的世界书条目拼接正文（与模型注入 `buildWorldBookText` 同源） */
       characterWorldBook: string
@@ -281,6 +285,8 @@ export function parseMemoryTraceData(raw: unknown): MemoryTraceData | null {
   const bdo = bd as Record<string, unknown>
   const persona = Array.isArray(bdo.persona) ? bdo.persona.map((x) => asStr(x)).filter(Boolean) : []
   const personaDetail = asStr(bdo.personaDetail)
+  const lifeMutableCharacter = asStr(bdo.lifeMutableCharacter)
+  const lifeMutablePlayer = asStr(bdo.lifeMutablePlayer)
   const worldBackground = asStr(bdo.worldBackground)
   const characterWorldBook = asStr(bdo.characterWorldBook)
   const globalWorldbook = asStr(bdo.globalWorldbook)
@@ -589,6 +595,8 @@ export function parseMemoryTraceData(raw: unknown): MemoryTraceData | null {
       baseDirectives: {
         persona,
         personaDetail,
+        ...(lifeMutableCharacter.trim() ? { lifeMutableCharacter } : {}),
+        ...(lifeMutablePlayer.trim() ? { lifeMutablePlayer } : {}),
         worldBackground,
         characterWorldBook,
         globalWorldbook,

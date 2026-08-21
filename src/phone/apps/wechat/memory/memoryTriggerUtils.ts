@@ -2,7 +2,7 @@ import type { CharacterMemory } from '../newFriendsPersona/types'
 import { extractStoryTimelineRowKeywordsFromRowText } from './storyTimelineTypes'
 
 /** 单角色注入时「始终触发」类记忆条数上限，防止 token 失控 */
-export const MEMORY_ALWAYS_INJECT_CAP = 28
+export const MEMORY_ALWAYS_INJECT_CAP = 12
 
 /**
  * 用户手动填写 / 从存储读出的触发词字符串：仅 trim + 空白折叠，**不做字数截断**。

@@ -32,13 +32,15 @@ export type WeChatBubblePreset = {
 export const WECHAT_APP_CLASSIC_BUBBLE_PRESET: WeChatBubblePreset = {
   id: 'wechat-app-classic',
   name: '微信 App',
-  description: '经典绿己方、白底对方、指向三角；聊天室背景 #F3F3F3，顶栏 #EDEDED。',
+  description: '经典绿己方、白底对方、指向三角；聊天室背景 #F3F3F3，顶栏 #EDEDED。可勾选夜间模式。',
   bubble: {
     selfBubbleBg: '#95EC69',
     otherBubbleBg: '#FFFFFF',
     selfBubbleRadiusPx: 8,
     otherBubbleRadiusPx: 8,
     showAvatar: true,
+    showAvatarSelf: true,
+    showAvatarOther: true,
     avatarRadiusPx: 8,
     showBubbleTail: true,
     bubbleTailStyle: 'wechat',
@@ -62,6 +64,70 @@ export const WECHAT_APP_CLASSIC_BUBBLE_PRESET: WeChatBubblePreset = {
       buttonSize: 22,
     },
   },
+}
+
+/** 微信 App 夜间色板（暗黑模式：黑底 + 深绿灰对方气泡） */
+export const WECHAT_APP_CLASSIC_NIGHT_BUBBLE_PRESET: WeChatBubblePreset = {
+  ...WECHAT_APP_CLASSIC_BUBBLE_PRESET,
+  id: 'wechat-app-classic',
+  name: '微信 App',
+  description: WECHAT_APP_CLASSIC_BUBBLE_PRESET.description,
+  bubble: {
+    ...WECHAT_APP_CLASSIC_BUBBLE_PRESET.bubble,
+    selfBubbleBg: '#28C445',
+    otherBubbleBg: '#2C2C2C',
+  },
+  selfBubbleText: '#191919',
+  otherBubbleText: '#E5E5E5',
+  chatRoomDefaultBg: { mode: 'solid', color: '#111111' },
+  wechatThemePatch: {
+    chatRoomDefaultBg: { mode: 'solid', color: '#111111' },
+    chatInputBg: '#1E1E1E',
+    chatInputBorder: 'rgba(255,255,255,0.08)',
+  },
+  chatThemePatch: {
+    inputBar: {
+      layout: 'wechat',
+      borderRadius: 6,
+      borderColor: 'rgba(255,255,255,0.08)',
+      backgroundColor: '#1E1E1E',
+      buttonColor: '#FFFFFF',
+      buttonSize: 22,
+    },
+  },
+}
+
+export const WECHAT_CLASSIC_PRESET_MARK = '--wx-wechat-classic-preset'
+export const WECHAT_CLASSIC_NIGHT_MARK = '--wx-wechat-classic-night'
+
+export function isWechatClassicPresetActive(wechatTheme?: WeChatTheme): boolean {
+  return (wechatTheme?.chatSkinOverrides?.[WECHAT_CLASSIC_PRESET_MARK] ?? '').trim() === '1'
+}
+
+export function isWechatClassicNightMode(wechatTheme?: WeChatTheme): boolean {
+  return (wechatTheme?.chatSkinOverrides?.[WECHAT_CLASSIC_NIGHT_MARK] ?? '').trim() === '1'
+}
+
+export function resolveWechatClassicPreset(night: boolean): WeChatBubblePreset {
+  return night ? WECHAT_APP_CLASSIC_NIGHT_BUBBLE_PRESET : WECHAT_APP_CLASSIC_BUBBLE_PRESET
+}
+
+/**
+ * 套用微信日/夜时合并主题补丁：有壁纸或渐变时不强制改成纯色底，
+ * 夜间靠聊天室黑色遮罩压暗；仅纯色底才在灰/黑之间切换。
+ */
+export function resolveWechatClassicThemePatch(
+  night: boolean,
+  currentRoomBg?: WeChatChatRoomBg,
+): NonNullable<WeChatBubblePreset['wechatThemePatch']> {
+  const resolved = resolveWechatClassicPreset(night)
+  const base = { ...(resolved.wechatThemePatch ?? {}) }
+  const mode = currentRoomBg?.mode
+  if (mode === 'image' || mode === 'gradient') {
+    const { chatRoomDefaultBg: _keepWallpaper, ...rest } = base
+    return rest
+  }
+  return base
 }
 
 /** 高仿 iOS iMessage：苹果蓝 + 浅灰对方 + 切角尾巴 + #f2f2f6 聊天室 */
@@ -178,6 +244,113 @@ export const TELEGRAM_BUBBLE_PRESET: WeChatBubblePreset = {
   },
 }
 
+/**
+ * Twitter / X 私信风：经典蓝己方 + 浅灰对方 + 大圆角无尾巴。
+ * 双方消息区不显示头像（顶栏胶囊才带头像）；不绑定 bubbleTailStyle。
+ */
+export const TWITTER_X_BUBBLE_PRESET: WeChatBubblePreset = {
+  id: 'twitter-x',
+  name: 'X 风格',
+  description:
+    '还原 X DM：#1D9BF0 己方 / #EFF3F4 对方、18px 尖角簇；消息区双方无头像；5 分钟居中时间戳、末条已读、顶栏功能钮与 +→触发回复。',
+  bubble: {
+    selfBubbleBg: '#1D9BF0',
+    otherBubbleBg: '#EFF3F4',
+    selfBubbleRadiusPx: 18,
+    otherBubbleRadiusPx: 18,
+    showAvatar: false,
+    showAvatarOther: false,
+    showAvatarSelf: false,
+    avatarRadiusPx: 999,
+    showBubbleTail: false,
+    mergeConsecutiveAvatarGroup: true,
+  },
+  selfBubbleText: '#FFFFFF',
+  otherBubbleText: '#0F1419',
+  chatRoomDefaultBg: { mode: 'solid', color: '#FFFFFF' },
+  wechatThemePatch: {
+    chatRoomDefaultBg: { mode: 'solid', color: '#FFFFFF' },
+    chatInputBg: '#EFF3F4',
+    chatInputBorder: 'rgba(15, 20, 25, 0.08)',
+  },
+  chatThemePatch: {
+    inputBar: {
+      layout: 'twitter',
+      borderRadius: 999,
+      borderColor: '#CFD9DE',
+      backgroundColor: '#EFF3F4',
+      buttonColor: '#536471',
+      buttonSize: 20,
+      sendButtonColor: '#1D9BF0',
+    },
+  },
+}
+
+/** Twitter / X 夜间色板（勾选夜间模式 / Lights Out） */
+export const TWITTER_X_NIGHT_BUBBLE_PRESET: WeChatBubblePreset = {
+  ...TWITTER_X_BUBBLE_PRESET,
+  id: 'twitter-x',
+  name: 'X 风格',
+  description: TWITTER_X_BUBBLE_PRESET.description,
+  bubble: {
+    ...TWITTER_X_BUBBLE_PRESET.bubble,
+    selfBubbleBg: '#1D9BF0',
+    otherBubbleBg: '#16181C',
+  },
+  selfBubbleText: '#FFFFFF',
+  otherBubbleText: '#E7E9EA',
+  chatRoomDefaultBg: { mode: 'solid', color: '#000000' },
+  wechatThemePatch: {
+    chatRoomDefaultBg: { mode: 'solid', color: '#000000' },
+    chatInputBg: '#16181C',
+    chatInputBorder: 'rgba(255,255,255,0.12)',
+  },
+  chatThemePatch: {
+    inputBar: {
+      layout: 'twitter',
+      borderRadius: 999,
+      borderColor: 'rgba(255,255,255,0.12)',
+      backgroundColor: '#16181C',
+      buttonColor: '#71767B',
+      buttonSize: 20,
+      sendButtonColor: '#1D9BF0',
+    },
+  },
+}
+
+export const TWITTER_X_PRESET_MARK = '--wx-twitter-preset'
+export const TWITTER_X_NIGHT_MARK = '--wx-twitter-night'
+
+export function isTwitterXPresetActive(wechatTheme?: WeChatTheme): boolean {
+  return (wechatTheme?.chatSkinOverrides?.[TWITTER_X_PRESET_MARK] ?? '').trim() === '1'
+}
+
+export function isTwitterXNightMode(wechatTheme?: WeChatTheme): boolean {
+  return (wechatTheme?.chatSkinOverrides?.[TWITTER_X_NIGHT_MARK] ?? '').trim() === '1'
+}
+
+export function resolveTwitterXPreset(night: boolean): WeChatBubblePreset {
+  return night ? TWITTER_X_NIGHT_BUBBLE_PRESET : TWITTER_X_BUBBLE_PRESET
+}
+
+/**
+ * 套用 X 日/夜主题补丁：有壁纸或渐变时不强制改成纯色底，
+ * 夜间靠聊天室黑色遮罩压暗；仅纯色底才在白/黑之间切换。
+ */
+export function resolveTwitterXThemePatch(
+  night: boolean,
+  currentRoomBg?: WeChatChatRoomBg,
+): NonNullable<WeChatBubblePreset['wechatThemePatch']> {
+  const resolved = resolveTwitterXPreset(night)
+  const base = { ...(resolved.wechatThemePatch ?? {}) }
+  const mode = currentRoomBg?.mode
+  if (mode === 'image' || mode === 'gradient') {
+    const { chatRoomDefaultBg: _keepWallpaper, ...rest } = base
+    return rest
+  }
+  return base
+}
+
 /** 本项目默认气泡样式，便于从预设切回 */
 export const WECHAT_APP_DEFAULT_BUBBLE_PRESET: WeChatBubblePreset = {
   id: 'wechat-app-default',
@@ -237,6 +410,11 @@ export function mergeWeChatBubbleGlobal(
   if (patch.showBubbleTail === false && !patch.bubbleTailStyle && !('bubbleTailStyle' in patch)) {
     delete merged.bubbleTailStyle
   }
+  // 预设写了 showAvatar 但未声明分侧时，清掉 Twitter 等留下的 showAvatarSelf/Other:false
+  if ('showAvatar' in patch) {
+    if (!('showAvatarSelf' in patch)) delete merged.showAvatarSelf
+    if (!('showAvatarOther' in patch)) delete merged.showAvatarOther
+  }
   return migrateMislabeledLumiDefaultBubble(merged)
 }
 
@@ -275,12 +453,37 @@ export function lumiDefaultChatInputBar(): ChatTheme['inputBar'] {
   }
 }
 
+/** 无 bubbleTailStyle 的色板预设（如 Twitter/X）：靠气泡形态匹配，避免输入栏被打回简约灰蓝 */
+function taillessColorPresetForBubble(
+  bubble: WeChatBubbleTheme,
+  wechatTheme?: WeChatTheme,
+): WeChatBubblePreset | null {
+  if (isTwitterXPresetActive(wechatTheme)) {
+    return resolveTwitterXPreset(isTwitterXNightMode(wechatTheme))
+  }
+  const effective = migrateMislabeledLumiDefaultBubble(bubble)
+  if (effective.bubbleTailStyle) return null
+  for (const preset of WECHAT_BUBBLE_PRESETS) {
+    if (preset.bubble.bubbleTailStyle) continue
+    if (preset.id === 'wechat-app-default' || preset.id === 'lumi-liquid-glass') continue
+    if (wechatBubbleThemesEqual(preset.bubble, effective)) return preset
+    if (
+      preset.id === 'twitter-x' &&
+      wechatBubbleThemesEqual(TWITTER_X_NIGHT_BUBBLE_PRESET.bubble, effective)
+    ) {
+      return TWITTER_X_NIGHT_BUBBLE_PRESET
+    }
+  }
+  return null
+}
+
 export const WECHAT_BUBBLE_PRESETS: WeChatBubblePreset[] = [
   WECHAT_APP_DEFAULT_BUBBLE_PRESET,
   WECHAT_APP_CLASSIC_BUBBLE_PRESET,
   IMESSAGE_BUBBLE_PRESET,
   TELEGRAM_BUBBLE_PRESET,
   TALKMAKER_BUBBLE_PRESET,
+  TWITTER_X_BUBBLE_PRESET,
   LIQUID_GLASS_MINIMAL_BUBBLE_PRESET,
 ]
 
@@ -328,11 +531,53 @@ export function resolveEffectiveChatInputBarForBubble(
     }
   }
 
+  if (isTwitterXPresetActive(wechatTheme)) {
+    const ti = resolveTwitterXPreset(isTwitterXNightMode(wechatTheme)).chatThemePatch?.inputBar
+    return {
+      ...inputBar,
+      layout: 'twitter',
+      borderRadius: ti?.borderRadius ?? 999,
+      borderColor: ti?.borderColor ?? inputBar.borderColor,
+      backgroundColor: ti?.backgroundColor ?? inputBar.backgroundColor,
+      buttonColor: ti?.buttonColor ?? inputBar.buttonColor,
+      buttonSize: ti?.buttonSize ?? inputBar.buttonSize,
+      sendButtonColor: ti?.sendButtonColor ?? inputBar.sendButtonColor,
+    }
+  }
+
+  if (isWechatClassicPresetActive(wechatTheme)) {
+    const wi = resolveWechatClassicPreset(isWechatClassicNightMode(wechatTheme)).chatThemePatch?.inputBar
+    return {
+      ...inputBar,
+      layout: 'wechat',
+      borderRadius: wi?.borderRadius ?? 6,
+      borderColor: wi?.borderColor ?? inputBar.borderColor,
+      backgroundColor: wi?.backgroundColor ?? inputBar.backgroundColor,
+      buttonColor: wi?.buttonColor ?? inputBar.buttonColor,
+      buttonSize: wi?.buttonSize ?? inputBar.buttonSize,
+      sendButtonColor: undefined,
+    }
+  }
+
   const effectiveBubble = migrateMislabeledLumiDefaultBubble(bubble)
   const layout = resolveInputBarLayoutForBubble(effectiveBubble)
   const presetInput = bubblePresetByTailStyle(effectiveBubble.bubbleTailStyle)?.chatThemePatch?.inputBar
 
   if (!effectiveBubble.bubbleTailStyle) {
+    const tailless = taillessColorPresetForBubble(effectiveBubble, wechatTheme)
+    const ti = tailless?.chatThemePatch?.inputBar
+    if (ti) {
+      return {
+        ...inputBar,
+        layout: ti.layout ?? 'lumi',
+        borderRadius: ti.borderRadius ?? inputBar.borderRadius,
+        borderColor: ti.borderColor ?? inputBar.borderColor,
+        buttonSize: ti.buttonSize ?? inputBar.buttonSize,
+        buttonColor: ti.buttonColor ?? inputBar.buttonColor,
+        backgroundColor: ti.backgroundColor ?? inputBar.backgroundColor,
+        sendButtonColor: ti.sendButtonColor ?? inputBar.sendButtonColor,
+      }
+    }
     return lumiDefaultChatInputBar()
   }
 
@@ -359,8 +604,30 @@ export function resolvePreviewWechatThemeForBubble(
       ...(LIQUID_GLASS_MINIMAL_BUBBLE_PRESET.wechatThemePatch ?? {}),
     }
   }
+  if (isTwitterXPresetActive(wechatTheme)) {
+    return {
+      ...wechatTheme,
+      ...resolveTwitterXThemePatch(
+        isTwitterXNightMode(wechatTheme),
+        wechatTheme.chatRoomDefaultBg,
+      ),
+    }
+  }
+  if (isWechatClassicPresetActive(wechatTheme)) {
+    return {
+      ...wechatTheme,
+      ...resolveWechatClassicThemePatch(
+        isWechatClassicNightMode(wechatTheme),
+        wechatTheme.chatRoomDefaultBg,
+      ),
+    }
+  }
   const effectiveBubble = migrateMislabeledLumiDefaultBubble(bubble)
   if (!effectiveBubble.bubbleTailStyle) {
+    const tailless = taillessColorPresetForBubble(effectiveBubble, wechatTheme)
+    if (tailless?.wechatThemePatch) {
+      return { ...wechatTheme, ...tailless.wechatThemePatch }
+    }
     return {
       ...wechatTheme,
       chatInputBg: DEFAULT_CUSTOMIZATION.wechatTheme.chatInputBg,
@@ -382,6 +649,20 @@ export function wechatBubblePresetMatchesActive(
   // 液态玻璃等 CSS 皮肤：以 CSS 标记为准
   if (preset.id === 'lumi-liquid-glass' && wechatTheme) {
     return Boolean(wechatTheme.chatSkinScopedCss?.includes('lumi-liquid-glass'))
+  }
+  if (preset.id === 'twitter-x' && wechatTheme) {
+    return isTwitterXPresetActive(wechatTheme)
+  }
+  if (preset.id === 'wechat-app-classic' && wechatTheme) {
+    if (isWechatClassicPresetActive(wechatTheme)) return true
+    // 兼容未写标记的旧套用：按日/夜色板形态匹配
+    if (
+      wechatBubbleThemesEqual(WECHAT_APP_CLASSIC_NIGHT_BUBBLE_PRESET.bubble, activeBubble) &&
+      WECHAT_APP_CLASSIC_NIGHT_BUBBLE_PRESET.selfBubbleText === selfBubbleText &&
+      WECHAT_APP_CLASSIC_NIGHT_BUBBLE_PRESET.otherBubbleText === otherBubbleText
+    ) {
+      return true
+    }
   }
   if (
     !wechatBubbleThemesEqual(preset.bubble, activeBubble) ||

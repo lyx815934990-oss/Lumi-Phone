@@ -98,15 +98,16 @@ import {
   computeContextVectorTextHash,
 } from '../memory/memoryContextVectorTypes'
 import {
-  backfillMemoryEmbeddingsBestEffort,
+  buildMemoryRecallQuerySlices,
+  capKeywordHitMemoriesForInject,
   filterKeywordHitsByVectorConfirm,
   isMemoryVectorRecallEnabled,
   memoryKeywordHitVectorSim,
-  MEMORY_VECTOR_MIN_SIM,
+  MEMORY_KEYWORD_HIT_INJECT_CAP,
+  MEMORY_KEYWORD_HIT_INJECT_CAP_GROUP,
   MEMORY_VECTOR_TOP_GROUP,
   MEMORY_VECTOR_TOP_PRIVATE,
-  pickMemoriesByVectorSimilarity,
-  pickMemoriesByVectorSimilarityScored,
+  recallMemoriesByFocusedVector,
   resolveMemoryEmbeddingModelId,
   type MemoryVectorRecallOpts,
 } from '../memory/memoryVectorRecall'
@@ -126,6 +127,15 @@ import {
   type StoryTimelineState,
 } from '../memory/storyTimelineTypes'
 import { loadStoryTimelinePromptBlock } from '../memory/storyTimelinePersist'
+import {
+  makePlayerLifeMutableId,
+  normalizeLifeMutableSheet,
+} from '../lifeMutable/compute'
+import type {
+  CharacterLifeMutableRow,
+  LifeMutableSheet,
+  PlayerLifeMutableRow,
+} from '../lifeMutable/types'
 import { isCharacterLinkedMemory, isCharacterOwnPrivateMemory } from '../memory/memoryCharacterScope'
 import {
   buildLinkedMemoryIdDisplayNameMap,
@@ -206,7 +216,7 @@ import { characterBelongsToWechatAccount, stampWechatAccountOwner } from '../wec
 import { WECHAT_USER_PROFILE_KV_KEY, WECHAT_USER_PROFILE_KV_KEY_LEGACY } from '../wechatProfileTypes'
 
 const DB_NAME = 'wechat-personas-v1'
-const DB_VERSION = 31
+const DB_VERSION = 32
 
 /** 复合索引：按会话 + 时间戳范围查询（日历、按日跳转） */
 const CHAT_MSG_INDEX_CONV_TS = 'conversationKey_timestamp'
@@ -245,6 +255,10 @@ const INDEXED_TRASH_STORE = 'indexedTrash'
 const STORY_TIMELINE_STORE = 'storyTimelineState'
 const STORY_TIMELINE_ROWS_STORE = 'storyTimelineRows'
 const MEMORY_CONTEXT_VECTOR_STORE = 'memoryContextVectors'
+/** 角色本线可变人生（年龄/资产等；与建档人设卡分离） */
+const CHARACTER_LIFE_MUTABLE_STORE = 'characterLifeMutable'
+/** 玩家身份卡 × 角色线可变人生（同一身份卡在不同 char 线上独立） */
+const PLAYER_LIFE_MUTABLE_STORE = 'playerLifeMutable'
 
 /** 与 DatingContext / loadOfflineDatingPlotsForWechatPrompt 一致（IndexedDB phoneKv） */
 const WECHAT_DATING_ARCHIVES_KV_KEY = 'wechat-dating-archives-v1'
@@ -1668,11 +1682,16 @@ function normalizeWeChatChatMessage(input: unknown): WeChatChatMessage | null {
           ? (m as { translationAudioUrl: string }).translationAudioUrl.trim()
           : ''
       const translationExpanded = (m as { translationExpanded?: unknown }).translationExpanded === true
+      const innerOs =
+        typeof (m as { innerOs?: unknown }).innerOs === 'string'
+          ? (m as { innerOs: string }).innerOs.trim().slice(0, 500)
+          : ''
       return {
         ...(translatedText ? { translatedText } : {}),
         ...(translationLang ? { translationLang } : {}),
         ...(translationExpanded ? { translationExpanded: true } : {}),
         ...(translationAudioUrl ? { translationAudioUrl } : {}),
+        ...(innerOs ? { innerOs } : {}),
       }
     })(),
     musicSync,
@@ -1856,6 +1875,24 @@ function normalizeChatConversationSettingsRow(input: unknown): ChatConversationS
     ...(typeof (r as { translationVoiceId?: unknown }).translationVoiceId === 'string' &&
     (r as { translationVoiceId: string }).translationVoiceId.trim()
       ? { translationVoiceId: (r as { translationVoiceId: string }).translationVoiceId.trim().slice(0, 120) }
+      : {}),
+    ...(typeof (r as { heartWhisperSyncEnabled?: unknown }).heartWhisperSyncEnabled === 'boolean'
+      ? { heartWhisperSyncEnabled: !!(r as { heartWhisperSyncEnabled: boolean }).heartWhisperSyncEnabled }
+      : {}),
+    ...(typeof (r as { innerOsSyncEnabled?: unknown }).innerOsSyncEnabled === 'boolean'
+      ? { innerOsSyncEnabled: !!(r as { innerOsSyncEnabled: boolean }).innerOsSyncEnabled }
+      : {}),
+    ...(typeof (r as { recentPrivateInjectAiRounds?: unknown }).recentPrivateInjectAiRounds === 'number' &&
+    Number.isFinite((r as { recentPrivateInjectAiRounds?: number }).recentPrivateInjectAiRounds)
+      ? {
+          recentPrivateInjectAiRounds: Math.max(
+            0,
+            Math.min(
+              16,
+              Math.floor((r as { recentPrivateInjectAiRounds: number }).recentPrivateInjectAiRounds),
+            ),
+          ),
+        }
       : {}),
     ...((): Partial<ChatConversationSettingsRow> => {
       const stickerRaw =
@@ -2098,6 +2135,22 @@ function mergeChatConversationSettingsRows(
   }
   if (typeof newer.translationAutoExpand !== 'boolean' && typeof older.translationAutoExpand === 'boolean') {
     merged.translationAutoExpand = older.translationAutoExpand
+  }
+  if (typeof newer.heartWhisperSyncEnabled !== 'boolean' && typeof older.heartWhisperSyncEnabled === 'boolean') {
+    merged.heartWhisperSyncEnabled = older.heartWhisperSyncEnabled
+  }
+  if (typeof newer.innerOsSyncEnabled !== 'boolean' && typeof older.innerOsSyncEnabled === 'boolean') {
+    merged.innerOsSyncEnabled = older.innerOsSyncEnabled
+  }
+  if (
+    !(typeof newer.recentPrivateInjectAiRounds === 'number' && Number.isFinite(newer.recentPrivateInjectAiRounds)) &&
+    typeof older.recentPrivateInjectAiRounds === 'number' &&
+    Number.isFinite(older.recentPrivateInjectAiRounds)
+  ) {
+    merged.recentPrivateInjectAiRounds = Math.max(
+      0,
+      Math.min(16, Math.floor(older.recentPrivateInjectAiRounds)),
+    )
   }
   if (
     typeof newer.proactiveMessageEnabled !== 'boolean' &&
@@ -3560,6 +3613,14 @@ function openDb(): Promise<IDBDatabase> {
         cv.createIndex('characterId', 'characterId', { unique: false })
         cv.createIndex('updatedAt', 'updatedAt', { unique: false })
       }
+      if (!db.objectStoreNames.contains(CHARACTER_LIFE_MUTABLE_STORE)) {
+        db.createObjectStore(CHARACTER_LIFE_MUTABLE_STORE, { keyPath: 'characterId' })
+      }
+      if (!db.objectStoreNames.contains(PLAYER_LIFE_MUTABLE_STORE)) {
+        const pl = db.createObjectStore(PLAYER_LIFE_MUTABLE_STORE, { keyPath: 'id' })
+        pl.createIndex('playerIdentityId', 'playerIdentityId', { unique: false })
+        pl.createIndex('characterId', 'characterId', { unique: false })
+      }
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error ?? new Error('open indexeddb failed'))
@@ -4063,6 +4124,7 @@ export class PersonaDb {
 
     await txDone(tx)
     db.close()
+    await this.purgePlayerLifeMutableForIdentity(pid)
   }
 
   async getCurrentIdentityId(): Promise<string> {
@@ -4736,6 +4798,7 @@ export class PersonaDb {
     await txDone(tx)
     db.close()
     await this.purgeStoryTimelineDataForCharacterIds([...idsToRemove])
+    await this.purgeLifeMutableForCharacterIds([...idsToRemove])
     await unregisterGlobalWechatCharacterForCharacterId(deleteId)
     emitWeChatStorageChanged()
     const { notifyUserWeChatDataClear } = await import('../wechatDataInventoryNotify')
@@ -5659,6 +5722,7 @@ export class PersonaDb {
       | 'translationLang'
       | 'translationExpanded'
       | 'translationAudioUrl'
+      | 'innerOs'
       >
     > & {
       redPacket?: Partial<WeChatRedPacketPayload>
@@ -7498,6 +7562,163 @@ export class PersonaDb {
     emitWeChatStorageChanged()
   }
 
+  async getCharacterLifeMutable(characterId: string): Promise<CharacterLifeMutableRow | null> {
+    const cid = characterId.trim()
+    if (!cid) return null
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(CHARACTER_LIFE_MUTABLE_STORE)) {
+      db.close()
+      return null
+    }
+    const tx = db.transaction(CHARACTER_LIFE_MUTABLE_STORE, 'readonly')
+    const req = tx.objectStore(CHARACTER_LIFE_MUTABLE_STORE).get(cid)
+    const res = await new Promise<unknown>((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error ?? new Error('get characterLifeMutable'))
+    })
+    await txDone(tx)
+    db.close()
+    if (!res || typeof res !== 'object') return null
+    const row = res as Partial<CharacterLifeMutableRow>
+    return {
+      characterId: cid,
+      updatedAt: typeof row.updatedAt === 'number' && Number.isFinite(row.updatedAt) ? row.updatedAt : Date.now(),
+      sheet: normalizeLifeMutableSheet(row.sheet),
+    }
+  }
+
+  async putCharacterLifeMutable(characterId: string, sheet: LifeMutableSheet): Promise<void> {
+    const cid = characterId.trim()
+    if (!cid) return
+    const row: CharacterLifeMutableRow = {
+      characterId: cid,
+      updatedAt: Date.now(),
+      sheet: normalizeLifeMutableSheet(sheet),
+    }
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(CHARACTER_LIFE_MUTABLE_STORE)) {
+      db.close()
+      return
+    }
+    const tx = db.transaction(CHARACTER_LIFE_MUTABLE_STORE, 'readwrite')
+    tx.objectStore(CHARACTER_LIFE_MUTABLE_STORE).put(row)
+    await txDone(tx)
+    db.close()
+    emitWeChatStorageChanged()
+  }
+
+  async getPlayerLifeMutable(
+    playerIdentityId: string,
+    characterId: string,
+  ): Promise<PlayerLifeMutableRow | null> {
+    const pid = playerIdentityId.trim()
+    const cid = characterId.trim()
+    if (!pid || !cid) return null
+    const id = makePlayerLifeMutableId(pid, cid)
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(PLAYER_LIFE_MUTABLE_STORE)) {
+      db.close()
+      return null
+    }
+    const tx = db.transaction(PLAYER_LIFE_MUTABLE_STORE, 'readonly')
+    const req = tx.objectStore(PLAYER_LIFE_MUTABLE_STORE).get(id)
+    const res = await new Promise<unknown>((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error ?? new Error('get playerLifeMutable'))
+    })
+    await txDone(tx)
+    db.close()
+    if (!res || typeof res !== 'object') return null
+    const row = res as Partial<PlayerLifeMutableRow>
+    return {
+      id,
+      playerIdentityId: pid,
+      characterId: cid,
+      updatedAt: typeof row.updatedAt === 'number' && Number.isFinite(row.updatedAt) ? row.updatedAt : Date.now(),
+      sheet: normalizeLifeMutableSheet(row.sheet),
+    }
+  }
+
+  async putPlayerLifeMutable(
+    playerIdentityId: string,
+    characterId: string,
+    sheet: LifeMutableSheet,
+  ): Promise<void> {
+    const pid = playerIdentityId.trim()
+    const cid = characterId.trim()
+    if (!pid || !cid) return
+    const row: PlayerLifeMutableRow = {
+      id: makePlayerLifeMutableId(pid, cid),
+      playerIdentityId: pid,
+      characterId: cid,
+      updatedAt: Date.now(),
+      sheet: normalizeLifeMutableSheet(sheet),
+    }
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(PLAYER_LIFE_MUTABLE_STORE)) {
+      db.close()
+      return
+    }
+    const tx = db.transaction(PLAYER_LIFE_MUTABLE_STORE, 'readwrite')
+    tx.objectStore(PLAYER_LIFE_MUTABLE_STORE).put(row)
+    await txDone(tx)
+    db.close()
+    emitWeChatStorageChanged()
+  }
+
+  async purgeLifeMutableForCharacterIds(characterIds: string[]): Promise<void> {
+    const ids = [...new Set(characterIds.map((x) => x.trim()).filter(Boolean))]
+    if (!ids.length) return
+    const db = await openDb()
+    const stores: string[] = []
+    if (db.objectStoreNames.contains(CHARACTER_LIFE_MUTABLE_STORE)) stores.push(CHARACTER_LIFE_MUTABLE_STORE)
+    if (db.objectStoreNames.contains(PLAYER_LIFE_MUTABLE_STORE)) stores.push(PLAYER_LIFE_MUTABLE_STORE)
+    if (!stores.length) {
+      db.close()
+      return
+    }
+    const tx = db.transaction(stores, 'readwrite')
+    if (db.objectStoreNames.contains(CHARACTER_LIFE_MUTABLE_STORE)) {
+      const st = tx.objectStore(CHARACTER_LIFE_MUTABLE_STORE)
+      for (const cid of ids) st.delete(cid)
+    }
+    if (db.objectStoreNames.contains(PLAYER_LIFE_MUTABLE_STORE)) {
+      const st = tx.objectStore(PLAYER_LIFE_MUTABLE_STORE)
+      const idx = st.index('characterId')
+      for (const cid of ids) {
+        const req = idx.getAll(cid)
+        const rows = await new Promise<PlayerLifeMutableRow[]>((resolve, reject) => {
+          req.onsuccess = () => resolve((req.result as PlayerLifeMutableRow[]) ?? [])
+          req.onerror = () => reject(req.error ?? new Error('list playerLifeMutable by character'))
+        })
+        for (const row of rows) st.delete(row.id)
+      }
+    }
+    await txDone(tx)
+    db.close()
+  }
+
+  async purgePlayerLifeMutableForIdentity(playerIdentityId: string): Promise<void> {
+    const pid = playerIdentityId.trim()
+    if (!pid) return
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(PLAYER_LIFE_MUTABLE_STORE)) {
+      db.close()
+      return
+    }
+    const tx = db.transaction(PLAYER_LIFE_MUTABLE_STORE, 'readwrite')
+    const st = tx.objectStore(PLAYER_LIFE_MUTABLE_STORE)
+    const idx = st.index('playerIdentityId')
+    const req = idx.getAll(pid)
+    const rows = await new Promise<PlayerLifeMutableRow[]>((resolve, reject) => {
+      req.onsuccess = () => resolve((req.result as PlayerLifeMutableRow[]) ?? [])
+      req.onerror = () => reject(req.error ?? new Error('list playerLifeMutable by identity'))
+    })
+    for (const row of rows) st.delete(row.id)
+    await txDone(tx)
+    db.close()
+  }
+
   async appendStoryTimelinePlotRow(row: StoryTimelinePlotRow): Promise<void> {
     await this.upsertStoryTimelinePlotRow(row)
     const cid = row.characterId.trim()
@@ -8645,67 +8866,85 @@ export class PersonaDb {
       const rawHay = String(relevanceText || '').trim()
       if (rawHay.length >= 10) {
         try {
+          const querySlices = buildMemoryRecallQuerySlices(rawHay)
+          const focusedQuery = querySlices[0] || rawHay.slice(-1800)
           const queryHit = await fetchEmbeddingVectorUnified(
             memorySettings,
             opts.apiConfig ?? null,
-            rawHay,
+            focusedQuery,
             resolveMemoryEmbeddingModelId(memorySettings, opts),
           )
-          if (queryHit?.vec.length) {
-            const union = [...privateList, ...groupList]
-            await backfillMemoryEmbeddingsBestEffort({
-              memories: union,
-              upsert: (m) => this.upsertCharacterMemory(m),
+
+          const reloadPrivate = async () => {
+            const privFresh = await this.listCharacterMemoriesForCharacter(cid)
+            return bucket === 'linked'
+              ? privFresh.filter(isCharacterLinkedMemory)
+              : privFresh.filter(isCharacterOwnPrivateMemory)
+          }
+          const reloadGroup = async () => this.listGroupMemoriesInvolvingCharacter(cid)
+
+          const exclP = new Set<string>(alwaysPrivate.map((m) => m.id))
+          const exclG = new Set<string>(alwaysGroup.map((m) => m.id))
+          const scoredP = await recallMemoriesByFocusedVector({
+            candidates: privateList,
+            relevanceText: rawHay,
+            settings: memorySettings,
+            chatApiConfig: opts.apiConfig ?? null,
+            upsert: (m) => this.upsertCharacterMemory(m),
+            reloadCandidates: reloadPrivate,
+            topK: MEMORY_VECTOR_TOP_PRIVATE,
+            excludeIds: exclP,
+          })
+          vecExtraPrivate = scoredP.map((x) => x.memory)
+
+          if (bucket === 'own') {
+            const scoredG = await recallMemoriesByFocusedVector({
+              candidates: groupList,
+              relevanceText: rawHay,
               settings: memorySettings,
               chatApiConfig: opts.apiConfig ?? null,
-              queryDim: queryHit.vec.length,
-              embeddingProvider: queryHit.provider,
-              embeddingModelId: queryHit.modelId,
-            })
-            const privFresh = await this.listCharacterMemoriesForCharacter(cid)
-            const groupFresh = await this.listGroupMemoriesInvolvingCharacter(cid)
-            const privCandidates =
-              bucket === 'linked'
-                ? privFresh.filter(isCharacterLinkedMemory)
-                : privFresh.filter(isCharacterOwnPrivateMemory)
-            const refreshKeywordHits = (candidates: CharacterMemory[], fresh: CharacterMemory[]) => {
-              const byId = new Map(fresh.map((m) => [m.id, m]))
-              return candidates.map((m) => byId.get(m.id) ?? m)
-            }
-            taggedPrivateHits = filterKeywordHitsByVectorConfirm({
-              hits: refreshKeywordHits(keywordCandPrivate, privCandidates),
-              queryVec: queryHit.vec,
-            })
-            taggedGroupHits = filterKeywordHitsByVectorConfirm({
-              hits: refreshKeywordHits(keywordCandGroup, groupFresh),
-              queryVec: queryHit.vec,
-            })
-
-            // 向量轨独立捞 TopK：只排除「始终触发」，不排除关键词命中。
-            // 否则 haystack 一大时几乎所有带触发词的记忆都进关键词轨，⑥ 向量长期记忆永远为 0。
-            const exclP = new Set<string>(alwaysPrivate.map((m) => m.id))
-            vecExtraPrivate = pickMemoriesByVectorSimilarity({
-              candidates: privCandidates,
-              queryVec: queryHit.vec,
-              topK: MEMORY_VECTOR_TOP_PRIVATE,
-              minSim: MEMORY_VECTOR_MIN_SIM,
-              excludeIds: exclP,
-            })
-
-            const exclG = new Set<string>(alwaysGroup.map((m) => m.id))
-            vecExtraGroup = pickMemoriesByVectorSimilarity({
-              candidates: groupFresh,
-              queryVec: queryHit.vec,
+              upsert: (m) => this.upsertCharacterMemory(m),
+              reloadCandidates: reloadGroup,
               topK: MEMORY_VECTOR_TOP_GROUP,
-              minSim: MEMORY_VECTOR_MIN_SIM,
               excludeIds: exclG,
             })
+            vecExtraGroup = scoredG.map((x) => x.memory)
           }
+
+          const privCandidates = await reloadPrivate()
+          const groupFresh = await reloadGroup()
+          const refreshKeywordHits = (candidates: CharacterMemory[], fresh: CharacterMemory[]) => {
+            const byId = new Map(fresh.map((m) => [m.id, m]))
+            return candidates.map((m) => byId.get(m.id) ?? m)
+          }
+          taggedPrivateHits = capKeywordHitMemoriesForInject(
+            filterKeywordHitsByVectorConfirm({
+              hits: refreshKeywordHits(keywordCandPrivate, privCandidates),
+              queryVec: queryHit?.vec ?? null,
+            }),
+            MEMORY_KEYWORD_HIT_INJECT_CAP,
+          )
+          taggedGroupHits = capKeywordHitMemoriesForInject(
+            filterKeywordHitsByVectorConfirm({
+              hits: refreshKeywordHits(keywordCandGroup, groupFresh),
+              queryVec: queryHit?.vec ?? null,
+            }),
+            MEMORY_KEYWORD_HIT_INJECT_CAP_GROUP,
+          )
         } catch {
           /* 仅关键词 */
         }
       }
     }
+
+    taggedPrivateHits = capKeywordHitMemoriesForInject(
+      taggedPrivateHits,
+      MEMORY_KEYWORD_HIT_INJECT_CAP,
+    )
+    taggedGroupHits = capKeywordHitMemoriesForInject(
+      taggedGroupHits,
+      MEMORY_KEYWORD_HIT_INJECT_CAP_GROUP,
+    )
 
     const legacyPrivate = privateList
       .filter((m) => !isMemoryAlwaysTrigger(m) && !memoryHasTriggerDimensions(m))
@@ -8957,95 +9196,112 @@ export class PersonaDb {
       const rawHay = String(relevanceText || '').trim()
       if (rawHay.length >= 10) {
         try {
+          const querySlices = buildMemoryRecallQuerySlices(rawHay)
+          const focusedQuery = querySlices[0] || rawHay.slice(-1800)
           const queryHit = await fetchEmbeddingVectorUnified(
             memorySettings,
             opts.apiConfig ?? null,
-            rawHay,
+            focusedQuery,
             resolveMemoryEmbeddingModelId(memorySettings, opts),
           )
-          if (queryHit?.vec.length) {
-            keywordQueryVec = queryHit.vec
-            const union = [...privateList, ...groupList]
-            await backfillMemoryEmbeddingsBestEffort({
-              memories: union,
-              upsert: (m) => this.upsertCharacterMemory(m),
-              settings: memorySettings,
-              chatApiConfig: opts.apiConfig ?? null,
-              queryDim: queryHit.vec.length,
-              embeddingProvider: queryHit.provider,
-              embeddingModelId: queryHit.modelId,
-            })
+          if (queryHit?.vec.length) keywordQueryVec = queryHit.vec
+
+          const reloadPrivate = async () => {
             const privFresh = await this.listCharacterMemoriesForCharacter(cid)
-            const groupFresh = await this.listGroupMemoriesInvolvingCharacter(cid)
-            const privCandidates =
-              bucket === 'linked'
-                ? privFresh.filter(isCharacterLinkedMemory)
-                : privFresh.filter(isCharacterOwnPrivateMemory)
-            const refreshKeywordHits = (candidates: CharacterMemory[], fresh: CharacterMemory[]) => {
-              const byId = new Map(fresh.map((m) => [m.id, m]))
-              return candidates.map((m) => byId.get(m.id) ?? m)
-            }
-            taggedPrivateHits = filterKeywordHitsByVectorConfirm({
-              hits: refreshKeywordHits(keywordCandPrivate, privCandidates),
-              queryVec: queryHit.vec,
-            })
-            taggedGroupHits = filterKeywordHitsByVectorConfirm({
-              hits: refreshKeywordHits(keywordCandGroup, groupFresh),
-              queryVec: queryHit.vec,
-            })
-
-            // 与注入一致：向量独立 TopK，仅排除始终触发；已进向量的条目不再重复进关键词轨展示
-            const exclP = new Set<string>(alwaysPrivate.map((m) => m.id))
-            const scoredP = pickMemoriesByVectorSimilarityScored({
-              candidates: privCandidates,
-              queryVec: queryHit.vec,
-              topK: MEMORY_VECTOR_TOP_PRIVATE,
-              minSim: MEMORY_VECTOR_MIN_SIM,
-              excludeIds: exclP,
-            })
-
-            const exclG = new Set<string>(alwaysGroup.map((m) => m.id))
-            const scoredG = pickMemoriesByVectorSimilarityScored({
-              candidates: groupFresh,
-              queryVec: queryHit.vec,
-              topK: MEMORY_VECTOR_TOP_GROUP,
-              minSim: MEMORY_VECTOR_MIN_SIM,
-              excludeIds: exclG,
-            })
-            const vecMemoriesCollected: CharacterMemory[] = []
-            for (const { memory } of scoredP) vecMemoriesCollected.push(memory)
-            for (const { memory } of scoredG) vecMemoriesCollected.push(memory)
-            const vecSeen = new Set<string>()
-            const vecUnique = vecMemoriesCollected.filter((mem) => {
-              if (vecSeen.has(mem.id)) return false
-              vecSeen.add(mem.id)
-              return true
-            })
-            const vecExp = await this.expandMemoryListContentForPrompt(vecUnique, cid)
-            const vecExpById = new Map(vecUnique.map((mem, i) => [mem.id, vecExp[i] ?? mem.content.trim()]))
-            for (const { memory, score } of scoredP) {
-              vectorRetrievals.push({
-                relevanceScore: score,
-                content: vecExpById.get(memory.id) ?? memory.content.trim(),
-                ...(await enrichTraceMeta(memory)),
-              })
-            }
-            for (const { memory, score } of scoredG) {
-              vectorRetrievals.push({
-                relevanceScore: score,
-                content: vecExpById.get(memory.id) ?? memory.content.trim(),
-                ...(await enrichTraceMeta(memory)),
-              })
-            }
-            // 已进向量轨的条目不再进关键词轨，避免⑥=0、⑦把语义命中全吃掉
-            taggedPrivateHits = taggedPrivateHits.filter((m) => !vecSeen.has(m.id))
-            taggedGroupHits = taggedGroupHits.filter((m) => !vecSeen.has(m.id))
+            return bucket === 'linked'
+              ? privFresh.filter(isCharacterLinkedMemory)
+              : privFresh.filter(isCharacterOwnPrivateMemory)
           }
+          const reloadGroup = async () => this.listGroupMemoriesInvolvingCharacter(cid)
+
+          const exclP = new Set<string>(alwaysPrivate.map((m) => m.id))
+          const exclG = new Set<string>(alwaysGroup.map((m) => m.id))
+          const scoredP = await recallMemoriesByFocusedVector({
+            candidates: privateList,
+            relevanceText: rawHay,
+            settings: memorySettings,
+            chatApiConfig: opts.apiConfig ?? null,
+            upsert: (m) => this.upsertCharacterMemory(m),
+            reloadCandidates: reloadPrivate,
+            topK: MEMORY_VECTOR_TOP_PRIVATE,
+            excludeIds: exclP,
+          })
+          const scoredG =
+            bucket === 'own'
+              ? await recallMemoriesByFocusedVector({
+                  candidates: groupList,
+                  relevanceText: rawHay,
+                  settings: memorySettings,
+                  chatApiConfig: opts.apiConfig ?? null,
+                  upsert: (m) => this.upsertCharacterMemory(m),
+                  reloadCandidates: reloadGroup,
+                  topK: MEMORY_VECTOR_TOP_GROUP,
+                  excludeIds: exclG,
+                })
+              : []
+
+          const privCandidates = await reloadPrivate()
+          const groupFresh = await reloadGroup()
+          const refreshKeywordHits = (candidates: CharacterMemory[], fresh: CharacterMemory[]) => {
+            const byId = new Map(fresh.map((m) => [m.id, m]))
+            return candidates.map((m) => byId.get(m.id) ?? m)
+          }
+          taggedPrivateHits = capKeywordHitMemoriesForInject(
+            filterKeywordHitsByVectorConfirm({
+              hits: refreshKeywordHits(keywordCandPrivate, privCandidates),
+              queryVec: keywordQueryVec,
+            }),
+            MEMORY_KEYWORD_HIT_INJECT_CAP,
+          )
+          taggedGroupHits = capKeywordHitMemoriesForInject(
+            filterKeywordHitsByVectorConfirm({
+              hits: refreshKeywordHits(keywordCandGroup, groupFresh),
+              queryVec: keywordQueryVec,
+            }),
+            MEMORY_KEYWORD_HIT_INJECT_CAP_GROUP,
+          )
+
+          const vecMemoriesCollected: CharacterMemory[] = []
+          for (const { memory } of scoredP) vecMemoriesCollected.push(memory)
+          for (const { memory } of scoredG) vecMemoriesCollected.push(memory)
+          const vecSeen = new Set<string>()
+          const vecUnique = vecMemoriesCollected.filter((mem) => {
+            if (vecSeen.has(mem.id)) return false
+            vecSeen.add(mem.id)
+            return true
+          })
+          const vecExp = await this.expandMemoryListContentForPrompt(vecUnique, cid)
+          const vecExpById = new Map(vecUnique.map((mem, i) => [mem.id, vecExp[i] ?? mem.content.trim()]))
+          for (const { memory, score } of scoredP) {
+            vectorRetrievals.push({
+              relevanceScore: score,
+              content: vecExpById.get(memory.id) ?? memory.content.trim(),
+              ...(await enrichTraceMeta(memory)),
+            })
+          }
+          for (const { memory, score } of scoredG) {
+            vectorRetrievals.push({
+              relevanceScore: score,
+              content: vecExpById.get(memory.id) ?? memory.content.trim(),
+              ...(await enrichTraceMeta(memory)),
+            })
+          }
+          taggedPrivateHits = taggedPrivateHits.filter((m) => !vecSeen.has(m.id))
+          taggedGroupHits = taggedGroupHits.filter((m) => !vecSeen.has(m.id))
         } catch {
           /* 无向量数据 */
         }
       }
     }
+
+    taggedPrivateHits = capKeywordHitMemoriesForInject(
+      taggedPrivateHits,
+      MEMORY_KEYWORD_HIT_INJECT_CAP,
+    )
+    taggedGroupHits = capKeywordHitMemoriesForInject(
+      taggedGroupHits,
+      MEMORY_KEYWORD_HIT_INJECT_CAP_GROUP,
+    )
 
     const kwMemoriesOrdered: CharacterMemory[] = []
     const seenKw = new Set<string>()
@@ -9930,6 +10186,8 @@ export class PersonaDb {
         | 'translationLanguage'
         | 'translationAutoExpand'
         | 'translationVoiceId'
+        | 'heartWhisperSyncEnabled'
+        | 'innerOsSyncEnabled'
         | 'imageRoundTriggerPercent'
         | 'imageRoundCountMin'
         | 'imageRoundCountMax'
@@ -9944,6 +10202,7 @@ export class PersonaDb {
         | 'proactiveMessageVariableIntervalMinSeconds'
         | 'proactiveMessageVariableIntervalMaxSeconds'
         | 'proactiveMessageNextIntervalSeconds'
+        | 'recentPrivateInjectAiRounds'
         | 'lastMessageTime'
         | 'uiOnlyHiddenBeforeTimestamp'
         | 'friendRequestAcceptedAtMs'
@@ -10074,6 +10333,27 @@ export class PersonaDb {
           : {}
         : existing?.translationVoiceId
           ? { translationVoiceId: existing.translationVoiceId }
+          : {}),
+      ...(typeof params.heartWhisperSyncEnabled === 'boolean'
+        ? { heartWhisperSyncEnabled: params.heartWhisperSyncEnabled }
+        : existing?.heartWhisperSyncEnabled != null
+          ? { heartWhisperSyncEnabled: existing.heartWhisperSyncEnabled }
+          : {}),
+      ...(typeof params.innerOsSyncEnabled === 'boolean'
+        ? { innerOsSyncEnabled: params.innerOsSyncEnabled }
+        : existing?.innerOsSyncEnabled != null
+          ? { innerOsSyncEnabled: existing.innerOsSyncEnabled }
+          : {}),
+      ...(typeof params.recentPrivateInjectAiRounds === 'number' &&
+      Number.isFinite(params.recentPrivateInjectAiRounds)
+        ? {
+            recentPrivateInjectAiRounds: Math.max(
+              0,
+              Math.min(16, Math.floor(params.recentPrivateInjectAiRounds)),
+            ),
+          }
+        : existing?.recentPrivateInjectAiRounds !== undefined
+          ? { recentPrivateInjectAiRounds: existing.recentPrivateInjectAiRounds }
           : {}),
       ...(params.clearClassicEmojiRoundTriggerPercent
         ? {}
@@ -10826,6 +11106,8 @@ export class PersonaDb {
         STORY_TIMELINE_STORE,
         STORY_TIMELINE_ROWS_STORE,
         MEMORY_CONTEXT_VECTOR_STORE,
+        CHARACTER_LIFE_MUTABLE_STORE,
+        PLAYER_LIFE_MUTABLE_STORE,
       ] as const
 
       const phoneKeysToDelete: string[] = []

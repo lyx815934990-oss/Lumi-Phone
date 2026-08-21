@@ -3,6 +3,7 @@ import { Check, RefreshCw, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { PersonaAiGenerateResult } from './personaAiGenerate'
+import { summarizePersonaAiLifeLedgers } from './personaAiGenerateLifeLedger'
 import type { Character } from './types'
 
 export type PersonaAiPreviewEntry = {
@@ -139,6 +140,29 @@ export function PersonaAiGeneratePreviewSheet({
               仍有 {result.issues.length} 项质量提示（可先采用再改，或勾选重写）。
             </p>
           ) : null}
+          {(() => {
+            const ledgerSummary = result.characterLifeSheet
+              ? summarizePersonaAiLifeLedgers({
+                  characterLifeSheet: result.characterLifeSheet,
+                  playerLifeSheet: result.playerLifeSheet ?? null,
+                })
+              : ''
+            if (!ledgerSummary) {
+              return (
+                <p className="mt-2 text-[11px] text-neutral-400">
+                  {result.lifeLedgerError
+                    ? `人生账本未生成：${result.lifeLedgerError}`
+                    : '人生账本未生成（可采用后人设页「按记忆对齐」补齐；有绑定身份时含玩家本线）。'}
+                </p>
+              )
+            }
+            return (
+              <p className="mt-2 whitespace-pre-line text-[11px] leading-relaxed text-emerald-800/90">
+                已生成开局人生账本（采用时写入）{'\n'}
+                {ledgerSummary}
+              </p>
+            )
+          })()}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">

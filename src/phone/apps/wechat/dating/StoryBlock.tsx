@@ -1,10 +1,15 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarClock, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { copyTextToClipboard } from '../../../utils/copyToClipboard'
 import { formatApiClientError } from '../addFriend/friendRequestApiError'
 import { WeChatCenterToast } from '../WeChatCenterToast'
+import {
+  normalizeDualNarrativeStoryFields,
+  type DualNarrativeStoryFields,
+} from '../memory/dualNarrativeTime'
+import { MemoryStoryTimeFieldsEditor } from '../memory/MemoryStoryTimeFieldsEditor'
 import { useExpandedStoryTimelineSnapshot } from '../memory/useExpandedStoryTimelineSnapshot'
 import { useDating } from './DatingContext'
 import { PlotDimensionPanel } from './PlotDimensionPanel'
@@ -14,21 +19,66 @@ import {
   formatPlotGenerationTimeCompact,
   resolvePlotStoryEndDisplayLabel,
 } from './plotStoryTimeLabel'
+import { seedPlotStoryTimeEditorFields } from './updatePlotStoryTime'
 import { PlotMagazineBody } from './PlotMagazineBody'
 import { PlotRichParagraph } from './plotRichText'
 import { DatingNum } from './DatingNum'
 import type { BranchOption, NarrativePerspective, PlotDimensionKind, PlotItem } from './types'
+
+function EditStoryTimeButton({
+  onClick,
+  variant = 'chip',
+  label = '改时间',
+}: {
+  onClick: () => void
+  variant?: 'chip' | 'ghost'
+  label?: string
+}) {
+  if (variant === 'ghost') {
+    return (
+      <button
+        type="button"
+        aria-label="编辑剧情发生时间"
+        className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-[#6B6B70] transition-colors hover:bg-black/[0.04] hover:text-[#1A1A1A] active:bg-black/[0.06]"
+        onClick={(e) => {
+          e.stopPropagation()
+          onClick()
+        }}
+      >
+        <CalendarClock className="size-3 opacity-80" strokeWidth={1.75} aria-hidden />
+        <span>{label}</span>
+      </button>
+    )
+  }
+  return (
+    <button
+      type="button"
+      aria-label="编辑剧情发生时间"
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-black/[0.08] bg-gradient-to-b from-white to-[#F7F7F8] px-2.5 py-1 text-[10px] font-medium leading-none tracking-wide text-[#333] shadow-[0_1px_0_rgba(255,255,255,0.9)_inset,0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,background,box-shadow,transform] hover:border-black/15 hover:from-white hover:to-[#F0F0F2] hover:shadow-[0_1px_0_rgba(255,255,255,0.95)_inset,0_2px_6px_rgba(0,0,0,0.06)] active:translate-y-px active:shadow-none"
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onClick()
+      }}
+    >
+      <CalendarClock className="size-3 text-[#555]" strokeWidth={1.75} aria-hidden />
+      <span>{label}</span>
+    </button>
+  )
+}
 
 function PlotCardMetaFooter({
   bodyChars,
   generationCompact,
   storyEndLabel,
   showLongPressHint,
+  onEditStoryTime,
 }: {
   bodyChars?: number
   generationCompact: string
   storyEndLabel?: string | null
   showLongPressHint?: boolean
+  onEditStoryTime?: () => void
 }) {
   const hasStory = Boolean(storyEndLabel?.trim())
   return (
@@ -54,12 +104,15 @@ function PlotCardMetaFooter({
             <DatingNum>{generationCompact}</DatingNum>
           </span>
         </div>
-        {hasStory ? (
-          <div className="flex min-w-0 items-baseline gap-2" title={`剧情时间 ${storyEndLabel}`}>
+        {hasStory || onEditStoryTime ? (
+          <div className="flex min-w-0 items-center gap-2" title={hasStory ? `剧情时间 ${storyEndLabel}` : '剧情时间未填'}>
             <span className="w-6 shrink-0 text-[9px] font-medium tracking-[0.08em] text-[#8A8A8E]">剧情</span>
-            <span className="min-w-0 truncate text-[11px] leading-tight text-[#333]">
-              <DatingNum>{storyEndLabel}</DatingNum>
+            <span className="min-w-0 flex-1 truncate text-[11px] leading-tight text-[#333]">
+              {hasStory ? <DatingNum>{storyEndLabel}</DatingNum> : <span className="text-[#8A8A8E]">未标注</span>}
             </span>
+            {onEditStoryTime ? (
+              <EditStoryTimeButton variant="ghost" label="编辑" onClick={onEditStoryTime} />
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -176,9 +229,18 @@ export function StoryBlock({
   branchChoices,
   narrativePerspective = 'second',
 }: Props) {
-  const { generatePlotDimension, backfillPlotTranslations, currentArchive, currentCharacterId } =
-    useDating()
+  const {
+    generatePlotDimension,
+    backfillPlotTranslations,
+    updatePlotStoryTime,
+    currentArchive,
+    currentCharacterId,
+  } = useDating()
   const [backfillBusy, setBackfillBusy] = useState(false)
+  const [storyTimeOpen, setStoryTimeOpen] = useState(false)
+  const [storyTimeFields, setStoryTimeFields] = useState<DualNarrativeStoryFields>({})
+  const [storyTimeBusy, setStoryTimeBusy] = useState(false)
+  const [storyTimeError, setStoryTimeError] = useState('')
   const aiSplit = useMemo(() => {
     if (plot.type !== 'ai') return { thinkingText: '', displayBody: plot.content }
     return resolveDatingPlotDisplayFromItem(plot)
@@ -352,6 +414,38 @@ export function StoryBlock({
     }
   }, [backfillBusy, backfillPlotTranslations, plot.id, plot.type, showCopyToast])
 
+  const openStoryTimeEditor = useCallback(() => {
+    if (plot.type !== 'ai') return
+    setStoryTimeError('')
+    setStoryTimeFields(seedPlotStoryTimeEditorFields(plot))
+    setStoryTimeOpen(true)
+    setCtxOpen(false)
+  }, [plot])
+
+  const saveStoryTime = useCallback(async () => {
+    if (plot.type !== 'ai' || storyTimeBusy) return
+    const norm = normalizeDualNarrativeStoryFields(storyTimeFields)
+    if (!norm.storyTimeLabel?.trim()) {
+      setStoryTimeError('请先选择剧情发生时间')
+      return
+    }
+    setStoryTimeBusy(true)
+    setStoryTimeError('')
+    try {
+      const result = await updatePlotStoryTime(plot.id, norm)
+      if (!result.ok) {
+        setStoryTimeError(result.reason)
+        return
+      }
+      setStoryTimeOpen(false)
+      showCopyToast('已更新剧情时间')
+    } catch (e) {
+      setStoryTimeError(formatApiClientError(e, '保存失败，请稍后重试'))
+    } finally {
+      setStoryTimeBusy(false)
+    }
+  }, [plot.id, plot.type, showCopyToast, storyTimeBusy, storyTimeFields, updatePlotStoryTime])
+
   const openDimensionPanel = useCallback((kind: PlotDimensionKind) => {
     setDimensionError(null)
     setDimensionPanel(kind)
@@ -442,7 +536,7 @@ export function StoryBlock({
                   style={{
                     position: 'fixed',
                     left: Math.min(window.innerWidth - 168, Math.max(12, ctxPos.x - 84)),
-                    top: Math.min(window.innerHeight - 220, ctxPos.y),
+                    top: Math.min(window.innerHeight - 280, ctxPos.y),
                     zIndex: 70,
                   }}
                   className="w-[168px] overflow-hidden rounded-2xl border border-white/70 bg-white/75 py-1 shadow-[0_12px_40px_rgba(0,0,0,0.1)] backdrop-blur-xl"
@@ -466,6 +560,16 @@ export function StoryBlock({
                   >
                     编辑内容
                   </button>
+                  {plot.type === 'ai' ? (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-[13px] text-stone-700 transition-colors hover:bg-white/60"
+                      onClick={() => openStoryTimeEditor()}
+                    >
+                      <CalendarClock className="size-3.5 shrink-0 text-stone-400" strokeWidth={1.75} aria-hidden />
+                      修改剧情时间
+                    </button>
+                  ) : null}
                   {canRegenerate && onRegenerate ? (
                     <button
                       type="button"
@@ -628,10 +732,14 @@ export function StoryBlock({
         <details className="listen-together-cn-text rounded-[14px] border border-black/[0.06] bg-white px-3 py-2">
           <summary
             onContextMenu={suppressSystemTextUi.onContextMenu}
-            className="cursor-pointer select-none touch-manipulation list-none text-[11px] font-medium tracking-wide text-[#8A8A8E] [-webkit-touch-callout:none] [-webkit-user-select:none] [&::-webkit-details-marker]:hidden"
+            className="flex cursor-pointer list-none items-center justify-between gap-2 select-none touch-manipulation text-[11px] font-medium tracking-wide text-[#8A8A8E] [-webkit-touch-callout:none] [-webkit-user-select:none] [&::-webkit-details-marker]:hidden"
             style={suppressSystemTextUi.style}
           >
-            剧情时间轴
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-1 rounded-full bg-[#C8C8CC]" aria-hidden />
+              剧情时间轴
+            </span>
+            <EditStoryTimeButton onClick={openStoryTimeEditor} />
           </summary>
           <pre
             onContextMenu={suppressSystemTextUi.onContextMenu}
@@ -641,6 +749,14 @@ export function StoryBlock({
             {timelineSnapshotText}
           </pre>
         </details>
+      ) : plot.type === 'ai' ? (
+        <div className="listen-together-cn-text flex items-center justify-between gap-2 rounded-[14px] border border-black/[0.06] bg-white px-3 py-2">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-[#8A8A8E]">
+            <span className="size-1 rounded-full bg-[#C8C8CC]" aria-hidden />
+            剧情时间轴
+          </span>
+          <EditStoryTimeButton onClick={openStoryTimeEditor} />
+        </div>
       ) : null}
         </div>
         <div className="flex shrink-0 flex-col gap-1 pt-0.5">
@@ -843,11 +959,94 @@ export function StoryBlock({
           generationCompact={generationCompact}
           storyEndLabel={storyEndTimeLabel}
           showLongPressHint={!editing}
+          onEditStoryTime={plot.type === 'ai' ? openStoryTimeEditor : undefined}
         />
       ) : null}
     </motion.div>
     {menuLayer}
     {copyToastNode}
+    {typeof document !== 'undefined'
+      ? createPortal(
+          <AnimatePresence>
+            {storyTimeOpen ? (
+              <motion.div
+                key="plot-story-time-sheet"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="plot-story-time-title"
+                className="fixed inset-0 flex flex-col justify-end"
+                style={{ zIndex: 56000, background: 'rgba(17,24,39,0.32)' }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={storyTimeBusy ? undefined : () => setStoryTimeOpen(false)}
+              >
+                <motion.div
+                  initial={{ y: '100%' }}
+                  animate={{ y: 0 }}
+                  exit={{ y: '100%' }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 38 }}
+                  className="max-h-[min(72vh,520px)] w-full overflow-hidden rounded-t-[28px] border border-gray-200/60 bg-white shadow-[0_-12px_48px_rgba(0,0,0,0.12)]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">
+                        STORY TIME
+                      </p>
+                      <p id="plot-story-time-title" className="mt-0.5 text-[17px] font-semibold text-gray-900">
+                        编辑剧情发生时间
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={storyTimeBusy}
+                      onClick={() => setStoryTimeOpen(false)}
+                      className="flex h-9 w-9 items-center justify-center rounded-full text-gray-500 active:bg-gray-100 disabled:opacity-50"
+                      aria-label="关闭"
+                    >
+                      <X className="size-5" strokeWidth={1.75} />
+                    </button>
+                  </div>
+                  <div className="overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
+                    <p className="mb-2 text-[11px] leading-relaxed text-gray-500">
+                      修改本段故事内公历时间。保存后会同步记忆档案里对应线下摘要的【本轮锚点】。
+                    </p>
+                    <MemoryStoryTimeFieldsEditor
+                      value={storyTimeFields}
+                      onChange={setStoryTimeFields}
+                      disabled={storyTimeBusy}
+                      hint="可选时间点或时间段；用于纠正线上线下年份不一致等情况。"
+                    />
+                    {storyTimeError ? (
+                      <p className="mt-3 text-[12px] text-red-600">{storyTimeError}</p>
+                    ) : null}
+                    <div className="mt-5 flex gap-2">
+                      <button
+                        type="button"
+                        disabled={storyTimeBusy}
+                        onClick={() => setStoryTimeOpen(false)}
+                        className="flex-1 rounded-2xl border border-gray-200 py-3 text-[14px] font-medium text-gray-600 disabled:opacity-50"
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        disabled={storyTimeBusy}
+                        onClick={() => void saveStoryTime()}
+                        className="flex-1 rounded-2xl bg-[#111] py-3 text-[14px] font-medium text-white disabled:opacity-50"
+                      >
+                        {storyTimeBusy ? '保存中…' : '保存'}
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>,
+          document.body,
+        )
+      : null}
     </>
   )
 }

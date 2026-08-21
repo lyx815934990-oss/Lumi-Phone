@@ -3,6 +3,7 @@ import type { DatingPlotSnapshotItem } from '../unifiedMemoryAutoSummary'
 import { rebuildStoryTimelineFromDatingPlots } from '../memory/storyTimelinePersist'
 import { personaDb } from '../newFriendsPersona/idb'
 import { rebuildWorldBookAfterFromDatingPlotList } from '../newFriendsPersona/worldBookAfterPatch'
+import { rebuildObservationNotesFromDatingPlotList } from '../observationNotes/plotRevert'
 import type { PlotItem } from './types'
 import { resolveOfflineDatingArchiveContext } from './offlineDatingArchiveResolve'
 
@@ -138,6 +139,19 @@ export async function finalizeDatingPlotListMutationSideEffects(
       }
     } catch (e) {
       console.warn('[dating] epilogue sync after plot mutation failed', e)
+    }
+
+    try {
+      const obsRestored = await rebuildObservationNotesFromDatingPlotList({
+        characterId: charId,
+        prevPlots: params.prevPlots,
+        nextPlots: params.nextPlots,
+      })
+      if (obsRestored.restored) {
+        /* ok */
+      }
+    } catch (e) {
+      console.warn('[dating] observation notes rollback after plot mutation failed', e)
     }
   }
 }

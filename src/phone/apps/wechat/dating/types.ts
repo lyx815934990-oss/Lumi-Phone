@@ -216,6 +216,10 @@ export type PlotItem = {
    */
   worldBookAfterRevertEntries?: WorldBookAfterRevertEntry[]
   /**
+   * 本条 AI 最近一次成功落库的私藏侧写补丁回滚信息；删剧情 / 重生前用于恢复。
+   */
+  observationNotesRevert?: import('../observationNotes/plotRevert').ObservationNotesPlotRevert
+  /**
    * @deprecated 待办台账已下线；旧档可能仍有此字段，读写时忽略。
    */
   todoLedgerBefore?: import('../memory/storyTimelineTypes').StoryTimelineTodoEntry[]

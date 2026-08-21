@@ -9,8 +9,11 @@ import {
 import { flattenMemoryTriggerKeywords, isMemoryAlwaysTrigger } from './memoryTriggerUtils'
 
 const MAX_EMBED_CHARS = 8000
-const STALE_EMBED_CAP_PER_CALL = 28
+/** 每轮补算 embedding 上限：优先喂给召回，避免库大时绝大多数无向量 → ⑥空⑦爆 */
+const STALE_EMBED_CAP_PER_CALL = 48
 const EMBEDDING_BATCH = 16
+/** 与剧情摘要向量一致：多轮补齐，避免一轮补不完导致⑥长期为 0 */
+const MEMORY_EMBED_MAX_ROUNDS = 6
 
 function djb2Hash(s: string): string {
   let h = 5381
@@ -47,7 +50,7 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   return dot / denom
 }
 
-function needsReembed(m: CharacterMemory, queryDim: number): boolean {
+export function memoryNeedsReembed(m: CharacterMemory, queryDim: number): boolean {
   const body = String(m.content ?? '').trim()
   if (!body) return false
   const h = computeMemoryEmbeddingHash(m)
@@ -56,6 +59,61 @@ function needsReembed(m: CharacterMemory, queryDim: number): boolean {
   if (emb.length !== queryDim) return true
   if (m.memoryEmbeddingHash !== h) return true
   return false
+}
+
+/**
+ * 线上长期记忆向量 query：不要把整段超长 hay（未总结+线下+32轮）整坨 embed。
+ * 与剧情摘要一致——用短切片，否则余弦会被稀释，⑥ 容易恒为 0。
+ */
+export function buildMemoryRecallQuerySlices(
+  hay: string,
+  opts?: { userText?: string; maxChars?: number },
+): string[] {
+  const maxChars = Math.max(240, Math.floor(opts?.maxChars ?? 1800))
+  const slices: string[] = []
+  const user = String(opts?.userText ?? '').trim()
+  if (user.length >= 4) {
+    slices.push(user.length <= maxChars ? user : user.slice(-maxChars))
+  }
+  const h = String(hay ?? '').trim()
+  if (h.length >= 10) {
+    // 取尾部（最近上下文），必要时再加头部一点
+    const focused =
+      h.length <= maxChars
+        ? h
+        : `${h.slice(0, Math.min(480, Math.floor(maxChars * 0.28)))}\n${h.slice(-(maxChars - Math.min(480, Math.floor(maxChars * 0.28))))}`.trim()
+    if (!slices.includes(focused)) slices.push(focused)
+  }
+  return slices
+}
+
+/** 触发词 / 正文开头与 query 的字面重合（0～0.72），作向量召回软增强 */
+export function scoreMemoryLexicalOverlap(m: CharacterMemory, queryText: string): number {
+  const q = String(queryText ?? '').trim().toLowerCase()
+  if (q.length < 2) return 0
+  let score = 0
+  for (const kw of flattenMemoryTriggerKeywords(m)) {
+    const t = String(kw ?? '').trim().toLowerCase()
+    if (t.length < 2) continue
+    if (q.includes(t)) score += t.length >= 4 ? 0.14 : 0.09
+  }
+  const head = String(m.content ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 36)
+    .toLowerCase()
+  if (head.length >= 4 && q.includes(head)) score += 0.18
+  return Math.min(0.72, score)
+}
+
+function resolveMemoryRecallScore(vectorSim: number, lexicalSim: number): number {
+  const v = Number.isFinite(vectorSim) && vectorSim > 0 ? vectorSim : -1
+  const lex = Number.isFinite(lexicalSim) && lexicalSim > 0 ? lexicalSim : 0
+  if (lex >= 0.24) {
+    if (v > 0) return Math.min(0.95, v + lex * 0.22)
+    return Math.min(0.88, 0.48 + lex)
+  }
+  return v > 0 ? v : 0
 }
 
 /**
@@ -70,8 +128,15 @@ export async function backfillMemoryEmbeddingsBestEffort(params: {
   embeddingProvider: 'local' | 'api'
   embeddingModelId: string
 }): Promise<void> {
-  const { memories, upsert, settings, chatApiConfig, queryDim, embeddingProvider, embeddingModelId } = params
-  const stale = memories.filter((m) => needsReembed(m, queryDim)).slice(0, STALE_EMBED_CAP_PER_CALL)
+  const { memories, upsert, settings, chatApiConfig, queryDim } = params
+  const stale = memories
+    .filter((m) => memoryNeedsReembed(m, queryDim))
+    .sort((a, b) => {
+      const am = !Array.isArray(a.memoryEmbedding) || !a.memoryEmbedding.length ? 1 : 0
+      const bm = !Array.isArray(b.memoryEmbedding) || !b.memoryEmbedding.length ? 1 : 0
+      return bm - am || b.updatedAt - a.updatedAt
+    })
+    .slice(0, STALE_EMBED_CAP_PER_CALL)
   if (!stale.length) return
 
   for (let i = 0; i < stale.length; i += EMBEDDING_BATCH) {
@@ -84,9 +149,6 @@ export async function backfillMemoryEmbeddingsBestEffort(params: {
         const m = chunk[j]
         const hit = embedded[j]
         if (!hit?.vec?.length || hit.vec.length !== queryDim) continue
-        if (hit.provider !== embeddingProvider && hit.modelId !== embeddingModelId) {
-          /* 维度一致即可写入 */
-        }
         const hash = computeMemoryEmbeddingHash(m)
         await upsert({
           ...m,
@@ -135,6 +197,19 @@ function scoreMemoriesByVectorSimilarity(params: {
   return scored.slice(0, topK)
 }
 
+/**
+ * 多 query 切片 + 词面增强（对齐剧情摘要向量召回），避免超长 hay 稀释导致⑥=0。
+ */
+export function pickMemoriesByVectorSimilarityScored(params: {
+  candidates: CharacterMemory[]
+  queryVec: number[]
+  topK: number
+  minSim: number
+  excludeIds: Set<string>
+}): { memory: CharacterMemory; score: number }[] {
+  return scoreMemoriesByVectorSimilarity(params).map(({ m, sim }) => ({ memory: m, score: sim }))
+}
+
 export function pickMemoriesByVectorSimilarity(params: {
   candidates: CharacterMemory[]
   queryVec: number[]
@@ -145,15 +220,113 @@ export function pickMemoriesByVectorSimilarity(params: {
   return scoreMemoriesByVectorSimilarity(params).map((x) => x.m)
 }
 
-/** 与 {@link pickMemoriesByVectorSimilarity} 相同筛选规则，额外返回余弦相似度（供思维溯源等 UI） */
-export function pickMemoriesByVectorSimilarityScored(params: {
+export function pickMemoriesByFocusedVectorRecall(params: {
   candidates: CharacterMemory[]
-  queryVec: number[]
+  queryVecs: number[][]
+  lexicalQuery: string
   topK: number
-  minSim: number
   excludeIds: Set<string>
+  minSim?: number
+  fallbackMinSim?: number
 }): { memory: CharacterMemory; score: number }[] {
-  return scoreMemoriesByVectorSimilarity(params).map(({ m, sim }) => ({ memory: m, score: sim }))
+  const {
+    candidates,
+    queryVecs,
+    lexicalQuery,
+    topK,
+    excludeIds,
+    minSim = MEMORY_VECTOR_PRIMARY_MIN_SIM,
+    fallbackMinSim = MEMORY_VECTOR_MIN_SIM,
+  } = params
+  if (!queryVecs.length && !lexicalQuery.trim()) return []
+
+  const scored: { memory: CharacterMemory; score: number; vectorSim: number; lexicalSim: number }[] = []
+  for (const m of candidates) {
+    if (excludeIds.has(m.id)) continue
+    if (isMemoryAlwaysTrigger(m)) continue
+    const emb = m.memoryEmbedding
+    let vectorSim = -1
+    if (Array.isArray(emb) && emb.length && queryVecs.length) {
+      const sims = queryVecs
+        .filter((q) => q.length === emb.length)
+        .map((q) => cosineSimilarity(q, emb))
+      if (sims.length) vectorSim = Math.max(...sims)
+    }
+    const lexicalSim = scoreMemoryLexicalOverlap(m, lexicalQuery)
+    const score = resolveMemoryRecallScore(vectorSim, lexicalSim)
+    if (score <= 0) continue
+    scored.push({ memory: m, score, vectorSim, lexicalSim })
+  }
+
+  const primary = scored
+    .filter((x) => x.score >= minSim || (x.vectorSim >= minSim && x.vectorSim > 0))
+    .sort((a, b) => b.score - a.score)
+  const fallback = scored
+    .filter((x) => x.score >= fallbackMinSim)
+    .sort((a, b) => b.score - a.score)
+
+  const out: { memory: CharacterMemory; score: number }[] = []
+  const seen = new Set<string>()
+  for (const row of [...primary, ...fallback]) {
+    if (seen.has(row.memory.id)) continue
+    seen.add(row.memory.id)
+    out.push({ memory: row.memory, score: row.score })
+    if (out.length >= topK) break
+  }
+  return out
+}
+
+/** 多轮补 embedding 后按短 query 切片召回 */
+export async function recallMemoriesByFocusedVector(params: {
+  candidates: CharacterMemory[]
+  relevanceText: string
+  userText?: string
+  settings: MemorySettingsRow
+  chatApiConfig: Pick<ApiConfig, 'apiUrl' | 'apiKey'> | null
+  upsert: (m: CharacterMemory) => Promise<void>
+  reloadCandidates: () => Promise<CharacterMemory[]>
+  topK: number
+  excludeIds: Set<string>
+}): Promise<{ memory: CharacterMemory; score: number }[]> {
+  const slices = buildMemoryRecallQuerySlices(params.relevanceText, {
+    userText: params.userText,
+  })
+  if (!slices.length) return []
+
+  let queryHits: Awaited<ReturnType<typeof fetchEmbeddingVectorsUnified>> = []
+  try {
+    queryHits = await fetchEmbeddingVectorsUnified(params.settings, params.chatApiConfig, slices)
+  } catch {
+    queryHits = []
+  }
+  const queryVecs = queryHits.map((h) => h.vec).filter((v) => Array.isArray(v) && v.length >= 8)
+  const ref = queryHits[0]
+  if (ref?.vec.length) {
+    let pool = params.candidates
+    for (let round = 0; round < MEMORY_EMBED_MAX_ROUNDS; round++) {
+      const staleCount = pool.filter((m) => memoryNeedsReembed(m, ref.vec.length)).length
+      if (!staleCount) break
+      await backfillMemoryEmbeddingsBestEffort({
+        memories: pool,
+        upsert: params.upsert,
+        settings: params.settings,
+        chatApiConfig: params.chatApiConfig,
+        queryDim: ref.vec.length,
+        embeddingProvider: ref.provider,
+        embeddingModelId: ref.modelId,
+      })
+      pool = await params.reloadCandidates()
+    }
+  }
+
+  const fresh = await params.reloadCandidates()
+  return pickMemoriesByFocusedVectorRecall({
+    candidates: fresh,
+    queryVecs,
+    lexicalQuery: slices.join('\n'),
+    topK: params.topK,
+    excludeIds: params.excludeIds,
+  })
 }
 
 export type MemoryPromptLineScope = {
@@ -194,10 +367,20 @@ export function resolveMemoryEmbeddingModelId(settings: MemorySettingsRow, opts?
 
 export const MEMORY_VECTOR_TOP_PRIVATE = 5
 export const MEMORY_VECTOR_TOP_GROUP = 4
-export const MEMORY_VECTOR_MIN_SIM = 0.70
+/** 与剧情摘要兜底门槛对齐：纯余弦过严会导致有库却⑥=0 */
+export const MEMORY_VECTOR_MIN_SIM = 0.52
+/** 主召回门槛（对齐剧情摘要 STORY_TIMELINE_ROW_VECTOR_MIN_SIM） */
+export const MEMORY_VECTOR_PRIMARY_MIN_SIM = 0.58
 
-/** 关键词子串命中后的语义确认门槛（query↔记忆向量余弦；向量未就绪时不校验） */
-export const MEMORY_KEYWORD_HIT_MIN_SIM = 0.75
+/** 关键词子串命中后的语义确认门槛（query↔记忆向量余弦） */
+export const MEMORY_KEYWORD_HIT_MIN_SIM = 0.62
+
+/** 非「始终触发」的关键词命中注入上限（私聊自有 / 关联各一轨） */
+export const MEMORY_KEYWORD_HIT_INJECT_CAP = 8
+/** 群聊关键词命中注入上限 */
+export const MEMORY_KEYWORD_HIT_INJECT_CAP_GROUP = 4
+/** 尚无 embedding 时，关键词命中最多保留几条（按 updatedAt），防止灌爆⑦ */
+export const MEMORY_KEYWORD_NO_EMBED_FALLBACK_CAP = 3
 
 export function memoryKeywordHitVectorSim(m: CharacterMemory, queryVec: number[] | null | undefined): number | null {
   if (!queryVec?.length) return null
@@ -206,18 +389,43 @@ export function memoryKeywordHitVectorSim(m: CharacterMemory, queryVec: number[]
   return cosineSimilarity(queryVec, emb)
 }
 
-/** 子串命中候选在向量可用时须达 {@link MEMORY_KEYWORD_HIT_MIN_SIM}；尚无记忆向量时保留命中，勿误杀 */
+/**
+ * 子串命中后的语义确认：
+ * - 有 embedding：须达 minSim
+ * - 无 embedding：仅保留最近若干条兜底（避免向量未就绪时⑦灌进十几二十条、⑥永远空）
+ */
 export function filterKeywordHitsByVectorConfirm(params: {
   hits: CharacterMemory[]
   queryVec: number[] | null | undefined
   minSim?: number
+  noEmbedFallbackCap?: number
 }): CharacterMemory[] {
-  const { hits, queryVec, minSim = MEMORY_KEYWORD_HIT_MIN_SIM } = params
-  if (!queryVec?.length) return hits
-  return hits.filter((m) => {
+  const {
+    hits,
+    queryVec,
+    minSim = MEMORY_KEYWORD_HIT_MIN_SIM,
+    noEmbedFallbackCap = MEMORY_KEYWORD_NO_EMBED_FALLBACK_CAP,
+  } = params
+  if (!queryVec?.length) {
+    return [...hits]
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, Math.max(noEmbedFallbackCap, MEMORY_KEYWORD_HIT_INJECT_CAP))
+  }
+  const passed: CharacterMemory[] = []
+  const noEmbed: CharacterMemory[] = []
+  for (const m of hits) {
     const sim = memoryKeywordHitVectorSim(m, queryVec)
-    // 记忆尚未写入 embedding：保留关键词命中（否则⑥⑦会双双变 0）
-    if (sim == null) return true
-    return sim >= minSim
-  })
+    if (sim == null) noEmbed.push(m)
+    else if (sim >= minSim) passed.push(m)
+  }
+  noEmbed.sort((a, b) => b.updatedAt - a.updatedAt)
+  return [...passed, ...noEmbed.slice(0, noEmbedFallbackCap)]
+}
+
+export function capKeywordHitMemoriesForInject(
+  hits: CharacterMemory[],
+  cap: number = MEMORY_KEYWORD_HIT_INJECT_CAP,
+): CharacterMemory[] {
+  if (hits.length <= cap) return hits
+  return [...hits].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, cap)
 }

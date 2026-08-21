@@ -195,3 +195,142 @@ export function sanitizeMemoryTraceDisplayText(text: string): string {
 
   return s
 }
+
+/** 注入条目末尾的占位符/人称说明（仅模型用；思维溯源不展示） */
+const WORLD_BOOK_TRACE_META_NOTES = [
+  '（占位符「{{char}}」=当前会话绑定人设的真实姓名，「{{user}}」=该人设绑定的玩家身份姓名；注入前替换，避免与角色设定混淆。）',
+  '（玩家身份条目：正文均指玩家本人，与聊天中的虚构人设设定无关。）',
+]
+
+const WORLD_BOOK_TRACE_META_NOTE_RE =
+  /\s*（(?:占位符「\{\{char\}\}」[^）]*|玩家身份条目：[^）]*)）\s*$/g
+
+export type PersonaWorldBookTraceEntry = {
+  priority: '序言' | '尾声' | string
+  name: string
+  content: string
+}
+
+export type PersonaWorldBookTraceBook = {
+  title: string
+  entries: PersonaWorldBookTraceEntry[]
+}
+
+function stripWorldBookTraceMetaNotes(text: string): string {
+  let s = String(text ?? '')
+  for (const note of WORLD_BOOK_TRACE_META_NOTES) {
+    if (note && s.includes(note)) s = s.split(note).join('')
+  }
+  s = s.replace(WORLD_BOOK_TRACE_META_NOTE_RE, '')
+  return s.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+function isHiddenPersonaWorldBookTraceEntry(name: string, content: string): boolean {
+  const n = name.trim()
+  if (n === '使用说明（参考偏向）' || n.includes('参考偏向')) return true
+  const c = content.trim()
+  if (c.includes('【参考偏向】') && c.includes('【严禁出戏】')) return true
+  return false
+}
+
+/**
+ * 思维溯源「人设世界书」：去掉占位符说明 / 参考偏向·严禁出戏套话，并拆成卷→条目。
+ * 不影响实际注入 prompt 的原文。
+ */
+export function parsePersonaWorldBookForTraceDisplay(raw: string): PersonaWorldBookTraceBook[] {
+  const cleaned = stripWorldBookTraceMetaNotes(sanitizeMemoryTraceDisplayText(String(raw ?? '')))
+  if (!cleaned) return []
+
+  const books: PersonaWorldBookTraceBook[] = []
+  const state: { current: PersonaWorldBookTraceBook | null } = { current: null }
+
+  const pushBook = () => {
+    const cur = state.current
+    if (!cur) return
+    if (cur.entries.length > 0 || cur.title) books.push(cur)
+    state.current = null
+  }
+
+  const ensureBook = (title: string) => {
+    const cur = state.current
+    if (cur && cur.title === title) return
+    pushBook()
+    state.current = { title: title.trim() || '世界书', entries: [] }
+  }
+
+  const entryLineRe = /^- \[(序言介入|尾声延展)\]\s*([^：:\n]+)[：:]\s*([\s\S]*)$/
+
+  for (const line of cleaned.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    const bookMatch = trimmed.match(/^《([^》]+)》$/)
+    if (bookMatch) {
+      ensureBook(bookMatch[1] ?? '世界书')
+      continue
+    }
+
+    const entryMatch = trimmed.match(entryLineRe)
+    if (entryMatch) {
+      const priorityRaw = entryMatch[1] ?? ''
+      const name = String(entryMatch[2] ?? '').trim()
+      let content = stripWorldBookTraceMetaNotes(String(entryMatch[3] ?? '').trim())
+      content = content
+        .replace(/^【参考偏向】[\s\S]*?(?=【严禁出戏】|$)/, '')
+        .replace(/^【严禁出戏】[\s\S]*$/, '')
+        .trim()
+      if (isHiddenPersonaWorldBookTraceEntry(name, String(entryMatch[3] ?? ''))) continue
+      if (!state.current) ensureBook('人设世界书')
+      state.current?.entries.push({
+        priority: priorityRaw === '尾声延展' ? '尾声' : '序言',
+        name: name || '未命名条目',
+        content,
+      })
+      continue
+    }
+
+    // `INFP人格设定` 等无书名号的卷标题（MBTI 注入文本）
+    if (
+      !trimmed.startsWith('-') &&
+      trimmed.length <= 40 &&
+      /(人格设定|世界书)$/.test(trimmed) &&
+      !trimmed.includes('：') &&
+      !trimmed.includes(':')
+    ) {
+      ensureBook(trimmed)
+      continue
+    }
+
+    // 续行正文：并入上一条
+    const curBook = state.current
+    if (curBook && curBook.entries.length) {
+      const last = curBook.entries[curBook.entries.length - 1]!
+      last.content = `${last.content}\n${stripWorldBookTraceMetaNotes(trimmed)}`.trim()
+    } else {
+      ensureBook('人设世界书')
+      state.current?.entries.push({ priority: '序言', name: '正文', content: trimmed })
+    }
+  }
+
+  pushBook()
+  return books.filter((b) => b.entries.length > 0)
+}
+
+/** 人设世界书溯源纯文本（无条目结构时的回退） */
+export function sanitizePersonaWorldBookForTraceDisplay(raw: string): string {
+  const books = parsePersonaWorldBookForTraceDisplay(raw)
+  if (!books.length) {
+    return stripWorldBookTraceMetaNotes(sanitizeMemoryTraceDisplayText(String(raw ?? '')))
+      .replace(/^- \[序言介入\]\s*使用说明（参考偏向）[：:][^\n]*\n?/gm, '')
+      .replace(/【参考偏向】[^\n]*/g, '')
+      .replace(/【严禁出戏】[^\n]*/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+  return books
+    .map((b) => {
+      const lines = b.entries.map((e) => `- [${e.priority}] ${e.name}：${e.content}`).join('\n')
+      return `《${b.title}》\n${lines}`
+    })
+    .join('\n\n')
+}
