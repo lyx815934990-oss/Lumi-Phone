@@ -208,6 +208,18 @@ export function PersonaAiGeneratePage({
     return playerIdentity?.name?.trim() || playerIdentity?.wechatNickname?.trim() || ''
   }, [playerIdentity])
 
+  /** 开屏生成前从 IDB 再取完整身份卡（含世界书），避免列表缓存丢家庭事实 */
+  const resolveFreshPlayerIdentity = async (): Promise<PlayerIdentity | null> => {
+    const id = playerIdentityId?.trim() || playerIdentity?.id?.trim()
+    if (!id) return playerIdentity
+    try {
+      const fresh = await personaDb.getPlayerIdentity(id)
+      return fresh ?? playerIdentity
+    } catch {
+      return playerIdentity
+    }
+  }
+
   const filledCount = useMemo(() => countFilledHints(form), [form])
   const directOnly = Boolean(form.referencePersonaDirectGenerate && form.referencePersonaHint.trim())
   const hintSlotTotal = directOnly ? 1 : TOTAL_HINT_SLOTS
@@ -291,12 +303,14 @@ export function PersonaAiGeneratePage({
     setRecoveryOffer(null)
     setPreviewOffer(null)
     try {
+      const identity = await resolveFreshPlayerIdentity()
       const result = await generatePersonaWithAi({
         apiConfig,
         form,
         draft,
-        playerIdentity,
-        playerDisplayName,
+        playerIdentity: identity,
+        playerDisplayName:
+          identity?.name?.trim() || identity?.wechatNickname?.trim() || playerDisplayName,
         worldBackgroundPrompt,
         signal: ac.signal,
       })
@@ -342,14 +356,16 @@ export function PersonaAiGeneratePage({
     setError(null)
     const previousIssueCount = recoveryOffer.result.issues.length
     try {
+      const identity = await resolveFreshPlayerIdentity()
       const next = await repairPersonaAiWithAi({
         apiConfig,
         form,
         draft,
         base: recoveryOffer.result,
         mode,
-        playerDisplayName,
-        playerIdentity,
+        playerDisplayName:
+          identity?.name?.trim() || identity?.wechatNickname?.trim() || playerDisplayName,
+        playerIdentity: identity,
         worldBackgroundPrompt,
         signal: ac.signal,
       })
@@ -421,6 +437,7 @@ export function PersonaAiGeneratePage({
     setGenerating(true)
     setError(null)
     try {
+      const identity = await resolveFreshPlayerIdentity()
       const next = await regeneratePersonaAiSelectedParts({
         apiConfig,
         form,
@@ -428,8 +445,9 @@ export function PersonaAiGeneratePage({
         base: previewOffer,
         selectedNames: selectedKeys,
         guidance,
-        playerDisplayName,
-        playerIdentity,
+        playerDisplayName:
+          identity?.name?.trim() || identity?.wechatNickname?.trim() || playerDisplayName,
+        playerIdentity: identity,
         worldBackgroundPrompt,
         signal: ac.signal,
       })

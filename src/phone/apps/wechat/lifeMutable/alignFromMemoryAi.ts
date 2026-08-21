@@ -385,6 +385,7 @@ export async function runLifeAlignFromMemory(params: {
 【玩家身份修订优先（硬 · 最高优先级）】
 - 下方「玩家身份设定」与建档卡中的姓名/性别/身份职业/学校专业/学历简介，是玩家**当前权威设定**（用户可随时改卡）。
 - 若「当前账本 JSON」、线上/线下近端仍写**旧**学校/专业/身份（例：普通大学、非艺术生），而身份设定已改为艺术生/艺术大学等：**必须以身份设定为准**改写 occupationMain、educationTrack、educationNote、学校宿舍/校园住所、社交圈同学所在学校与专业口径。
+- 身份卡/世界书已写明的亲属（妹妹、哥哥、弟弟、父母等）须写入 family（或必要的 socialCircle），禁止用无关父母模板顶替而漏掉已点名的兄弟姐妹。
 - 近端对话与旧账本里的旧身份表述＝修订前残留，**不得**压过身份卡；不得因「账本里已有普通大学且看起来合理」就输出 noChange 或原样保留。
 - 感情状态、存款、车产、宠物、近期剧情推进的住址变动等非「身份背景」项，仍可参考近端剧情；但学校/专业/主业身份口径冲突时一律跟身份卡。
 `
@@ -417,7 +418,7 @@ ${playerIdentityPriorityRule}
    - **relation**：短关系称呼（≤8字），如「恋人」「大学同学」「前任」「酒吧老板」；复合可用「恋人/同学」。禁止把整句性格/态度写进 relation。
    - **attitude**：关系补充（态度/亲疏/相处现状），可写完整句子；勿把 attitude 当作短标签。
    - **note**：职业语境外的其他备注；与 attitude 不重复。
-7. educationTrack / educationGradeAtStart 是开篇学年；现在读到哪写在 educationNote；occupationMain 的年级必须与按剧情日推算的当前年级一致；学校/专业口径须与权威身份设定一致，且校名为具体虚构专名。
+7. educationTrack / educationGradeAtStart 是开篇学年；现在读到哪写在 educationNote；occupationMain 的年级必须与按剧情日推算的当前年级一致；学校/专业口径须与权威身份设定一致，且校名为具体虚构专名。**人设世界书已写明的年级（如大三/大一）优先于「暑假待升」臆造**；禁止把大三改成大二，或把已是大一写成「待升大一」。
 8. storyStartDay / 主体 ageAtStart 默认勿动。近端明确「现在几岁」可另输出 currentAge。
 9. 证据矛盾：${
       params.subject === 'player'

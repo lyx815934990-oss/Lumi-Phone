@@ -33,15 +33,58 @@ function clip(s: string, max: number): string {
 }
 
 function pickWorldBookSnippet(character: Character, names: string[], maxEach = 360): string {
-  const items = character.worldBooks?.[0]?.items ?? []
+  const books = character.worldBooks ?? []
   const lines: string[] = []
   for (const name of names) {
-    const hit = items.find((it) => String(it.name ?? '').trim() === name)
-    const body = String(hit?.content ?? '').trim()
+    let body = ''
+    for (const wb of books) {
+      if (wb.enabled === false) continue
+      const hit = (wb.items ?? []).find((it) => String(it.name ?? '').trim() === name)
+      if (!hit || hit.enabled === false) continue
+      body = String(hit.content ?? '').trim()
+      if (body) break
+    }
     if (!body) continue
     lines.push(`【${name}】\n${clip(body, maxEach)}`)
   }
   return lines.join('\n\n')
+}
+
+/** 玩家身份卡：家庭/兄弟姊妹等事实须进账本提示（开屏生成此前几乎没喂世界书） */
+function pickPlayerIdentityFamilySocialEvidence(player: PlayerIdentity | null | undefined): string {
+  if (!player) return ''
+  const lines: string[] = []
+  if (player.bio?.trim()) lines.push(`简介：${clip(player.bio, 280)}`)
+
+  const preferName =
+    /家庭|家人|人际|秘密|名片|周边|亲属|父母|兄|弟|姐|妹|社交|人脉|身世|背景|性格|能力与日常/
+  const kinInText = /妹妹|姐姐|哥哥|弟弟|兄妹|姐弟|父母|父亲|母亲|家人|亲属|兄弟|姐妹/
+  const preferred: string[] = []
+  const fallback: string[] = []
+  for (const wb of player.worldBooks ?? []) {
+    if (wb.enabled === false) continue
+    const wbName = String(wb.name ?? '').trim() || '世界书'
+    for (const it of wb.items ?? []) {
+      if (it.enabled === false) continue
+      const name = String(it.name ?? '').trim()
+      const content = String(it.content ?? '').trim()
+      if (!content) continue
+      const block = `【${wbName} · ${name || '条目'}】\n${clip(content, 420)}`
+      const hit = preferName.test(name) || preferName.test(wbName) || kinInText.test(content)
+      if (hit) preferred.push(block)
+      else fallback.push(block)
+    }
+  }
+  // 优先亲属相关条目；若筛不到（条目名不规范）则退回前若干条世界书，避免身份卡事实完全丢失
+  const chunks = (preferred.length ? preferred : fallback).slice(0, 10)
+  if (chunks.length) lines.push(...chunks)
+  if (!lines.length) return ''
+  return [
+    '【玩家身份 · 家庭/社交事实（硬依据）】',
+    '下列内容来自用户身份卡；写 ===玩家=== 的【家庭】【社交】时必须落实已点名的亲属（如妹妹、哥哥、弟弟等），禁止漏写或改成无关路人。',
+    '角色账本【家庭】不要写玩家的家人；若剧情上玩家家人也认识角色，可写入双方【社交】且同名人客观信息一致。',
+    ...lines,
+  ].join('\n')
 }
 
 function genderForSheet(g: Character['gender'] | '' | undefined): LifeMutableSheet['gender'] {
@@ -444,14 +487,23 @@ export async function generatePersonaAiLifeLedgers(params: {
       })
     : null
 
-  const wbCtx = pickWorldBookSnippet(ch, [
-    '名片基础',
-    '人际与秘密',
-    PERSONA_AI_NPC_ROSTER_ENTRY_NAME,
-    PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
-    '相遇羁绊',
-    '对你现在',
-  ])
+  const wbCtx = [
+    pickWorldBookSnippet(
+      ch,
+      [
+        '名片基础',
+        '人际与秘密',
+        PERSONA_AI_NPC_ROSTER_ENTRY_NAME,
+        PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
+        '对你现在',
+      ],
+      320,
+    ),
+    // 相遇羁绊常写明学长/大一等开篇年级，给足篇幅，避免截断丢年级
+    pickWorldBookSnippet(ch, ['相遇羁绊'], 720),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 
   const playerCardLine = player
     ? [
@@ -482,8 +534,8 @@ export async function generatePersonaAiLifeLedgers(params: {
 存款：短句
 感情：短句
 学历：初中|高中|本科|硕士|博士|在职|其他
-开篇年级：数字（在职可空）
-学历备注：短句（具体虚构校名，禁「某大学」）
+开篇年级：数字（在职可空；大一=1，大二=2，大三=3…）
+学历备注：短句（具体虚构校名，禁「某大学」；年级须与主业一致）
 备注：可空
 
 【住所】
@@ -496,7 +548,7 @@ export async function generatePersonaAiLifeLedgers(params: {
 
 【家庭】
 姓名|关系|性别|年龄|生日|职业|住址|同住
-（2～4行；姓名真人名禁「爸爸」；同住=是|否；生日如03-12）
+（2～4行；姓名真人名禁「爸爸」；同住=是|否；生日如03-12；**玩家侧须含身份卡已写明的兄/姐/弟/妹等亲属**）
 
 【社交】
 姓名|关系|性别|年龄|生日|职业|住址|态度
@@ -505,16 +557,20 @@ export async function generatePersonaAiLifeLedgers(params: {
 【宠物】
 种|名|年龄|入手
 （无则整段省略）
-${hasPlayer ? '\n===玩家===\n（字段与列表格式同角色；为本角色线独立账本）\n' : ''}
+${hasPlayer ? '\n===玩家===\n（字段与列表格式同角色；为本角色线独立账本；家庭/社交以玩家身份卡事实为准；年级以相遇羁绊/身份为准）\n' : ''}
 规则：
 1. 开篇年龄对齐卡面；开篇日可用 ${todayStr}；列表人 age=开篇年龄。
 2. 禁「某/某某/××」地名；勿套固定示范城；按人设新编。
 3. 禁止把玩家写进角色家庭；共同社交圈同名人两侧基础信息须一致。
-4. 只输出标记正文，勿复述种子 JSON。
+4. **身份卡对齐（最高优先）**：若【玩家身份 · 家庭/社交事实】已写明妹妹/哥哥/弟弟/父母等具名或可点名亲属，===玩家===【家庭】必须写出对应条目（有姓名用原名；仅称谓则补合理真名+关系）；禁止用无关父母模板顶替而漏掉已写明的兄弟姐妹。
+5. **年级对齐（最高优先）**：【相遇羁绊】/名片等若写角色「大三」、玩家「大一」等，双方主业与开篇年级必须照写；禁止因开局日在暑假就改成大二，或写成「待9月升大一/大二」。暑假仅可注明「暑假在读」，年级本身不变。
+6. 只输出标记正文，勿复述种子。
 
 ${buildSharedSocialCircleConsistencyRule()}
 
 ${buildLifeLedgerAddressAndAcademicRules()}`
+
+  const playerFamilyEvidence = pickPlayerIdentityFamilySocialEvidence(player)
 
   const user = `【角色卡】
 姓名：${ch.name}
@@ -533,6 +589,7 @@ ${compactSeedLines(charSeed)}
 
 【玩家身份】
 ${playerCardLine}
+${playerFamilyEvidence ? `\n${playerFamilyEvidence}\n` : ''}
 ${hasPlayer && playerSeed ? `\n【玩家种子】\n${compactSeedLines(playerSeed)}\n` : ''}
 请按格式输出纯文本账本。`
 

@@ -100,9 +100,11 @@ export function syncSheetStudentGradeWording(
   let occupationSide = sheet.occupationSide
   let educationNote = sheet.educationNote
 
-  // 先去掉「大一升大二」类过渡表述，再统一年级词
+  // 去掉「待9月升大二 / 大一升大二」等过渡表述，再统一年级词
   if (inSchool && gradeToken) {
     educationNote = educationNote
+      .replace(/暑假[，,]?\s*待\s*\d*\s*月?\s*升\s*(大[一二三四]|高[一二三]|初[一二三]|研[一二三])[^\s·，。；]*/g, `暑假 · ${gradeToken}在读`)
+      .replace(/待\s*\d*\s*月?\s*升\s*(大[一二三四]|高[一二三]|初[一二三]|研[一二三])[^\s·，。；]*/g, `${gradeToken}在读`)
       .replace(/大[一二三四]\s*升\s*大[一二三四][^\s·，。；]*/g, `${gradeToken}在读`)
       .replace(/高[一二三]\s*升\s*高[一二三][^\s·，。；]*/g, `${gradeToken}在读`)
       .replace(/初[一二三]\s*升\s*初[一二三][^\s·，。；]*/g, `${gradeToken}在读`)
@@ -156,11 +158,12 @@ export function buildLifeLedgerAddressAndAcademicRules(): string {
 - 同一主体/同一家庭共用住所时，城市、小区/校名、楼栋口径须全表一致。
 
 【学年日历 · 年级必须自洽】
-- 每年 **9 月**起升入新学年；**9 月以前**仍属上一学年年级（例：8 月仍是大一，不可写成大二）。
+- **人设世界书优先（最高）**：相遇羁绊/名片/身份等已写明「大三学长」「大一新生」等年级时，开局账本的主业、开篇年级、学历备注必须与之一致；禁止擅自降级/升级（例：世界书写大三，不得写成大二；写已是大一，不得写成「待升大一」）。
+- 每年 **9 月**起升入新学年；**9 月以前**仍属上一学年年级（例：证据写大一且剧情日在 8 月 → 仍写大一，不可提前写成大二）。
 - **6 月**毕业季；**1–2 月**寒假；**7–8 月**暑假。
 - 艺考**联考**约 **12–1 月**；艺术**校考**约联考后 **2–4 月**。
-- educationTrack + educationGradeAtStart（开篇学年：1=大一/高一/初一…）决定开篇年级；occupationMain、educationNote、学历展示必须与按剧情日推算的**当前年级**一致，禁止一边写大一一边写大二。
-- 开局日若在 7–8 月暑假、且尚未到 9 月：职业写「大一在读…」，educationNote 可写「暑假，待 9 月升大二」，但**不得**把 occupation 直接写成大二。
+- educationTrack + educationGradeAtStart（开篇学年：1=大一/高一/初一，3=大三…）须对齐世界书已给年级；occupationMain、educationNote 必须与该年级一致，禁止一边大一一边大二。
+- 开局日若在 7–8 月暑假：职业仍写世界书给出的当前年级「…大三在读…」；学历备注可写「暑假在读」或「暑假（仍属大三）」；**禁止**臆造「待 9 月升大X」来改年级，更禁止用「待升大一」暗示尚未入学（除非世界书明确写未报到/未入学）。
 - 学生主业写法：\`具体虚构校名 + 当前年级 · 专业\`（校名须具体，禁止「某大学大二」）；校名从人设/身份推断新编，勿套固定样板。`
 }
 
