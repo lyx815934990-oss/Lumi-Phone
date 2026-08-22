@@ -783,7 +783,7 @@ export async function buildRecentPrivateChatRoundsWithTimeBlock(params: {
     return (
       `【板块·近端·最近 ${rounds} 轮线上私聊原文】（必注全文；不依赖总结游标）` +
       `下列为最近 ${rounds} 轮**对方角色回复**及其间用户消息的气泡原文（${timeHint}）${filterNote}` +
-      `总结入库后未总结块可能为空，仍须承接此处原话与口吻，禁止只靠长期记忆摘要续写或声称「不记得原话」。\n\n` +
+      `「轮」= 一次角色回复（连发多气泡仍计 1 轮）；总结入库后未总结块可能为空，仍须承接此处原话与口吻，禁止只靠长期记忆摘要续写或声称「不记得原话」。\n\n` +
       body
     )
   } catch {

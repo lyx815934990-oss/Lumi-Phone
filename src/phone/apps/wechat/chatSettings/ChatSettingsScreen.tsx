@@ -1283,7 +1283,7 @@ export function ChatSettingsScreen({
                 <div className="min-w-0 flex-1">
                   <span className="text-[16px] text-black">固定注入近端原文</span>
                   <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                    主回复必注最近 N 轮对方回复原文（含其间用户消息），不依赖总结游标；每条带剧情时间。总结后也能接上原话。
+                    主回复必注最近 N 轮对方回复原文（含其间用户消息），不依赖总结游标；每条带剧情时间。同一轮连发多气泡仍计 1 轮。总结后也能接上原话。
                     <span style={phoneNumStyle}>0</span> = 关闭。
                   </p>
                 </div>
