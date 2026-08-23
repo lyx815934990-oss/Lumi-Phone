@@ -1,4 +1,5 @@
 import { buildImageGenCompositionLifeFeelCotBlock } from './imageGenCompositionLifeFeelCot'
+import { buildImageGenFaceAppearanceLlmBlock } from './imageGenFaceAppearanceLlmGuide'
 import {
   CHARACTER_MEDIA_SELFIE_PREFIX_TEMPLATE,
   hasCharacterMediaSelfiePrefix,
@@ -73,7 +74,7 @@ const NO_REF_CHARACTER_APPEARANCE_BLOCK_RULE = `
 `.trim()
 
 const SUBJECT_FRONT_SELFIE_TEMPLATE =
-  '[wx-selfie|who={{char}}] selfie shot, grey t-shirt, bedroom, soft morning light, half-lidded gaze, soft pout, closed mouth'
+  '[wx-selfie|who={{char}}] selfie shot, grey t-shirt, bedroom, soft morning light, clear eyes, healthy skin, relaxed lips'
 
 const SUBJECT_MIRROR_SELFIE_TEMPLATE =
   '[wx-selfie|who={{char}}] mirror selfie shot, lifting grey t-shirt, midriff visible, bathroom mirror, warm overhead light'
@@ -81,9 +82,9 @@ const SUBJECT_MIRROR_SELFIE_TEMPLATE =
 const SUBJECT_MIRROR_SELFIE_NO_REF_EXAMPLE = SUBJECT_MIRROR_SELFIE_TEMPLATE
 
 const SELFIE_EXPRESSION_WRITING_GUIDE = `
-  - **神态**：用 **3～6 个可见 tag**（half-lidded gaze, soft pout, closed mouth, light blush on ear tip）；**禁止**心理/气质空词。
-  - **默认气质（硬性）**：偏冷淡半阖眼、不大笑；**禁止** gentle smile / soft smile / warm smile / clear dark eyes / bright eyes（客户端也会压掉，但仍勿写）。
-  - **禁止示例**：moist eyes, dreamy gaze, shy and obedient, vulnerable aura, hot breath in the air, timid expression, feeling ashamed, boyfriend-material smile。
+  - **神态**：用 **3～6 个可见 tag**（clear eyes, healthy skin, relaxed lips, light blush on cheeks）；**禁止**心理/气质空词与疲态 tag。
+  - **默认气质（硬性）**：健康清醒肤质、眼神有神；**禁止** tired/exhausted/weary/half-lidded sleepy/dark circles/sickly/melancholic/bedroom-eyes（剧情明确通宵/大病/哭过后除外）。
+  - **禁止示例**：moist eyes, dreamy gaze, shy and obedient, vulnerable aura, hot breath in the air, timid expression, feeling ashamed, boyfriend-material smile, gentle smile / soft smile / warm smile（除非剧情明确在笑）。
 ${IMAGE_PROMPT_LIGHTING_CONTEXT_RULE}
   - **动作/穿搭**：lifting shirt, grey t-shirt, peace sign 等 comma tag；**禁止** holding phone / phone visible。
 `.trim()
@@ -159,7 +160,8 @@ ${IMAGE_PROMPT_ENGLISH_ONLY_RULE}
 ${IMAGE_PROMPT_THIRD_PERSON_RULE}
 ${IMAGE_PROMPT_CONCISE_STYLE_RULE}
 - **非自拍（默认·直接画面）**：\`[图片]\` 行**只写成片画面**（主体、环境、光线）；**禁止** first-person POV / eye level / rear camera / looking down/up 等机位 meta tag（**客户端不再自动补全**）。露己身肢体时写 own hand / sneakers at bottom 等**画面要素**即可。
-  - **① 空镜/风景** → 可无肢体入镜。
+  - **① 空镜/风景** → 可无肢体入镜；**禁止** reference character / 1boy / 1girl / face / portrait / handsome 等人脸 tag。
+  - **①-b 无脸部位特写**（手/锁骨/腹肌/腿等）→ 只写该部位；**禁止** face/head/portrait/handsome 脸 tag。
   - **② 露肢体** → own shoulders, arms, hands, thighs, legs, feet 等按画面需要写入；**不是** front camera selfie、**不是** mirror selfie、**不是** third-person full-body portrait。
   - 例（空镜）：\`rainy street after rain, neon reflected on wet pavement, overcast scattered light, road surface reflections\`
   - 例（俯视·脚）：\`orange cat crouching on floor tiles, white sneakers and jeans cuffs at bottom of frame, afternoon sunlight, warm tile reflection\`
@@ -170,6 +172,7 @@ ${IMAGE_PROMPT_CONCISE_STYLE_RULE}
   - 例（游艇·拍女生）：\`young woman in black swimsuit sitting on yacht deck cushion, turquoise sea and sky behind her, bright midday sunlight, subject centered in frame\`
 ${IMAGE_PROMPT_POV_ANGLE_BACKGROUND_RULE}
 ${selfieRule}
+${buildImageGenFaceAppearanceLlmBlock()}
 - 每张配图 prompt 须描述**不同**画面/角度/主体；**不要**写风格词。${compositionCotBlock}
 `.trim()
 }

@@ -25,39 +25,27 @@ function isAnimeStyle(settings: MomentsImageGenSettings, combinedPrompt: string)
   return false
 }
 
-function hasPersonSubject(prompt: string): boolean {
-  return PERSON_HINT.test(prompt) || /人|脸|肖像|自拍|男生|女生|少年|少女|青年/.test(prompt)
-}
-
 const ANIME_FACE_SUFFIX =
   [
     'beautiful anime face',
     'sharp defined jawline, high cheekbones, slim face',
-    'natural straight brows partly covered by bangs',
-    'heavy-lidded hooded eyes with thin double eyelids, almond-shaped, slightly downturned outer corners, deep-set',
-    'dark irises, half-lidded sultry gaze looking straight into the camera',
-    'calm slightly indifferent melancholic expression, soft catchlights, bedroom-eyes sexual tension without smiling big',
-    'high straight nose bridge, refined tip',
-    'relaxed lips, soft pout, closed mouth',
+    'clear bright eyes, natural catchlights, relaxed gaze',
+    'healthy smooth skin, even natural complexion',
+    'calm natural expression, soft lips',
     'attractive, clean linework',
-    'NOT ugly, NOT deformed face, NOT bad anatomy, NOT glass-skin, NOT k-pop idol polish',
+    'NOT ugly, NOT deformed face, NOT bad anatomy, NOT tired eyes, NOT dark circles, NOT sickly pale',
   ].join(', ')
 
-/** 写实默认五官：对齐「冷淡半阖眼 + 自然肤质 + 性张力」自拍效果（非韩系爱豆抛光） */
+/** 写实默认五官：健康肤质 + 清晰眼神（非疲态/病态） */
 const REALISTIC_FACE_SUFFIX =
   [
     'beautiful face',
     'sharp defined jawline, high cheekbones, slim face',
-    'cool pale skin with natural texture, not glass-skin, not K-pop idol polish',
-    'natural straight brows partly covered by bangs',
-    'eyes are the focus: heavy-lidded hooded eyes with thin double eyelids, almond-shaped, slightly downturned outer corners, deep-set',
-    'dark brown irises, half-lidded sultry gaze looking straight into the camera',
-    'calm, slightly indifferent and melancholic, soft catchlights, bedroom-eyes sexual tension without smiling big',
-    'high straight nose bridge, refined narrow tip',
-    'relaxed lips, soft pout, closed mouth',
-    'intimate close facial framing when face is visible',
-    'attractive, soft desaturated cinematic light on face',
-    'NOT ugly, NOT deformed face, NOT bad anatomy, NOT plastic skin, NOT korean drama idol face',
+    'clear eyes, natural catchlights, alert relaxed gaze',
+    'healthy skin with natural texture, even complexion, not ashy, not oily',
+    'calm natural expression, relaxed lips',
+    'soft natural light on face',
+    'NOT ugly, NOT deformed face, NOT bad anatomy, NOT tired eyes, NOT exhausted look, NOT dark undereye circles',
   ].join(', ')
 
 /**
@@ -84,6 +72,12 @@ function neutralizeSoftIdolFaceConflictTags(prompt: string): string {
     /\bk-?pop\s+idol\b/gi,
     /\bhandsome\s+nose\b/gi,
     /\bstraight\s+handsome\s+nose\b/gi,
+    /\bhalf[- ]lidded\b/gi,
+    /\bbedroom[- ]eyes\b/gi,
+    /\b(?:tired|exhausted|weary|sleepy)\s+(?:eyes?|gaze|look)\b/gi,
+    /\bdark\s+(?:undereye\s+)?circles?\b/gi,
+    /\b(?:sickly|haggard|drained)\b/gi,
+    /\bmelancholic\b/gi,
   ]
   for (const re of drop) s = s.replace(re, '')
   // 非标准性别 tag → 标准 danbooru 位
@@ -100,18 +94,8 @@ function neutralizeSoftIdolFaceConflictTags(prompt: string): string {
     .trim()
 }
 
-/** 「十分帅气的男生」——仅男生主体露脸时前置 */
-const EXTREMELY_HANDSOME_YOUNG_MAN_PREFIX =
-  'extremely handsome young man, strikingly good-looking, very attractive male face, sharp masculine features'
-
-function looksLikeMaleSubjectPrompt(prompt: string): boolean {
-  const p = prompt.trim()
-  if (!p) return false
-  if (/\b(?:1girl|2girls?|young woman|1woman)\b/i.test(p)) return false
-  return /\b(?:1boy|1man|young man|handsome (?:young )?man|male)\b/i.test(p)
-}
-
 function shouldAppendDefaultFaceAesthetic(prompt: string, hasReference: boolean): boolean {
+  if (isCharacterMediaScenicOrObjectOnlyPrompt(prompt)) return false
   if (!isCharacterMediaCharacterFaceVisiblePrompt(prompt)) return false
   if (isCharacterMediaHandsOnlyNoFaceComposition(prompt)) return false
   if (isCharacterMediaSoloBodyPartCloseupPrompt(prompt)) return false
@@ -172,7 +156,38 @@ export function isCharacterMediaPhotographingOthersPrompt(prompt: string): boole
 }
 
 const SCENIC_ONLY_HINT =
-  /风景|街景|窗外|夜景|城市|landscape|scenery|street|horizon|sunset|海(?!报)|湖|山|路|林荫|天际线|江|河|公园|雨后街道|霓虹倒映|无人物肢体入镜|no human body parts in frame/i
+  /风景|街景|窗外|夜景|城市|landscape|scenery|street|horizon|sunset|海(?!报)|湖|山|路|林荫|天际线|江|河|公园|雨后街道|霓虹倒映|无人物肢体入镜|no human body parts in frame|wet pavement|neon reflected|overcast scattered light|cityscape|night view|empty (?:street|room|alley)/i
+
+/** 纯风景/空镜/静物：画面无人物脸、不应注入默认五官审美 */
+export function isCharacterMediaScenicOrObjectOnlyPrompt(prompt: string): boolean {
+  const p = prompt.trim()
+  if (!p) return false
+  if (isCharacterMediaSelfiePrompt(p) || isCharacterMediaMirrorSelfiePrompt(p)) return false
+  if (FACE_FEATURE_RE.test(p) || UPPER_BODY_WITH_FACE_RE.test(p)) return false
+  if (
+    /\b(?:1boy|1girl|1man|1woman|young (?:man|woman)|reference character|portrait|selfie|headshot|face fills|handsome)\b/i.test(
+      p,
+    )
+  ) {
+    return false
+  }
+  if (SOLO_BODY_PART_CLOSEUP_RE.test(p) || EXTREMITY_CLOSEUP_RE.test(p)) return false
+  if (isCharacterMediaFingerInterlockPrompt(p) || isCharacterMediaDualHandHoldingPrompt(p)) return false
+  if (isCharacterMediaPhotographingOthersPrompt(p)) return false
+  if (OTHER_PERSON_SUBJECT_RE.test(p)) return false
+  if (isCharacterMediaFirstPersonBodyPrompt(p)) return false
+
+  if (SCENIC_ONLY_HINT.test(p)) return true
+  if (EXPLICIT_NO_FACE_RE.test(p) && SCENIC_ONLY_HINT.test(p)) return true
+
+  const objectFoodPetOnly =
+    /\b(?:still life|food|coffee|tea|dessert|meal|desk|table|skyline|architecture|building|flower|bouquet|plant|potted|cat|dog|pet|rain|snow|sunrise|landscape|scenery|neon (?:sign|lights)|road surface|no (?:people|person|humans?|faces?))\b/i
+  const hasPerson =
+    PERSON_HINT.test(p) ||
+    /\b(?:1boy|1girl|boy|girl|man|woman|couple|people|person|human)\b/i.test(p) ||
+    /人|脸|男|女|男生|女生|肖像/.test(p)
+  return objectFoodPetOnly.test(p) && !hasPerson
+}
 
 /** 第一视角且画面含角色自身肢体/身体（非纯风景空镜） */
 export function isCharacterMediaFirstPersonBodyPrompt(prompt: string): boolean {
@@ -198,10 +213,14 @@ export function isCharacterMediaAppearanceLockPrompt(prompt: string): boolean {
 export function isCharacterMediaCharacterAppearanceNeededPrompt(prompt: string): boolean {
   const p = prompt.trim()
   if (!p) return false
+  if (isCharacterMediaScenicOrObjectOnlyPrompt(p)) return false
   if (isCharacterMediaPhotographingOthersPrompt(p)) return false
   if (isCharacterMediaAppearanceLockPrompt(p)) return true
   if (isCharacterMediaMirrorSelfiePrompt(p)) return true
-  if (/\breference character\b/i.test(p)) return true
+  if (/\breference character\b/i.test(p)) {
+    if (isCharacterMediaScenicOrObjectOnlyPrompt(p)) return false
+    return true
+  }
   if (/The character appearance:/i.test(p)) return true
   if (hasCharacterMediaSelfiePrefix(p)) return true
   if (
@@ -280,7 +299,10 @@ export function isCharacterMediaCharacterFaceVisiblePrompt(prompt: string): bool
 
   if (hasFaceFeature || hasUpperBody) return true
 
-  if (/\breference character\b/i.test(p)) return true
+  if (/\breference character\b/i.test(p)) {
+    if (isCharacterMediaScenicOrObjectOnlyPrompt(p)) return false
+    return true
+  }
 
   if (isCharacterMediaCharacterAppearanceNeededPrompt(p)) {
     if (isCharacterMediaFirstPersonBodyPrompt(p) && !hasFaceFeature && !hasUpperBody) {
@@ -603,14 +625,6 @@ export function buildCharacterMediaImagePrompt(
   const withStyle = stylePrefix ? `${stylePrefix}${sceneBody}`.trim() : sceneBody
 
   const parts: string[] = []
-  // 男生露脸：前置「十分帅气」
-  if (
-    appendFace &&
-    looksLikeMaleSubjectPrompt(`${inferFrom} ${sceneBody}`) &&
-    !/extremely handsome young man/i.test(withStyle)
-  ) {
-    parts.push(EXTREMELY_HANDSOME_YOUNG_MAN_PREFIX)
-  }
   parts.push(withStyle)
   appendCharacterMediaReferenceStyleParts(parts, useReferenceStyle, hasReference, inferFrom)
   appendCharacterMediaDualIntimateCompositionGuard(parts, inferFrom)
@@ -623,7 +637,7 @@ export function buildCharacterMediaImagePrompt(
     const blob = parts.join(', ')
     const faceSuffix = anime ? ANIME_FACE_SUFFIX : REALISTIC_FACE_SUFFIX
     // 避免重复堆叠（重新生成 / 用户已手写同款）
-    if (!/bedroom-eyes sexual tension|heavy-lidded hooded eyes/i.test(blob)) {
+    if (!/healthy (?:clear )?skin|clear eyes|even complexion/i.test(blob)) {
       parts.push(faceSuffix)
     }
   }
@@ -662,12 +676,6 @@ export function buildDatingPlotImagePrompt(
       parts.push(ANIME_ANTI_REALISTIC)
     }
     if (!hasReference && /脸|面部|眼神|唇|五官|face|eyes|lips|reference character|1boy|1girl/i.test(trimmed)) {
-      if (
-        looksLikeMaleSubjectPrompt(trimmed) &&
-        !/extremely handsome young man/i.test(parts.join(', '))
-      ) {
-        parts.push(EXTREMELY_HANDSOME_YOUNG_MAN_PREFIX)
-      }
       parts.push(anime ? ANIME_FACE_SUFFIX : REALISTIC_FACE_SUFFIX)
     }
   }
@@ -720,13 +728,8 @@ export function enhanceMomentsImagePrompt(
     parts.push(ANIME_ANTI_REALISTIC)
   }
 
-  if (hasPersonSubject(trimmed)) {
-    if (
-      looksLikeMaleSubjectPrompt(trimmed) &&
-      !/extremely handsome young man/i.test(trimmed)
-    ) {
-      parts.push(EXTREMELY_HANDSOME_YOUNG_MAN_PREFIX)
-    }
+  const appendFace = shouldAppendDefaultFaceAesthetic(trimmed, false)
+  if (appendFace) {
     parts.push(anime ? ANIME_FACE_SUFFIX : REALISTIC_FACE_SUFFIX)
   }
 

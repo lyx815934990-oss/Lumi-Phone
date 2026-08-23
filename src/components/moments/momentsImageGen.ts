@@ -173,10 +173,10 @@ function buildFullPrompt(params: MomentsImageGenParams): string {
       inferencePrompt,
       appearanceText,
     })
-    if (hint && !hasReference && !isSubjectSelfie) {
+    const characterAppearanceNeeded = isCharacterMediaCharacterAppearanceNeededPrompt(inferencePrompt)
+    if (hint && !hasReference && !isSubjectSelfie && characterAppearanceNeeded) {
       built += `, consistent character appearance: ${hint}`
     }
-    const characterAppearanceNeeded = isCharacterMediaCharacterAppearanceNeededPrompt(inferencePrompt)
     if (refNote && characterAppearanceNeeded) {
       if (userHandAppearancePriority) {
         // 用户手部外貌文案优先于任何默认好看手/无手毛注入

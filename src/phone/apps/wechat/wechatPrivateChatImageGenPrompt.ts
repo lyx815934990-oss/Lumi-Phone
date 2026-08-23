@@ -17,7 +17,10 @@ export const WECHAT_PRIVATE_CHAT_IMAGE_GEN_INTERNAL_COT_RULES = `
 2. **禁抽象/心理 tag**：禁 dare not, ashamed, obedient, timid, vulnerable aura, moist eyes, dreamy gaze, hot breath in the air, feeling of…；改写成可见特征：slightly red lips, tears glistening in eyes, furrowed brows, guilty gaze looking to the left, light blush on cheeks。
 3. **景别↔细节**：全景/广角→禁微表情、睫毛、汗珠；**自拍默认 upper body**，只有角色明确怼脸/特写时才写 close-up face；wide shot / full body → 禁睫毛级微观细节。
 4. **视角**：① **直接画面（默认）**：右侧只写画面内容，**禁止** POV/eye level/rear camera/looking down/up 等机位词（**客户端不再自动补全**） ② **自拍**：\`[wx-selfie|who={{char}}]\` + **selfie shot** 或 **mirror selfie shot** + upper body/穿搭/环境；**禁止**默认 close-up / 怼脸 ③ **对镜**：同前缀 + **mirror selfie shot**。**禁止**混写；**禁止** front camera / POV lens / phone visible；**禁止**露脸 tag 与 close-up abs/chest/genitals 同写。
-4a. **外貌注入**：**禁止**写 \`The character appearance:\` 外貌块或单独中文外貌气泡；客户端自动注入形象特征；**右侧**无参考图时含 1boy/1girl + 必要英文外貌词。
+4a. **外貌注入**：**禁止**写 \`The character appearance:\` 外貌块或单独中文外貌气泡；客户端自动注入形象特征；**右侧**无参考图时，**仅露脸/自拍/对镜/明确需要角色脸**的构图才含 1boy/1girl + **4～8 个**贴合人设的英文外貌 tag（脸型/眉/眼/鼻/唇/肤质/发，见「露脸·外貌 tag」）。
+4a-d. **露脸神态**：默认 healthy clear skin, alert relaxed eyes；**禁止** tired/exhausted/weary/half-lidded sleepy/dark circles/sickly/melancholic 等显疲态 tag（剧情明确通宵/大病/哭过后除外）。
+4a-b. **空镜/风景/静物**：右侧**禁止** 1boy/1girl/reference character/face/portrait/handsome 等人脸 tag；只写环境、物体、光线。
+4a-c. **无脸部位特写**（手/锁骨/腹肌/腿等）：**禁止** face/head/portrait/handsome man 等；只写该部位与可见皮肤/衣物；**禁止**为「照顾型年上」等气质硬塞帅气脸。
 4b. **拍他人（后置成品照）**：主体写被拍的人；右侧**只写画面内容**；**禁止** POV/eye level/rear camera 套话；**禁止** hands holding phone / phone screen / viewfinder / 第三人称「正在拍照」构图。
 5. **俯角↔背景**：写了 looking down / 俯视 → 正下方必须是 sand/floor/tiles/bedsheets；**禁** horizon, sea waves, beach background, skyline 等同写。海边牵手俯视用 own hand + partner's hand + wet sand directly below + no horizon in frame。
 6. **仰角↔背景**：写了 looking up / 仰视 → 画面是 sky/ceiling/building tops；**禁** floor tiles, pavement, wet sand at feet, shoes at bottom of frame（仰视看不到地板）。
@@ -39,7 +42,7 @@ export const WECHAT_PRIVATE_CHAT_IMAGE_GEN_NSFW_EXAMPLES_WITH_REF = `
 - **selfie·默认**：\`发图 卧室自拍半身，白色动物连体睡衣比耶|||[wx-selfie|who={{char}}] selfie shot, upper body, white animal onesie pajamas, hood pulled up, fluffy round ears on hood, black leather choker, slightly parted lips, light blush on cheeks, dim bedroom lamp\`
 - **selfie·shake**（仅手抖事故，**勿**据此默认写「头发乱」口语）：\`发图 卧室自拍半身，手抖糊了一下|||[wx-selfie|who={{char}}] selfie shot, upper body, motion blur from accidental phone shake, beige hoodie neckline visible, red hair tie, dim bedside lamp\`
 - **selfie·arm length**：\`发图 卧室自拍半身，对焦清楚|||[wx-selfie|who={{char}}] selfie shot, upper body, sharp stable focus, lips slightly pursed, light blush on cheeks, collarbone in frame, warm lamp light\`
-- **selfie·怼脸（仅角色明确要特写时）**：\`发图 怼脸自拍特写|||[wx-selfie|who={{char}}] selfie shot, close-up face, extreme close-up, face fills most of frame, lips slightly parted, light blush on cheeks, dim bedroom lamp\`
+- **selfie·怼脸（仅角色明确要特写时）**：\`发图 怼脸自拍特写|||[wx-selfie|who={{char}}] selfie shot, close-up face, extreme close-up, face fills most of frame, reference character, clear eyes, healthy skin, lips slightly parted, light blush on cheeks, dim bedroom lamp\`
 - **rear·fingers**：\`发图 两指插入，阴唇张开|||own two fingers inserted into vaginal opening, labia spread open, swollen clitoris visible, wet with arousal fluid, thighs trembling, warm side light, messy bedsheets\`
 - **rear·holding hands**：\`发图 俩人站着十指相扣，镜头往下拍，脚下湿路面，小腿和鞋入镜|||A close-up photo of hands held together: the hands of two people, their fingers interlaced; the joints are clearly visible. The hands are slender and attractive, with one of them wearing a silver ring on its ring finger. The background is a wet surface; it's night time, dark and gloomy. The view is from a first-person perspective, and the calves and shoes of the two people are also visible in the frame.\`
 - **dual intimate**：\`发图 她躺白床单上双腿分开，他的脸在她大腿之间|||reference character lying on white sheets, legs spread, labia and clitoris visible, 1boy face partially visible between her thighs, medium shot, bedroom, warm side light, messy bedsheets\`
@@ -57,7 +60,7 @@ export const WECHAT_PRIVATE_CHAT_IMAGE_GEN_NSFW_EXAMPLES_WITHOUT_REF = `
 - **selfie·默认**：\`发图 卧室自拍半身，白色动物连体睡衣|||[wx-selfie|who={{char}}] selfie shot, upper body, 1girl, white animal onesie pajamas, hood pulled up, fluffy round ears on hood, black leather choker, slightly parted lips, light blush on cheeks, dim bedroom lamp\`
 - **selfie·shake**（仅手抖事故，**勿**据此默认写「头发乱」口语）：\`发图 卧室自拍半身，手抖糊了一下|||[wx-selfie|who={{char}}] selfie shot, upper body, 1girl, motion blur from accidental phone shake, beige hoodie neckline visible, red hair tie, dim bedside lamp\`
 - **selfie·arm length**：\`发图 卧室自拍半身，对焦清楚|||[wx-selfie|who={{char}}] selfie shot, upper body, 1girl, sharp stable focus, lips slightly pursed, light blush on cheeks, collarbone in frame, warm lamp light\`
-- **selfie·怼脸（仅角色明确要特写时）**：\`发图 怼脸自拍特写|||[wx-selfie|who={{char}}] selfie shot, close-up face, extreme close-up, face fills most of frame, 1girl, lips slightly parted, light blush on cheeks, dim bedroom lamp\`
+- **selfie·怼脸（仅角色明确要特写时）**：\`发图 怼脸自拍特写|||[wx-selfie|who={{char}}] selfie shot, close-up face, extreme close-up, face fills most of frame, 1girl, soft oval face, clear eyes, healthy skin, lips slightly parted, light blush on cheeks, dim bedroom lamp\`
 - **rear·fingers**：\`发图 两指插入，阴唇张开|||own two fingers inserted into vaginal opening, labia spread open, swollen clitoris visible, wet with arousal fluid, thighs trembling, warm side light, messy bedsheets\`
 - **rear·holding hands**：\`发图 俩人站着十指相扣，镜头往下拍，脚下湿路面，小腿和鞋入镜|||A close-up photo of hands held together: the hands of two people, their fingers interlaced; the joints are clearly visible. The hands are slender and attractive, with one of them wearing a silver ring on its ring finger. The background is a wet surface; it's night time, dark and gloomy. The view is from a first-person perspective, and the calves and shoes of the two people are also visible in the frame.\`
 - **dual intimate**：\`发图 她躺白床单上双腿分开，他的脸在她大腿之间|||1girl lying on white sheets, legs spread, labia and clitoris visible, 1boy face partially visible between her thighs, medium shot, bedroom, warm side light, messy bedsheets\`
@@ -78,8 +81,11 @@ export function buildWeChatPrivateChatImageGenEnhancementBlock(
   options: WeChatPrivateChatImageGenEnhancementOptions = {},
 ): string {
   const hasAppearanceReference = options.hasAppearanceReference !== false
+  const appearanceHint = options.appearanceHint?.trim() ?? ''
   const noRefNote = !hasAppearanceReference
-    ? `\n■ 无参考图·硬性：禁止 reference character；**禁止**写 The character appearance 外貌块（客户端自动注入）；右侧英文 tag 含 1boy/1girl + 必要英文外貌词。`
+    ? appearanceHint
+      ? `\n■ 无参考图·硬性：禁止 reference character；**禁止**写 The character appearance 外貌块（客户端自动注入）；露脸时右侧含 1boy/1girl + 从外貌 DNA 择优写 2～4 个英文 tag。\n■ 角色外貌 DNA：${appearanceHint}`
+      : `\n■ 无参考图·硬性：禁止 reference character；**禁止**写 The character appearance 外貌块（客户端自动注入）；露脸时右侧含 1boy/1girl + 贴合人设的英文外貌 tag。`
     : ''
   const nsfwExamples = hasAppearanceReference
     ? WECHAT_PRIVATE_CHAT_IMAGE_GEN_NSFW_EXAMPLES_WITH_REF

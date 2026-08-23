@@ -1,5 +1,6 @@
 import type { WeChatImageMime, Gender } from './newFriendsPersona/types'
 import { buildImageGenCompositionLifeFeelCotBlock } from '../../../components/moments/imageGenCompositionLifeFeelCot'
+import { buildImageGenFaceAppearanceLlmBlock } from '../../../components/moments/imageGenFaceAppearanceLlmGuide'
 import { buildChatSelfieImageGenRule, IMAGE_PROMPT_CONCRETE_VISUAL_RULE, IMAGE_PROMPT_ENGLISH_ONLY_RULE, IMAGE_PROMPT_LIGHTING_CONTEXT_RULE, IMAGE_PROMPT_POV_ANGLE_BACKGROUND_RULE } from '../../../components/moments/momentCharacterImageRules'
 import { buildWeChatPrivateChatImageGenEnhancementBlock } from './wechatPrivateChatImageGenPrompt'
 import { buildWeChatNsfwPoseLibraryPromptBlock } from './nsfwPoseLibrary/buildWeChatNsfwPoseLibraryPromptBlock'
@@ -196,9 +197,16 @@ export function buildCharacterImageGenPromptBlock(
   const poseLibraryAppendix = poseLibraryBlock ? `\n\n${poseLibraryBlock}` : ''
   const noRefAppearanceRule = !hasRef
     ? appearanceHint
-      ? `\n- **无形象参考图（硬性）**：**禁止** reference character；**禁止**写 \`The character appearance:\` 外貌块。右侧英文 tag 必要时含 1boy/1girl + 英文外貌词。`
-      : `\n- **无形象参考图（硬性）**：**禁止** reference character；**禁止**写 The character appearance 外貌块；右侧写 1boy/1girl + 英文外貌 tag。`
+      ? `\n- **无形象参考图（硬性）**：**禁止** reference character；**禁止**写 \`The character appearance:\` 外貌块。右侧露脸时含 1boy/1girl + 从下方「角色外貌 DNA」择优写入 2～4 个英文外貌 tag。`
+      : `\n- **无形象参考图（硬性）**：**禁止** reference character；**禁止**写 The character appearance 外貌块；露脸时右侧写 1boy/1girl + 贴合人设的英文外貌 tag。`
     : ''
+  const faceAppearanceLlmBlock = `\n\n${buildImageGenFaceAppearanceLlmBlock({
+    appearanceHint: hasRef ? undefined : appearanceHint || undefined,
+    characterGender:
+      options?.characterGender === 'male' || options?.characterGender === 'female'
+        ? options.characterGender
+        : null,
+  })}`
 
   return `---------------------
 【角色发送 AI 配图（已启用${privateChat ? ' · 私聊增强' : ''}${userExplicit ? ' · 用户要求' : ''}）】
@@ -211,6 +219,8 @@ export function buildCharacterImageGenPromptBlock(
 - **\`|||\` 右侧** = 给生图 API 的英文 tag；用户点确认后**直接**用右侧生图，**禁止**省略右侧、禁止只写左侧。
 - 例：\`发图 对镜自拍，一只手拿草莓牛奶，另一只手比耶|||[wx-selfie|who={{char}}] mirror selfie shot, upper body, holding strawberry milk carton, peace sign, bathroom mirror, warm light\`
 - 例（空镜）：\`发图 雨后霓虹映在湿路面上|||rainy street after rain, neon reflected on wet pavement, overcast scattered light\`
+- **空镜/风景/静物/食物（硬性）**：右侧**禁止** 1boy/1girl/reference character/face/portrait/handsome/young man 等人脸或角色主体 tag；只写环境、物体、光线、动物（若需要）。
+- **无脸部位特写（硬性）**：手/锁骨/腹肌/手腕/腿等**不露脸**时，右侧**禁止** face/head/portrait/handsome/1boy 帅气脸 tag；只写该部位 + 皮肤/衣物 + 环境。害羞等情绪用画面可见特征表达，勿强行塞人脸。
 - 例（拍他人）：\`发图 游艇甲板上穿黑泳衣的女孩坐着，身后碧蓝海水|||young woman in black swimsuit sitting on yacht deck cushion, turquoise sea and sky behind her, bright midday sunlight\`
 
 ■ 右侧英文 tag 规则（硬性）
@@ -253,7 +263,7 @@ ${privateChat ? `\n■ 景别与多人（私聊）\n- 自拍默认 upper body；
 
 ■ 禁止假发图（硬性）
 - 凡口头写「发过去了」「拍好了」「传给你了」「给你发了」等，**同一轮回复中必须**有对应 \`发图\` 行（含 \`|||\` 与右侧英文 tag）；否则客户端**不会**出图。
-- **没有** \`发图\` 行时，禁止写已发送/已拍好类措辞；应继续文字说明，或直接输出完整双层 \`发图\` 行。${privateEnhancement}${poseLibraryAppendix}${compositionCotBlock}`
+- **没有** \`发图\` 行时，禁止写已发送/已拍好类措辞；应继续文字说明，或直接输出完整双层 \`发图\` 行。${faceAppearanceLlmBlock}${privateEnhancement}${poseLibraryAppendix}${compositionCotBlock}`
 }
 
 /** 统计气泡中的 `发图 ` 行数（独立行或气泡内换行） */
