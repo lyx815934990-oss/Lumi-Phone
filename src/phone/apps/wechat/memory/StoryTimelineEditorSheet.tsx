@@ -312,7 +312,7 @@ export function StoryTimelineEditorSheet({
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', stiffness: 420, damping: 38 }}
-            className={`max-h-[min(88vh,720px)] w-full overflow-hidden rounded-t-[28px] border border-gray-200/60 bg-white shadow-[0_-12px_48px_rgba(0,0,0,0.12)] ${MEMORY_ARCHIVE_SERIF_CLASS}`}
+            className={`flex max-h-[min(88vh,720px)] w-full flex-col overflow-hidden rounded-t-[28px] border border-gray-200/60 bg-white shadow-[0_-12px_48px_rgba(0,0,0,0.12)] ${MEMORY_ARCHIVE_SERIF_CLASS}`}
             style={archiveSerifTextStyle}
             onClick={(e) => e.stopPropagation()}
           >
@@ -336,7 +336,7 @@ export function StoryTimelineEditorSheet({
               </Pressable>
             </div>
 
-            <div className="overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4">
               {isRow ? (
                 <>
                   <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">
@@ -359,7 +359,7 @@ export function StoryTimelineEditorSheet({
                       value={storyFields}
                       onChange={setStoryFields}
                       disabled={busy || loadingDisplay}
-                      hint="系统用【本轮锚点】公历日判断是否为「历史」。可选时间点或时间段；保存会同步改锚点。"
+                      hint="系统用【本轮锚点】公历日判断是否为「历史」。改完请点底部「保存」同步锚点。"
                     />
                   </div>
                 </>
@@ -371,7 +371,7 @@ export function StoryTimelineEditorSheet({
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 disabled={busy || loadingDisplay}
-                rows={isState ? 12 : 10}
+                rows={isState ? 10 : 8}
                 placeholder={
                   loadingDisplay
                     ? '正在展开占位符…'
@@ -381,12 +381,14 @@ export function StoryTimelineEditorSheet({
                 }
                 className={ARCHIVE_SOFT_TEXTAREA}
               />
-              <p className="mt-2 text-[11px] leading-relaxed text-gray-400">
+              <p className="mt-2 pb-2 text-[11px] leading-relaxed text-gray-400">
                 编辑时展示真实姓名便于阅读；保存后仍按占位符规则入库，换绑身份后语义一致。
               </p>
               {error ? <p className="mt-2 text-[12px] text-red-600">{error}</p> : null}
+            </div>
 
-              <div className="mt-5 flex gap-2">
+            <div className="shrink-0 border-t border-gray-100 bg-white/95 px-5 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(0,0,0,0.04)]">
+              <div className="flex gap-2">
                 <Pressable
                   type="button"
                   disabled={busy || loadingDisplay}
