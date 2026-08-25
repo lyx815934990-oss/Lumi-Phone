@@ -489,7 +489,7 @@ export function buildDatingStyleSystemPrompt(
     : ''
   const intimacyPosePresetNote = resolved.offlineCoupleIntimacyPoses
     ? thinkingChainEnabled
-      ? `\n\n【档案室预设·耳后三厘米经济特区·已开启】亲密须写具体姿势、表情与贴耳蜜语（软直带喘；禁油腻小作文、禁侮辱）；禁「很动情」等空词、禁跳过前戏（详见思维链内特区条文）。`
+      ? `\n\n【档案室预设·耳后三厘米经济特区·已开启】亲密须写具体姿势、表情与贴耳蜜语（软直带喘；有喘时可穿插哈/啊哈或拆成多拍短对白；禁油腻小作文、禁侮辱）；禁「很动情」等空词、禁跳过前戏（详见思维链内特区条文）。`
       : `\n\n【档案室预设·耳后三厘米经济特区·已开启】\n${OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX}`
     : ''
   const cuisinePresetNote = resolved.cuisineRecipeAtlas

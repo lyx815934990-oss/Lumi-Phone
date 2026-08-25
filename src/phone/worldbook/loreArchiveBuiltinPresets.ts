@@ -73,7 +73,7 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
     id: 'offlineCoupleIntimacyPoses',
     title: '耳后三厘米经济特区',
     description:
-      '系统内置：专治「人贴在一起时只会复读三个动词」。含推拉退进、指舌调情、追吻眼神与认真吻闭眼、软直贴耳蜜语（好舒服/好可爱/还想要，禁油腻小作文、禁侮辱）与细触感。开启后仅注入线下约会 AI，正文不可查看或编辑。',
+      '系统内置：专治「人贴在一起时只会复读三个动词」。含推拉退进、指舌调情、追吻眼神与认真吻闭眼、软直贴耳蜜语（可喘字穿插/断句对白；禁油腻小作文、禁侮辱）与细触感。开启后仅注入线下约会 AI，正文不可查看或编辑。',
   },
   {
     id: 'cuisineRecipeAtlas',
@@ -264,7 +264,7 @@ ${OFFLINE_DATING_FASHION_STYLING_APPENDIX}`)
   }
   if (resolved.offlineCoupleIntimacyPoses) {
     parts.push(`【耳后三厘米经济特区】
-写亲密时用下面菜单：具体姿势 + 脸上的反应 + 贴耳蜜语（软、直、带喘；禁油腻小作文、禁侮辱）；含指舌互动与追吻（追时眼神有性张力，认真吻默认闭眼）；禁空词（很动情/电流）、禁跳过前戏、禁哑巴动作、禁羞辱伴侣。关系阶段仍听其他设定：
+写亲密时用下面菜单：具体姿势 + 脸上的反应 + 贴耳蜜语（软、直、带喘；有喘时可穿插「哈/啊哈」或拆成多拍短对白；禁油腻小作文、禁侮辱）；含指舌互动与追吻（追时眼神有性张力，认真吻默认闭眼）；禁空词（很动情/电流）、禁跳过前戏、禁哑巴动作、禁羞辱伴侣。关系阶段仍听其他设定：
 ${OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX}`)
   }
   if (resolved.cuisineRecipeAtlas) {
