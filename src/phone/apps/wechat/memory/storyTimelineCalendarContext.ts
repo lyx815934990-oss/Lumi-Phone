@@ -1,8 +1,13 @@
 import { getAiPlotActiveTimelineDelta } from '../dating/plotTimelineDelta'
 import type { PlotItem } from '../dating/types'
 import { personaDb } from '../newFriendsPersona/idb'
+import { formatStoryTimeClockFromMs } from '../time/applyOnlineChatTimeFusion'
+import { normalizeWeChatTimeConfig, resolveWeChatCurrentTimeMs } from '../time/wechatTimeUtils'
+import { resolveCharacterCurrentStoryStamp } from './onlineMemorySummaryFormat'
 import {
   composeStoryTimelineCalendarAnchorLabel,
+  formatGregorianStoryDayFromMs,
+  formatStoryTimelineListTimeLabel,
   hasTimelineDeltaContent,
   parseStoryCalendarDayStartMs,
   STORY_TIMELINE_GREGORIAN_ANCHOR_RE,
@@ -190,14 +195,93 @@ export function resolveStoryTimeHintMsFromPlots(
 export const STORY_TIMELINE_CALENDAR_AWARENESS_RULES = `
 【剧情日历·公历锚点（timeline 必填语义）】
 - **锚点是故事内时间，不是生成/落库时刻**：story_day / story_time 必须来自正文与已有剧情时间轴；**禁止**使用手机当前日期、消息发送时刻、plot.timestamp。
-- story_day **须写含年份的公历日期**（本轮开始或单点之日），如 "2025年10月1日"；**禁止**仅写「第3天」「Day 12」（相对进度写 relative_time）。
+- story_day **须写含年份的公历日期**（本轮开始或单点之日），如 "2026年10月1日"；**禁止**仅写「第3天」「Day 12」（相对进度写 relative_time）；年份须与【剧情时间锚点】一致，勿默认写成示例年。
 - story_time **须写 24 小时制 HH:mm**（本轮开始或单点时刻）；仅有「傍晚/深夜」时须结合上下文推断。
-- **跨时段剧情**：正文明确跨越时间（如闪回、多日旅行、从清晨写到深夜且跨日）时，须填写 story_day_end、story_time_end；展示形如「2025年5月1日 星期一 08:00 - 2025年6月29日 星期日 18:00」。同日跨度可只写 story_time + story_time_end（story_day_end 可省略或与 story_day 相同）。
+- **正文未明示公历**：若材料/正文没有写出明确年月日（或只有「傍晚」等模糊词），story_day / story_time **必须**采用下方【剧情时间锚点】（含线上最新回复的故事时间 / 剧情轴「现在」），可同日或略后；**禁止**臆造更早年份。
+- **跨时段剧情**：正文明确跨越时间（如闪回、多日旅行、从清晨写到深夜且跨日）时，须填写 story_day_end、story_time_end；展示形如「2026年5月1日 08:00 - 2026年6月29日 18:00」。同日跨度可只写 story_time + story_time_end（story_day_end 可省略或与 story_day 相同）。
 - 写 event_summary / row_title 时须感知**季节与节日氛围**，并与 story_day（及 end）一致。
 - **生日节点**：若下方提供了 {{user}} / {{char}} 的生日 MM-DD，须对照 story_day 判断是否临近或当日。
 - **重要节日**：元旦、春节、清明、劳动节、端午、中秋、国庆、情人节、520、七夕、跨年夜等；命中或临近（±1～2 天）时在摘要中点明节日语境。
-- **禁止无闪回的时间倒流**：若提供了【剧情时间锚点（上一回合故事内末尾）】，接续剧情的 story_day / story_day_end 须为锚点**同日或更晚**；**禁止**无回忆/闪回/插叙铺垫却写成更早年份。闪回须在 relative_time 或正文摘要中明示。
+- **禁止无闪回的时间倒流**：若提供了【剧情时间锚点】，接续剧情的 story_day / story_day_end 须为锚点**同日或更晚**；**禁止**无回忆/闪回/插叙铺垫却写成更早年份。闪回须在 relative_time 或正文摘要中明示。
 `.trim()
+
+/**
+ * 手动补写剧情摘要用的故事「现在」：
+ * 线上最新回复盖章 / 自定义线上时钟 / 剧情轴 / 已有摘要行 取最晚，再与摘要行对齐。
+ * （正文未写时间时，模型须承接此锚点，避免落到示例年如 2025。）
+ */
+export async function resolveManualStoryTimelineCalendarAnchor(
+  characterId: string,
+): Promise<string> {
+  const cid = characterId.trim()
+  if (!cid) return ''
+
+  let stateOrClockLabel = ''
+  try {
+    const stamp = await resolveCharacterCurrentStoryStamp(cid)
+    stateOrClockLabel = stamp.storyTimeLabel?.trim() || ''
+  } catch {
+    stateOrClockLabel = ''
+  }
+
+  let liveStoryLabel = ''
+  try {
+    const timeRow = await personaDb.getCharacterTimeSettings(cid)
+    const cfg = timeRow?.config ? normalizeWeChatTimeConfig(timeRow.config) : null
+    if (cfg?.mode === 'custom' && timeRow?.timePerceptionEnabled !== false) {
+      const liveMs = resolveWeChatCurrentTimeMs(cfg)
+      liveStoryLabel = composeStoryTimelineCalendarAnchorLabel({
+        story_day: formatGregorianStoryDayFromMs(liveMs),
+        story_time: formatStoryTimeClockFromMs(liveMs),
+      }).trim()
+    }
+  } catch {
+    liveStoryLabel = ''
+  }
+
+  let latestOnlineReplyLabel = ''
+  try {
+    const chatRows = await personaDb.listWeChatChatMessagesRecentByCharacter({
+      characterId: cid,
+      limit: 80,
+    })
+    for (const m of chatRows) {
+      const label = String(m.storyTimeLabel ?? '').trim()
+      if (label) {
+        latestOnlineReplyLabel = pickLatestStoryCalendarLabel(latestOnlineReplyLabel, label)
+      }
+    }
+  } catch {
+    latestOnlineReplyLabel = ''
+  }
+
+  let latestRowCalendarLabel = ''
+  try {
+    const rows = await personaDb.listStoryTimelinePlotRowsByCharacterId(cid)
+    for (const r of rows) {
+      const label = formatStoryTimelineListTimeLabel(r.rowText ?? '').trim()
+      if (label) {
+        latestRowCalendarLabel = pickLatestStoryCalendarLabel(latestRowCalendarLabel, label)
+      }
+    }
+  } catch {
+    latestRowCalendarLabel = ''
+  }
+
+  return (
+    mergeOnlineStoryNowWithOfflineFloor(
+      pickLatestStoryCalendarLabel(
+        stateOrClockLabel,
+        liveStoryLabel,
+        latestOnlineReplyLabel,
+        latestRowCalendarLabel,
+      ),
+      latestRowCalendarLabel,
+    ) ||
+    pickLaterStoryCalendarLabel(stateOrClockLabel, latestOnlineReplyLabel) ||
+    latestRowCalendarLabel
+  )
+}
 
 /** 约会正文生成用：接续上一回合锚点，禁止公历倒流 */
 export const STORY_TIMELINE_CALENDAR_CHRONOLOGY_RULES = `
@@ -218,7 +302,10 @@ export async function buildStoryTimelineCalendarContextBlock(params: {
   const anchor = String(params.storyCalendarAnchor ?? '').trim()
   if (anchor) {
     lines.push(
-      `【剧情时间锚点（上一回合故事内末尾·本轮须承接；禁止写成手机当前日期）】${anchor}`,
+      `【剧情时间锚点（故事「现在」·含线上最新回复/剧情轴；本轮须承接；禁止写成手机当前日期）】${anchor}`,
+    )
+    lines.push(
+      '若正文未写出明确公历年月日：story_day/story_time **必须**采用上述锚点（同日或略后），禁止臆造更早年份。',
     )
   } else {
     lines.push(

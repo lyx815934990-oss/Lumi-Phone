@@ -2,6 +2,7 @@ import type { ApiConfig } from '../../api/types'
 import { personaDb } from '../newFriendsPersona/idb'
 import { gatherLatestRoundBodyForEpilogue } from './memoryEpilogueArchive'
 import { resolveTimelineSummaryApiConfig } from './memoryTimelineSummaryApi'
+import { resolveManualStoryTimelineCalendarAnchor } from './storyTimelineCalendarContext'
 import { persistStoryTimelineFromSummaryDelta } from './storyTimelinePersist'
 import {
   buildDatingStoryTimelineFallbackMaterial,
@@ -125,6 +126,8 @@ export async function runManualStoryTimelineSummary(params: {
   const displayName =
     params.displayName?.trim() || ch.name?.trim() || ch.wechatNickname?.trim() || '角色'
 
+  const storyCalendarAnchor = await resolveManualStoryTimelineCalendarAnchor(cid)
+
   const written = await writePerRoundStoryTimelineWithSeparateAttempt({
     chatFallback: params.apiConfig,
     characterId: cid,
@@ -134,6 +137,7 @@ export async function runManualStoryTimelineSummary(params: {
       materialBlock: buildDatingStoryTimelineFallbackMaterial({ plotBody: body }),
       peerCharacterId: cid,
       latestRoundBody: body,
+      storyCalendarAnchor: storyCalendarAnchor || undefined,
     },
     notifyOnFailure: false,
   })

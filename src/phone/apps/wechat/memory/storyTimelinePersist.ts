@@ -95,6 +95,18 @@ export async function persistStoryTimelineFromSummaryDelta(
   } catch {
     /* ignore */
   }
+  try {
+    const chatRows = await personaDb.listWeChatChatMessagesRecentByCharacter({
+      characterId: cid,
+      limit: 80,
+    })
+    for (const m of chatRows) {
+      const label = String(m.storyTimeLabel ?? '').trim()
+      if (label) floorLabel = pickLatestStoryCalendarLabel(floorLabel, label)
+    }
+  } catch {
+    /* ignore */
+  }
   const floorMs = floorLabel
     ? parseStoryCalendarDayStartMs(floorLabel.match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1] ?? '')
     : prev?.currentStoryDay?.trim()
