@@ -224,6 +224,11 @@ export type ChatConversationSettingsRow = {
   profileImageChangeEnabled: boolean
   /** 是否注入「网络玩梗轻量词库」附录（默认关） */
   internetMemeLexiconEnabled: boolean
+  /**
+   * 是否注入「语感同化 / 夫妻相」附录（默认关）：
+   * 按关系浓度下意识贴近用户表层说话习惯，人设与口语习惯仍优先。
+   */
+  mimicUserSpeakingStyleEnabled: boolean
   isDanmakuMode: boolean
   /** 群聊：是否在消息头像旁显示发送者群昵称（默认开启） */
   showGroupMemberNicknameInChat: boolean

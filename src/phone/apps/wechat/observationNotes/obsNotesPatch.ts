@@ -20,6 +20,7 @@ import {
   saveObservationNotes,
 } from './store'
 import { normalizeObservationNotesPatchPath, sanitizeObservationRemarkNickname } from './knownUserFacts'
+import { isObservationFieldNearDuplicate } from './fieldNearDuplicate'
 import { personaDb } from '../newFriendsPersona/idb'
 import type { ObservationNotesPlotRevert } from './plotRevert'
 
@@ -57,6 +58,14 @@ const LABEL_TO_PATH: Array<{ labels: string[]; path: string; action?: 'append' |
   { labels: ['爱好', '兴趣', '兴趣爱好', 'hobbies'], path: 'basic.hobbies' },
   { labels: ['线上备注', '备注', 'remarkNickname'], path: 'remarkNickname' },
   { labels: ['称呼', '喜欢的称呼', 'preferredAddress'], path: 'preferredAddress' },
+  {
+    labels: ['口头禅', '眼中的口头禅', '对方口头禅', 'userCatchphrases'],
+    path: 'userCatchphrases',
+  },
+  {
+    labels: ['语言风格', '说话风格', '语言风格简述', 'languageStyleBrief'],
+    path: 'languageStyleBrief',
+  },
   { labels: ['评价', '总体评价', 'overallEvaluation'], path: 'overallEvaluation' },
   { labels: ['好感', '好感度', 'affection'], path: 'affection' },
   { labels: ['关系', '目前关系', 'relationshipLabel'], path: 'relationshipLabel' },
@@ -120,6 +129,8 @@ ${OBS_NOTES_PATCH_MARKER}
 ① 无实质更新：
 无变化
 
+（「无实质」含：没有新事实/纠正/阶段变化，只是同义换词或加一句形容词润色——那种也写「无变化」，不要交字段行。）
+
 ② 有更新：每行一项「标签｜内容」
 示例：
 姓名｜她跟我说叫小晚，我就这么记了
@@ -130,6 +141,8 @@ ${OBS_NOTES_PATCH_MARKER}
 爱好｜深夜乱逛
 线上备注｜季修晗🐾
 称呼｜阿晚
+口头禅｜「真的假的」「你懂的」；偶尔句末拖个「嘛」
+语言风格｜短句多、爱省略号；认真时突然变长；轻松时语气词密一点
 好感｜72
 关系｜暧昧
 评价｜……用你平时跟对方说话的语气写一两句……
@@ -144,7 +157,7 @@ XP｜喜欢锁骨、脚踝、小腹、亲密时放音乐
 能力｜智商74 情商82 胆商58 逆商71 创商80 健商49
 能力注｜你总能把乱情绪整理成能被接住的句子
 
-可用标签：姓名、性别、性取向、食物、雷点、爱好、线上备注、称呼、好感、关系、评价、优点、缺点、亲密、XP、敏感处、亲密方式、人格、人格注、能力、能力注
+可用标签：姓名、性别、性取向、食物、雷点、爱好、线上备注、称呼、口头禅、语言风格、好感、关系、评价、优点、缺点、亲密、XP、敏感处、亲密方式、人格、人格注、能力、能力注
 ${initial}
 【口吻 · 活人感 · 第一人称 · 不 OOC】
 - 用你**平时与对方相处/线上私聊的同款语气**填档案试卷；侧写=「我」对 {{user}} 的私藏认知，**禁止**中立简介、第三方旁白、百科词条。
@@ -162,6 +175,10 @@ ${initial}
     · 好感约 70+ 或关系暧昧恋爱、尤其「非常爱」：可更亲昵甚至人设反差的腻歪备注（**允许**宝宝/宝贝/小宝/老公/老婆等）；
     · **禁止**照抄对方微信公开昵称；**禁止动物系宠物名**：如「XX狗」「XX猫」「小狗狗」「小猫咪」等把人当宠物养的叫法（emoji 🐾 可以，但备注正文不要「狗/猫」后缀宠称）。
   - 本轮若「好感｜」「关系｜」有更新：检查「线上备注」是否仍匹配新阶段与你的感情浓度；不匹配则本轮一并改。
+- **「口头禅 / 语言风格」栏（你眼里对方怎么说话）**：
+  - 「口头禅」＝对方常挂嘴边的词/短句/语气词习惯（可多项）；写你观察到的，**不是**你自己的口癖。
+  - 「语言风格」＝一两句简述对方表层语感（断句长短、标点癖好、软硬、碎不碎、爱不爱省略号等）。
+  - 有近端/召回依据再写；无依据→「尚不清楚」类；对方说话习惯明显变了就覆盖旧值。
 - **「关系」栏**：写你认定的关系阶段 + 你的态度（可一句）；禁止只丢「热恋/暧昧/好友」单标签。
 - **「评价」栏**：一两句第一人称，贴人设口癖与私下看法。
 - **「亲密 / XP / 敏感处 / 亲密方式」＝性向身体亲密认知（硬性）**：
@@ -171,7 +188,7 @@ ${initial}
   - 「敏感处」＝身体敏感部位，例：小腹、耳后、嘴唇；
   - 「亲密方式」＝更具体的亲密行为偏好，例：温柔的接吻、被从背后抱然后被亲耳朵和脖子。
   - 有依据再写；对方本轮否认、改口、设限时必须覆盖旧值，接话服从对方当前意愿。
-- **「暂时不知道」通则（含食物/雷点/爱好/性取向/亲密四栏等事实栏）**：
+- **「暂时不知道」通则（含食物/雷点/爱好/性取向/亲密四栏/口头禅/语言风格等事实观察栏）**：
   - 本轮材料**完全没有**某条依据时：用你的视角写「尚不清楚」「暂时不知道」「还没摸清楚…」等，**禁止瞎编**。
   - **证据只认本轮实际注入的内容**：用户本轮话、身份卡、近期剧情/日记，以及 system 里出现的 **【向量召回】/【关键词命中】/长期记忆召回** 等板块。
   - **本轮召回里写过的事实优先**：侧写旧值写着「不知道」，但本轮召回记忆里已有该事实 → **必须以召回为准落笔覆盖**，接话也当作你记得；禁止口口声声「我不知道」却无视召回。
@@ -180,8 +197,9 @@ ${initial}
 - 「人格 / 能力」**必须打分**：六轴各 0–100，格式固定如「外向42 直觉78 理性55 决断48 开放74 共情86」；能力轴为「智商74 情商82 胆商58 逆商71 创商80 健商49」。也可只写六个数字「42 78 55 48 74 86」。
 - 「人格注 / 能力注」**必须各写一句**你的主观评语（手记口吻），不可省略。
 - 「尚不清楚／暂时不知道」且本轮已有证据（含召回记忆）必须改。
+- **禁止无效更新（硬）**：已有实质内容、本轮无新事实/无纠正/无关系阶段变化时，该字段**不要交卷**；整份都如此则写「无变化」。禁止同义换词、加一句「……甜甜的」类形容词润色来「刷存在感」——客户端会丢弃近义改写。
 - **具体心动瞬间 / 深刻往事不写进侧写**：那些交给向量/关键词记忆召回；侧写只记稳定认知与态度。
-- **档案与用户本轮反应冲突时**：可见回复先承认旧印象再收下新说法（例：「这样吗？我以为你喜欢吃辣的，我记住了。」按人设改写）；答卷同步覆盖「食物 / 雷点 / 爱好 / 称呼 / 亲密 / XP / 敏感处 / 亲密方式」等对应标签；禁止用旧档抬杠。
+- **档案与用户本轮反应冲突时**：可见回复先承认旧印象再收下新说法（例：「这样吗？我以为你喜欢吃辣的，我记住了。」按人设改写）；答卷同步覆盖「食物 / 雷点 / 爱好 / 称呼 / 口头禅 / 语言风格 / 亲密 / XP / 敏感处 / 亲密方式」等对应标签；禁止用旧档抬杠。
 ---------------------
 `.trim()
 }
@@ -354,6 +372,8 @@ function readPathText(doc: ObservationNotesDoc, path: string): string {
   }
   if (p === 'remarkNickname') return doc.remarkNickname
   if (p === 'preferredAddress') return doc.preferredAddress
+  if (p === 'userCatchphrases') return doc.userCatchphrases
+  if (p === 'languageStyleBrief') return doc.languageStyleBrief
   if (p === 'overallEvaluation') return doc.overallEvaluation
   if (p === 'affection') return String(doc.affection)
   if (p === 'relationshipLabel') return doc.relationshipLabel
@@ -423,6 +443,14 @@ function applyOnePatch(
   }
   if (path === 'preferredAddress') {
     next.preferredAddress = text
+    return next
+  }
+  if (path === 'userCatchphrases') {
+    next.userCatchphrases = text
+    return next
+  }
+  if (path === 'languageStyleBrief') {
+    next.languageStyleBrief = text
     return next
   }
   if (path === 'overallEvaluation') {
@@ -524,7 +552,8 @@ export function applyObservationNotesFieldPatches(
     const prev = readPathText(cur, p.path)
     const nextDoc = applyOnePatch(cur, p)
     const next = readPathText(nextDoc, p.path)
-    if (prev === next) continue
+    // 全等或同义润色（无新事实）→ 不落库、不记 diff
+    if (isObservationFieldNearDuplicate(prev, next, p.path.trim())) continue
     diffs.push({
       path: p.path.trim(),
       label: p.label.trim() || p.path.trim(),
@@ -557,7 +586,7 @@ function buildFullRewriteDiffsAgainstPrevious(
   for (const row of FULL_REWRITE_COMPARE_PATHS) {
     const previousText = readPathText(before, row.path)
     const currentText = readPathText(after, row.path)
-    if (previousText === currentText) continue
+    if (isObservationFieldNearDuplicate(previousText, currentText, row.path)) continue
     diffs.push({
       path: row.path,
       label: row.label,

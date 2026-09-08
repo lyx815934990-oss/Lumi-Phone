@@ -21,6 +21,7 @@ import {
   composeStoryTimelineCalendarAnchorLabel,
   createEmptyStoryTimelineState,
   enforceStoryTimelineDeltaChronology,
+  enforceStoryTimelineDeltaSameDayUnlessCrossDay,
   formatGregorianStoryDayFromMs,
   formatStoryTimelineDeltaForDisplay,
   formatStoryTimelineInjectBody,
@@ -112,7 +113,11 @@ export async function persistStoryTimelineFromSummaryDelta(
     : prev?.currentStoryDay?.trim()
       ? parseStoryCalendarDayStartMs(prev.currentStoryDay.trim())
       : null
-  const enforcedDelta = enforceStoryTimelineDeltaChronology(delta, floorMs)
+  const enforcedDelta = enforceStoryTimelineDeltaSameDayUnlessCrossDay(
+    enforceStoryTimelineDeltaChronology(delta, floorMs),
+    floorMs,
+    [delta.event_summary, delta.relative_time, delta.row_title].filter(Boolean).join('\n'),
+  )
   const merged = mergeStoryTimelineState(prev, cid, enforcedDelta, scope)
   if (!merged) return
   await personaDb.putStoryTimelineState(merged)

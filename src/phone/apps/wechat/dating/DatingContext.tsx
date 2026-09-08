@@ -74,6 +74,7 @@ import {
   hasStoryTimelineVectorRecallInBlock,
   splitStoryTimelineInjectBody,
   enforceStoryTimelineDeltaChronology,
+  enforceStoryTimelineDeltaSameDayUnlessCrossDay,
   composeStoryTimelineCalendarAnchorLabel,
   formatGregorianStoryDayFromMs,
   formatStoryTimelineDeltaForDisplay,
@@ -221,6 +222,10 @@ import {
 } from '../observationNotes'
 import { loadObservationNotesPromptBlock } from '../observationNotes/promptBlock'
 import { rebuildObservationNotesFromDatingPlotList } from '../observationNotes/plotRevert'
+import {
+  DATING_MIMIC_USER_SPEAKING_STYLE_APPENDIX,
+} from '../wechatMimicUserSpeakingStyle'
+import { loadMimicUserSpeakingStyleEnabled } from '../mimicUserSpeakingStyleSettings'
 import { buildWorldbookContext } from '../../../worldbook/buildWorldbookContext'
 import { getWorldbookLoreEntriesSnapshot } from '../../../worldbook/worldbookLoreStore'
 import { resolveEffectiveDanmakuVisuals } from '../danmakuResolve'
@@ -1168,6 +1173,10 @@ async function timelinePersistFieldsFromAiTextRaw(
     mainCharacterOffstage?: boolean
     /** 上一回合故事内末尾公历锚点（用于禁止时间倒流） */
     storyCalendarAnchor?: string | null
+    /** 线下末条公历（同日钳制基准；勿用已跳时的 storyNow） */
+    offlineLastCalendarAnchor?: string | null
+    /** 故事「现在」已晚于线下末条（用户线上跳时） */
+    calendarAdvanced?: boolean
   },
 ) {
   const { memoryJsonText } = splitDatingAiResponseAndUnifiedMemoryJson(aiTextRaw)
@@ -1196,6 +1205,18 @@ async function timelinePersistFieldsFromAiTextRaw(
   const floorMs = resolveStoryCalendarAnchorFloorMs(opts?.storyCalendarAnchor)
   if (timelineDelta && floorMs != null) {
     timelineDelta = enforceStoryTimelineDeltaChronology(timelineDelta, floorMs)
+  }
+  // 无跨日证据：锁在「接续基准日」（未跳时时=线下末条日；已跳时=故事现在日），禁止模型无故写成次日/后日
+  if (timelineDelta) {
+    const sameDayFloorLabel = opts?.calendarAdvanced
+      ? opts?.storyCalendarAnchor
+      : opts?.offlineLastCalendarAnchor || opts?.storyCalendarAnchor
+    const sameDayFloorMs = resolveStoryCalendarAnchorFloorMs(sameDayFloorLabel)
+    timelineDelta = enforceStoryTimelineDeltaSameDayUnlessCrossDay(
+      timelineDelta,
+      sameDayFloorMs,
+      plotBody,
+    )
   }
   if (timelineDelta && opts?.mainCharacterOffstage) {
     timelineDelta = { ...timelineDelta, side_perspective: true }
@@ -2303,8 +2324,8 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   const storyCalendarHint = storyNowLabel
     ? calendarAdvanced ||
       (chronologyFloorForPrompt && chronologyFloorForPrompt !== offlineLastCalendarAnchor)
-      ? `\n【剧情时间锚点】故事「现在」= **${storyNowLabel}**（线上/剧情轴已推进；线下末条参考 ${offlineLastCalendarAnchor || '无'} 为往事）。本轮正文与 [TIMELINE] 的 story_day/**年份与月日必须等于该「现在」或其后**，禁止写成末条年或更早（例：禁止在「现在」已是 10月11日时仍写 10月8日）。勿用手机日期。\n`
-      : `\n【剧情时间锚点（上一回合故事内末尾·本轮须承接；勿用手机日期）】${storyNowLabel}\n`
+      ? `\n【剧情时间锚点】故事「现在」= **${storyNowLabel}**（线上/剧情轴已推进；线下末条参考 ${offlineLastCalendarAnchor || '无'} 为往事）。本轮正文与 [TIMELINE] 的 story_day/**年份与月日默认等于该「现在」同日**（时刻可略后）；仅当正文明示跨日或用户已跳时到更晚时才可写更晚日期。禁止写成末条年或更早（例：禁止在「现在」已是 10月11日时仍写 10月8日）。勿用手机日期。\n`
+      : `\n【剧情时间锚点（上一回合故事内末尾·本轮须承接；勿用手机日期）】${storyNowLabel}\n【同日默认】正文未写跨日时，本轮 story_day **必须仍是该日**，只允许时刻往后；禁止无故写成次日。\n`
     : ''
   const storyCalendarChronologyRule =
     chronologyFloorForPrompt || offlineLastCalendarAnchor
@@ -2337,6 +2358,14 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   })
   let playerGenderPronounReminder = ''
   const styleAppend = buildDatingStyleSystemAppend(genOptions)
+  let mimicUserSpeakingStyleAppend = ''
+  try {
+    if (await loadMimicUserSpeakingStyleEnabled(character.id)) {
+      mimicUserSpeakingStyleAppend = `\n\n${DATING_MIMIC_USER_SPEAKING_STYLE_APPENDIX}`
+    }
+  } catch {
+    mimicUserSpeakingStyleAppend = ''
+  }
   const onlineInjectScope = onlineCtx?.onlineInjectScope
   const onlineTemporalScopeRule = onlineInjectScope
     ? formatDatingOnlineTemporalScopePromptRule(onlineInjectScope, Date.now())
@@ -2688,7 +2717,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       ? `\n\n${datingArchiveBlock}\n\n${worldBookRoleLockReminder}\n`
       : '\n') +
     `${wbAfterBlock}${observationNotesAppendix}${lifeLedgerAppendix}\n\n` +
-    `${styleAppend}\n\n` +
+    `${styleAppend}${mimicUserSpeakingStyleAppend}\n\n` +
     `${PROSE_FORBIDDEN_LEXICON_PROMPT}\n\n` +
     `${combinedMemNote}`
   const datingCharProfileBlock = mainCharRow
@@ -4271,12 +4300,13 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           const plotHtmlVisual = plotArtifactOn ? htmlVisualCandidate ?? undefined : undefined
           const plotTs = Date.now()
           const offlineLastForFloor = resolveStoryCalendarAnchorFromPlotItems(plotsForModel)
+          const storyNowForFloor =
+            onlineCtx?.storyNowLabel?.trim() ||
+            onlineCtx?.onlineInjectScope?.storyNowLabel?.trim() ||
+            onlineCtx?.storyCalendarAnchor?.trim() ||
+            ''
           const chronologyFloorLabel = resolveDatingPlotChronologyFloorLabel({
-            storyNowLabel:
-              onlineCtx?.storyNowLabel?.trim() ||
-              onlineCtx?.onlineInjectScope?.storyNowLabel?.trim() ||
-              onlineCtx?.storyCalendarAnchor?.trim() ||
-              '',
+            storyNowLabel: storyNowForFloor,
             offlineLastLabel: offlineLastForFloor,
           })
           const { timelineSnap, timelineDelta } = await timelinePersistFieldsFromAiTextRaw(aiTextRaw, plotTs, {
@@ -4287,6 +4317,8 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             characterRealName: char.realName,
             mainCharacterOffstage: !!archiveSnap.mainCharacterOffstage,
             storyCalendarAnchor: chronologyFloorLabel || offlineLastForFloor,
+            offlineLastCalendarAnchor: offlineLastForFloor,
+            calendarAdvanced: isStoryNowCalendarAfterOfflineLast(storyNowForFloor, offlineLastForFloor),
           })
           const wbRevertNew = sanitizeWorldBookAfterRevertEntries(aiGen.worldBookAfterRevertEntries)
           const storyFields = dualNarrativeStoryFieldsFromDelta(timelineDelta)
@@ -5035,12 +5067,13 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           : undefined
         const plotTsRegen = Date.now()
         const offlineLastForFloorRegen = resolveStoryCalendarAnchorFromPlotItems(before)
+        const storyNowForFloorRegen =
+          onlineCtx?.storyNowLabel?.trim() ||
+          onlineCtx?.onlineInjectScope?.storyNowLabel?.trim() ||
+          onlineCtx?.storyCalendarAnchor?.trim() ||
+          ''
         const chronologyFloorLabelRegen = resolveDatingPlotChronologyFloorLabel({
-          storyNowLabel:
-            onlineCtx?.storyNowLabel?.trim() ||
-            onlineCtx?.onlineInjectScope?.storyNowLabel?.trim() ||
-            onlineCtx?.storyCalendarAnchor?.trim() ||
-            '',
+          storyNowLabel: storyNowForFloorRegen,
           offlineLastLabel: offlineLastForFloorRegen,
         })
         const { timelineSnap: timelineSnapRegen, timelineDelta: timelineDeltaRegen } =
@@ -5052,6 +5085,11 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             characterRealName: char.realName,
             mainCharacterOffstage: !!archive.mainCharacterOffstage,
             storyCalendarAnchor: chronologyFloorLabelRegen || offlineLastForFloorRegen,
+            offlineLastCalendarAnchor: offlineLastForFloorRegen,
+            calendarAdvanced: isStoryNowCalendarAfterOfflineLast(
+              storyNowForFloorRegen,
+              offlineLastForFloorRegen,
+            ),
           })
         const nextRevert = sanitizeWorldBookAfterRevertEntries(aiGenRegen.worldBookAfterRevertEntries)
         const regenStory = dualNarrativeStoryFieldsFromDelta(timelineDeltaRegen)

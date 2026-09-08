@@ -467,6 +467,7 @@ async function fireProactiveMessage(row: ChatConversationSettingsRow): Promise<v
         includePulseDmScreenshot: activeRow.pulseDmScreenshotEnabled === true,
         includeProfileImageChange: activeRow.profileImageChangeEnabled === true,
         includeInternetMemeLexicon: activeRow.internetMemeLexiconEnabled === true,
+        includeMimicUserSpeakingStyle: activeRow.mimicUserSpeakingStyleEnabled === true,
         currentTimeMs: gameNowForRound,
         timePerceptionEnabled,
         chatMemberIds: [peerCharacterId],

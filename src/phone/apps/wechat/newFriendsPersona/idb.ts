@@ -1839,6 +1839,11 @@ function normalizeChatConversationSettingsRow(input: unknown): ChatConversationS
       typeof (r as { internetMemeLexiconEnabled?: unknown }).internetMemeLexiconEnabled === 'boolean'
         ? !!(r as { internetMemeLexiconEnabled?: unknown }).internetMemeLexiconEnabled
         : false,
+    mimicUserSpeakingStyleEnabled:
+      typeof (r as { mimicUserSpeakingStyleEnabled?: unknown }).mimicUserSpeakingStyleEnabled ===
+      'boolean'
+        ? !!(r as { mimicUserSpeakingStyleEnabled?: unknown }).mimicUserSpeakingStyleEnabled
+        : false,
     isDanmakuMode: typeof r.isDanmakuMode === 'boolean' ? r.isDanmakuMode : false,
     showGroupMemberNicknameInChat:
       typeof (r as { showGroupMemberNicknameInChat?: unknown }).showGroupMemberNicknameInChat === 'boolean'
@@ -2102,6 +2107,8 @@ function mergeChatConversationSettingsRows(
     pulseDmScreenshotEnabled: a.pulseDmScreenshotEnabled || b.pulseDmScreenshotEnabled,
     profileImageChangeEnabled: a.profileImageChangeEnabled || b.profileImageChangeEnabled,
     internetMemeLexiconEnabled: a.internetMemeLexiconEnabled || b.internetMemeLexiconEnabled,
+    mimicUserSpeakingStyleEnabled:
+      a.mimicUserSpeakingStyleEnabled || b.mimicUserSpeakingStyleEnabled,
     isDanmakuMode: a.isDanmakuMode || b.isDanmakuMode,
     showGroupMemberNicknameInChat: newer.showGroupMemberNicknameInChat,
     showGroupRankBadgesInChat: a.showGroupRankBadgesInChat || b.showGroupRankBadgesInChat,
@@ -10232,6 +10239,7 @@ export class PersonaDb {
         | 'pulseDmScreenshotEnabled'
         | 'profileImageChangeEnabled'
         | 'internetMemeLexiconEnabled'
+        | 'mimicUserSpeakingStyleEnabled'
         | 'isDanmakuMode'
         | 'showGroupMemberNicknameInChat'
         | 'showGroupRankBadgesInChat'
@@ -10334,6 +10342,8 @@ export class PersonaDb {
         params.profileImageChangeEnabled ?? existing?.profileImageChangeEnabled ?? false,
       internetMemeLexiconEnabled:
         params.internetMemeLexiconEnabled ?? existing?.internetMemeLexiconEnabled ?? false,
+      mimicUserSpeakingStyleEnabled:
+        params.mimicUserSpeakingStyleEnabled ?? existing?.mimicUserSpeakingStyleEnabled ?? false,
       isDanmakuMode: params.isDanmakuMode ?? existing?.isDanmakuMode ?? false,
       showGroupMemberNicknameInChat:
         params.showGroupMemberNicknameInChat ?? existing?.showGroupMemberNicknameInChat ?? true,

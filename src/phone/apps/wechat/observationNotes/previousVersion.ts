@@ -6,6 +6,8 @@ export function looksLikeLegacySampleObservationNotes(doc: ObservationNotesDoc):
   const blob = [
     doc.remarkNickname,
     doc.preferredAddress,
+    doc.userCatchphrases,
+    doc.languageStyleBrief,
     doc.overallEvaluation,
     ...doc.strengths,
     ...doc.weaknesses,
@@ -94,8 +96,8 @@ export function formatObservationNotesUpdateContextBlock(
     ? '- **近端与原稿优先于「不知道」**：侧写写着尚不清楚/暂时不知道，但近端轮次或当前原稿/上一版已有该事实 → 接话与答卷以之为准覆盖；禁止装作不记得。本轮未注入的旧记忆不得凭空当已知。'
     : '- **本轮召回记忆优先于「不知道」**：侧写写着尚不清楚/暂时不知道，但本轮【向量召回】/【关键词命中】已有该事实 → 接话与答卷都以召回为准覆盖；禁止装作不记得。未注入本轮的旧记忆不得凭空当已知。'
   const noChangeRule = recentOnly
-    ? '- 无实质新证据且字段已写过、且与本轮用户话/身份卡/近端不冲突 → 可「无变化」；「尚不清楚」+本轮已有证据（含近端或原稿）则必须更新。'
-    : '- 无实质新证据且字段已写过、且与本轮用户话/身份卡/召回不冲突 → 可「无变化」；「尚不清楚」+本轮已有证据（含召回）则必须更新。'
+    ? '- 无实质新证据且字段已写过、且与本轮用户话/身份卡/近端不冲突 → **必须「无变化」**；禁止同义换词、加一句形容词式润色再交卷（如「爱喝奶茶带小丸子」改成「……喝起来甜甜的」=无效更新）。「尚不清楚」+本轮已有证据（含近端或原稿）则必须更新。'
+    : '- 无实质新证据且字段已写过、且与本轮用户话/身份卡/召回不冲突 → **必须「无变化」**；禁止同义换词、加一句形容词式润色再交卷（如「爱喝奶茶带小丸子」改成「……喝起来甜甜的」=无效更新）。「尚不清楚」+本轮已有证据（含召回）则必须更新。'
 
   return [
     formatObservationNotesPromptBlock(doc),
@@ -113,6 +115,7 @@ export function formatObservationNotesUpdateContextBlock(
     noChangeRule,
     '- 「线上备注」须跟「好感」「关系」同步：默认贴合人设；深爱可反差更腻（宝宝/宝贝等可）；**禁止XX狗/XX猫等动物系宠称**；阶段仍浅则保持克制。',
     '- 禁止用过时侧写质疑、抬杠或强迫对方承认旧偏好；禁止为了「看起来更新了」而改无关字段。',
+    '- **禁止无效更新**：字段意思没变、只是换说法/加语气词/加一句同义描写 → 该字段不要交卷（整份都无新事实则写「无变化」）。客户端也会丢弃这类近义改写。',
     '- 全文须保持你本人的人设口吻与当前亲密浓度，禁止中立档案腔、百科短标签、把关系栏压成「热恋/暧昧」单字。',
   ]
     .filter((x) => x !== '')

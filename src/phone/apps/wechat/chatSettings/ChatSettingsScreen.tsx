@@ -388,6 +388,7 @@ export function ChatSettingsScreen({
       pulseDmScreenshotEnabled: false,
       profileImageChangeEnabled: false,
       internetMemeLexiconEnabled: false,
+      mimicUserSpeakingStyleEnabled: false,
       isDanmakuMode: false,
       showGroupMemberNicknameInChat: true,
       showGroupRankBadgesInChat: false,
@@ -460,6 +461,7 @@ export function ChatSettingsScreen({
           | 'pulseDmScreenshotEnabled'
           | 'profileImageChangeEnabled'
           | 'internetMemeLexiconEnabled'
+          | 'mimicUserSpeakingStyleEnabled'
           | 'chatBackground'
           | 'playerChatAvatarUrl'
           | 'stickerRoundTriggerPercent'
@@ -1366,7 +1368,7 @@ export function ChatSettingsScreen({
               onToggle={() => void patch({ profileImageChangeEnabled: !effective.profileImageChangeEnabled })}
             />
           </ListRow>
-          <ListRow>
+          <ListRow borderBottom>
             <div className="min-w-0 flex-1">
               <span className="text-[16px] text-black">网络玩梗词库</span>
               <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
@@ -1376,6 +1378,22 @@ export function ChatSettingsScreen({
             <WxSwitch
               on={effective.internetMemeLexiconEnabled}
               onToggle={() => void patch({ internetMemeLexiconEnabled: !effective.internetMemeLexiconEnabled })}
+            />
+          </ListRow>
+          <ListRow>
+            <div className="min-w-0 flex-1">
+              <span className="text-[16px] text-black">模仿用户说话风格</span>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                线上私聊与线下约会均生效；优先对齐私藏侧写里的口头禅与语言风格，关系越近越可能下意识贴近；人设不变
+              </p>
+            </div>
+            <WxSwitch
+              on={effective.mimicUserSpeakingStyleEnabled}
+              onToggle={() =>
+                void patch({
+                  mimicUserSpeakingStyleEnabled: !effective.mimicUserSpeakingStyleEnabled,
+                })
+              }
             />
           </ListRow>
         </SettingsSection>

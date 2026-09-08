@@ -172,6 +172,7 @@ import { WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX } from './wechatCharacterMomen
 import { WECHAT_CHARACTER_PRESENCE_MURMUR_APPENDIX } from './wechatCharacterPresenceMurmurApply'
 import { WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX } from './wechatCharacterMomentSongShareApply'
 import { WECHAT_INTERNET_MEME_LEXICON_APPENDIX } from './wechatInternetMemeLexicon'
+import { WECHAT_MIMIC_USER_SPEAKING_STYLE_APPENDIX } from './wechatMimicUserSpeakingStyle'
 import { WECHAT_HEART_WHISPER_SYSTEM_PROMPT } from './wechatHeartWhisperPrompt'
 import {
   parseGroupHeartWhisperOutput,
@@ -1752,6 +1753,8 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   /** 「支持发图」：思维链增加发图判定 */
   includeCharacterImageSend?: boolean
   includeInternetMemeLexicon?: boolean
+  /** 「语感同化 / 夫妻相」：按关系贴近用户表层说话习惯 */
+  includeMimicUserSpeakingStyle?: boolean
   replyOutputLanguage?: string
   replyVoiceLanguage?: string
   translationSyncEnabled?: boolean
@@ -1787,6 +1790,9 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
     : ''
   const memeLexiconBlock = params.includeInternetMemeLexicon
     ? `\n\n${WECHAT_INTERNET_MEME_LEXICON_APPENDIX}`
+    : ''
+  const mimicStyleBlock = params.includeMimicUserSpeakingStyle
+    ? `\n\n${WECHAT_MIMIC_USER_SPEAKING_STYLE_APPENDIX}`
     : ''
   const langBlock = buildWechatReplyOutputLanguageAppendix(
     params.replyOutputLanguage,
@@ -1834,7 +1840,7 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   return appendWorldBookAfterPatchOutputRules(
     params.character,
     false,
-    `${buildWechatReplyOutputAppendix(toggles)}${forwardBlock}${pulseDmShotBlock}${thinkingBlock}${profileImageBlock}${profileStateBlock}${memeLexiconBlock}${langAppend}\n\n${WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX}${pinCatalog ? `\n\n${pinCatalog}` : ''}${userMomentsCatalog ? `\n\n${userMomentsCatalog}` : ''}\n\n${WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_PIN_APPENDIX}\n\n${WECHAT_CHARACTER_PRESENCE_MURMUR_APPENDIX}`,
+    `${buildWechatReplyOutputAppendix(toggles)}${forwardBlock}${pulseDmShotBlock}${thinkingBlock}${profileImageBlock}${profileStateBlock}${memeLexiconBlock}${mimicStyleBlock}${langAppend}\n\n${WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX}${pinCatalog ? `\n\n${pinCatalog}` : ''}${userMomentsCatalog ? `\n\n${userMomentsCatalog}` : ''}\n\n${WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_PIN_APPENDIX}\n\n${WECHAT_CHARACTER_PRESENCE_MURMUR_APPENDIX}`,
   )
 }
 
@@ -2017,6 +2023,7 @@ export async function requestWeChatPeerReplyBubbles(params: {
   includePulseDmScreenshot?: boolean
   includeProfileImageChange?: boolean
   includeInternetMemeLexicon?: boolean
+  includeMimicUserSpeakingStyle?: boolean
   currentTimeMs?: number
   timePerceptionEnabled?: boolean
   danmakuConfig?: WeChatDanmakuInlineConfig
@@ -2186,6 +2193,7 @@ export async function requestWeChatPeerReplyBubbles(params: {
           includePulseDmScreenshot: params.includePulseDmScreenshot === true,
           includeProfileImageChange: params.includeProfileImageChange === true,
           includeInternetMemeLexicon: params.includeInternetMemeLexicon === true,
+          includeMimicUserSpeakingStyle: params.includeMimicUserSpeakingStyle === true,
         })
   let earlyOutputAppendix = outputAppendix
   if (
@@ -2615,6 +2623,7 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   includePulseDmScreenshot?: boolean
   includeProfileImageChange?: boolean
   includeInternetMemeLexicon?: boolean
+  includeMimicUserSpeakingStyle?: boolean
   currentTimeMs?: number
   timePerceptionEnabled?: boolean
   danmakuConfig?: WeChatDanmakuInlineConfig
@@ -2803,6 +2812,7 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
         includePulseDmScreenshot: params.includePulseDmScreenshot === true,
         includeProfileImageChange: params.includeProfileImageChange === true,
         includeInternetMemeLexicon: params.includeInternetMemeLexicon === true,
+        includeMimicUserSpeakingStyle: params.includeMimicUserSpeakingStyle === true,
       })
   const memoryMomentImages = (params.longTermMemoryMomentImages ?? [])
     .map((u) => u.trim())

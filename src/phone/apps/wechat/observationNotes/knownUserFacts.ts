@@ -14,6 +14,8 @@ export function isObservationNotesMostlyEmpty(doc: ObservationNotesDoc): boolean
     intimateEmpty &&
     !doc.remarkNickname.trim() &&
     !doc.preferredAddress.trim() &&
+    !doc.userCatchphrases.trim() &&
+    !doc.languageStyleBrief.trim() &&
     !doc.overallEvaluation.trim() &&
     doc.strengths.length === 0 &&
     doc.weaknesses.length === 0 &&
@@ -73,8 +75,9 @@ export function formatKnownUserFactsForObservationNotes(
   }
   lines.push(
     '- 「线上备注」vs「称呼」vs「姓名」：姓名＝对方是谁；线上备注＝你通讯录备注（跟好感/关系对齐；默认像人设，深爱可腻称含宝宝/宝贝等；**禁止XX狗/XX猫等动物系宠称**）；称呼＝你口头怎么叫。勿抄公开昵称。',
+    '- 「口头禅 / 语言风格」＝你眼里对方怎么说话（惯用语、断句与语气感）；有近端依据再写，勿写成你自己的口癖。',
     '- **身份卡修订优先**：用户改过身份卡后，学校/专业/职业等客观背景以**当前身份卡**为准；旧侧写、旧记忆、旧聊天里的旧大学/旧专业视为残留，须覆盖，禁止「无变化」硬留。',
-    '- 食物/称呼/雷点/爱好：若对话里出现过更具体说法，优先用剧情证据；与用户最近反应冲突时以用户当前反应为准。',
+    '- 食物/称呼/雷点/爱好/口头禅/语言风格：若对话里出现过更具体说法，优先用剧情证据；与用户最近反应冲突时以用户当前反应为准。',
     '- 亲密/XP/敏感处/亲密方式：只记**性向身体亲密**（节奏如热烈/慢慢/半推半就；部位 XP；敏感处；接吻拥抱等具体方式），禁止写成感情节奏；冲突时以用户当前意愿为准。',
     opts?.evidenceMode === 'recent_rounds'
       ? '- **暂时不知道**：事实栏无依据可写「尚不清楚／暂时不知道」；但若近端轮次或当前侧写原稿/上一版已写出该事实，必须以之为准覆盖，禁止仍写不知道。本轮未注入的旧记忆不得当作已知。'
@@ -132,6 +135,14 @@ export function normalizeObservationNotesPatchPath(raw: string): string {
     线上备注: 'remarkNickname',
     称呼: 'preferredAddress',
     喜欢的称呼: 'preferredAddress',
+    口头禅: 'userCatchphrases',
+    眼中的口头禅: 'userCatchphrases',
+    对方口头禅: 'userCatchphrases',
+    userCatchphrases: 'userCatchphrases',
+    语言风格: 'languageStyleBrief',
+    说话风格: 'languageStyleBrief',
+    语言风格简述: 'languageStyleBrief',
+    languageStyleBrief: 'languageStyleBrief',
     总体评价: 'overallEvaluation',
     好感: 'affection',
     好感度: 'affection',

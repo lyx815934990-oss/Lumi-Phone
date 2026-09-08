@@ -397,6 +397,8 @@ function collectManualEditDiffs(before: ObservationNotesDoc, after: ObservationN
   push('weaknesses', '缺点', before.weaknesses.join('\n'), after.weaknesses.join('\n'))
   push('remarkNickname', '线上备注', before.remarkNickname, after.remarkNickname)
   push('preferredAddress', '喜欢的称呼', before.preferredAddress, after.preferredAddress)
+  push('userCatchphrases', '口头禅', before.userCatchphrases, after.userCatchphrases)
+  push('languageStyleBrief', '语言风格', before.languageStyleBrief, after.languageStyleBrief)
   push('overallEvaluation', '总体评价', before.overallEvaluation, after.overallEvaluation)
   push('affection', '好感', String(before.affection), String(after.affection))
   push('relationshipLabel', '关系标签', before.relationshipLabel, after.relationshipLabel)
@@ -1405,9 +1407,61 @@ export function ObservationNotesScreen({
                   </FolderSection>
                 </div>
 
+                <div id="obs-path-userCatchphrases">
+                  <FolderSection title="眼中的口头禅" index="06" defaultOpen={editing || false}>
+                    {editing ? (
+                      <ObsEditTextarea
+                        value={viewDoc.userCatchphrases}
+                        rows={2}
+                        larger
+                        onChange={(text) => patchDraft((d) => ({ ...d, userCatchphrases: text }))}
+                        placeholder="你常挂嘴边的词、短句…"
+                      />
+                    ) : (
+                      <DiffableRow
+                        path="userCatchphrases"
+                        label="口头禅"
+                        en="CATCHPHRASE"
+                        doc={viewDoc}
+                        onConsumed={onConsumed}
+                      >
+                        <p className="text-[16px] leading-relaxed" style={{ ...hand, fontSize: 16 }}>
+                          {viewDoc.userCatchphrases.trim() || '还没听出你有什么固定口头禅。'}
+                        </p>
+                      </DiffableRow>
+                    )}
+                  </FolderSection>
+                </div>
+
+                <div id="obs-path-languageStyleBrief">
+                  <FolderSection title="语言风格简述" index="07" defaultOpen={editing || false}>
+                    {editing ? (
+                      <ObsEditTextarea
+                        value={viewDoc.languageStyleBrief}
+                        rows={3}
+                        larger
+                        onChange={(text) => patchDraft((d) => ({ ...d, languageStyleBrief: text }))}
+                        placeholder="你说话的断句、语气词、软硬、碎不碎…"
+                      />
+                    ) : (
+                      <DiffableRow
+                        path="languageStyleBrief"
+                        label="语言风格"
+                        en="SPEECH STYLE"
+                        doc={viewDoc}
+                        onConsumed={onConsumed}
+                      >
+                        <p className="text-[16px] leading-relaxed" style={{ ...hand, fontSize: 16 }}>
+                          {viewDoc.languageStyleBrief.trim() || '还没摸清你说话的调子。'}
+                        </p>
+                      </DiffableRow>
+                    )}
+                  </FolderSection>
+                </div>
+
                 <FolderSection
                   title="对你的判定"
-                  index="06"
+                  index="08"
                   clip={false}
                   defaultOpen={
                     editing ||
@@ -1518,7 +1572,7 @@ export function ObservationNotesScreen({
                   )}
                 </FolderSection>
 
-                <FolderSection title="总体评价" index="07" en="CLOSING LETTER" defaultOpen>
+                <FolderSection title="总体评价" index="09" en="CLOSING LETTER" defaultOpen>
                   {editing ? (
                     <div className="space-y-4">
                       <ObsEditTextarea

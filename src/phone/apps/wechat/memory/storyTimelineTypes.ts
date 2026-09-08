@@ -593,6 +593,20 @@ export function resolveStoryTimelineDeltaAnchorEndMs(
 const STORY_TIMELINE_FLASHBACK_HINT_RE =
   /回忆|闪回|插叙|回溯|当年|那时|过去|多年前|几年前|幼时|童年|中学|大学|两年前|三年前|四年前|五年前|十年前/
 
+/** 正文/摘要是否明示跨公历日（允许 story_day 晚于接续锚点当日） */
+export function storyMaterialImpliesCalendarDayAdvance(text: string): boolean {
+  const t = String(text ?? '')
+  if (!t.trim()) return false
+  if (
+    /第二天|次日|翌日|隔天|隔日|隔了一天|过了一天|明天[早晚上下午夜]|后天|大后天|数日后|几天后|一周后|下周一|下周二|下周三|下周四|下周五|下周六|下周日|下周|下个月|熬到天亮|通宵到天亮|跨过午夜|过了零点|跨日|隔夜|天亮后|翌日清晨|次日清晨/.test(
+      t,
+    )
+  ) {
+    return true
+  }
+  return false
+}
+
 /** 摘要增量是否明示为回忆/闪回（允许 story_day 早于接续锚点） */
 export function isStoryTimelineFlashbackDelta(delta: StoryTimelineSummaryDelta): boolean {
   const rel = String(delta.relative_time ?? '').trim()
@@ -632,6 +646,55 @@ export function enforceStoryTimelineDeltaChronology(
   if (endMs != null && endMs < floorMs) {
     patch.story_day_end = undefined
   }
+  return patch
+}
+
+/**
+ * 无跨日证据时，禁止把 story_day / story_day_end 推到接续锚点日之后。
+ * 解决「同场续写却被写成次日/后日」污染剧情轴「现在」的问题。
+ */
+export function enforceStoryTimelineDeltaSameDayUnlessCrossDay(
+  delta: StoryTimelineSummaryDelta,
+  sameDayFloorMs: number | null | undefined,
+  evidenceText?: string,
+): StoryTimelineSummaryDelta {
+  if (sameDayFloorMs == null || !Number.isFinite(sameDayFloorMs)) return delta
+  if (isStoryTimelineFlashbackDelta(delta)) return delta
+
+  const floorDay = formatGregorianStoryDayFromMs(sameDayFloorMs)
+  const blob = [evidenceText, delta.event_summary, delta.relative_time, delta.row_title]
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean)
+    .join('\n')
+
+  if (storyMaterialImpliesCalendarDayAdvance(blob)) return delta
+
+  // 正文/摘要点名了更晚的公历日 → 视为有跨日依据
+  for (const m of blob.matchAll(/(\d{4}年\d{1,2}月\d{1,2}日)/g)) {
+    const ms = storyCalendarDayStartMs(m[1]!)
+    if (ms != null && ms > sameDayFloorMs) return delta
+  }
+
+  const patch: StoryTimelineSummaryDelta = { ...delta }
+  if (!patch.story_day?.trim()) patch.story_day = floorDay
+
+  const startMs = patch.story_day?.trim() ? storyCalendarDayStartMs(patch.story_day) : null
+  const endMs = patch.story_day_end?.trim() ? storyCalendarDayStartMs(patch.story_day_end) : null
+
+  if (startMs != null && startMs > sameDayFloorMs) {
+    patch.story_day = floorDay
+  }
+  // 无跨日依据却把结束日写成次日 → 丢掉跨日 end，避免卡片「改时间」显示成后一天
+  if (endMs != null && endMs > sameDayFloorMs) {
+    patch.story_day_end = undefined
+  } else if (
+    patch.story_day_end?.trim() &&
+    patch.story_day?.trim() &&
+    storyCalendarDayStartMs(patch.story_day_end) === storyCalendarDayStartMs(patch.story_day)
+  ) {
+    // 同日 end 可保留时刻；若与 start 同日则保留 story_day_end 亦可，这里保留
+  }
+
   return patch
 }
 

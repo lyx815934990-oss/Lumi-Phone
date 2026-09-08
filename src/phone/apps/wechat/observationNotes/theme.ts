@@ -93,6 +93,8 @@ export const OBS_SECTION_EN: Record<string, string> = {
   优点与缺点: 'VIRTUES & FLAWS',
   给你的线上备注: 'ONLINE ALIAS',
   你喜欢的称呼: 'HOW I CALL YOU',
+  眼中的口头禅: 'YOUR CATCHPHRASES',
+  语言风格简述: 'HOW YOU SOUND',
   对你的判定: 'JUDGEMENT',
   总体评价: 'CLOSING LETTER',
   更新历史: 'REVISION LOG',

@@ -4875,6 +4875,7 @@ function WeChatAppInner({ onBack }: Props) {
     pulseDmScreenshot: boolean
     profileImageChange: boolean
     internetMemeLexicon: boolean
+    mimicUserSpeakingStyle: boolean
     bg: string
     playerChatAvatarUrl: string
     showGroupMemberNicknameInChat: boolean
@@ -4922,6 +4923,7 @@ function WeChatAppInner({ onBack }: Props) {
           pulseDmScreenshot: s?.pulseDmScreenshotEnabled === true,
           profileImageChange: s?.profileImageChangeEnabled === true,
           internetMemeLexicon: s?.internetMemeLexiconEnabled === true,
+          mimicUserSpeakingStyle: s?.mimicUserSpeakingStyleEnabled === true,
           bg: (s?.chatBackground ?? '').trim(),
           playerChatAvatarUrl: (s?.playerChatAvatarUrl ?? '').trim(),
           showGroupMemberNicknameInChat: s?.showGroupMemberNicknameInChat !== false,
@@ -4935,6 +4937,7 @@ function WeChatAppInner({ onBack }: Props) {
           prev.pulseDmScreenshot === next.pulseDmScreenshot &&
           prev.profileImageChange === next.profileImageChange &&
           prev.internetMemeLexicon === next.internetMemeLexicon &&
+          prev.mimicUserSpeakingStyle === next.mimicUserSpeakingStyle &&
           prev.bg === next.bg &&
           prev.playerChatAvatarUrl === next.playerChatAvatarUrl &&
           prev.showGroupMemberNicknameInChat === next.showGroupMemberNicknameInChat &&
@@ -5357,6 +5360,7 @@ function WeChatAppInner({ onBack }: Props) {
         includePulseDmScreenshot: convSettings?.pulseDmScreenshotEnabled === true,
         includeProfileImageChange: convSettings?.profileImageChangeEnabled === true,
         includeInternetMemeLexicon: convSettings?.internetMemeLexiconEnabled === true,
+        includeMimicUserSpeakingStyle: convSettings?.mimicUserSpeakingStyleEnabled === true,
         friendRequestAdjudication,
         altAccountProbeBlock: altAccountProbeBlock || undefined,
         currentTimeMs: getCurrentTimeMs(),
@@ -6392,6 +6396,7 @@ function WeChatAppInner({ onBack }: Props) {
                 pulseDmScreenshotEnabled={chatSessionPrefs?.pulseDmScreenshot ?? false}
                 profileImageChangeEnabled={chatSessionPrefs?.profileImageChange ?? false}
                 internetMemeLexiconEnabled={chatSessionPrefs?.internetMemeLexicon ?? false}
+                mimicUserSpeakingStyleEnabled={chatSessionPrefs?.mimicUserSpeakingStyle ?? false}
                 showGroupMemberNicknameInChat={chatSessionPrefs?.showGroupMemberNicknameInChat !== false}
                 showGroupRankBadgesInChat={!!chatSessionPrefs?.showGroupRankBadgesInChat}
                 useLumiProjectAssistantPrompt={wxDockChat.kind === 'lumi'}

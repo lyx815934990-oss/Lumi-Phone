@@ -190,6 +190,8 @@ export function normalizeObservationNotesDoc(input: unknown): ObservationNotesDo
     weaknesses,
     remarkNickname: typeof r.remarkNickname === 'string' ? r.remarkNickname.trim() : '',
     preferredAddress: typeof r.preferredAddress === 'string' ? r.preferredAddress.trim() : '',
+    userCatchphrases: typeof r.userCatchphrases === 'string' ? r.userCatchphrases.trim() : '',
+    languageStyleBrief: typeof r.languageStyleBrief === 'string' ? r.languageStyleBrief.trim() : '',
     heartMoments: normalizeTimeline(r.heartMoments),
     deepMemories: normalizeTimeline(r.deepMemories),
     personalityRadar: normalizeRadar(r.personalityRadar, OBS_MBTI_AXIS_LABELS),
@@ -321,6 +323,8 @@ export function createBlankObservationNotesDoc(params: {
     weaknesses: [],
     remarkNickname: '',
     preferredAddress: '',
+    userCatchphrases: '',
+    languageStyleBrief: '',
     heartMoments: [],
     deepMemories: [],
     personalityRadar: {

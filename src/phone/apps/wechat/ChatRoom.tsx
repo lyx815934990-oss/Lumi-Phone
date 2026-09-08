@@ -2644,6 +2644,8 @@ export function ChatRoomInner({
   profileImageChangeEnabled = false,
   /** 会话设置：网络玩梗轻量词库（默认关） */
   internetMemeLexiconEnabled = false,
+  /** 会话设置：语感同化 / 夫妻相（默认关） */
+  mimicUserSpeakingStyleEnabled = false,
   /** 群聊：是否在对方消息头像右侧显示发送者群昵称 */
   showGroupMemberNicknameInChat = true,
   /** 群聊：是否在发言者头像左上角显示群主/管理员头衔 */
@@ -2705,6 +2707,7 @@ export function ChatRoomInner({
   pulseDmScreenshotEnabled?: boolean
   profileImageChangeEnabled?: boolean
   internetMemeLexiconEnabled?: boolean
+  mimicUserSpeakingStyleEnabled?: boolean
   showGroupMemberNicknameInChat?: boolean
   showGroupRankBadgesInChat?: boolean
   scrollToMessageId?: string | null
@@ -9080,6 +9083,7 @@ export function ChatRoomInner({
             let includePulseDmScreenshot = pulseDmScreenshotEnabled === true
             let includeProfileImageChange = profileImageChangeEnabled === true
             let includeInternetMemeLexicon = internetMemeLexiconEnabled === true
+            let includeMimicUserSpeakingStyle = mimicUserSpeakingStyleEnabled === true
             try {
               const liveConv = await personaDb.getChatConversationSettings(flushConversationKey)
               if (liveConv) {
@@ -9088,6 +9092,7 @@ export function ChatRoomInner({
                 includePulseDmScreenshot = liveConv.pulseDmScreenshotEnabled === true
                 includeProfileImageChange = liveConv.profileImageChangeEnabled === true
                 includeInternetMemeLexicon = liveConv.internetMemeLexiconEnabled === true
+                includeMimicUserSpeakingStyle = liveConv.mimicUserSpeakingStyleEnabled === true
               }
             } catch {
               /* 读失败则沿用 props */
@@ -9118,7 +9123,14 @@ export function ChatRoomInner({
                   '仅当真倾诉、真冲突、自伤等禁区时收梗。',
                 ].join('\n')
               : ''
-            const mergedReplyBias = [roundReplyBias, voiceEmotionBias, agencyChatBias, memeLexiconBias]
+            const mimicStyleBias = includeMimicUserSpeakingStyle
+              ? [
+                  '【语感同化·本轮必守】本会话已开启「模仿用户说话风格」。',
+                  '优先对齐私藏侧写「口头禅 / 语言风格」（非尚不清楚时）；再按当前关系浓度贴近近端气泡的断句与语气词。',
+                  '人设与口语习惯仍优先，禁止变成对方本人或整句复读；冷战/真倾诉时收同化。',
+                ].join('\n')
+              : ''
+            const mergedReplyBias = [roundReplyBias, voiceEmotionBias, agencyChatBias, memeLexiconBias, mimicStyleBias]
               .filter((x) => x.trim())
               .join('\n\n')
             const recallPreview = pendingRecalledUserTextRef.current?.trim() || ''
@@ -10076,6 +10088,7 @@ export function ChatRoomInner({
                 includePulseDmScreenshot,
                 includeProfileImageChange,
                 includeInternetMemeLexicon,
+                includeMimicUserSpeakingStyle,
                 currentTimeMs: getCurrentTimeMs(),
                 timePerceptionEnabled: roomType === 'private' ? timePerceptionEnabled : true,
                 danmakuConfig: shouldSplitDanmakuCall ? undefined : danmakuConfig,
@@ -10131,6 +10144,7 @@ export function ChatRoomInner({
                   includePulseDmScreenshot,
                   includeProfileImageChange,
                   includeInternetMemeLexicon,
+                  includeMimicUserSpeakingStyle,
                   currentTimeMs: getCurrentTimeMs(),
                   timePerceptionEnabled: roomType === 'private' ? timePerceptionEnabled : true,
                   danmakuConfig: shouldSplitDanmakuCall ? undefined : danmakuConfig,
@@ -10197,6 +10211,7 @@ export function ChatRoomInner({
                 includePulseDmScreenshot,
                 includeProfileImageChange,
                 includeInternetMemeLexicon,
+                includeMimicUserSpeakingStyle,
                 currentTimeMs: getCurrentTimeMs(),
                 timePerceptionEnabled: roomType === 'private' ? timePerceptionEnabled : true,
                 danmakuConfig: shouldSplitDanmakuCall ? undefined : danmakuConfig,
@@ -13651,6 +13666,7 @@ export function ChatRoomInner({
     pulseDmScreenshotEnabled,
     profileImageChangeEnabled,
     internetMemeLexiconEnabled,
+    mimicUserSpeakingStyleEnabled,
   ])
 
   /** 群聊主回复（含 <<GROUP_SET_…>> 等）单次 completion：pending 恒为 1，避免连发/重叠触发多次模型调用。 */

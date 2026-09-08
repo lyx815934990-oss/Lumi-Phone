@@ -3,6 +3,10 @@ import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { DatingStyleTuning } from './styleTuningStorage'
 import { loadDatingStyleTuning, saveDatingStyleTuning } from './styleTuningStorage'
+import {
+  loadMimicUserSpeakingStyleEnabled,
+  saveMimicUserSpeakingStyleEnabled,
+} from '../mimicUserSpeakingStyleSettings'
 
 type Props = {
   open: boolean
@@ -15,12 +19,21 @@ type Props = {
 export function StyleSettingsDrawer({ open, characterId, onClose, onSaved }: Props) {
   const [stylePrompt, setStylePrompt] = useState('')
   const [referenceSnippet, setReferenceSnippet] = useState('')
+  const [mimicUserSpeakingStyle, setMimicUserSpeakingStyle] = useState(false)
+  const [mimicSaving, setMimicSaving] = useState(false)
 
   useEffect(() => {
     if (!open || !characterId.trim()) return
     const v = loadDatingStyleTuning(characterId)
     setStylePrompt(v.stylePrompt)
     setReferenceSnippet(v.referenceSnippet)
+    let cancelled = false
+    void loadMimicUserSpeakingStyleEnabled(characterId).then((on) => {
+      if (!cancelled) setMimicUserSpeakingStyle(on)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [open, characterId])
 
   const save = () => {
@@ -28,6 +41,18 @@ export function StyleSettingsDrawer({ open, characterId, onClose, onSaved }: Pro
     saveDatingStyleTuning(characterId, v)
     onSaved?.(v)
     onClose()
+  }
+
+  const toggleMimic = () => {
+    if (mimicSaving || !characterId.trim()) return
+    const next = !mimicUserSpeakingStyle
+    setMimicUserSpeakingStyle(next)
+    setMimicSaving(true)
+    void saveMimicUserSpeakingStyleEnabled(characterId, next)
+      .catch(() => {
+        setMimicUserSpeakingStyle(!next)
+      })
+      .finally(() => setMimicSaving(false))
   }
 
   return (
@@ -73,6 +98,30 @@ export function StyleSettingsDrawer({ open, characterId, onClose, onSaved }: Pro
               </button>
             </div>
             <div className="max-h-[min(72vh,560px)] space-y-4 overflow-y-auto px-4 py-4 [scrollbar-width:thin]">
+              <div className="flex items-start justify-between gap-3 rounded-xl border border-stone-200/90 bg-white/90 px-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-medium text-stone-800">模仿用户说话风格</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-stone-500">
+                    与私聊同一开关：优先对齐私藏侧写口头禅/语言风格；只染对白语感，人设不变。线上线下同步。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={mimicUserSpeakingStyle}
+                  disabled={mimicSaving}
+                  onClick={toggleMimic}
+                  className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full transition-colors ${
+                    mimicUserSpeakingStyle ? 'bg-stone-900' : 'bg-stone-300'
+                  } ${mimicSaving ? 'opacity-60' : ''}`}
+                >
+                  <span
+                    className={`absolute top-0.5 size-6 rounded-full bg-white shadow transition-transform ${
+                      mimicUserSpeakingStyle ? 'translate-x-[22px]' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
               <div>
                 <label className="text-[12px] font-medium text-stone-600">目标文风描述（Style Prompt）</label>
                 <textarea

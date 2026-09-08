@@ -42,6 +42,16 @@ export function formatObservationNotesPromptBlock(doc: ObservationNotesDoc): str
   if (doc.preferredAddress.trim()) {
     lines.push(`你喜欢的称呼（我怎么叫你）：${doc.preferredAddress.trim()}`)
   }
+  if (doc.userCatchphrases.trim()) {
+    lines.push(
+      `你眼里对方的口头禅（相处中观察到的惯用语，非你本人口癖）：${doc.userCatchphrases.trim()}`,
+    )
+  }
+  if (doc.languageStyleBrief.trim()) {
+    lines.push(
+      `你眼里对方的语言风格（断句/语气词/软硬/碎不碎等简述）：${doc.languageStyleBrief.trim()}`,
+    )
+  }
   if (doc.personalityRadar.axes.length) {
     lines.push(
       '',

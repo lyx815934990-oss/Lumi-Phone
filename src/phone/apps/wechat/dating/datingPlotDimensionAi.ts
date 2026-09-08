@@ -25,6 +25,8 @@ import { PROSE_FORBIDDEN_LEXICON_PROMPT } from '../proseForbiddenLexiconPrompt'
 import { MBTI_OUTPUT_BAN_RULE } from '../mbtiOutputBan'
 import { splitDatingAssistantOutput } from './plotCoT'
 import { buildDatingStyleSystemAppend } from './datingStylePrompt'
+import { DATING_MIMIC_USER_SPEAKING_STYLE_APPENDIX } from '../wechatMimicUserSpeakingStyle'
+import { loadMimicUserSpeakingStyleEnabled } from '../mimicUserSpeakingStyleSettings'
 import { OFFLINE_DATING_RICH_INNER_OS_APPENDIX } from './offlineDatingRichInnerOsAppendix'
 import { OFFLINE_DATING_FASHION_STYLING_APPENDIX } from './offlineDatingFashionStylingAppendix'
 import { OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX } from './offlineDatingCoupleIntimacyPoseAppendix'
@@ -166,6 +168,8 @@ function buildDimensionSystemPrompt(
     languageSettings?: DimensionLanguageSettings | null
     /** 与主线约会同一套文风（用户设定或默认汪曾祺白描） */
     styleGenOptions?: Pick<NarrativeGenOptions, 'stylePrompt' | 'referenceSnippet'> | null
+    /** 与私聊同一会话开关：语感同化 */
+    mimicUserSpeakingStyleEnabled?: boolean
     lifeContext?: DatingPlotDimensionLifeContext | null
   },
 ): string {
@@ -261,6 +265,10 @@ function buildDimensionSystemPrompt(
         }
       : undefined,
   )
+  const mimicAppend =
+    opts.mimicUserSpeakingStyleEnabled === true
+      ? `\n\n${DATING_MIMIC_USER_SPEAKING_STYLE_APPENDIX}`
+      : ''
 
   const lifeCtx = opts.lifeContext
   const lifeBlocks = [lifeCtx?.characterLifeBlock, lifeCtx?.playerLifeBlock]
@@ -289,7 +297,7 @@ ${languageRule}
 ${languageAppendix ? `\n${languageAppendix}\n` : ''}
 ${taskBlock}
 ${metaBan}
-${styleAppend}
+${styleAppend}${mimicAppend}
 
 ${PROSE_FORBIDDEN_LEXICON_PROMPT}
 
@@ -453,6 +461,9 @@ export async function generateDatingPlotDimensionAi(params: {
       ? { referenceSnippet: String(referenceSnippet).trim() }
       : {}),
   }
+  const mimicUserSpeakingStyleEnabled = await loadMimicUserSpeakingStyleEnabled(character.id).catch(
+    () => false,
+  )
 
   if (!apiConfig?.apiUrl || !apiConfig?.apiKey || !apiConfig?.modelId) {
     await new Promise((r) => window.setTimeout(r, 280))
@@ -470,6 +481,7 @@ export async function generateDatingPlotDimensionAi(params: {
     isVnMode: isVnMode === true,
     languageSettings,
     styleGenOptions: Object.keys(styleGenOptions).length ? styleGenOptions : null,
+    mimicUserSpeakingStyleEnabled,
     lifeContext,
   })
 

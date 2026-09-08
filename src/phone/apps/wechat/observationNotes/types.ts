@@ -89,6 +89,10 @@ export type ObservationNotesDoc = {
   remarkNickname: string
   /** 你喜欢的称呼：char 平时怎么叫 user */
   preferredAddress: string
+  /** char 眼中 user 常挂嘴边的口头禅 / 惯用语（可多项，顿号或逗号分隔） */
+  userCatchphrases: string
+  /** char 对 user 说话风格的一两句简述（断句、语气词、软硬、碎不碎等） */
+  languageStyleBrief: string
   heartMoments: ObservationTimelineEntry[]
   deepMemories: ObservationTimelineEntry[]
   personalityRadar: ObservationRadarBlock
