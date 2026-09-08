@@ -382,12 +382,30 @@ function stripPlotBodyForPrompt(plot: PlotItem): string {
 
 function formatRecentPlotsForPrompt(history: PlotItem[], characterRealName: string, maxTotalChars: number): string {
   const tail = history.slice(-DATING_AI_PLOT_HISTORY_MAX)
+  const lastAiIdx = (() => {
+    for (let i = tail.length - 1; i >= 0; i--) {
+      if (tail[i]?.type === 'ai') return i
+    }
+    return -1
+  })()
   const parts: string[] = []
   let lastStoryCalendar: string | null = null
-  for (const x of tail) {
+  for (let i = 0; i < tail.length; i++) {
+    const x = tail[i]!
     let body = stripPlotBodyForPrompt(x)
-    if (body.length > DATING_AI_HISTORY_PER_PLOT_CAP) {
-      body = `${body.slice(0, DATING_AI_HISTORY_PER_PLOT_CAP)}…`
+    // 末条 AI：只留末尾供承接现场，砍掉前半文风模板，降低洗稿雷同
+    // 更早 AI：短截，只保留事实线索
+    const perCap =
+      x.type === 'ai'
+        ? i === lastAiIdx
+          ? 1_600
+          : 720
+        : DATING_AI_HISTORY_PER_PLOT_CAP
+    if (body.length > perCap) {
+      body =
+        x.type === 'ai' && i === lastAiIdx
+          ? `…【仅保留末条剧情末尾供承接现场与姿态；前半已省略防洗稿】\n${body.slice(-perCap)}`
+          : `${body.slice(0, perCap)}…`
     }
     const label = x.type === 'player' ? '我' : characterRealName
     if (x.type === 'ai') {
@@ -2253,7 +2271,8 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
           ? `本轮正文须承接「现在」时空，禁止无因果把场景清零成另一套日常；亦禁止无视跳时仍钉死末条旅途。`
           : `本轮正文必须**直接承接**末条锚点，禁止无因果的「状态清零」。`) +
       `禁止无过渡的瞬移（例如上文已关灯就寝，下文突然户外路边）；若必须换场，至少用一行旁白交代「间隔多久 / 为何出门 / 如何抵达」。` +
-      `禁止在近 ${DATING_AI_PLOT_HISTORY_MAX} 条已发生剧情中，把**同一核心桥段**改头换面再演一遍（重复接吻拉扯、同梗吃醋质问、已收束的回忆又当新情节）；须推进**新的**动作、对白信息或矛盾。\n`
+      `禁止在近 ${DATING_AI_PLOT_HISTORY_MAX} 条已发生剧情中，把**同一核心桥段**改头换面再演一遍（重复接吻拉扯、同梗吃醋质问、亲密同拍复读、已收束的回忆又当新情节）；须推进**新的**动作、对白信息或矛盾。` +
+      `【末条禁洗稿】承接末条的**场所/姿态/衣物/已发生事实**即可；**禁止**模仿末条句式节奏（省略号连珠、结巴对白模板）、禁止复读末条同一亲密动作链（如咬耳→疼→舔哄、薄茧摸同处、同一淫语问句换皮）。本轮须至少写出 **2 个与末条不同的新动作或新信息点**。\n`
     : ''
   const isRegenerateTurn = datingExtras?.regeneratingWorldBookBaseline === true
   const plotEmotionalDirectionRule =
@@ -2272,7 +2291,10 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   const plotAntiEchoRule = !isVnMode
     ? calendarAdvancedEarly
       ? `【普通模式·去重复】跳时后禁止续写「最近剧情」末条同一旅途/酒店桥段；须按「现在」地点推进**新的**对白、动作或矛盾。\n`
-      : `【普通模式·去重复】「最近剧情」**末尾最新**优先；禁止把更早条目里的**同一核心桥段**（同梗吃醋/同场质问/已和解又重演）改头换面再演一遍；须推进**新的**对白、动作或矛盾。\n`
+      : `【普通模式·去重复｜禁洗稿】「最近剧情」**末尾最新**只供承接事实与现场；` +
+        `禁止把更早条目或**末条 AI 正文**里的同一核心桥段改头换面再演（同梗吃醋/同场质问/亲密同拍如咬耳舔哄、薄茧摩挲、同一湿/看我问句）。` +
+        `**禁止**顺着末条文风续写（省略号堆砌、结巴对白模板、同一神态形容词复读）。` +
+        `本轮须推进**新的**对白、动作或矛盾，至少 **2 个**与末条不同的新信息点；导演指令若要求换拍/推进，优先执行指令而非原地摩擦复读。\n`
     : ''
   /** 普通模式：历史里常混入曾用 VN 写的条目，模型会照抄标签；须明文禁止 */
   const normalPlotFormatRule = !isVnMode
@@ -2892,6 +2914,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `未总结·线下剧情（落库先后；末尾最新优先）：\n${unsOffClipped || '（暂无）'}\n\n` +
     `【历史摘录·文风隔离｜最高优先级】下条「最近剧情」**只**供提取事实、关系、未收束点与空间关系；` +
     `**禁止**模仿旧稿措辞、句式、比喻与氛围腔（含近乎/狼狈/执拗/耳朵红得像滴血、泥潭/深渊/潮气/凝固等）。` +
+    `尤其禁止把**上一轮 AI 剧情**当范文：其省略号对白节奏、亲密动作顺序、重复问句与感官形容词，本轮须换拍重写，不得同构洗稿。` +
     `旧稿八股只当反例：本轮须按 system 白描与禁词表**重新写**，不得顺着上文文风续写。\n` +
     `${godHistoryIsolationNote}` +
     `${mainCharacterOffstageHistoryNote}` +
