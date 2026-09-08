@@ -72,7 +72,7 @@ export function obsMarginaliaStyle(handStack: string): CSSProperties {
 }
 
 /**
- * 线上备注：你通讯录给对方起的备注（须贴合人设口吻；可含 emoji、颜文字）；勿等同对方公开昵称。
+ * 线上备注：你通讯录给对方起的备注（须贴合人设口吻、鼓励多样化；可含 emoji、颜文字）；勿等同对方公开昵称；勿照搬提示示例。
  * 手写体 + 彩色 emoji 回退栈，避免表情被手写字体吃掉。
  */
 export function obsRemarkStyle(handStack: string): CSSProperties {

@@ -1374,7 +1374,7 @@ export function ObservationNotesScreen({
                         onConsumed={onConsumed}
                       >
                         <p className="text-[18px] leading-snug" style={{ ...remarkStyle, fontSize: 18 }}>
-                          {viewDoc.remarkNickname.trim() || '尚未起备注（深爱可宝宝/宝贝；勿用XX狗/猫）'}
+                          {viewDoc.remarkNickname.trim() || '尚未起备注（贴人设多样化；勿用XX狗/猫）'}
                         </p>
                       </DiffableRow>
                     )}

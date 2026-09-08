@@ -1,6 +1,8 @@
 /**
- * 私藏侧写字段：同义润色 / 微增描写判定为「无效更新」，落库前跳过。
- * 例：「很喜欢喝奶茶，特别是有小丸子小料的」↔「……，喝起来甜甜的」
+ * 私藏侧写字段：同义润色 / 微增描写 / 删减瘦身判定为「无效更新」，落库前跳过。
+ * 例：
+ * - 「很喜欢喝奶茶，特别是有小丸子小料的」↔「……，喝起来甜甜的」
+ * - 「阳光…高中时会偷偷把最冰的汽水留给我…」→「阳光开朗，特别温柔」（删具体事迹=无效）
  */
 
 function normalizeObsCompareText(raw: string): string {
@@ -44,7 +46,20 @@ function bigramDice(a: string, b: string): number {
   return (2 * inter) / (A.size + B.size)
 }
 
-/** 短称呼/备注：只认归一化全等，避免「阿晚」↔「阿晚呀」被误杀时仍允许；但「季修晗」↔「季修晗🐾」应可更新 */
+/** 短文的 bigram 有多少比例已出现在长文里（删减检测） */
+function bigramCoverage(shorter: string, longer: string): number {
+  const S = charBigrams(shorter)
+  const L = charBigrams(longer)
+  if (!S.size) return 1
+  if (!L.size) return 0
+  let hit = 0
+  for (const x of S) {
+    if (L.has(x)) hit++
+  }
+  return hit / S.size
+}
+
+/** 短称呼/备注：只认归一化全等，避免「阿晚」↔「阿晚呀」被误杀时仍允许；但「阿晚」↔「阿晚～」应可更新 */
 function isStrictIdentityPath(path: string): boolean {
   return path === 'remarkNickname' || path === 'preferredAddress' || path === 'affection'
 }
@@ -95,11 +110,33 @@ export function isObservationFieldNearDuplicate(
   const longer = pn.length <= nn.length ? nn : pn
   const extra = longer.length - shorter.length
 
-  // 一方包含另一方，且增量只是轻度润色（如加「喝起来甜甜的」）
+  // 一方包含另一方
   if (longer.includes(shorter)) {
-    const rel = shorter.length > 0 ? extra / shorter.length : 1
-    if (extra <= 18 && (extra <= 8 || rel <= 0.28)) return true
-    if (shorter.length / longer.length >= 0.88) return true
+    if (nn.length > pn.length) {
+      // 微增润色：只拦极短尾巴（「……甜甜的」），勿拦「今天又帮我改了海报」类新事实
+      if (extra <= 6) return true
+      if (extra <= 12 && shorter.length / longer.length >= 0.94) return true
+      // 旧文基本完整保留且追加了可观内容 → 有效更新
+      if (extra > 6) return false
+    } else if (extra >= 6) {
+      // 纯删减（新文是旧文子串）
+      return true
+    }
+  }
+
+  // —— 删减式无效更新：新文更短，却几乎没带来新信息（只删具体事迹/专名）——
+  if (nn.length < pn.length) {
+    const shrink = pn.length - nn.length
+    const keepRatio = nn.length / pn.length
+    // 新文是旧文子串 → 纯删减
+    if (pn.includes(nn) && shrink >= 6) return true
+    const cov = bigramCoverage(nn, pn)
+    // 短了不少，且新文内容大半本来就在旧文里
+    if (shrink >= 8 && keepRatio <= 0.85 && cov >= 0.72) return true
+    if (shrink >= 14 && keepRatio <= 0.72 && cov >= 0.55) return true
+    // 明显瘦身（删掉约 1/4+）且整体仍很像
+    const diceThin = bigramDice(pn, nn)
+    if (keepRatio <= 0.78 && shrink >= 10 && diceThin >= 0.55) return true
   }
 
   const dice = bigramDice(pn, nn)
@@ -107,6 +144,13 @@ export function isObservationFieldNearDuplicate(
   if (
     dice >= 0.86 &&
     Math.abs(pn.length - nn.length) <= Math.max(4, Math.floor(Math.min(pn.length, nn.length) * 0.18))
+  ) {
+    return true
+  }
+  // 同义换说法但信息量差不多（略缩写也算）
+  if (
+    dice >= 0.82 &&
+    Math.abs(pn.length - nn.length) <= Math.max(10, Math.floor(Math.min(pn.length, nn.length) * 0.28))
   ) {
     return true
   }
