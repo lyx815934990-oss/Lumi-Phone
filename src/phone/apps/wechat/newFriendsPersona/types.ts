@@ -117,6 +117,8 @@ export type Character = {
   zodiac: string
   identity: string
   mbti?: string
+  /** 动物塑气质倾向（猫/狗/狐等；后台参考，可见正文勿直说标签） */
+  animalArchetype?: string
   bio?: string
   motto?: string
   /** 角色侧开场白：每行一个气泡消息 */
@@ -1254,6 +1256,12 @@ export type Favorite = {
   content: string
   timestamp: number
   createdAt: number
+  /**
+   * 收藏形态：缺省 / message = 普通消息；innerOs = 气泡内心 OS（嘴上 vs 心里）
+   */
+  kind?: 'message' | 'innerOs'
+  /** 内心 OS 收藏：嘴上说的气泡原文 */
+  spokenText?: string
   /** 语音收藏：时长（秒） */
   voiceDurationSec?: number
   /** 语音收藏：展示用转写 */

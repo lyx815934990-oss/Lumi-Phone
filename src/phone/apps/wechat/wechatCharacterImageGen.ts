@@ -47,8 +47,19 @@ export function parseCharacterImageGenLine(
           const m = /^\[图片\]\s*(.+)$/.exec(t)
           return m?.[1]?.trim() ?? ''
         })()
-  if (!body) return null
+  if (body) {
+    const parsed = parseCharacterImageGenBody(body)
+    if (parsed) return parsed
+  }
 
+  const inline = parseInlineCharacterImageGenFromText(t)
+  if (inline) {
+    return { description: inline.description, prompt: inline.prompt }
+  }
+  return null
+}
+
+function parseCharacterImageGenBody(body: string): { description: string; prompt: string } | null {
   const sepIdx = body.indexOf(CHARACTER_IMAGE_GEN_LINE_SEP)
   if (sepIdx >= 0) {
     const description = body.slice(0, sepIdx).trim()
@@ -64,6 +75,63 @@ export function parseCharacterImageGenLine(
     return { description: body, prompt: body }
   }
   return { description: body, prompt: '' }
+}
+
+/**
+ * 模型把口语与 `发图 …|||tags` 粘在同一气泡时，拆出前缀口语与配图行。
+ * 例：`先拍一张给你过过眼瘾发图 酒店对镜自拍…|||[wx-selfie|who=…] mirror selfie shot…`
+ */
+export function parseInlineCharacterImageGenFromText(
+  text: string,
+): { prefix?: string; description: string; prompt: string } | null {
+  const t = String(text ?? '').trim()
+  if (!t.includes(CHARACTER_IMAGE_GEN_LINE_SEP)) return null
+
+  const sepIdx = t.indexOf(CHARACTER_IMAGE_GEN_LINE_SEP)
+  const before = t.slice(0, sepIdx)
+  const prompt = t.slice(sepIdx + CHARACTER_IMAGE_GEN_LINE_SEP.length).trim()
+  if (!prompt) return null
+
+  const faTuIdx = before.indexOf(WxCmd.image)
+  if (faTuIdx >= 0) {
+    const prefix = before.slice(0, faTuIdx).trim()
+    const description = before.slice(faTuIdx + WxCmd.image.length).trim()
+    if (!description) return null
+    return {
+      prefix: prefix || undefined,
+      description,
+      prompt,
+    }
+  }
+
+  const description = before.trim()
+  if (!description || !looksLikeEnglishImageGenTags(prompt)) return null
+  return { description, prompt }
+}
+
+/** 把含行内 `发图 …|||tags` 的单气泡拆成多条（口语 + 标准发图行） */
+export function splitInlineCharacterImageGenBubble(text: string): string[] {
+  const t = String(text ?? '').trim()
+  if (!t) return []
+
+  const inline = parseInlineCharacterImageGenFromText(t)
+  if (!inline) return [t]
+
+  if (!inline.prefix && matchDirectiveName(t, WxCmd.image) != null) {
+    return [t]
+  }
+
+  const imageLine = `${WxCmd.image} ${inline.description}|||${inline.prompt}`
+  if (inline.prefix) return [inline.prefix, imageLine]
+  return [imageLine]
+}
+
+export function expandInlineCharacterImageGenBubbles(bubbles: readonly string[]): string[] {
+  const out: string[] = []
+  for (const raw of bubbles) {
+    out.push(...splitInlineCharacterImageGenBubble(String(raw ?? '')))
+  }
+  return out
 }
 
 /** 气泡占位：优先中文描述；旧档仅有英文 tag 时回退展示 tag */
@@ -215,6 +283,7 @@ export function buildCharacterImageGenPromptBlock(
 
 ■ 双层输出（硬性·同轮一并写出）
 - 单独占一行，格式：\`发图 通俗中文画面描述|||English comma-separated visual tags\`
+- **\`发图\` 须单独成行、行首书写**；口语与配图须拆成不同气泡/不同行，**禁止**粘在一句里（如「先拍一张给你发图 酒店对镜…|||tags」会导致客户端掉格式）。
 - **\`|||\` 左侧** = 给用户看的中文占位（谁在哪、干什么；像跟人说话）；客户端气泡只展示左侧。
 - **\`|||\` 右侧** = 给生图 API 的英文 tag；用户点确认后**直接**用右侧生图，**禁止**省略右侧、禁止只写左侧。
 - 例：\`发图 对镜自拍，一只手拿草莓牛奶，另一只手比耶|||[wx-selfie|who={{char}}] mirror selfie shot, upper body, holding strawberry milk carton, peace sign, bathroom mirror, warm light\`
@@ -283,16 +352,18 @@ const CHARACTER_FAKE_SENT_IMAGE_RE =
 /** 模型口头声称已发图，但输出中无可用的 `发图 ` 行（须有可生图的英文 tag） */
 export function characterOutputClaimsSentImageWithoutLine(bubbles: string[]): boolean {
   const hasUsableImageLine = bubbles.some((b) => {
-    for (const line of String(b ?? '').split('\n')) {
-      const parsed = parseCharacterImageGenLine(line.trim())
-      if (!parsed) continue
-      if (
-        resolveCharacterImageGenPromptForApi({
-          imageDescription: parsed.description,
-          imageGenPrompt: parsed.prompt,
-        })
-      ) {
-        return true
+    for (const part of splitInlineCharacterImageGenBubble(String(b ?? ''))) {
+      for (const line of part.split('\n')) {
+        const parsed = parseCharacterImageGenLine(line.trim())
+        if (!parsed) continue
+        if (
+          resolveCharacterImageGenPromptForApi({
+            imageDescription: parsed.description,
+            imageGenPrompt: parsed.prompt,
+          })
+        ) {
+          return true
+        }
       }
     }
     return false
@@ -307,7 +378,7 @@ export function characterOutputClaimsSentImageWithoutLine(bubbles: string[]): bo
 
 export function buildCharacterImageFakeSendRetryBias(): string {
   return `[系统纠错] 你上一轮口头写了「发过去了/拍好了」等，但**缺少**完整 \`发图 中文描述|||英文tags\` 行，客户端**不会**出图。
-请立刻补发：单独占一行 \`发图 通俗中文|||english tags\`（如 \`发图 卧室对镜自拍半身比耶|||[wx-selfie|who={{char}}] mirror selfie shot, upper body, peace sign, …\`），可保留原有文字气泡；**禁止**再次假装已发；**禁止**省略 \`|||\` 或右侧英文 tag。`
+请立刻补发：单独占一行 \`发图 通俗中文|||english tags\`（如 \`发图 卧室对镜自拍半身比耶|||[wx-selfie|who={{char}}] mirror selfie shot, upper body, peace sign, …\`），可保留原有文字气泡；**禁止**把 \`发图\` 粘在口语句子里（如「先拍一张发图 …」须拆成两句）；**禁止**再次假装已发；**禁止**省略 \`|||\` 或右侧英文 tag。`
 }
 
 export function mergeCharacterImageRetryBubbles(original: string[], retry: string[]): string[] {

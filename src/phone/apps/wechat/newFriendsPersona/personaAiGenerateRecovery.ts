@@ -1,4 +1,4 @@
-import {
+﻿import {
   buildPersonaAiHealthyToneRules,
   buildPersonaAiIntimatePartnerWordingRules,
   buildPersonaAiNsfwHintToneRules,
@@ -24,19 +24,23 @@ import {
   PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME,
   PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME,
   PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
+  PERSONA_AI_NSFW_ENTRY_NAME,
   canonicalizePersonaAiCompactEntryName,
   isPersonaAiOrientationEpilogueName,
   isPersonaAiOccupationEpilogueName,
   isPersonaAiRelationshipHistoryEntryName,
+  isPersonaAiNsfwEntryName,
   pickPersonaAiOrientationEpilogueContent,
   pickPersonaAiOccupationEpilogueContent,
   pickPersonaAiRelationshipHistoryContent,
+  pickPersonaAiNsfwContent,
   type PersonaAiCompactEntryName,
   type PersonaAiEpilogueEntry,
 } from './personaAiWorldBooks'
 import {
   serializePersonaAiMarkup,
 } from './personaAiGenerateMarkup'
+import { buildPersonaAiEntryTagRulesBlock } from './personaAiEntryTagSpec'
 
 export type PersonaAiGenerateIssueKind =
   | 'parse'
@@ -199,7 +203,7 @@ function findCompactPersonaBook(character: Character) {
   const books = character.worldBooks ?? []
   return (
     books.find((w) => w.name === PERSONA_AI_COMPACT_BOOK_TITLE) ||
-    books.find((w) => /角色人设档案|对你现在/.test(String(w.name ?? ''))) ||
+    books.find((w) => /角色人设档案|对你的看法和态度/.test(String(w.name ?? ''))) ||
     books[0]
   )
 }
@@ -389,6 +393,7 @@ function repairHintForIssue(issue: PersonaAiGenerateIssue): string | null {
       motto: '座右铭',
       wechatSignature: '个性签名',
       mbti: 'MBTI',
+      animalArchetype: '动物塑',
       orientation: '性取向',
     }
     return `补写键值行「${labelMap[key] ?? key}：…」`
@@ -518,6 +523,25 @@ export function buildPersonaAiRepairSnapshot(
           '',
           `【${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}】`,
           '（缺失·请新写本段）',
+        )
+      }
+    }
+  }
+
+  if (needWb.has(PERSONA_AI_NSFW_ENTRY_NAME)) {
+    const already = weakParts.some((p) => p === `【${PERSONA_AI_NSFW_ENTRY_NAME}】`)
+    if (!already) {
+      const hasNsfw =
+        Array.isArray(arr) &&
+        arr.some((x) => {
+          if (!x || typeof x !== 'object') return false
+          return isPersonaAiNsfwEntryName(String((x as { name?: unknown }).name ?? ''))
+        })
+      if (!hasNsfw) {
+        weakParts.push(
+          '',
+          `【${PERSONA_AI_NSFW_ENTRY_NAME}】`,
+          '（缺失·请新写成人向：敏感点/偏好/接吻抚摸前戏性爱场景与口语）',
         )
       }
     }
@@ -713,6 +737,39 @@ export function auditPersonaAiGenerateResult(
     })
   }
 
+  if (form.nsfwEnabled) {
+    const nsfwContent =
+      pickPersonaAiNsfwContent(
+        Array.isArray(meta.parsed.worldBookEntries)
+          ? (meta.parsed.worldBookEntries as PersonaAiEpilogueEntry[])
+          : [],
+      ) ||
+      (() => {
+        const book = findCompactPersonaBook(character)
+        for (const it of book?.items ?? []) {
+          if (isPersonaAiNsfwEntryName(String(it.name ?? ''))) {
+            return String(it.content ?? '').trim()
+          }
+        }
+        return ''
+      })()
+    if (!nsfwContent) {
+      issues.push({
+        id: `wb-${PERSONA_AI_NSFW_ENTRY_NAME}`,
+        kind: 'missing_epilogue',
+        label: `世界书 · ${PERSONA_AI_NSFW_ENTRY_NAME}`,
+        detail: 'NSFW 已开启：须单独输出成人向条目（敏感点/偏好/亲密场景与口语）',
+      })
+    } else if (isWeakFieldValue(nsfwContent, Math.floor(PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS * 0.4))) {
+      issues.push({
+        id: `wb-${PERSONA_AI_NSFW_ENTRY_NAME}`,
+        kind: 'placeholder_field',
+        label: `世界书 · ${PERSONA_AI_NSFW_ENTRY_NAME}`,
+        detail: '内容过短或为占位稿',
+      })
+    }
+  }
+
   const book = findCompactPersonaBook(character)
   let extras = 0
   for (const it of book?.items ?? []) {
@@ -720,6 +777,7 @@ export function auditPersonaAiGenerateResult(
     if (isPersonaAiOrientationEpilogueName(rawName)) continue
     if (isPersonaAiOccupationEpilogueName(rawName)) continue
     if (isPersonaAiRelationshipHistoryEntryName(rawName)) continue
+    if (isPersonaAiNsfwEntryName(rawName)) continue
     if (!canonicalizePersonaAiCompactEntryName(rawName)) extras += 1
   }
   if (extras > 0) {
@@ -828,6 +886,7 @@ export function buildPersonaAiRepairSystemPrompt(opts: {
     ...(occupationMutable ? [`- ${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}（职业可变 · 尾声）`] : []),
     ...(opts.orientationMutable ? [`- ${PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME}（取向可变 · 尾声）`] : []),
     ...(includeHistory ? [`- ${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}（感情史 · 序言）`] : []),
+    ...(opts.nsfwEnabled ? [`- ${PERSONA_AI_NSFW_ENTRY_NAME}（成人向 · 敏感点/性爱场景）`] : []),
   ].join('\n')
   const modeLine =
     opts.mode === 'fix'
@@ -857,26 +916,32 @@ ${refNpcLine}
 ${entryList}
 角色用 {{char}}、绑定玩家用 {{user}}，禁止写汉字真名。
 与 {{user}} 的关系为「${rel}」；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」勿把 {{user}} 写成暗恋/性幻想对象；${orientHostLine} ${occupationHostLine}${historyHostLine ? ` ${historyHostLine}` : ''}
-「相遇羁绊」只写如何相识的过程，禁止写当前关系标签/态度总结；「对你现在」独占当前关系与态度，须先读懂关系原文「${rel}」的投入程度并对齐；原文未表达好感时禁止补写成潜在心动、嘴硬心软或暗中关注；两处禁止整段互相复述。
+「相遇羁绊」只写如何相识的过程，禁止写当前关系标签/态度总结；「对你的看法和态度」独占当前看法与态度；「对你的称呼」**只写**对 {{user}} 怎么叫；「口语习惯」**独占**说话风格与日常/生气等中文场景引语（两条严禁混写）；每条世界书正文只用**一个根标签**、禁止嵌套小标签；须先读懂关系原文「${rel}」的投入程度并对齐；原文未表达好感时禁止补写成潜在心动、嘴硬心软或暗中关注；禁止整段互相复述。
 ${buildPersonaAiBioRules()}
 ${buildPersonaAiIntimatePartnerWordingRules()}
-${opts.nsfwEnabled ? 'NSFW 已开启：补写「亲密与恋爱观」须直白描绘；指恋人写「对方」；禁止超雄 caricature。' : 'NSFW 未开启：补写「亲密与恋爱观」须清水恋爱观，禁止露骨；指恋人写「对方」。'}
+${opts.nsfwEnabled ? `NSFW 已开启：须单独补写「${PERSONA_AI_NSFW_ENTRY_NAME}」（敏感点/偏好/接吻抚摸前戏性爱场景与口语，偏荤）；「亲密与恋爱观」勿堆床戏；指恋人写「对方」。` : `NSFW 未开启：不要输出「${PERSONA_AI_NSFW_ENTRY_NAME}」；「亲密与恋爱观」须清水恋爱观，禁止露骨。`}
 ${opts.orientationMutable ? `${buildPersonaAiOrientationMutableSemanticsRule(true)}` : ''}
 ${occupationMutable ? `${buildPersonaAiOccupationMutableSemanticsRule(true)}` : ''}
 ${buildPersonaAiCompactEntryLengthRules({
   referencePersonaDirectGenerate: Boolean(opts.referencePersonaDirectGenerate),
 })}
 补写正文须用**中性朴实**描述，禁止超雄/极端用语与八股油腻形容词。
+世界书补写段落必须带对应 <> 分区标签（与完整生成一致）。
+若补写「口语习惯」：引语须平等活人感，禁止「听话」「别闹了」等爹味/油腻句。
 
 ${buildPersonaAiHealthyToneRules()}
 
 【输出格式 · 增量纯文本（禁止 JSON）】
-只写待处理项。顶层用「键：值」单行；多行块用【标题】单独成行，正文写在下一行起。
-示例（假设只缺座右铭与「对你现在」）：
+只写待处理项。顶层用「键：值」单行；多行块用【标题】单独成行，正文写在下一行起且须含 <> 分区标签。
+示例（假设只缺座右铭与「对你的看法和态度」）：
 座右铭：……
-【对你现在】
-……正文……
-补「相遇羁绊」时标题须为【相遇羁绊】。
+【对你的看法和态度】
+<toward_user>
+当前看法与关系定位……
+相处边界……
+心里分量……
+</toward_user>
+补「相遇羁绊」时标题须为【相遇羁绊】；补「口语习惯」时标题须为【口语习惯】（<speech_habit>，中文场景引语）；补「对你的称呼」时标题须为【对你的称呼】（<user_speech>，只写怎么叫，禁止场景引语）。
 不要输出示例里未列出的其他键或【段落】。`.trim()
 }
 
@@ -964,10 +1029,12 @@ export function buildPersonaAiRepairUserPrompt(params: {
   }
   lines.push(
     '',
-    '纠正/补全须遵守：完整参考上方【绑定玩家身份】与世界书；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」指恋人写「对方」；「相遇羁绊」只写相识过程，禁止写当前关系/态度；「对你现在」明确指 {{user}} 当前态度；补写【简介】只写稳定名片，禁止写当前和谁怎么样；{{user}} 身体描写须与绑定玩家性别一致。',
-    `补写世界书条目约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字；描述用中性词，禁止超雄/极端用语与八股油腻形容词。`,
+    '纠正/补全须遵守：完整参考上方【绑定玩家身份】与世界书；颜值欣赏≠恋爱≠取向动摇；「亲密与恋爱观」指恋人写「对方」；「相遇羁绊」只写相识过程，禁止写当前关系/态度；「对你的看法和态度」明确指 {{user}} 当前态度；补写【简介】只写稳定名片，禁止写当前和谁怎么样；{{user}} 身体描写须与绑定玩家性别一致。',
+    `补写世界书条目约 ${PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS} 字；正文须带 <> 分区标签；描述用中性词，禁止超雄/极端用语与八股油腻形容词。`,
     '**全局禁止**：不得出现超雄、极端、病态 caricature，也不得堆砌花里胡哨网文标签。',
     '**只输出白名单内的键值行与【段落】**；禁止 JSON；禁止重复「已完整·勿改」内容。',
+    '',
+    buildPersonaAiEntryTagRulesBlock(),
   )
   return lines.join('\n')
 }

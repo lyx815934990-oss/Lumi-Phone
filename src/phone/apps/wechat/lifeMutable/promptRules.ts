@@ -9,6 +9,13 @@ import { computeEducationLabel, normalizeLifeMutableSheet, parseLifeStoryDayMs }
 const REAL_CITY_BLOCKLIST =
   /北京|上海|广州|深圳|杭州|成都|武汉|南京|重庆|天津|苏州|西安|长沙|郑州|青岛|大连|厦门|福州|济南|合肥|昆明|南昌|沈阳|哈尔滨|长春|石家庄|太原|南宁|海口|贵阳|兰州|银川|西宁|呼和浩特|乌鲁木齐|拉萨|香港|澳门|台北|东京|大阪|首尔|纽约|伦敦/
 
+/**
+ * 模型爱复用的「网文默认虚构城」（无世界书依据时禁止写入账本/正文）。
+ * 不给正面示范城名，只列黑名单，避免换一个默认城继续抄。
+ */
+const STOCK_FICTIONAL_CITY_BLOCKLIST =
+  /澜川(?:市)?|青梧(?:市)?|临川市|江川市|云川(?:市)?|海川(?:市)?|星港市/
+
 /** 整段就是笼统称呼 */
 const VAGUE_PLACE =
   /^(重组家庭住所|家人处|家里|家中|自家|自家住所|学校宿舍|宿舍|租房|合租|市内|本市|某(?:市|城|区|高校|大学)|高档(?:住宅|小区)|核心区|市区内?|市中心)$/
@@ -211,6 +218,7 @@ export function buildLifeLedgerAddressAndAcademicRules(): string {
 - realEstates[].location、family[].residence、socialCircle[].residence、occupationMain、educationNote、occupationOrSchool、note 等凡写地点/学校/单位：必须**编造具体专名**，像真通讯录地址一样可读。
 - **禁止**任何「某／某某／某市／某区／某高校／某大学／某小区／某银行／××大学」等糊弄搭配。
 - **禁止照抄本提示词里的示范地名/校名/路名**（本提示**不提供**可复用的城市或校名清单）。须按人设世界书、身份卡与近端证据**自行新编**；世界书/近端已有城市则沿用，无则另造，**不要**默认成同一个固定城市。
+- **禁止模型默认城**：无世界书/近端依据时，**严禁**写「澜川 / 澜川市」以及青梧、临川市、江川市、云川、海川、星港市等网文味固定默认城；另造须换全新市名，禁止跨角色反复复用同一默认城。
 - 完整地址须达此粒度：「虚构市 + 区 + 路门牌或校名校区 + 楼栋号 + 房间号」。宿舍/公寓**必须**写清楼栋号与房间号；禁止只写「学生宿舍楼」「青年公寓」停在楼名。
 - 学校须写**具体虚构校名**（可含学院类型），禁止「某大学」「大学」「高校」单独充数；label 可写「学校宿舍」，但 location 仍须带全校名+楼栋房间。
 - 城市名须**虚构**；**禁止**现实一线/省会名（北京上海广州深圳杭州成都武汉南京重庆等），除非世界书/剧情正文已明确出现该城市。
@@ -227,37 +235,40 @@ export function buildLifeLedgerAddressAndAcademicRules(): string {
 - 学生主业写法：\`具体虚构校名 + 当前年级 · 专业\`（校名须具体，禁止「某大学大二」）；校名从人设/身份推断新编，勿套固定样板。`
 }
 
-/** 校验地址/地点文案是否过糊 */
+/** 校验地址/地点文案是否过糊（用于提示与软提示；勿再因此整轮对齐失败） */
 export function isVagueLifePlaceText(raw: string): boolean {
   const t = String(raw ?? '').trim()
   if (!t) return true
-  if (t.length < 6) return true
   if (VAGUE_PLACE.test(t)) return true
   if (VAGUE_PLACEHOLDER.test(t)) return true
-  if (/某/.test(t)) return true
-  if (!/[市州盟]/.test(t) && !/区|路|街|巷|弄|苑|园|村|栋|号|室|宿舍|公寓/.test(t)) return true
-  // 宿舍/公寓类：有楼名却无楼栋或房间号，仍算过糊
-  if (/(宿舍|公寓)/.test(t) && !/(?:\d+\s*号?\s*楼|\d+\s*栋|[A-Za-z]\s*栋)/.test(t)) return true
-  if (/(宿舍|公寓|栋|号楼)/.test(t) && !/\d+\s*室/.test(t)) return true
+  // 过短且不像具体地址
+  if (t.length < 4) return true
+  if (!/[市州盟]/.test(t) && !/区|路|街|巷|弄|苑|园|村|栋|号|室|宿舍|公寓|学院|大学|学校/.test(t)) {
+    return true
+  }
   return false
 }
 
-/** 账本里住所/住址/职业学校字段是否仍含「某」等糊弄写法 */
+/** 是否命中模型默认虚构城黑名单（无世界书依据时不应采用） */
+export function isStockFictionalCityText(raw: string): boolean {
+  return STOCK_FICTIONAL_CITY_BLOCKLIST.test(String(raw ?? '').trim())
+}
+
+/** 账本里是否仍含「某大学/某小区」等明显糊弄占位（不再用裸「某」字误伤） */
 export function sheetHasVagueLifePlaces(sheet: LifeMutableSheet): boolean {
   const texts: string[] = [
     sheet.occupationMain,
     sheet.occupationSide,
     sheet.educationNote,
-    sheet.extraNote,
     ...sheet.realEstates.flatMap((h) => [h.label, h.location, h.note]),
     ...sheet.family.flatMap((f) => [f.occupationOrSchool, f.residence]),
-    ...sheet.socialCircle.flatMap((c) => [c.occupationOrSchool, c.residence, c.note]),
+    ...sheet.socialCircle.flatMap((c) => [c.occupationOrSchool, c.residence]),
   ]
   return texts.some((t) => {
     const s = String(t ?? '').trim()
     if (!s) return false
-    if (/某|某某|×{1,2}/.test(s)) return true
-    if (hLooksLikeAddressField(s) && isVagueLifePlaceText(s)) return true
+    if (VAGUE_PLACEHOLDER.test(s)) return true
+    if (hLooksLikeAddressField(s) && VAGUE_PLACE.test(s)) return true
     return false
   })
 }

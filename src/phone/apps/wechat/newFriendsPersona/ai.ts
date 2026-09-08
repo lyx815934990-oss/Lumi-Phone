@@ -1,11 +1,17 @@
-import { buildPersonaAiHealthyToneRules } from './personaAiGeneratePrompt'
+import { buildPersonaAiHealthyToneRules, buildPersonaAiSpeechHabitQuoteRules } from './personaAiGeneratePrompt'
 import {
   PERSONA_AI_AFFECTION_GUIDE_EPILOGUE_NAME,
   PERSONA_AI_MEETING_BOND_ENTRY_NAME,
   PERSONA_AI_NPC_ROSTER_ENTRY_NAME,
   PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
+  PERSONA_AI_TOWARD_USER_ENTRY_NAME,
+  PERSONA_AI_USER_SPEECH_ENTRY_NAME,
+  PERSONA_AI_SPEECH_HABIT_ENTRY_NAME,
+  PERSONA_AI_NSFW_ENTRY_NAME,
   isPersonaAiRelationshipHistoryEntryName,
+  isPersonaAiNsfwEntryName,
 } from './personaAiWorldBooks'
+import { formatPersonaAiEntryTagBlock } from './personaAiEntryTagSpec'
 import type { Character, PlayerIdentity, WorldBook, WorldBookItem } from './types'
 import { genderLabelZh } from './utils'
 import { formatWorldBookItemLineForPrompt, worldBookPronounGuideAnnotation } from './worldBookPronounGuide'
@@ -1299,26 +1305,47 @@ export async function generateWorldBookItemContent(params: {
 
   const userChatMannerExtra =
     !forId &&
-    (/对你现在/.test(params.item.name) ||
-      (/当前对你的态度/.test(params.worldBook.name) && /称呼|聊天分寸/.test(params.item.name)))
-      ? `【本条特殊要求】「对你现在」须写清对 {{user}} 的**当前**称呼、回消息节奏、相处边界与心里分量；心里分量必须与档案关系设定一致。若关系为低投入/不咋在意，禁止写成潜在好感、嘴硬心软或暗中关注。相识过程属「相遇羁绊」，本条勿整段复述相识故事；**当前关系与态度只写在本条**。勿重复「能力与日常」里的通用口语习惯。\n`
+    (params.item.name === PERSONA_AI_TOWARD_USER_ENTRY_NAME ||
+      /对你的看法和态度|对你现在/.test(params.item.name) ||
+      (/当前对你的态度/.test(params.worldBook.name) && /称呼|聊天分寸/.test(params.item.name) === false && /态度|边界|分量/.test(params.item.name)))
+      ? `【本条特殊要求】「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」须写清对 {{user}} 的**当前**看法、关系定位、相处边界与心里分量；心里分量必须与档案关系设定一致。若关系为低投入/不咋在意，禁止写成潜在好感、嘴硬心软或暗中关注。相识过程属「相遇羁绊」；对 {{user}} 怎么叫属「${PERSONA_AI_USER_SPEECH_ENTRY_NAME}」；说话场景引语属「${PERSONA_AI_SPEECH_HABIT_ENTRY_NAME}」，本条勿堆口语示例。\n`
+      : ''
+
+  const userSpeechExtra =
+    !forId &&
+    (params.item.name === PERSONA_AI_USER_SPEECH_ENTRY_NAME ||
+      /对你的称呼|日常用语和风格|用语和风格/.test(params.item.name))
+      ? `【本条特殊要求】「${PERSONA_AI_USER_SPEECH_ENTRY_NAME}」**只写**对 {{user}} 怎么叫（常用称呼、何时换称呼）。只用 <user_speech> 一个根标签。**禁止**写日常/生气/委屈等说话场景引语——那些只属于「${PERSONA_AI_SPEECH_HABIT_ENTRY_NAME}」。\n`
       : ''
 
   const meetingBondExtra =
     !forId &&
     (params.item.name === PERSONA_AI_MEETING_BOND_ENTRY_NAME ||
       /相遇羁绊|相识过程|如何相识|初遇|结识/.test(params.item.name))
-      ? `【本条特殊要求】「相遇羁绊」只写 {{char}} 与 {{user}} 如何相识（场合、契机、早期互动与过程节点）。本条为序言固定层：禁止写当前关系标签、当前态度、称呼分寸、心里分量或「如今是…/开局关系为…」类总结；这些只属于尾声「对你现在」，禁止与尾声抢写或冲突。\n`
+      ? `【本条特殊要求】「相遇羁绊」只写 {{char}} 与 {{user}} 如何相识（场合、契机、早期互动与过程节点）。本条为序言固定层：禁止写当前关系标签、当前态度、称呼分寸、心里分量或「如今是…/开局关系为…」类总结；这些只属于尾声「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」与「${PERSONA_AI_USER_SPEECH_ENTRY_NAME}」，禁止与尾声抢写或冲突。\n`
       : ''
 
   const generalSpeechExtra =
-    !forId && /能力与日常|口语与口头禅|口语习惯|口头禅/.test(params.item.name)
-      ? `【本条特殊要求】本条目写 {{char}} **本人**的通用口语习惯、口头禅、用词节奏与语气；须含 2–4 条可直接引用的引语示例（英文半角双引号）。**禁止**写对 {{user}} 的专属称呼/回消息分寸——那些只属于「对你现在」。\n`
+    !forId &&
+    (params.item.name === PERSONA_AI_SPEECH_HABIT_ENTRY_NAME ||
+      (/口语习惯|口头禅|口语与口头禅/.test(params.item.name) &&
+        !/对你的称呼|用语和风格|亲密/.test(params.item.name)))
+      ? `【本条特殊要求】「${PERSONA_AI_SPEECH_HABIT_ENTRY_NAME}」写说话风格 + 中文场景引语（日常/生气/委屈/难过/撒娇/害羞/开心/亲密时）。只用 <speech_habit> 一个根标签。**禁止**写对 {{user}} 怎么称呼——那些只属于「${PERSONA_AI_USER_SPEECH_ENTRY_NAME}」。\n${buildPersonaAiSpeechHabitQuoteRules()}\n`
+      : ''
+
+  const lifestyleExtra =
+    !forId && /能力与日常/.test(params.item.name)
+      ? `【本条特殊要求】「能力与日常」写技能爱好、社交态度与生活习惯；口语口头禅另属「${PERSONA_AI_SPEECH_HABIT_ENTRY_NAME}」，本条勿展开说话引语。\n`
       : ''
 
   const intimateSpeechExtra =
-    !forId && /亲密与恋爱观|亲密口语习惯/.test(params.item.name)
-      ? `【本条特殊要求】「亲密与恋爱观」写一般亲密观与恋爱反差（指恋人写「对方」）；若含亲密口语，须「情境 + 引语」示例。非对 {{user}} 的微信聊天分寸。清水档案禁止露骨。过往对象/情史写在「${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}」，本条勿展开长情史。\n`
+    !forId && /亲密与恋爱观|亲密口语习惯/.test(params.item.name) && !isPersonaAiNsfwEntryName(params.item.name)
+      ? `【本条特殊要求】「亲密与恋爱观」写一般亲密观与恋爱反差（指恋人写「对方」）；勿展开露骨床戏——那些属于「${PERSONA_AI_NSFW_ENTRY_NAME}」。清水档案禁止露骨。过往对象/情史写在「${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}」。\n`
+      : ''
+
+  const nsfwIntimateExtra =
+    !forId && isPersonaAiNsfwEntryName(params.item.name)
+      ? `【本条特殊要求】「${PERSONA_AI_NSFW_ENTRY_NAME}」须写：身体敏感点、亲密偏好方式、接吻、被抚摸、抚摸对方、前戏、发生关系时的动作场景与口语示例。整体偏荤、可写器官与失控反应；偶可夹一两句纯情。只用 <intimate_nsfw> 一个根标签。指恋人写「对方」；双方自愿；禁止非自愿暴力。\n`
       : ''
 
   const relationshipHistoryExtra =
@@ -1330,18 +1357,18 @@ export async function generateWorldBookItemContent(params: {
     !forId &&
     (/取向认同的当前快照|取向与自我认同|性取向由来/.test(params.item.name) ||
       (/性格内核/.test(params.item.name) && params.item.priority !== 'after'))
-      ? `【本条特殊要求】${/取向认同|取向与自我|性取向由来/.test(params.item.name) ? '本条为取向尾声快照：' : '若本条含取向段落：'}只写 {{char}} 对**自我**性取向的**当下稳定**认同与由来。审美欣赏 ≠ 恋爱 ≠ 取向变化；对 {{user}} 的颜值评价应写在「对你现在」。若本条目为尾声延展，「可变」仅指可更新快照，正文仍写稳定认同。\n`
+      ? `【本条特殊要求】${/取向认同|取向与自我|性取向由来/.test(params.item.name) ? '本条为取向尾声快照：' : '若本条含取向段落：'}只写 {{char}} 对**自我**性取向的**当下稳定**认同与由来。审美欣赏 ≠ 恋爱 ≠ 取向变化；对 {{user}} 的颜值评价应写在「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」。若本条目为尾声延展，「可变」仅指可更新快照，正文仍写稳定认同。\n`
       : ''
 
   const affectionGuideExtra =
     !forId && params.item.name === PERSONA_AI_AFFECTION_GUIDE_EPILOGUE_NAME
-      ? `【本条特殊要求】须含对 {{user}} 的称呼、相处边界与心里分量侧写；分量强度须贴合关系设定。低投入/不咋在意时禁止写成好感萌芽。可写雷区与维持现状的分寸；禁止无依据抬成可攻略心动开局；禁止跪舔速成、套路 PUA、提及「玩家」。\n`
+      ? `【本条特殊要求】须含对 {{user}} 的相处边界与心里分量侧写；分量强度须贴合关系设定。低投入/不咋在意时禁止写成好感萌芽。对 {{user}} 怎么叫写在「${PERSONA_AI_USER_SPEECH_ENTRY_NAME}」；说话场景写在「${PERSONA_AI_SPEECH_HABIT_ENTRY_NAME}」。禁止无依据抬成可攻略心动开局；禁止跪舔速成、套路 PUA、提及「玩家」。\n`
       : ''
 
   const npcRosterExtra =
     !forId &&
     (params.item.name === PERSONA_AI_NPC_ROSTER_ENTRY_NAME || /周边NPC|NPC简|关联人物|周边人物/.test(params.item.name))
-      ? `【本条特殊要求】「周边NPC」写围绕 {{char}} 的**具名**配角简档：每人含姓名、与 {{char}} 关系、一两句性格与近况。若本档案为原著/参考人物直接生成：不设 3–5 上限，开篇与日常圈具名配角尽量写全；名单内配角彼此若有原著关系（室友/好感/死党等）须双方互相写清，禁止只写各自与 {{char}}。禁止把配角写成 {{user}} 本人。若「对你现在」/绑定身份显示 {{user}} 为同作相关角色，每人必须另写「对 {{user}}」；禁止原著本该认识 {{user}} 的配角写成路人。禁止写成完整人设或重复「人际与秘密」；中性朴实。\n`
+      ? `【本条特殊要求】「周边NPC」写围绕 {{char}} 的**具名**配角简档：每人含姓名、与 {{char}} 关系、一两句性格与近况。若本档案为原著/参考人物直接生成：不设 3–5 上限，开篇与日常圈具名配角尽量写全；名单内配角彼此若有原著关系（室友/好感/死党等）须双方互相写清，禁止只写各自与 {{char}}。禁止把配角写成 {{user}} 本人。若「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」/绑定身份显示 {{user}} 为同作相关角色，每人必须另写「对 {{user}}」；禁止原著本该认识 {{user}} 的配角写成路人。禁止写成完整人设或重复「人际与秘密」；中性朴实。\n`
       : ''
 
   const vol05DesireExtra =
@@ -1375,11 +1402,15 @@ export async function generateWorldBookItemContent(params: {
 
   const maxTokens = wbItemGenMaxTokensForTarget(targetChars)
   const lengthHardRule = `\n【长度硬要求】正文须写满约 ${targetChars} 字（含标点）；禁止只写一两句、单个引语示例或半句话就结束；写完后自检字数，明显不足则继续补写再结束。\n`
+  const entryTagBlock = forId ? '' : formatPersonaAiEntryTagBlock(params.item.name)
+  const entryTagExtra = entryTagBlock
+    ? `\n【本条 <> 分区标签】\n${entryTagBlock}\n正文必须包在上述标签内；禁止无标签散文块。\n`
+    : ''
   const messages: ChatMessage[] = [
     { role: 'system', content: systemContent },
     {
       role: 'user',
-      content: `${baseHint}${pronounWriterNote}${npcBlock}${context}${coherenceBlock}${wbgBlock}${styleBlock}${attitudeBookExtra}${userChatMannerExtra}${meetingBondExtra}${generalSpeechExtra}${intimateSpeechExtra}${relationshipHistoryExtra}${orientationOriginExtra}${affectionGuideExtra}${npcRosterExtra}${vol05DesireExtra}${vol07ContrastExtra}${lengthHardRule}请生成本条目的正文内容。`,
+      content: `${baseHint}${pronounWriterNote}${npcBlock}${context}${coherenceBlock}${wbgBlock}${styleBlock}${attitudeBookExtra}${userChatMannerExtra}${userSpeechExtra}${meetingBondExtra}${generalSpeechExtra}${lifestyleExtra}${intimateSpeechExtra}${nsfwIntimateExtra}${relationshipHistoryExtra}${orientationOriginExtra}${affectionGuideExtra}${npcRosterExtra}${vol05DesireExtra}${vol07ContrastExtra}${entryTagExtra}${lengthHardRule}请生成本条目的正文内容。`,
     },
   ]
   let body = sanitizeWorldBookGeneratedBody(await openAiCompatibleChat(cfg, messages, { max_tokens: maxTokens }))

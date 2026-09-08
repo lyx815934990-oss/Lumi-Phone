@@ -32,18 +32,15 @@ function indexOfClosingCorner(t: string, from: number): number {
   return -1
 }
 
-/** 内心 OS：浅灰字，无衬底、无描边 */
-const osCls = 'text-[15px] font-normal italic leading-[1.75] text-[#b8b8bc]'
-const osClickableCls = `${osCls} cursor-pointer underline decoration-dotted decoration-[#c8c8cc] underline-offset-2`
+const osCls =
+  'sr-plot-inner-os inline text-[length:var(--dating-font-size,15px)] font-light italic leading-[1.75] tracking-[0.03em] text-[color:var(--plot-inner-os-fg,#a89eb0)] [font-family:var(--dating-font-inner-os,var(--dating-font-narrative,var(--sr-font-serif,inherit)))]'
 
-/**
- * 对白样式：不用圆角+clone 底纹（多行时会碎成多块药丸）。
- * 以字重 + 暖底色条区分旁白，换行后仍读作同一句。
- */
 const dialogueCls =
-  'inline not-italic bg-[#f7f3ec] px-[0.12em] font-medium tracking-[0.02em] text-[#3f3a33] shadow-[inset_0_-1px_0_0_rgba(235,227,215,0.95)]'
+  'sr-plot-dialogue inline text-[length:var(--dating-font-size,15px)] font-normal italic leading-[1.75] text-[color:var(--plot-dialogue-fg,#b8b8bc)] [font-family:var(--dating-font-dialogue,var(--dating-font-narrative,var(--sr-font-serif,inherit)))]'
 
-const dialogueClickableCls = `${dialogueCls} cursor-pointer transition-colors hover:bg-[#f0ebe3]`
+const dialogueClickableCls = `${dialogueCls} cursor-pointer underline decoration-dotted decoration-[color:var(--plot-dialogue-fg,#c8c8cc)] underline-offset-2`
+
+const osClickableCls = `${osCls} cursor-pointer underline decoration-dotted decoration-[color:var(--plot-inner-os-fg,#c8c8cc)] underline-offset-2`
 
 function normalizeRichTextSource(s: string): string {
   return String(s || '')

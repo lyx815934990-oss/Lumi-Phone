@@ -6,7 +6,7 @@ import type { Character, Gender, PlayerIdentity } from '../newFriendsPersona/typ
 import { genderLabelZh, uid } from '../newFriendsPersona/utils'
 import { personaDb } from '../newFriendsPersona/idb'
 import { LUMI_SHELL_NUM_STYLE } from '../lumiShellTheme'
-import { runLifeAlignFromMemory } from './alignFromMemoryAi'
+import { runLifeAlignFromMemory, runLifeAlignPairFromMemory } from './alignFromMemoryAi'
 import {
   isLifeLedgerInlineSyncEnabled,
   setLifeLedgerInlineSyncEnabled,
@@ -37,13 +37,22 @@ import {
   LIFE_LEDGER_COACH_TARGET_ATTR,
 } from './lifeLedgerCoach'
 import { LIFE_LEDGER_TUTORIAL_SECTIONS } from './lifeLedgerTutorialCopy'
-import { BookOpen, ChevronDown } from 'lucide-react'
+import { BookOpen, ChevronDown, History } from 'lucide-react'
 import { MemoryCoachPortal } from '../memory/MemoryCoachPortal'
 import { MemoryTutorialModal } from '../memory/MemoryTutorialModal'
 import { readMemoryCoachSeen, writeMemoryCoachSeen } from '../memory/memoryCoachTypes'
+import {
+  appendLifeChangeHistory,
+  appendOrCoalesceManualHistory,
+  formatLifeHistoryDiffPair,
+  lifeChangeSourceLabel,
+  lifeSheetContentEqual,
+} from './lifeChangeHistory'
 import type {
+  LifeChangeEvent,
   LifeEducationTrack,
   LifeFamilyMember,
+  LifeFieldDiff,
   LifeMutableSheet,
   LifePayKind,
   LifePet,
@@ -152,7 +161,7 @@ function Stamp({
 }) {
   return (
     <span
-      className="inline-block max-w-[7.5rem] shrink-0 truncate px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em]"
+      className="inline-block max-w-[8.5rem] shrink-0 truncate px-1.5 py-0.5 font-mono text-[9px] tracking-[0.08em]"
       style={{
         border: `1px solid ${STAMP}`,
         color: STAMP,
@@ -448,6 +457,7 @@ function DossierRow({
   title,
   sub,
   stamp,
+  stamps,
   meta,
   memo,
 }: {
@@ -455,9 +465,12 @@ function DossierRow({
   title: string
   sub?: string
   stamp?: string
+  /** 右上角多个印章（含价值标签等） */
+  stamps?: string[]
   meta: string[]
   memo?: string
 }) {
+  const stampList = [...(stamps ?? []), ...(stamp ? [stamp] : [])].filter(Boolean)
   return (
     <div className="py-3" style={{ borderBottom: `0.5px solid ${LINE}` }}>
       <div className="flex items-start gap-2.5">
@@ -492,7 +505,15 @@ function DossierRow({
                 </p>
               ) : null}
             </div>
-            {stamp ? <Stamp rotate={-2.5}>{stamp}</Stamp> : null}
+            {stampList.length ? (
+              <div className="flex max-w-[55%] shrink-0 flex-wrap justify-end gap-1">
+                {stampList.map((s, i) => (
+                  <Stamp key={`${s}-${i}`} rotate={-2.5 + i * 1.5}>
+                    {s}
+                  </Stamp>
+                ))}
+              </div>
+            ) : null}
           </div>
           {meta.length ? (
             <p
@@ -704,13 +725,14 @@ function SheetPreview({
         {sheet.realEstates.map((h) => {
           const kind = lifePlaceKindLabel(h.placeKind)
           const title = h.label.trim() || kind || '未命名地点'
+          const valueLabel = h.valueWan.trim() ? `价值 ${h.valueWan.trim()} 万` : ''
           return (
             <DossierRow
               key={h.id}
               mark={title}
               title={title}
               sub={kind && title !== kind ? kind : undefined}
-              stamp={h.ownedBySubject ? 'OWNED' : 'NOT OWNED'}
+              stamps={[valueLabel, h.ownedBySubject ? 'OWNED' : 'NOT OWNED'].filter(Boolean)}
               meta={[
                 h.location.trim() && `LOC. ${h.location.trim()}`,
                 h.tenure === 'own' ? 'TENURE. OWN' : h.tenure === 'rent' ? 'TENURE. RENT' : '',
@@ -730,10 +752,12 @@ function SheetPreview({
             key={v.id}
             mark={v.model}
             title={v.model.trim() || '型号未填'}
+            stamps={v.valueWan.trim() ? [`价值 ${v.valueWan.trim()} 万`] : undefined}
             meta={
-              [v.boughtAt && `ACQ. ${v.boughtAt}`, payZh(v.payKind) && `PAY. ${payZh(v.payKind)}`].filter(
-                Boolean,
-              ) as string[]
+              [
+                v.boughtAt && `ACQ. ${v.boughtAt}`,
+                payZh(v.payKind) && `PAY. ${payZh(v.payKind)}`,
+              ].filter(Boolean) as string[]
             }
             memo={v.note.trim() || undefined}
           />
@@ -1290,6 +1314,7 @@ function SheetFields({
                 area: '',
                 layout: '',
                 floor: '',
+                valueWan: '',
                 payKind: '',
                 loanRemaining: '',
                 monthlyPayment: '',
@@ -1327,6 +1352,7 @@ function SheetFields({
                 id: uid('car'),
                 boughtAt: '',
                 model: '',
+                valueWan: '',
                 payKind: '',
                 loanRemaining: '',
                 monthlyPayment: '',
@@ -1688,6 +1714,14 @@ function EstateCard({
           onChange={(e) => onChange({ ...item, floor: e.target.value })}
         />
       </div>
+      <input
+        className={inputCls}
+        style={inputStyle}
+        placeholder="价值（万元）"
+        inputMode="decimal"
+        value={item.valueWan}
+        onChange={(e) => onChange({ ...item, valueWan: e.target.value })}
+      />
       <PayFields
         payKind={item.payKind}
         loanRemaining={item.loanRemaining}
@@ -1737,6 +1771,14 @@ function VehicleCard({
           onChange={(e) => onChange({ ...item, model: e.target.value })}
         />
       </div>
+      <input
+        className={inputCls}
+        style={inputStyle}
+        placeholder="价值（万元）"
+        inputMode="decimal"
+        value={item.valueWan}
+        onChange={(e) => onChange({ ...item, valueWan: e.target.value })}
+      />
       <PayFields
         payKind={item.payKind}
         loanRemaining={item.loanRemaining}
@@ -2143,23 +2185,242 @@ function PetCard({
 function useDebouncedSheetSave(
   sheet: LifeMutableSheet | null,
   save: (s: LifeMutableSheet) => Promise<void>,
+  onCoalescedHistory?: (s: LifeMutableSheet) => void,
 ) {
   const timer = useRef<number | null>(null)
   const first = useRef(true)
+  const lastPersisted = useRef<LifeMutableSheet | null>(null)
+  useEffect(() => {
+    first.current = true
+    lastPersisted.current = null
+  }, [save])
   useEffect(() => {
     if (!sheet) return
     if (first.current) {
       first.current = false
+      lastPersisted.current = sheet
       return
     }
     if (timer.current) window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => {
-      void save(sheet)
+      void (async () => {
+        const prev = lastPersisted.current
+        let toSave = sheet
+        if (prev && !lifeSheetContentEqual(prev, sheet)) {
+          const latest = sheet.changeHistory?.[0]
+          const recentlyRecorded =
+            !!latest &&
+            Date.now() - latest.at < 8000 &&
+            (latest.source === 'align' || latest.source === 'inline' || latest.source === 'sync_circle')
+          if (!recentlyRecorded) {
+            toSave = appendOrCoalesceManualHistory(prev, sheet)
+            if (toSave.changeHistory !== sheet.changeHistory) onCoalescedHistory?.(toSave)
+          }
+        }
+        await save(toSave)
+        lastPersisted.current = toSave
+      })()
     }, 450)
     return () => {
       if (timer.current) window.clearTimeout(timer.current)
     }
-  }, [sheet, save])
+  }, [sheet, save, onCoalescedHistory])
+}
+
+function formatLifeHistoryTime(at: number): string {
+  try {
+    return new Date(at).toLocaleString('zh-CN', {
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return ''
+  }
+}
+
+function LifeHistoryDiffLine({ diff }: { diff: LifeFieldDiff }) {
+  const pair = formatLifeHistoryDiffPair(diff.previousText || '（空）', diff.currentText || '（空）')
+  return (
+    <div
+      className="overflow-hidden rounded-[8px]"
+      style={{ border: `1px solid ${LINE}`, background: PAPER }}
+    >
+      <div className="px-2.5 py-1.5" style={{ borderBottom: `1px solid ${LINE}`, background: 'rgba(255,255,255,0.7)' }}>
+        <p className="text-[12px] font-semibold" style={{ color: STAMP, fontFamily: SANS }}>
+          {diff.label}
+        </p>
+      </div>
+      <div className="px-2.5 py-2" style={{ borderBottom: `1px solid ${LINE}` }}>
+        <p className="mb-0.5 font-mono text-[8px] tracking-[0.14em]" style={{ color: MIST, fontFamily: MONO }}>
+          原先
+        </p>
+        <p className="whitespace-pre-wrap break-words text-[11px] leading-relaxed" style={{ color: MIST, fontFamily: SANS }}>
+          {pair.previousText}
+        </p>
+      </div>
+      <div className="px-2.5 py-2" style={{ background: 'rgba(139,26,26,0.06)' }}>
+        <p className="mb-0.5 font-mono text-[8px] tracking-[0.14em]" style={{ color: STAMP, fontFamily: MONO }}>
+          现在
+        </p>
+        <p className="whitespace-pre-wrap break-words text-[11px] leading-relaxed" style={{ color: INK, fontFamily: SANS }}>
+          {pair.currentText}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function LifeHistoryPanel({
+  open,
+  onClose,
+  title,
+  events,
+}: {
+  open: boolean
+  onClose: () => void
+  title: string
+  events: LifeChangeEvent[]
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(events[0]?.id ?? null)
+  useEffect(() => {
+    if (open) setExpandedId(events[0]?.id ?? null)
+  }, [open, events])
+
+  if (!open) return null
+  return (
+    <div
+      className="fixed inset-0 z-[62600] flex items-end justify-center sm:items-center"
+      style={{ background: 'rgba(18,20,26,0.42)' }}
+      role="presentation"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[86vh] w-full max-w-[420px] flex-col overflow-hidden rounded-t-[16px] sm:rounded-[16px]"
+        style={{
+          background: PAPER,
+          border: `1px solid ${LINE}`,
+          boxShadow: '0 12px 40px rgba(18,20,26,0.18)',
+        }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="life-history-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="flex shrink-0 items-center gap-2 px-4 py-3"
+          style={{ borderBottom: `1px solid ${LINE}` }}
+        >
+          <History className="size-4 shrink-0" style={{ color: STAMP }} strokeWidth={1.6} />
+          <div className="min-w-0 flex-1">
+            <p
+              id="life-history-title"
+              className="text-[15px] font-semibold tracking-wide"
+              style={{ color: INK, fontFamily: SANS }}
+            >
+              变更历史
+            </p>
+            <p className="mt-0.5 font-mono text-[9px] tracking-[0.14em]" style={{ color: MIST, fontFamily: MONO }}>
+              {title} · REVISION LOG
+            </p>
+          </div>
+          <button
+            type="button"
+            className="rounded-full px-3 py-1.5 text-[12px] font-medium active:opacity-80"
+            style={{ color: INK, border: `1px solid ${LINE}` }}
+            onClick={onClose}
+          >
+            关闭
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          {events.length === 0 ? (
+            <div className="px-2 py-10 text-center">
+              <History className="mx-auto mb-3 size-7" style={{ color: MIST }} strokeWidth={1.4} />
+              <p className="text-[13px]" style={{ color: INK, fontFamily: SANS }}>
+                还没有变更记录
+              </p>
+              <p className="mt-1.5 text-[12px] leading-relaxed" style={{ color: MIST, fontFamily: SANS }}>
+                按记忆对齐、同请求同步或手动改字段后，这里会出现新旧对照。
+              </p>
+            </div>
+          ) : (
+            <ul className="space-y-2.5">
+              {events.map((ev, index) => {
+                const openRow = expandedId === ev.id
+                return (
+                  <li
+                    key={ev.id}
+                    className="overflow-hidden rounded-[10px]"
+                    style={{ border: `1px solid ${LINE}`, background: PAPER }}
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-start gap-2 px-3 py-3 text-left active:opacity-95"
+                      onClick={() => setExpandedId(openRow ? null : ev.id)}
+                      aria-expanded={openRow}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span
+                            className="rounded-full px-2 py-0.5 text-[10px] font-medium tabular-nums"
+                            style={{
+                              color: STAMP,
+                              background: 'rgba(139,26,26,0.08)',
+                              border: `1px solid rgba(139,26,26,0.18)`,
+                              fontFamily: MONO,
+                            }}
+                          >
+                            {formatLifeHistoryTime(ev.at)}
+                          </span>
+                          <span
+                            className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wide"
+                            style={{ color: STAMP, border: `1px solid ${STAMP}` }}
+                          >
+                            {lifeChangeSourceLabel(ev.source)}
+                          </span>
+                          {index === 0 ? (
+                            <span className="text-[9px] font-semibold" style={{ color: STAMP }}>
+                              最近
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1.5 text-[13px] leading-snug" style={{ color: INK, fontFamily: SANS }}>
+                          {ev.summary}
+                        </p>
+                        <p className="mt-1 text-[11px]" style={{ color: MIST }}>
+                          {ev.diffs.length > 0 ? `${ev.diffs.length} 处字段变更` : '无字段明细'}
+                        </p>
+                      </div>
+                      <ChevronDown
+                        className="mt-1 size-4 shrink-0 transition-transform"
+                        style={{
+                          color: STAMP,
+                          transform: openRow ? 'rotate(180deg)' : undefined,
+                        }}
+                        strokeWidth={1.8}
+                      />
+                    </button>
+                    {openRow && ev.diffs.length > 0 ? (
+                      <div className="space-y-2 px-3 pb-3" style={{ borderTop: `1px solid ${LINE}` }}>
+                        <p className="pt-2.5 font-mono text-[9px] tracking-[0.14em]" style={{ color: MIST, fontFamily: MONO }}>
+                          FIELD DIFF
+                        </p>
+                        {ev.diffs.map((d) => (
+                          <LifeHistoryDiffLine key={`${ev.id}-${d.path}-${d.label}`} diff={d} />
+                        ))}
+                      </div>
+                    ) : null}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function LifeMutableEditor(props: {
@@ -2181,6 +2442,7 @@ export function LifeMutableEditor(props: {
   const [alignBusy, setAlignBusy] = useState(false)
   const [alignFeedback, setAlignFeedback] = useState('')
   const [alignConfirmOpen, setAlignConfirmOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [inlineSyncOn, setInlineSyncOn] = useState(false)
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [coachOpen, setCoachOpen] = useState(false)
@@ -2279,8 +2541,8 @@ export function LifeMutableEditor(props: {
     },
     [boundPlayer?.id, character.id],
   )
-  useDebouncedSheetSave(charSheet, saveChar)
-  useDebouncedSheetSave(playerSheet, savePlayer)
+  useDebouncedSheetSave(charSheet, saveChar, setCharSheet)
+  useDebouncedSheetSave(playerSheet, savePlayer, setPlayerSheet)
 
   const requestAlign = useCallback(() => {
     if (alignBusy) return
@@ -2331,24 +2593,13 @@ export function LifeMutableEditor(props: {
       }
       let workingChar = charSheet
       let workingPlayer = playerSheet
-      for (const job of jobs) {
-        if (ctrl.signal.aborted) break
-        setAlignFeedback(`正在对齐${job.label}…`)
-        const counterpart =
-          job.subject === 'character' ? workingPlayer : workingChar
-        const result = await runLifeAlignFromMemory({
-          character,
-          boundPlayer: freshBound,
-          subject: job.subject,
-          sheet: job.subject === 'character' ? workingChar! : workingPlayer!,
-          span: freshSpan,
-          counterpartSheet: counterpart,
-          apiConfig,
-          signal: ctrl.signal,
-          onProgress: (_stage, detail) => setAlignFeedback(`${job.label}：${detail}`),
-        })
+
+      const applyAlignJobResult = (
+        label: string,
+        result: Awaited<ReturnType<typeof runLifeAlignFromMemory>>,
+      ) => {
         if (result.status === 'updated') {
-          if (job.subject === 'player') {
+          if (label === '玩家') {
             workingPlayer = result.sheet
             setPlayerSheet(result.sheet)
           } else {
@@ -2357,28 +2608,75 @@ export function LifeMutableEditor(props: {
           }
           anyUpdated = true
           for (const c of result.changed) {
-            const tag = `${job.label}·${c}`
+            const tag = `${label}·${c}`
             if (!changedLabels.includes(tag)) changedLabels.push(tag)
           }
-          parts.push(`${job.label}已对齐：${result.changed.join('、')}`)
+          parts.push(`${label}已对齐：${result.changed.join('、')}`)
         } else if (result.status === 'no_change') {
           parts.push(
-            `${job.label}已一致（当前剧情跨度 ${freshSpan.startDay || '？'} → ${freshSpan.nowDay || '？'}）`,
+            `${label}已一致（当前剧情跨度 ${freshSpan.startDay || '？'} → ${freshSpan.nowDay || '？'}）`,
           )
         } else {
-          parts.push(`${job.label}失败：${result.reason || '对齐失败'}`)
+          parts.push(`${label}失败：${result.reason || '对齐失败'}`)
+        }
+      }
+
+      if (workingChar && freshBound?.id && workingPlayer) {
+        if (ctrl.signal.aborted) {
+          /* skip */
+        } else {
+          setAlignFeedback('正在一次请求对齐角色与玩家…')
+          const pairResult = await runLifeAlignPairFromMemory({
+            character,
+            boundPlayer: freshBound,
+            characterSheet: workingChar,
+            playerSheet: workingPlayer,
+            span: freshSpan,
+            apiConfig,
+            signal: ctrl.signal,
+            onProgress: (_stage, detail) => setAlignFeedback(detail),
+          })
+          applyAlignJobResult('角色', pairResult.character)
+          applyAlignJobResult('玩家', pairResult.player)
+        }
+      } else {
+        for (const job of jobs) {
+          if (ctrl.signal.aborted) break
+          setAlignFeedback(`正在对齐${job.label}…`)
+          const counterpart =
+            job.subject === 'character' ? workingPlayer : workingChar
+          const result = await runLifeAlignFromMemory({
+            character,
+            boundPlayer: freshBound,
+            subject: job.subject,
+            sheet: job.subject === 'character' ? workingChar! : workingPlayer!,
+            span: freshSpan,
+            counterpartSheet: counterpart,
+            apiConfig,
+            signal: ctrl.signal,
+            onProgress: (_stage, detail) => setAlignFeedback(`${job.label}：${detail}`),
+          })
+          applyAlignJobResult(job.label, result)
         }
       }
       // 双方都有账本时：强制同步同名共同好友的学校/职业/住址等客观事实
       if (workingChar && workingPlayer && freshBound?.id) {
         const synced = syncSharedSocialCircleBetweenSheets(workingChar, workingPlayer)
         if (synced.syncedNames.length) {
-          workingChar = synced.character
-          workingPlayer = synced.player
-          setCharSheet(synced.character)
-          setPlayerSheet(synced.player)
-          await personaDb.putCharacterLifeMutable(character.id, synced.character)
-          await personaDb.putPlayerLifeMutable(freshBound.id, character.id, synced.player)
+          workingChar = appendLifeChangeHistory(synced.character, {
+            before: workingChar,
+            summary: `共同社交圈 · ${synced.syncedNames.slice(0, 6).join('、')}`,
+            source: 'sync_circle',
+          })
+          workingPlayer = appendLifeChangeHistory(synced.player, {
+            before: workingPlayer,
+            summary: `共同社交圈 · ${synced.syncedNames.slice(0, 6).join('、')}`,
+            source: 'sync_circle',
+          })
+          setCharSheet(workingChar)
+          setPlayerSheet(workingPlayer)
+          await personaDb.putCharacterLifeMutable(character.id, workingChar)
+          await personaDb.putPlayerLifeMutable(freshBound.id, character.id, workingPlayer)
           anyUpdated = true
           const circleLabel = `共同社交圈·${synced.syncedNames.slice(0, 6).join('、')}`
           if (!changedLabels.includes(circleLabel)) changedLabels.push(circleLabel)
@@ -2486,6 +2784,53 @@ export function LifeMutableEditor(props: {
               onAlign={requestAlign}
               hasPlayer={Boolean(boundPlayer?.id)}
             />
+            <section className="mt-2.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <p
+                  className="font-mono text-[8px] uppercase tracking-[0.2em]"
+                  style={{ color: MIST, fontFamily: MONO }}
+                >
+                  REVISION LOG
+                </p>
+                <p className="font-mono text-[8px] tracking-[0.12em]" style={{ color: MIST, fontFamily: MONO }}>
+                  {panel === 'char' ? 'CHAR' : 'USER'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="mt-2 flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left active:opacity-90"
+                style={{
+                  border: `1.5px solid ${LINE}`,
+                  background: PAPER,
+                  color: INK,
+                }}
+                onClick={() => setHistoryOpen(true)}
+                {...{ [LIFE_LEDGER_COACH_TARGET_ATTR]: 'ledger-history' }}
+              >
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ fontFamily: SANS }}>
+                    <History className="size-3.5 shrink-0" style={{ color: STAMP }} strokeWidth={1.7} />
+                    变更历史
+                  </span>
+                  <span className="mt-0.5 block text-[10.5px] leading-relaxed" style={{ color: MIST, fontFamily: SANS }}>
+                    {(() => {
+                      const n =
+                        (panel === 'char' ? charSheet?.changeHistory : playerSheet?.changeHistory)?.length ?? 0
+                      return n > 0
+                        ? `当前页签 ${n} 条记录 · 对齐 / 同步 / 手改`
+                        : '对齐、同步或手改后会出现新旧对照'
+                    })()}
+                  </span>
+                </span>
+                <span
+                  className="shrink-0 font-mono text-[10px] tracking-[0.14em]"
+                  style={{ fontFamily: MONO, color: STAMP }}
+                  aria-hidden
+                >
+                  →
+                </span>
+              </button>
+            </section>
           </div>
         </div>
       </header>
@@ -2624,8 +2969,8 @@ export function LifeMutableEditor(props: {
               style={{ color: MIST, fontFamily: SANS }}
             >
               {boundPlayer?.id
-                ? '将按人设世界书、身份卡与线上/线下近端各 10 轮，一次补齐角色 + 玩家两边账本空白并校正过时项。不读向量与长期记忆。'
-                : '将按人设世界书、身份卡与线上/线下近端各 10 轮，补齐当前账本空白并校正过时项。不读向量与长期记忆。'}
+                ? '将按人设世界书、身份卡与线上私聊/线下剧情近端各 10 轮，一次补齐角色 + 玩家两边账本。近端聊过的感情/住址/升学等「现在」事实优先写入。不读向量与长期记忆。'
+                : '将按人设世界书、身份卡与线上私聊/线下剧情近端各 10 轮，补齐当前账本。近端「现在」事实优先于旧账本。不读向量与长期记忆。'}
             </p>
             <div className="mt-5 flex gap-2.5">
               <button
@@ -2660,11 +3005,20 @@ export function LifeMutableEditor(props: {
         </div>
       ) : null}
 
+      <LifeHistoryPanel
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        title={panel === 'char' ? '角色本线' : `玩家 · ${pidName}`}
+        events={
+          (panel === 'char' ? charSheet?.changeHistory : playerSheet?.changeHistory) ?? []
+        }
+      />
+
       <MemoryTutorialModal
         open={tutorialOpen}
         onClose={() => setTutorialOpen(false)}
         title="人生账本 · 说明"
-        subtitle="会变的现状登记 · 开/关体验对比"
+        subtitle="会变的现状登记 · 历史 · 开/关体验对比"
         sections={LIFE_LEDGER_TUTORIAL_SECTIONS}
         onStartLiveCoach={startLiveCoach}
         zIndex={62000}

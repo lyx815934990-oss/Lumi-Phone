@@ -1,0 +1,205 @@
+/**
+ * Story RPG · 主题 token（默认对齐「藕灰粉调」日间；运行时由色卡覆盖）
+ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Serif+SC:wght@400;500;600&display=swap');
+
+.story-rpg-root {
+  --sr-bg: #efe4e9;
+  --sr-panel: #f7f1f4;
+  --sr-panel-elevated: #f7f1f4;
+  --sr-gold: #bdbbbf;
+  --sr-gold-dim: #7a7a7c;
+  --sr-gold-on: #ffffff;
+  --sr-gold-glow: rgba(189, 187, 191, 0.4);
+  --sr-text: #5f5f5f;
+  --sr-text-muted: #a2a1a4;
+  --sr-text-soft: #7a7a7c;
+  --sr-text-faint: #a2a1a499;
+  --sr-border: rgba(95, 95, 95, 0.12);
+  --sr-glass: rgba(255, 255, 255, 0.42);
+  --sr-glass-strong: rgba(255, 255, 255, 0.55);
+  --sr-header-bg: #f7f1f4f0;
+  --sr-console-bg: #f7f1f4f5;
+  --sr-prose-em: #a2a1a4;
+  --plot-dialogue-fg: var(--sr-text-muted);
+  --plot-inner-os-fg: var(--sr-gold-dim);
+  --sr-font-serif: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
+  --sr-font-ui: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --sr-header-bar-h: 60px;
+  --sr-header-h: calc(var(--sr-header-bar-h) + env(safe-area-inset-top, 0px));
+  /* 底栏含工具 chip + 输入行，实际高度由 ResizeObserver 写入 --sr-console-h */
+  --sr-console-min-h: 168px;
+  --sr-console-h: var(--sr-console-min-h);
+  --sr-keyboard-inset: 0px;
+  --sr-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  background: var(--sr-bg);
+  color: var(--sr-text);
+  font-family: var(--sr-font-ui);
+  min-height: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+.story-rpg-root[data-mode='vn'] {
+  --sr-bg: #efe4e9;
+}
+
+.story-rpg-root[data-header-compact='true'] {
+  --sr-header-bar-h: 52px;
+}
+
+/* 高光剧情卡片：静态淡金描边（不做无限旋转，避免干扰阅读） */
+.sr-highlight-border {
+  border-color: color-mix(in srgb, var(--sr-gold) 45%, var(--sr-border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sr-gold) 18%, transparent);
+}
+
+/* 评论按钮金光呼吸 */
+@keyframes sr-gold-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 16px 4px rgba(212, 175, 55, 0.25);
+  }
+}
+
+.sr-comment-glow {
+  animation: sr-gold-pulse 2.4s ease-in-out infinite;
+}
+
+/* CoT 呼吸灯 */
+@keyframes sr-cot-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.sr-cot-bar {
+  animation: sr-cot-breathe 2.8s ease-in-out infinite;
+}
+
+/* 弹幕 */
+@keyframes sr-danmaku-scroll {
+  from {
+    transform: translateX(110vw);
+  }
+  to {
+    transform: translateX(-120%);
+  }
+}
+
+.sr-danmaku-track {
+  animation: sr-danmaku-scroll linear infinite;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+/* 正文排版 · 优先自定义剧情字体，其次主题衬线 */
+/* 剧情卡片：长按时禁止系统文本框选（复制走菜单「复制」） */
+[data-no-native-select='1'],
+[data-no-native-select='1'] * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-user-drag: none !important;
+}
+
+.sr-prose {
+  font-family: var(--dating-font-narrative, var(--sr-font-serif));
+  font-size: var(--dating-font-size, 15px);
+  line-height: 1.85;
+  letter-spacing: 0.02em;
+  color: var(--sr-text);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  /* 长按出菜单时避免系统文本框选；复制走卡片「复制」 */
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-user-drag: none;
+}
+
+.sr-prose p {
+  margin: 0 0 0.85em;
+}
+
+.sr-prose p:last-child {
+  margin-bottom: 0;
+}
+
+.sr-prose strong {
+  color: var(--sr-gold);
+  font-weight: 600;
+}
+
+/* 对白 / 内心 OS（由 parsePlotRichText 输出）：与正文统一字号 */
+.sr-prose .sr-plot-dialogue {
+  font-style: italic;
+  font-weight: 400;
+  font-size: var(--dating-font-size, 15px);
+  color: var(--plot-dialogue-fg);
+  font-family: var(--dating-font-dialogue, var(--dating-font-narrative, var(--sr-font-serif)));
+}
+
+.sr-prose .sr-plot-inner-os {
+  font-style: italic;
+  font-weight: 300;
+  letter-spacing: 0.03em;
+  font-size: var(--dating-font-size, 15px);
+  color: var(--plot-inner-os-fg);
+  font-family: var(--dating-font-inner-os, var(--dating-font-narrative, var(--sr-font-serif)));
+}
+
+.sr-prose em {
+  font-style: italic;
+  color: var(--sr-prose-em);
+}
+
+.sr-prose blockquote {
+  margin: 0.75em 0;
+  padding-left: 0.85em;
+  border-left: 2px solid var(--sr-gold-dim);
+  color: var(--sr-text-muted);
+}
+
+/* Radix 动画 */
+.sr-sheet-overlay {
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.sr-dropdown-content {
+  animation: sr-dropdown-in 0.2s var(--sr-spring);
+}
+
+@keyframes sr-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 隐藏滚动条但保留滑动 */
+.sr-scroll-x {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sr-scroll-x::-webkit-scrollbar {
+  display: none;
+}

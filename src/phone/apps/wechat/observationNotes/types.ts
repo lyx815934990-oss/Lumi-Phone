@@ -95,7 +95,12 @@ export type ObservationNotesDoc = {
   abilityRadar: ObservationRadarBlock
   overallEvaluation: string
   affection: number
+  /**
+   * 好感旁展示用阶段文案；与 `relationshipLabel` 对齐（char 自填），
+   * 不再按数值硬套「轻微在意期」等系统名。
+   */
   affectionStageLabel: string
+  /** char 自认的关系阶段（暗恋/暧昧等）；好感条旁展示以此为准 */
   relationshipLabel: string
   /** 相对上次版本的字段级 diff（用于主页标记） */
   pendingDiffs: ObservationFieldDiff[]
@@ -126,13 +131,32 @@ export function clampPct(n: number): number {
   return Math.max(0, Math.min(100, Math.round(n)))
 }
 
-export function affectionStageFromValue(affection: number): string {
-  const a = clampPct(affection)
-  if (a < 20) return '礼貌试探期'
-  if (a < 40) return '保持距离期'
-  if (a < 60) return '轻微在意期'
-  if (a < 80) return '心动萌芽期'
-  return '心意渐明期'
+/** 旧版按数值硬套的阶段名（勿再展示 / 注入提示词） */
+const LEGACY_CODE_AFFECTION_STAGE_LABELS = new Set([
+  '礼貌试探期',
+  '保持距离期',
+  '轻微在意期',
+  '心动萌芽期',
+  '心意渐明期',
+])
+
+/**
+ * 好感旁展示的阶段文案：只用 char 自己填的「关系」标签。
+ * 数值高低不另套系统阶段（暗恋可以只有 50 好感）。
+ */
+export function resolveAffectionStageDisplay(relationshipLabel: string | undefined | null): string {
+  const rel = String(relationshipLabel ?? '').trim()
+  if (!rel || rel === '关系未明') return ''
+  return rel
+}
+
+/** @deprecated 勿再按数值套阶段；保留仅为兼容旧调用，恒返回空串 */
+export function affectionStageFromValue(_affection: number): string {
+  return ''
+}
+
+export function isLegacyCodeAffectionStageLabel(label: string | undefined | null): boolean {
+  return LEGACY_CODE_AFFECTION_STAGE_LABELS.has(String(label ?? '').trim())
 }
 
 export function fieldText(f: ObservationField | undefined | null): string {

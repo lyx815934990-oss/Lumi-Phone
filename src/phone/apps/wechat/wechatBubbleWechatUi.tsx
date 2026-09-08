@@ -11,7 +11,7 @@ export const WECHAT_CLASSIC = {
   otherBubble: '#FFFFFF',
   wechatGreen: '#07C160',
   quoteBg: '#EBEBEB',
-  bubbleRadiusPx: 8,
+  bubbleRadiusPx: 4,
   tailTopPx: 14,
   /** 微信 8.x 暗黑模式近似色 */
   chatBgNight: '#111111',
@@ -94,8 +94,12 @@ export function wechatClassicSpecialSkinOverrides(night: boolean): Record<string
   }
 }
 
+/** 微信 App 经典头像边长（默认 40 + 2） */
+export const WECHAT_CLASSIC_AVATAR_SIZE_PX = 42
+
 /** 聊天气泡最大宽：左右边距 24×2 + 两侧头像列（头像+12 间距）各一列 */
-export const WECHAT_CHAT_BUBBLE_MAX_CLASS = 'max-w-[calc(100vw-24px-24px-40px-12px-12px-40px)]'
+export const WECHAT_CHAT_BUBBLE_MAX_CLASS =
+  'max-w-[calc(100vw-24px-24px-42px-12px-12px-42px)]'
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))
@@ -278,7 +282,7 @@ const TAIL_DEFAULTS: TailResolved = {
   offsetYPct: null,
   topPx: WECHAT_CLASSIC.tailTopPx,
   yMode: 'pct',
-  avatarSizePx: 40,
+  avatarSizePx: 42,
   avatarBubbleYPct: 0,
   anchor: 'side',
   offsetXPct: 0,

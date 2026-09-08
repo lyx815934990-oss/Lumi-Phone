@@ -1,0 +1,86 @@
+/**
+ * 约会模块共享 UI 原子（续写方向 / 人脉 @ 等弹层仍可能引用）。
+ * 普通剧情页主布局已清空，重建时请在新布局中注入色卡变量或自建样式。
+ */
+
+:root {
+  --ds-bg: #dee9dc;
+  --ds-bg-elevated: #f4f8f3;
+  --ds-surface: #eaf1e8;
+  --ds-ink: #594842;
+  --ds-ink-soft: #685049;
+  --ds-muted: #8a807a;
+  --ds-rule: rgba(89, 72, 66, 0.1);
+  --ds-accent: #7a8f72;
+  --ds-accent-on: #ffffff;
+  --ds-accent-soft: rgba(183, 192, 175, 0.45);
+}
+
+.ds-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--ds-rule, rgba(89, 72, 66, 0.1));
+  background: transparent;
+  padding: 0.28rem 0.7rem;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--ds-ink-soft, #685049);
+}
+
+.ds-chip[data-on='true'] {
+  border-color: transparent;
+  background: var(--ds-accent, #7a8f72);
+  color: var(--ds-accent-on, #fff);
+}
+
+.ds-btn-primary {
+  border-radius: 999px;
+  border: none;
+  background: var(--ds-ink, #594842);
+  padding: 0.55rem 1.15rem;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ds-bg-elevated, #f4f8f3);
+}
+
+.ds-btn-primary:disabled {
+  opacity: 0.45;
+}
+
+.ds-btn-ghost {
+  border-radius: 999px;
+  border: 1px solid var(--ds-rule, rgba(89, 72, 66, 0.1));
+  background: transparent;
+  padding: 0.55rem 0.95rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ds-ink-soft, #685049);
+}
+
+.ds-pace-card {
+  border-radius: 16px;
+  border: 1px solid var(--ds-rule, rgba(89, 72, 66, 0.1));
+  background: var(--ds-surface, #eaf1e8);
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+}
+
+.ds-pace-card[data-on='true'] {
+  border-color: color-mix(in srgb, var(--ds-accent, #7a8f72) 40%, transparent);
+  background: var(--ds-accent-soft, rgba(183, 192, 175, 0.45));
+}
+
+.ds-action-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  border-radius: 16px;
+  border: 1px solid var(--ds-rule, rgba(89, 72, 66, 0.1));
+  background: var(--ds-bg-elevated, #f4f8f3);
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+}

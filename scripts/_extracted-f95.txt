@@ -1,0 +1,623 @@
+
+
+===== ceremonyEnter =====
+type Props = {
+  onBackToSelect: () => void
+  /** 自赴约邀请卡进入时播放剧情页入场 */
+  ceremonyEnter?: boolean
+  onCeremonyEnterDone?: () => void
+}
+
+
+===== ceremonyEnter =====
+function DatingStoryPageInner({ onBackToSelect, ceremonyEnter, onCeremonyEnterDone }: Props) {
+
+
+===== ceremonyEnter =====
+      {!isVn ? (
+        <motion.div
+          className={`flex h-full min-h-0 flex-col${storyHasContent ? ' dating-story-page' : ''}`}
+          style={storyHasContent ? datingStoryComfortCssVars() : undefined}
+          initial={ceremonyEnter ? { opacity: 0, y: 12 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{
+            duration: 0.52,
+            ease: [0.22, 1, 0.36, 1],
+            delay: ceremonyEnter ? 0.04 : 0,
+          }}
+          onAnimationComplete={() => {
+            if (ceremonyEnter) onCeremonyEnterDone?.()
+          }}
+        >
+
+
+===== ceremonyEnter =====
+          style={
+            storyHasContent
+              ? datingStoryComfortCssVars()
+              : ceremonyEnter
+                ? { background: DATING_COMFORT.bg }
+                : undefined
+          }
+
+
+===== ceremonyEnter =====
+      {page === 'select' ? (
+        <div className="h-full min-h-0">
+          <DatingRoleSelectPage
+            onEnterStory={enterStoryFromInvite}
+            onBeginStoryDepart={beginStoryDepart}
+            onOpenPersonaManager={onOpenPersonaManager}
+          />
+        </div>
+      ) : (
+        <div className="h-full min-h-0">
+          <DatingStoryPage
+            onBackToSelect={backToSelect}
+            ceremonyEnter={storyCeremonyEnter}
+            onCeremonyEnterDone={() => setStoryCeremonyEnter(false)}
+          />
+        </div>
+      )}
+
+      <AnimatePresence>
+        {storyDepart ? (
+          <InviteDepartOverlay
+            key="dating-story-depart"
+            character={storyDepart.character}
+            hasProgress={storyDepart.hasProgress}
+          />
+        ) : null}
+      </AnimatePresence>
+
+
+===== ceremonyEnter =====
+          initial={ceremonyEnter ? { opacity: 0 } : false}
+          animate={{ opacity: 1 }}
+          transition={{
+            duration: 0.36,
+            ease: [0.22, 1, 0.36, 1],
+          }}
+          onAnimationComplete={() => {
+            if (ceremonyEnter) onCeremonyEnterDone?.()
+          }}
+        >
+
+
+===== ceremonyEnter =====
+          initial={ceremonyEnter ? { opacity: 0, y: 28, scale: 0.985 } : false}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{
+            duration: 0.55,
+            ease: [0.22, 1, 0.36, 1],
+            delay: ceremonyEnter ? 0.08 : 0,
+          }}
+          onAnimationComplete={() => {
+            if (ceremonyEnter) onCeremonyEnterDone?.()
+          }}
+        >
+
+
+===== DatingStoryComposerScaffold =====
+import { DatingStoryComposerScaffold } from './DatingStoryComposerScaffold'
+import { resolvePlotStoryEndDisplayLabel } from './plotStoryTimeLabel'
+
+
+===== ceremonyEnter =====
+      {!isVn ? (
+        <motion.div
+          className="flex h-full min-h-0 flex-col"
+          initial={ceremonyEnter ? { opacity: 0 } : false}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.35 }}
+          onAnimationComplete={() => {
+            if (ceremonyEnter) onCeremonyEnterDone?.()
+          }}
+        >
+          {/* 布局待重做：临时顶栏 */}
+          <header className="sticky top-0 z-20 shrink-0 border-b border-stone-200 bg-white px-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-2">
+            <div className="relative flex items-center gap-2 py-1.5 pl-8 pr-16">
+              <button
+                type="button"
+                onClick={onBackToSelect}
+                className="absolute left-0 top-1/2 z-[1] -translate-y-1/2 p-1.5"
+                aria-label="返回"
+              >
+                <ArrowLeft className="size-[18px]" strokeWidth={1.7} />
+              </button>
+              <div ref={floorsPanelRef} className="absolute right-0 top-1/2 z-10 -translate-y-1/2">
+                <div className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    title="隐藏历史楼层（仅视图）"
+                    onClick={() => setFloorsPanelOpen((v) => !v)}
+                    className={`p-1.5 ${floorsPanelOpen ? 'bg-stone-100' : ''}`}
+                  >
+                    <Layers className="size-[18px]" strokeWidth={1.7} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen((v) => !v)
+                      setFloorsPanelOpen(false)
+                    }}
+                    className="p-1.5"
+                    aria-label="更多"
+                  >
+                    <MoreHorizontal className="size-[18px]" strokeWidth={1.7} />
+                  </button>
+                </div>
+              {floorsPanelOpen ? (
+                <div className="absolute right-0 top-10 z-30 w-[232px] border border-stone-200 bg-white p-3 shadow-lg">
+                  <p className="text-[11px] font-medium text-stone-500">从尾部展示条数</p>
+                  <p className="mt-0.5 text-[10px] leading-snug text-stone-400">
+                    仅影响列表展示，不删除存档；范围 3～{floorsMax}。点列表顶「已隐藏…展开」可一次显示全部。
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={3}
+                      max={floorsMax}
+                      value={floorsDraft}
+                      onChange={(e) => setFloorsDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') applyFloorsDraft()
+                      }}
+                      onBlur={applyFloorsDraft}
+                      className="min-w-0 flex-1 border border-stone-200 bg-white px-2.5 py-1.5 text-[13px] tabular-nums text-stone-800 outline-none"
+                      style={datingNumStyle}
+                    />
+                    <button
+                      type="button"
+                      onClick={applyFloorsDraft}
+                      className="shrink-0 bg-stone-900 px-2.5 py-1.5 text-[12px] font-medium text-white"
+                    >
+                      应用
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              </div>
+              <img
+                src={displayAvatarUrl}
+                alt={currentCharacter.realName}
+                className="h-8 w-8 shrink-0 rounded-full object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-[15px] font-medium leading-tight">
+                  {currentCharacter.realName}
+                </h2>
+                {lastStoryTimeLabel ? (
+                  <p className="truncate text-[11px] tabular-nums text-stone-500">
+                    <DatingNum>{lastStoryTimeLabel}</DatingNum>
+                  </p>
+                ) : (
+                  <p className="truncate text-[11px] text-stone-400">线下剧情 · 布局待重做</p>
+                )}
+              </div>
+              {menuOpen ? (
+                <div className="absolute right-0 top-[calc(100%+4px)] z-30 w-52 border border-stone-200 bg-white p-1 shadow-md">
+
+
+===== DatingStoryComposerScaffold =====
+              ) : null}
+            </div>
+          </header>
+
+          {/* 弹幕与聊天室一致：盖在「剧情滚动区」视口上，不随列表滚动 */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {showOfflineDmOverlay ? (
+              <div className="pointer-events-none absolute inset-0 z-[60]">
+                <DanmakuOverlay bullets={offlineDmBullets} zoneStyle={offlineDmZoneStyle} />
+              </div>
+            ) : null}
+            <div
+              ref={normalScrollRef}
+              className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
+            {currentArchive.plots.length ? (
+              <div className="mx-auto w-full max-w-xl pb-2">
+                <StoryFeed
+                  plots={currentArchive.plots}
+                  timelineExpandCharacterId={currentCharacter.id}
+                  tailVisibleCount={plotTailVisible}
+                  onTailVisibleCountChange={persistPlotTail}
+                  regeneratingPlotId={regeneratingPlotId}
+                  interactionLocked={branchesLoading || Boolean(regeneratingPlotId)}
+                  narrativePerspective={perspective}
+                  onUpdatePlot={(id, patch) => updatePlotItem(id, patch)}
+                  onRegeneratePlot={openRetryBiasPanel}
+                  onSetPlotVersionIndex={(id, idx) => setPlotVersionIndex(id, idx)}
+                  onDeletePlot={(id) => deletePlotItem(id)}
+                  branchEnabled={currentArchive.branchEnabled}
+                  pendingBranches={currentArchive.pendingBranches}
+                  branchesLoading={branchesLoading}
+                  onBranchPick={handleBranchPick}
+                />
+              </div>
+            ) : (
+              <div className="mx-auto flex w-full max-w-xl flex-col items-center px-4 py-16 text-center">
+                <p className="text-[15px] font-medium tracking-tight opacity-80">与 {currentCharacter.realName} 的线下故事</p>
+                <p className="mt-2 max-w-[260px] text-[13px] leading-relaxed opacity-55">
+                  布局已清空，可直接输入或点续写推进剧情
+                </p>
+              </div>
+            )}
+            </div>
+
+            <div
+              ref={composerRef}
+              className="shrink-0 border-t border-stone-200 bg-white px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
+              style={
+                keyboardInsetPx > 0
+                  ? {
+                      paddingBottom: isIOSWebKit()
+                        ? `calc(${keyboardInsetPx}px + max(0.75rem, env(safe-area-inset-bottom, 0px)))`
+                        : keyboardScrollPaddingBottom(keyboardInsetPx, { basePx: 12 }),
+                    }
+                  : undefined
+              }
+            >
+            <DatingStoryComposerScaffold
+              loading={loading}
+              input={input}
+              onInputChange={setInput}
+              inputRef={inputRef}
+              onInputKeyDown={(e) => applyMentionKeyDown(e, input, setInput)}
+              onInputFocus={() => scrollComposerIntoView()}
+              placeholder={
+                currentArchive.mainCharacterOffstage
+                  ? '输入你与 NPC/人脉的场景、对白或动作…'
+                  : currentArchive.directorMode
+                    ? '输入下一段剧情走向 / 导演指令…'
+                    : storyHasContent
+                      ? '这一幕，你想做什么？'
+                      : '输入你想说的话或动作，推进约会剧情…'
+              }
+              onSend={async () => {
+                const raw = input.trim()
+                if (!raw) return
+                const ok = await sendPlayerInput(stripDatingNetworkMentionMarkers(raw), perspective, {
+                  ...narrativeGenOptions,
+                  presentNetworkCharacterIds: collectDatingNetworkMentionIds(raw),
+                })
+                if (ok) setInput('')
+              }}
+              onOpenContinue={() => openContinueProbeSheet('normal')}
+              insertQuotePair={insertQuotePair}
+              godPerspective={!!currentArchive.godPerspective}
+              directorMode={!!currentArchive.directorMode}
+              mainCharacterOffstage={!!currentArchive.mainCharacterOffstage}
+              generateParallelOnSend={!!currentArchive.generateParallelOnSend}
+              generateIfLineOnSend={!!currentArchive.generateIfLineOnSend}
+              onToggleGod={setGodPerspective}
+              onToggleDirector={setDirectorMode}
+              onToggleOffstage={setMainCharacterOffstage}
+              onToggleParallel={setGenerateParallelOnSend}
+              onToggleIfLine={setGenerateIfLineOnSend}
+              onOpenDirectorHelp={() => setDirectorModeHelpOpen(true)}
+              perspective={perspective}
+              onPerspectiveChange={setPerspective}
+              lengthTargetChars={lengthTargetChars}
+              onLengthChange={setLengthTargetChars}
+              onLengthBlur={blurPersistLengthTarget}
+              plotPace={plotPace}
+              onPlotPacePatch={setPlotPaceSettings}
+              thinkingChainEnabled={thinkingChainEnabled}
+              onToggleThinkingChain={toggleThinkingChain}
+              godLocksNoInterrupt={godLocksNoInterrupt}
+              autoUserReaction={autoUserReaction}
+              onSetAutoUserReaction={setAutoUserReaction}
+              languageValue={normalizeDatingLanguageSettings({
+                plotOutputLanguage: currentArchive.plotOutputLanguage,
+                dialogueLanguage: currentArchive.dialogueLanguage,
+                innerOsLanguage: currentArchive.innerOsLanguage,
+                dialogueTranslationSyncEnabled: currentArchive.dialogueTranslationSyncEnabled,
+                innerOsTranslationSyncEnabled: currentArchive.innerOsTranslationSyncEnabled,
+                dialogueTranslationLanguage: currentArchive.dialogueTranslationLanguage,
+              })}
+              onLanguagePatch={patchDatingLanguageSettings}
+              onOpenHeartWhisper={() => setHeartWhisperOpen(true)}
+              datingCharacterId={currentCharacter.id}
+              plotFontSettings={plotFontSettings}
+              plotFontDataUrls={plotFontDataUrls}
+              onPlotFontChange={patchDatingPlotFontSettings}
+              onPlotFontDataUrlChange={setPlotFontDataUrls}
+              onOpenWorldbook={() => setArchiveWbSheetOpen(true)}
+              onOpenStyle={() => setStyleDrawerOpen(true)}
+              plotImageGenEnabled={plotImageGenEnabled}
+              imageGenConfigured={imageGenConfigured}
+              onTogglePlotImage={() => patchPlotImageSettings({ plotImageGenEnabled: !plotImageGenEnabled })}
+              onOpenPlotImageSettings={() => setPlotImageSettingsOpen(true)}
+              plotImageCountNode={plotImageCountNode}
+            />
+            </div>
+          </div>
+          {isAndroidWeb() ? <KeyboardBottomWhitePad insetPx={keyboardInsetPx} zIndex={45} /> : null}
+        </motion.div>
+      ) : (
+
+
+===== floorJumpItems =====
+  return (
+    <div
+      className="relative h-full min-h-0 overflow-hidden bg-white"
+      style={plotFontCssVars}
+    >
+      {!isVn ? (
+        <motion.div
+          className="flex h-full min-h-0 flex-col"
+          initial={ceremonyEnter ? { opacity: 0 } : false}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.35 }}
+          onAnimationComplete={() => {
+            if (ceremonyEnter) onCeremonyEnterDone?.()
+          }}
+        >
+          <header className="sticky top-0 z-20 shrink-0 border-b border-neutral-200 bg-white px-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pb-1">
+            <div className="relative flex h-10 items-center gap-1">
+              <button
+                type="button"
+                onClick={onBackToSelect}
+                className="shrink-0 p-1.5 text-neutral-800"
+                aria-label="返回"
+              >
+                <ArrowLeft className="size-[18px]" strokeWidth={1.7} />
+              </button>
+              <div className="min-w-0 flex-1 px-1">
+                <p className="truncate text-[13px] font-medium text-neutral-800">
+                  {currentCharacter.realName}
+                </p>
+              </div>
+              <div className="relative z-10 flex shrink-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  title="楼层目录"
+                  onClick={() => {
+                    setFloorsPanelOpen((v) => !v)
+                    setMenuOpen(false)
+                  }}
+                  className={`p-1.5 text-neutral-800 ${floorsPanelOpen ? 'bg-neutral-100' : ''}`}
+                  aria-label="楼层目录"
+                >
+                  <Layers className="size-[18px]" strokeWidth={1.7} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen((v) => !v)
+                    setFloorsPanelOpen(false)
+                  }}
+                  className="p-1.5 text-neutral-800"
+                  aria-label="更多"
+                >
+                  <MoreHorizontal className="size-[18px]" strokeWidth={1.7} />
+                </button>
+              </div>
+              {menuOpen ? (
+                <div className="absolute right-0 top-[calc(100%+4px)] z-30 w-52 border border-neutral-200 bg-white p-1 shadow-md">
+                  <button
+                    className="w-full px-3 py-2 text-left text-[13px] text-neutral-800 hover:bg-neutral-50"
+                    onClick={() => {
+                      setMode('vn')
+                      setMenuOpen(false)
+                    }}
+                  >
+                    切换到 VN 模式
+                  </button>
+                  <div
+                    className="flex items-center justify-between px-3 py-2 text-[13px] text-neutral-800 hover:bg-neutral-50"
+                    title="开启后每轮 AI 剧情结束会请求弹幕（使用 API 设置中的弹幕预设；需在弹幕配置中为该角色启用）"
+                  >
+                    <span>弹幕模式</span>
+                    <DatingCapsuleSwitch
+                      checked={!!currentArchive.offlineDanmakuEnabled}
+                      onToggle={() => setOfflineDanmakuEnabled(!currentArchive.offlineDanmakuEnabled)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between px-3 py-2 text-[13px] text-neutral-800 hover:bg-neutral-50">
+                    <span>剧情分支</span>
+                    <DatingCapsuleSwitch
+                      checked={currentArchive.branchEnabled}
+                      onToggle={() => setBranchEnabled(!currentArchive.branchEnabled)}
+                    />
+                  </div>
+                  <button
+                    className="w-full px-3 py-2 text-left text-[13px] text-neutral-800 hover:bg-neutral-50"
+                    onClick={() => {
+                      setEditOpen(true)
+                      setMenuOpen(false)
+                      setSwitchOpen(false)
+                    }}
+                  >
+                    编辑当前角色卡片信息
+                  </button>
+                  <button
+                    className="w-full px-3 py-2 text-left text-[13px] text-red-600 hover:bg-neutral-50"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setSwitchOpen(false)
+                      setResetArchiveConfirmOpen(true)
+                    }}
+                  >
+                    重置当前角色进度
+                  </button>
+                  <button
+                    className="flex w-full items-center justify-between px-3 py-2 text-left text-[13px] text-neutral-800 hover:bg-neutral-50"
+                    onClick={() => setSwitchOpen((v) => !v)}
+                  >
+                    切换其他AI角色 <ChevronDown className="size-4" />
+                  </button>
+                  {switchOpen ? (
+                    <div className="mt-1 border border-neutral-200 bg-neutral-50 p-1">
+                      {characters.map((x) => (
+                        <button
+                          key={x.id}
+                          className="w-full px-2 py-1.5 text-left text-[12px] text-neutral-800 hover:bg-white"
+                          onClick={() => {
+                            setCurrentCharacterId(x.id)
+                            setMenuOpen(false)
+                            setSwitchOpen(false)
+                          }}
+                        >
+                          {x.realName}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </header>
+
+          <DatingStoryFloorDrawer
+            open={floorsPanelOpen}
+            onClose={() => setFloorsPanelOpen(false)}
+            items={floorJumpItems}
+            currentPlotId={floorJumpItems.length ? floorJumpItems[floorJumpItems.length - 1]?.plotId : null}
+            onJump={jumpToPlotFloor}
+            tailVisibleCount={floorsDisplay}
+            floorsMax={floorsMax}
+            onTailVisibleCountChange={persistPlotTail}
+          />
+
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {showOfflineDmOverlay ? (
+              <div className="pointer-events-none absolute inset-0 z-[60]">
+                <DanmakuOverlay bullets={offlineDmBullets} zoneStyle={offlineDmZoneStyle} />
+              </div>
+            ) : null}
+            <div
+              ref={normalScrollRef}
+              className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
+            {currentArchive.plots.length ? (
+              <div className="mx-auto w-full max-w-xl pb-2">
+                <StoryFeed
+                  plots={currentArchive.plots}
+                  timelineExpandCharacterId={currentCharacter.id}
+                  characterAvatarUrl={displayAvatarUrl}
+                  characterName={currentCharacter.realName}
+                  tailVisibleCount={plotTailVisible}
+                  onTailVisibleCountChange={persistPlotTail}
+                  regeneratingPlotId={regeneratingPlotId}
+                  interactionLocked={branchesLoading || Boolean(regeneratingPlotId)}
+                  narrativePerspective={perspective}
+                  onUpdatePlot={(id, patch) => updatePlotItem(id, patch)}
+                  onRegeneratePlot={openRetryBiasPanel}
+                  onSetPlotVersionIndex={(id, idx) => setPlotVersionIndex(id, idx)}
+                  onDeletePlot={(id) => deletePlotItem(id)}
+                  branchEnabled={currentArchive.branchEnabled}
+                  pendingBranches={currentArchive.pendingBranches}
+                  branchesLoading={branchesLoading}
+                  onBranchPick={handleBranchPick}
+                />
+              </div>
+            ) : (
+              <div className="mx-auto flex w-full max-w-xl flex-col items-center px-4 py-16 text-center">
+                <p className="text-[15px] font-medium text-neutral-800">
+                  与 {currentCharacter.realName} 的线下故事
+                </p>
+                <p className="mt-2 max-w-[260px] text-[13px] leading-relaxed text-neutral-500">
+                  旧布局框架已拆除，输入或点续写即可
+                </p>
+              </div>
+            )}
+            </div>
+
+            <div
+              ref={composerRef}
+              className="shrink-0 border-t border-neutral-200 bg-white px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
+              style={
+                keyboardInsetPx > 0
+                  ? {
+                      paddingBottom: isIOSWebKit()
+                        ? `calc(${keyboardInsetPx}px + max(0.75rem, env(safe-area-inset-bottom, 0px)))`
+                        : keyboardScrollPaddingBottom(keyboardInsetPx, { basePx: 12 }),
+                    }
+                  : undefined
+              }
+            >
+            <DatingStoryComposerScaffold
+              loading={loading}
+              input={input}
+              onInputChange={setInput}
+              inputRef={inputRef}
+              onInputKeyDown={(e) => applyMentionKeyDown(e, input, setInput)}
+              onInputFocus={() => scrollComposerIntoView()}
+              placeholder={
+                currentArchive.mainCharacterOffstage
+                  ? '输入你与 NPC/人脉的场景、对白或动作…'
+                  : currentArchive.directorMode
+                    ? '输入下一段剧情走向 / 导演指令…'
+                    : storyHasContent
+                      ? '这一幕，你想做什么？'
+                      : '输入你想说的话或动作，推进约会剧情…'
+              }
+              onSend={async () => {
+                const raw = input.trim()
+                if (!raw) return
+                const ok = await sendPlayerInput(stripDatingNetworkMentionMarkers(raw), perspective, {
+                  ...narrativeGenOptions,
+                  presentNetworkCharacterIds: collectDatingNetworkMentionIds(raw),
+                })
+                if (ok) setInput('')
+              }}
+              onOpenContinue={() => openContinueProbeSheet('normal')}
+              insertQuotePair={insertQuotePair}
+              godPerspective={!!currentArchive.godPerspective}
+              directorMode={!!currentArchive.directorMode}
+              mainCharacterOffstage={!!currentArchive.mainCharacterOffstage}
+              generateParallelOnSend={!!currentArchive.generateParallelOnSend}
+              generateIfLineOnSend={!!currentArchive.generateIfLineOnSend}
+              onToggleGod={setGodPerspective}
+              onToggleDirector={setDirectorMode}
+              onToggleOffstage={setMainCharacterOffstage}
+              onToggleParallel={setGenerateParallelOnSend}
+              onToggleIfLine={setGenerateIfLineOnSend}
+              onOpenDirectorHelp={() => setDirectorModeHelpOpen(true)}
+              perspective={perspective}
+              onPerspectiveChange={setPerspective}
+              lengthTargetChars={lengthTargetChars}
+              onLengthChange={setLengthTargetChars}
+              onLengthBlur={blurPersistLengthTarget}
+              plotPace={plotPace}
+              onPlotPacePatch={setPlotPaceSettings}
+              thinkingChainEnabled={thinkingChainEnabled}
+              onToggleThinkingChain={toggleThinkingChain}
+              godLocksNoInterrupt={godLocksNoInterrupt}
+              autoUserReaction={autoUserReaction}
+              onSetAutoUserReaction={setAutoUserReaction}
+              languageValue={normalizeDatingLanguageSettings({
+                plotOutputLanguage: currentArchive.plotOutputLanguage,
+                dialogueLanguage: currentArchive.dialogueLanguage,
+                innerOsLanguage: currentArchive.innerOsLanguage,
+                dialogueTranslationSyncEnabled: currentArchive.dialogueTranslationSyncEnabled,
+                innerOsTranslationSyncEnabled: currentArchive.innerOsTranslationSyncEnabled,
+                dialogueTranslationLanguage: currentArchive.dialogueTranslationLanguage,
+              })}
+              onLanguagePatch={patchDatingLanguageSettings}
+              onOpenHeartWhisper={() => setHeartWhisperOpen(true)}
+              datingCharacterId={currentCharacter.id}
+              plotFontSettings={plotFontSettings}
+              plotFontDataUrls={plotFontDataUrls}
+              onPlotFontChange={patchDatingPlotFontSettings}
+              onPlotFontDataUrlChange={setPlotFontDataUrls}
+              onOpenWorldbook={() => setArchiveWbSheetOpen(true)}
+              onOpenStyle={() => setStyleDrawerOpen(true)}
+              plotImageGenEnabled={plotImageGenEnabled}
+              imageGenConfigured={imageGenConfigured}
+              onTogglePlotImage={() => patchPlotImageSettings({ plotImageGenEnabled: !plotImageGenEnabled })}
+              onOpenPlotImageSettings={() => setPlotImageSettingsOpen(true)}
+              plotImageCountNode={plotImageCountNode}
+            />
+            </div>
+          </div>
+          {isAndroidWeb() ? <KeyboardBottomWhitePad insetPx={keyboardInsetPx} zIndex={45} /> : null}
+        </motion.div>
+      ) : (
+
+
+===== floorJumpItems =====
+  const floorJumpItems = useMemo((): DatingFloorJumpItem[] => {

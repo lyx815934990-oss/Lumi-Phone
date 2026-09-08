@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#29 扫墓导航 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:linear-gradient(180deg,#e8ece8,#d0d8d2);color:#243028}
+.stage{max-width:420px;margin:12px auto 28px;padding:0 12px 24px}
+.hero{width:100%;height:110px;object-fit:cover;border-radius:12px;display:block;filter:saturate(.85)}
+.title-custom{padding:12px 4px;font-size:19px}
+.nav{padding:14px;border-radius:14px;background:linear-gradient(165deg,#f4f6f4,#e4ebe6);border:1px solid #c4d0c8;box-shadow:0 12px 28px rgba(40,50,45,.12)}
+.bar{font-weight:700;font-size:14px;margin-bottom:8px}
+.stats{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;opacity:.75;margin-bottom:10px}
+.map{position:relative;height:140px;border-radius:12px;background:
+radial-gradient(circle at 70% 40%,#c5d4c8 0 8px,transparent 9px),
+linear-gradient(160deg,#c8d4cc,#a8b8b0);overflow:hidden;margin-bottom:10px}
+.map-tag{position:absolute;font-size:10px;background:rgba(36,48,40,.7);color:#f0f4f0;padding:3px 8px;border-radius:4px}
+.map-tag.a{left:10px;bottom:10px}.map-tag.b{right:10px;top:12px}
+.pin{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);text-align:center}
+.pin .sym{font-size:28px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))}
+.pin .lab{font-size:11px;margin-top:2px;color:#1e2a22;font-weight:650}
+.arrive{text-align:center;padding:8px;border-radius:8px;background:#2d6b5722;color:#2d6b57;font-size:12px;font-weight:700;margin-bottom:10px;opacity:0;transition:opacity .5s}
+.arrive.on{opacity:1}
+.wall{max-height:0;overflow:hidden;opacity:0;transition:max-height .55s ease,opacity .45s}
+.wall.on{max-height:420px;opacity:1}
+.note{padding:8px 10px;margin-bottom:6px;border-radius:8px;background:#fff;border-left:3px solid #6a8a70;font-size:12px;line-height:1.55}
+.flower{text-align:center;margin-top:10px;font-size:12px;opacity:.7}
+.btn{width:100%;padding:10px;border:0;border-radius:8px;background:#243028;color:#e8f0e8;font-weight:700;cursor:pointer}
+.btn.done{opacity:.55}
+.tip{margin-top:10px;padding:8px;border-radius:8px;background:#fff8e8;font-size:12px;line-height:1.55}
+.foot{margin-top:8px;font-size:10px;opacity:.5;text-align:center}
+.npc-block{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.npc-row{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:12px;background:rgba(255,255,255,.6);border:1px solid rgba(36,48,40,.1);font-size:12px;line-height:1.5}
+.av{flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(145deg,#d0dcd4,#b0c0b8);display:inline-flex;align-items:center;justify-content:center;font-size:15px}
+.dense{margin-top:16px;padding:14px;border-radius:14px;background:#eef2f0;border:1px solid #c4d0c8;font-size:12px}
+.dx-h{font-weight:700;font-size:14px}.dx-sub{margin:4px 0 10px;font-size:11px;opacity:.75}
+.dx-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;font-size:11px}
+.dx-list{border-radius:8px;overflow:hidden;background:rgba(0,0,0,.03)}
+.dx-row{display:flex;gap:8px;padding:8px 10px;border-bottom:1px dashed rgba(0,0,0,.08);line-height:1.45}
+.dx-t{font-family:ui-monospace,Consolas,monospace;opacity:.55;min-width:22px}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./28.html">上一张</a><b>#29 扫墓导航</b><a href="./30.html">下一张</a></div>
+<p class="fore">克制纪念 · 到达后留言墙展开 · 禁止血腥恐怖</p>
+<div class="stage">
+<img class="hero" alt="memorial path" src="https://image.pollinations.ai/prompt/quiet%20memorial%20garden%20mist%20path%20umbrella%20flowers%20solemn%20no%20people">
+<p class="title-custom">🕯️ 纪念园 · 扫墓导航</p>
+<div class="nav">
+<div class="bar">导航 · 纪念园 · 目的地化名「灯下」</div>
+<div class="stats"><span>步行剩余 <b id="dist">320</b> m</span><span>雨 小</span><span>共伞模式</span></div>
+<div class="map">
+<span class="map-tag a">便利店方向</span>
+<span class="map-tag b">回程 · 伞可共</span>
+<div class="pin"><div class="sym">❦</div><div class="lab" id="pinLab">前往中…</div></div>
+</div>
+<div class="arrive" id="arrive">已到达 · 碑前 · 请肃静</div>
+<button type="button" class="btn" id="go">模拟到达终点</button>
+<div class="wall" id="wall">
+<div class="note"><b>留言 01</b> · 伞还在，人会来。</div>
+<div class="note"><b>留言 02</b> · 今年花换了白的。</div>
+<div class="note"><b>留言 03</b> · 别先走——写给还在路上的人。</div>
+<div class="note"><b>留言 04</b> · 便利店的关东煮热了，回来吃。</div>
+<div class="note"><b>留言 05</b> · 灯坏了也看得见字。</div>
+<div class="note"><b>留言 06</b> · 祁洵到了。「靠过来一点」。</div>
+<div class="note"><b>留言 07</b> · 雨小了，我们走吧——一起。</div>
+<div class="flower">献花示意 · 白菊 · 请勿踩踏草坪</div>
+</div>
+<div class="tip">导航结束语：目的地不只是坐标，也是愿意等的人。本页为克制纪念向戏仿，禁止血腥恐怖与美化自杀。</div>
+<div class="foot">离线地图已缓存 · 回程建议共伞模式 · NAV-8821</div>
+</div>
+<div class="npc-block"><div class="npc-row"><span class="av">🕊️</span><span>园丁：花换了白的，和往年一样。</span></div><div class="npc-row"><span class="av">💬</span><span>祁洵：到了。伞我撑着，你看留言。</span></div><div class="npc-row"><span class="av">🧑</span><span>路人：雨小了，碑前有两个人。</span></div><div class="npc-row"><span class="av">🏪</span><span>店员：关东煮打包好了，回来再热。</span></div><div class="npc-row"><span class="av">📝</span><span>你（自言）：别先走——写给还在路上的人。</span></div><div class="npc-row"><span class="av">🌧️</span><span>雨声：靠过来一点，字才不被打湿。</span></div><div class="npc-row"><span class="av">🕯️</span><span>温虐党：到达后留言淡入，比哭戏克制。</span></div><div class="npc-row"><span class="av">📦</span><span>系统：本区为「扫墓导航」番外旁观串。</span></div></div>
+<div class="dense">
+<div class="dx-h">关联碎片 · 扫墓导航 · #29</div>
+<div class="dx-sub">导航到达后留言墙展开的克制纪念</div>
+<div class="dx-stats"><span>线索 <b>12</b></span><span>旁观 <b>8</b></span><span>结构 <b>9</b></span><span>仪式 <b>开</b></span></div>
+<div class="dx-list"><div class="dx-row"><span class="dx-t">01</span><span>导航卡片：目的地化名「灯下」</span></div><div class="dx-row"><span class="dx-t">02</span><span>路线摘要：步行 · 雨小 · 共伞模式</span></div><div class="dx-row"><span class="dx-t">03</span><span>到达态 · 碑前肃静</span></div><div class="dx-row"><span class="dx-t">04</span><span>留言墙 7 条短 · 含「别先走」</span></div><div class="dx-row"><span class="dx-t">05</span><span>献花示意 · 白菊</span></div><div class="dx-row"><span class="dx-t">06</span><span>祁洵到了 · 「靠过来一点」</span></div><div class="dx-row"><span class="dx-t">07</span><span>回程建议共伞模式</span></div><div class="dx-row"><span class="dx-t">08</span><span>系统注记：样卡 #29 · C类 · 标签 BE·物证</span></div></div>
+</div>
+</div>
+<script>
+(function(){
+var dist=document.getElementById("dist");
+var arrive=document.getElementById("arrive");
+var wall=document.getElementById("wall");
+var btn=document.getElementById("go");
+var pinLab=document.getElementById("pinLab");
+var d=320,timer=null,done=false;
+function paint(){if(dist)dist.textContent=String(d)}
+if(btn)btn.addEventListener("click",function(){
+if(done)return;
+btn.classList.add("done");
+btn.textContent="前往中…";
+if(timer)clearInterval(timer);
+timer=setInterval(function(){
+d=Math.max(0,d-40);
+paint();
+if(d<=0){
+clearInterval(timer);
+done=true;
+if(pinLab)pinLab.textContent="已到达 · 碑前";
+if(arrive)arrive.classList.add("on");
+if(wall)wall.classList.add("on");
+btn.textContent="已到达 · 留言已展开";
+}
+},200);
+});
+paint();
+})();
+</script>
+</body>
+</html>

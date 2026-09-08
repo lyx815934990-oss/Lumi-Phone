@@ -8,6 +8,14 @@ import {
   type DualNarrativeStoryFields,
 } from '../memory/dualNarrativeTime'
 import type { PlotDialogueTranslation, PlotItem } from './types'
+import {
+  normalizePlotReaderComments,
+  type PlotReaderComment,
+} from './datingReaderComments'
+import {
+  normalizePlotHtmlVisual,
+  type PlotHtmlVisual,
+} from './datingPlotHtmlVisual'
 
 /** 取 AI 剧情用于多版本存储/展示的正文与思维链（与 `StoryBlock` / `splitDatingAssistantOutput` 一致） */
 export function getAiPlotVersionSlices(plot: PlotItem): {
@@ -17,6 +25,8 @@ export function getAiPlotVersionSlices(plot: PlotItem): {
   timelineDelta?: StoryTimelineSummaryDelta
   dialogueTranslations?: PlotDialogueTranslation[]
   innerOsTranslations?: PlotDialogueTranslation[]
+  readerComments?: PlotReaderComment[]
+  plotHtmlVisual?: PlotHtmlVisual
 } {
   if (plot.type !== 'ai') return { body: plot.content }
   const {
@@ -26,6 +36,8 @@ export function getAiPlotVersionSlices(plot: PlotItem): {
     versionTimelineDeltas,
     versionDialogueTranslations,
     versionInnerOsTranslations,
+    versionReaderComments,
+    versionPlotHtmlVisuals,
     currentVersionIndex,
   } = getAiVersionArrays(plot)
   const i = Math.max(0, Math.min(versions.length - 1, currentVersionIndex))
@@ -36,6 +48,8 @@ export function getAiPlotVersionSlices(plot: PlotItem): {
     timelineDelta: versionTimelineDeltas[i] ?? plot.timelineDelta,
     dialogueTranslations: versionDialogueTranslations[i] ?? plot.dialogueTranslations,
     innerOsTranslations: versionInnerOsTranslations[i] ?? plot.innerOsTranslations,
+    readerComments: versionReaderComments[i] ?? plot.readerComments,
+    plotHtmlVisual: versionPlotHtmlVisuals[i] ?? plot.plotHtmlVisual,
   }
 }
 
@@ -46,6 +60,8 @@ export function getAiVersionArrays(plot: PlotItem): {
   versionTimelineDeltas: (StoryTimelineSummaryDelta | undefined)[]
   versionDialogueTranslations: (PlotDialogueTranslation[] | undefined)[]
   versionInnerOsTranslations: (PlotDialogueTranslation[] | undefined)[]
+  versionReaderComments: (PlotReaderComment[] | undefined)[]
+  versionPlotHtmlVisuals: (PlotHtmlVisual | undefined)[]
   currentVersionIndex: number
 } {
   const versions = plot.versions?.length ? [...plot.versions] : [plot.content]
@@ -64,11 +80,19 @@ export function getAiVersionArrays(plot: PlotItem): {
   const versionInnerOsTranslations = plot.versionInnerOsTranslations?.length
     ? [...plot.versionInnerOsTranslations]
     : [plot.innerOsTranslations]
+  const versionReaderComments = plot.versionReaderComments?.length
+    ? [...plot.versionReaderComments]
+    : [plot.readerComments]
+  const versionPlotHtmlVisuals = plot.versionPlotHtmlVisuals?.length
+    ? [...plot.versionPlotHtmlVisuals]
+    : [plot.plotHtmlVisual]
   while (versionLogicPasses.length < versions.length) versionLogicPasses.push(undefined)
   while (versionTimelineSnapshots.length < versions.length) versionTimelineSnapshots.push(undefined)
   while (versionTimelineDeltas.length < versions.length) versionTimelineDeltas.push(undefined)
   while (versionDialogueTranslations.length < versions.length) versionDialogueTranslations.push(undefined)
   while (versionInnerOsTranslations.length < versions.length) versionInnerOsTranslations.push(undefined)
+  while (versionReaderComments.length < versions.length) versionReaderComments.push(undefined)
+  while (versionPlotHtmlVisuals.length < versions.length) versionPlotHtmlVisuals.push(undefined)
   const currentVersionIndex =
     typeof plot.currentVersionIndex === 'number' && Number.isFinite(plot.currentVersionIndex)
       ? Math.max(0, Math.min(versions.length - 1, plot.currentVersionIndex))
@@ -80,6 +104,8 @@ export function getAiVersionArrays(plot: PlotItem): {
     versionTimelineDeltas,
     versionDialogueTranslations,
     versionInnerOsTranslations,
+    versionReaderComments,
+    versionPlotHtmlVisuals,
     currentVersionIndex,
   }
 }
@@ -93,6 +119,8 @@ export function initialAiPlotVersions(
   timelineDelta?: StoryTimelineSummaryDelta,
   dialogueTranslations?: PlotDialogueTranslation[],
   innerOsTranslations?: PlotDialogueTranslation[],
+  readerComments?: PlotReaderComment[],
+  plotHtmlVisual?: PlotHtmlVisual,
 ): Pick<
   PlotItem,
   | 'content'
@@ -109,11 +137,17 @@ export function initialAiPlotVersions(
   | 'timelineSnapshot'
   | 'timelineDelta'
   | 'currentVersionIndex'
+  | 'readerComments'
+  | 'versionReaderComments'
+  | 'plotHtmlVisual'
+  | 'versionPlotHtmlVisuals'
 > {
   const snap = timelineSnapshot?.trim() || undefined
   const delta = timelineDelta && Object.keys(timelineDelta).length ? timelineDelta : undefined
   const tr = dialogueTranslations?.length ? dialogueTranslations : undefined
   const osTr = innerOsTranslations?.length ? innerOsTranslations : undefined
+  const rc = readerComments?.length ? normalizePlotReaderComments(readerComments) : undefined
+  const hv = normalizePlotHtmlVisual(plotHtmlVisual)
   return {
     content,
     logicPass,
@@ -128,6 +162,10 @@ export function initialAiPlotVersions(
     innerOsTranslations: osTr,
     timelineSnapshot: snap,
     timelineDelta: delta,
+    readerComments: rc,
+    versionReaderComments: [rc],
+    plotHtmlVisual: hv,
+    versionPlotHtmlVisuals: [hv],
     currentVersionIndex: 0,
   }
 }
@@ -142,6 +180,8 @@ export function appendAiRegenerateVersion(
   newTimelineDelta?: StoryTimelineSummaryDelta,
   newDialogueTranslations?: PlotDialogueTranslation[],
   newInnerOsTranslations?: PlotDialogueTranslation[],
+  newReaderComments?: PlotReaderComment[],
+  newPlotHtmlVisual?: PlotHtmlVisual,
 ): PlotItem {
   const {
     versions,
@@ -150,6 +190,8 @@ export function appendAiRegenerateVersion(
     versionTimelineDeltas,
     versionDialogueTranslations,
     versionInnerOsTranslations,
+    versionReaderComments,
+    versionPlotHtmlVisuals,
   } = getAiVersionArrays(prev)
   const nextVs = [...versions, newContent]
   const nextLp = [...versionLogicPasses, newLogicPass]
@@ -163,15 +205,27 @@ export function appendAiRegenerateVersion(
     ...versionInnerOsTranslations,
     newInnerOsTranslations?.length ? newInnerOsTranslations : undefined,
   ]
+  const nextRc = [
+    ...versionReaderComments,
+    newReaderComments?.length ? normalizePlotReaderComments(newReaderComments) : undefined,
+  ]
+  const nextHv = [
+    ...versionPlotHtmlVisuals,
+    normalizePlotHtmlVisual(newPlotHtmlVisual),
+  ]
   while (nextLp.length < nextVs.length) nextLp.push(undefined)
   while (nextTs.length < nextVs.length) nextTs.push(undefined)
   while (nextTd.length < nextVs.length) nextTd.push(undefined)
   while (nextTr.length < nextVs.length) nextTr.push(undefined)
   while (nextOsTr.length < nextVs.length) nextOsTr.push(undefined)
+  while (nextRc.length < nextVs.length) nextRc.push(undefined)
+  while (nextHv.length < nextVs.length) nextHv.push(undefined)
   const snap = nextTs[nextTs.length - 1]
   const delta = nextTd[nextTd.length - 1]
   const tr = nextTr[nextTr.length - 1]
   const osTr = nextOsTr[nextOsTr.length - 1]
+  const rc = nextRc[nextRc.length - 1]
+  const hv = nextHv[nextHv.length - 1]
   return {
     ...prev,
     content: newContent,
@@ -185,6 +239,10 @@ export function appendAiRegenerateVersion(
     dialogueTranslations: tr,
     versionInnerOsTranslations: nextOsTr,
     innerOsTranslations: osTr,
+    readerComments: rc,
+    versionReaderComments: nextRc,
+    plotHtmlVisual: hv,
+    versionPlotHtmlVisuals: nextHv,
     timelineSnapshot: snap,
     timelineDelta: delta,
     currentVersionIndex: nextVs.length - 1,
@@ -202,6 +260,8 @@ export function plotWithVersionIndex(plot: PlotItem, index: number): PlotItem {
     versionTimelineDeltas,
     versionDialogueTranslations,
     versionInnerOsTranslations,
+    versionReaderComments,
+    versionPlotHtmlVisuals,
   } = getAiVersionArrays(plot)
   const i = Math.max(0, Math.min(versions.length - 1, index))
   return {
@@ -212,12 +272,16 @@ export function plotWithVersionIndex(plot: PlotItem, index: number): PlotItem {
     timelineDelta: versionTimelineDeltas[i],
     dialogueTranslations: versionDialogueTranslations[i],
     innerOsTranslations: versionInnerOsTranslations[i],
+    readerComments: versionReaderComments[i],
+    plotHtmlVisual: versionPlotHtmlVisuals[i],
     versions,
     versionLogicPasses,
     versionTimelineSnapshots,
     versionTimelineDeltas,
     versionDialogueTranslations,
     versionInnerOsTranslations,
+    versionReaderComments,
+    versionPlotHtmlVisuals,
     currentVersionIndex: i,
   }
 }
@@ -302,6 +366,7 @@ export function plotWithEditedCurrentVersion(plot: PlotItem, draftBody: string):
     versionTimelineDeltas,
     versionDialogueTranslations,
     versionInnerOsTranslations,
+    versionReaderComments,
     currentVersionIndex,
   } = getAiVersionArrays(plot)
   const nextVs = [...versions]
@@ -310,6 +375,7 @@ export function plotWithEditedCurrentVersion(plot: PlotItem, draftBody: string):
   const nextTd = [...versionTimelineDeltas]
   const nextTr = [...versionDialogueTranslations]
   const nextOsTr = [...versionInnerOsTranslations]
+  const nextRc = [...versionReaderComments]
   const i = currentVersionIndex
   nextVs[i] = draftBody.trimEnd()
   while (nextLp.length < nextVs.length) nextLp.push(undefined)
@@ -317,6 +383,7 @@ export function plotWithEditedCurrentVersion(plot: PlotItem, draftBody: string):
   while (nextTd.length < nextVs.length) nextTd.push(undefined)
   while (nextTr.length < nextVs.length) nextTr.push(undefined)
   while (nextOsTr.length < nextVs.length) nextOsTr.push(undefined)
+  while (nextRc.length < nextVs.length) nextRc.push(undefined)
   return {
     ...plot,
     content: nextVs[i]!,
@@ -325,12 +392,14 @@ export function plotWithEditedCurrentVersion(plot: PlotItem, draftBody: string):
     timelineDelta: nextTd[i],
     dialogueTranslations: nextTr[i],
     innerOsTranslations: nextOsTr[i],
+    readerComments: nextRc[i],
     versions: nextVs,
     versionLogicPasses: nextLp,
     versionTimelineSnapshots: nextTs,
     versionTimelineDeltas: nextTd,
     versionDialogueTranslations: nextTr,
     versionInnerOsTranslations: nextOsTr,
+    versionReaderComments: nextRc,
     currentVersionIndex: i,
   }
 }

@@ -83,8 +83,12 @@ export type MomentsImageGenParams = {
   characterAppearanceRefNote?: string
   /** 自拍+参考图：档案性别，写入锁脸 prompt 防止换性别 */
   characterGenderHint?: string
-  /** 非自拍配图：参考图仅锁画风/渲染，不锁第三人称构图 */
+  /** 非自拍配图：参考图仅锁画风/渲染，不锁第三人称构图（旧字段；与 referenceLock* 并存时后者优先） */
   referenceStyleOnly?: boolean
+  /** 显式控制：是否锁定参考图五官/身份 */
+  referenceLockIdentity?: boolean
+  /** 显式控制：是否锁定参考图画风/渲染 */
+  referenceLockStyle?: boolean
   /** 角色配图：原始中文 tag，用于 POV/景别推断（prompt 字段可能已译成英文） */
   characterMediaPromptForInference?: string
   /** 剧情配图：前 N 张参考图为约会角色，其后为玩家 */
@@ -106,6 +110,26 @@ const REF_KIND_PROMPT_LABELS: Record<'face' | 'half' | 'full' | 'side' | 'other'
   side: 'side profile',
   full: 'full-body',
   other: 'additional view',
+}
+
+export type ReferenceImageLockMode = 'full' | 'identity_only' | 'style_only' | 'none'
+
+export function resolveReferenceImageLockMode(
+  params: Pick<
+    MomentsImageGenParams,
+    'referenceStyleOnly' | 'referenceLockIdentity' | 'referenceLockStyle'
+  >,
+): ReferenceImageLockMode {
+  if (params.referenceLockIdentity !== undefined || params.referenceLockStyle !== undefined) {
+    const lockIdentity = params.referenceLockIdentity ?? false
+    const lockStyle = params.referenceLockStyle ?? false
+    if (lockIdentity && lockStyle) return 'full'
+    if (lockIdentity) return 'identity_only'
+    if (lockStyle) return 'style_only'
+    return 'none'
+  }
+  if (params.referenceStyleOnly === true) return 'style_only'
+  return 'full'
 }
 
 function resolveReferenceUrlsFromParams(params: MomentsImageGenParams): string[] {
@@ -292,6 +316,104 @@ function buildReferenceStyleOnlyLockPrompt(
     `${notePart}${refPart}Match reference art style and rendering medium only; do NOT copy reference third-person composition unless the scene prompt asks for it. ` +
     `Keep the SAME medium as the reference (2D/illustration/photo/CGI — whichever the reference is); do NOT reinterpret into a different medium. Scene request: ${scenePrompt}`
   )
+}
+
+function buildReferenceIdentityOnlyLockPrompt(
+  scenePrompt: string,
+  genderHint?: string,
+  refCount = 1,
+  refLabels?: string[],
+  appearanceRefNote?: string,
+): string {
+  const genderPart = genderHint?.trim()
+    ? `The subject is ${genderHint.trim()}. Do NOT change gender, sex, or sex presentation. `
+    : ''
+  const notePart = appearanceRefNote?.trim()
+    ? `Mandatory character identity traits from user reference notes (face/body only, must NOT be ignored): ${appearanceRefNote.trim()}. `
+    : ''
+  const identityPart =
+    refCount > 1
+      ? `You are given ${refCount} reference images of the SAME character from different views (${refLabels?.join(', ') ?? 'multiple angles'}). Preserve consistent identity, face, hairstyle, hair color, eye shape, skin tone, and body proportions ONLY. `
+      : 'Preserve the SAME individual face, hairstyle, hair color, eye shape, and skin tone from the reference image. '
+  return (
+    `${genderPart}${notePart}${identityPart}` +
+    `Do NOT copy the reference art style, line quality, color palette, rendering medium, background, or composition — follow the scene prompt and configured global style instead. Scene request: ${scenePrompt}`
+  )
+}
+
+function buildReferenceLooseContextPrompt(
+  scenePrompt: string,
+  refCount = 1,
+  appearanceRefNote?: string,
+): string {
+  const notePart = appearanceRefNote?.trim() ? `Optional user notes: ${appearanceRefNote.trim()}. ` : ''
+  const refPart =
+    refCount > 1
+      ? `${refCount} reference images are attached for optional loose context. `
+      : 'A reference image is attached for optional loose context. '
+  return (
+    `${notePart}${refPart}` +
+    `Do NOT lock identity, face, or art style from the reference unless the scene prompt explicitly requires it. Scene request: ${scenePrompt}`
+  )
+}
+
+function buildReferenceLockPromptForMode(
+  lockMode: ReferenceImageLockMode,
+  params: {
+    prompt: string
+    genderHint?: string
+    refCount: number
+    refLabels?: string[]
+    appearanceRefNote?: string
+    promptContext?: MomentsImageGenParams['promptContext']
+    datingPlotCharacterRefCount?: number
+    playerGenderHint?: string
+  },
+): string {
+  const {
+    prompt,
+    genderHint,
+    refCount,
+    refLabels,
+    appearanceRefNote,
+    promptContext,
+    datingPlotCharacterRefCount = 0,
+    playerGenderHint,
+  } = params
+  if (promptContext === 'dating_plot') {
+    return `${buildDatingPlotReferenceIdentityLockPrompt(
+      prompt,
+      genderHint,
+      refCount,
+      refLabels,
+      appearanceRefNote,
+      datingPlotCharacterRefCount,
+      playerGenderHint,
+    )} ${REFERENCE_MEDIUM_LOCK_GUARD}`
+  }
+  switch (lockMode) {
+    case 'style_only':
+      return `${buildReferenceStyleOnlyLockPrompt(prompt, refCount, appearanceRefNote)} ${REFERENCE_MEDIUM_LOCK_GUARD}`
+    case 'identity_only':
+      return buildReferenceIdentityOnlyLockPrompt(
+        prompt,
+        genderHint,
+        refCount,
+        refLabels,
+        appearanceRefNote,
+      )
+    case 'none':
+      return buildReferenceLooseContextPrompt(prompt, refCount, appearanceRefNote)
+    case 'full':
+    default:
+      return `${buildReferenceIdentityLockPrompt(
+        prompt,
+        genderHint,
+        refCount,
+        refLabels,
+        appearanceRefNote,
+      )} ${REFERENCE_MEDIUM_LOCK_GUARD}`
+  }
 }
 
 function buildReferenceIdentityLockPrompt(
@@ -707,6 +829,8 @@ async function requestGeminiGenerateContentImage(params: {
   characterGenderHint?: string
   characterAppearanceRefNote?: string
   referenceStyleOnly?: boolean
+  referenceLockIdentity?: boolean
+  referenceLockStyle?: boolean
   promptContext?: MomentsImageGenParams['promptContext']
   datingPlotCharacterRefCount?: number
   datingPlotPlayerGenderHint?: string
@@ -743,30 +867,19 @@ async function requestGeminiGenerateContentImage(params: {
       parts.push({ text: `Reference image (${kindLabel}): ${refRole}.` })
     })
     parts.push({
-      text:
-        (params.promptContext === 'dating_plot'
-          ? buildDatingPlotReferenceIdentityLockPrompt(
-              params.prompt,
-              params.characterGenderHint,
-              refDataUrls.length,
-              refLabels,
-              params.characterAppearanceRefNote,
-              params.datingPlotCharacterRefCount ?? 0,
-              params.datingPlotPlayerGenderHint,
-            )
-          : params.referenceStyleOnly
-            ? buildReferenceStyleOnlyLockPrompt(
-                params.prompt,
-                refDataUrls.length,
-                params.characterAppearanceRefNote,
-              )
-            : buildReferenceIdentityLockPrompt(
-                params.prompt,
-                params.characterGenderHint,
-                refDataUrls.length,
-                refLabels,
-                params.characterAppearanceRefNote,
-              )) + ` ${REFERENCE_MEDIUM_LOCK_GUARD}`,
+      text: buildReferenceLockPromptForMode(
+        resolveReferenceImageLockMode(params),
+        {
+          prompt: params.prompt,
+          genderHint: params.characterGenderHint,
+          refCount: refDataUrls.length,
+          refLabels,
+          appearanceRefNote: params.characterAppearanceRefNote,
+          promptContext: params.promptContext,
+          datingPlotCharacterRefCount: params.datingPlotCharacterRefCount ?? 0,
+          playerGenderHint: params.datingPlotPlayerGenderHint,
+        },
+      ),
     })
   } else {
     parts.push({ text: params.prompt })
@@ -874,18 +987,21 @@ function buildGptImageReferenceEditPrompt(
   refCount = 1,
   refLabels?: string[],
   appearanceRefNote?: string,
-  styleOnly = false,
+  lockMode: ReferenceImageLockMode = 'full',
   promptContext?: MomentsImageGenParams['promptContext'],
   characterRefCount = 0,
   playerGenderHint?: string,
 ): string {
-  if (promptContext === 'dating_plot') {
-    return `${buildDatingPlotReferenceIdentityLockPrompt(prompt, genderHint, refCount, refLabels, appearanceRefNote, characterRefCount, playerGenderHint)} ${REFERENCE_MEDIUM_LOCK_GUARD}`
-  }
-  if (styleOnly) {
-    return `${buildReferenceStyleOnlyLockPrompt(prompt, refCount, appearanceRefNote)} ${REFERENCE_MEDIUM_LOCK_GUARD}`
-  }
-  return `${buildReferenceIdentityLockPrompt(prompt, genderHint, refCount, refLabels, appearanceRefNote)} ${REFERENCE_MEDIUM_LOCK_GUARD}`
+  return buildReferenceLockPromptForMode(lockMode, {
+    prompt,
+    genderHint,
+    refCount,
+    refLabels,
+    appearanceRefNote,
+    promptContext,
+    datingPlotCharacterRefCount: characterRefCount,
+    playerGenderHint,
+  })
 }
 
 function extractOpenAiImagePayloadError(data: unknown): string {
@@ -1155,6 +1271,8 @@ async function generateGptImageWithReference(params: {
   characterGenderHint?: string
   characterAppearanceRefNote?: string
   referenceStyleOnly?: boolean
+  referenceLockIdentity?: boolean
+  referenceLockStyle?: boolean
   promptContext?: MomentsImageGenParams['promptContext']
   datingPlotCharacterRefCount?: number
   datingPlotPlayerGenderHint?: string
@@ -1171,7 +1289,7 @@ async function generateGptImageWithReference(params: {
       params.referenceCount ?? 1,
       params.referenceLabels,
       params.characterAppearanceRefNote,
-      params.referenceStyleOnly === true,
+      resolveReferenceImageLockMode(params),
       params.promptContext,
       params.datingPlotCharacterRefCount ?? 0,
       params.datingPlotPlayerGenderHint,
@@ -1264,6 +1382,8 @@ async function generateGeminiImage(params: MomentsImageGenParams): Promise<strin
     characterGenderHint: params.characterGenderHint,
     characterAppearanceRefNote: params.characterAppearanceRefNote,
     referenceStyleOnly: params.referenceStyleOnly,
+    referenceLockIdentity: params.referenceLockIdentity,
+    referenceLockStyle: params.referenceLockStyle,
     promptContext: params.promptContext,
     datingPlotCharacterRefCount: params.datingPlotCharacterRefCount,
     datingPlotPlayerGenderHint: params.datingPlotPlayerGenderHint,
@@ -1312,6 +1432,8 @@ async function generateOpenaiImage(params: MomentsImageGenParams): Promise<strin
         characterGenderHint: params.characterGenderHint,
         characterAppearanceRefNote: params.characterAppearanceRefNote,
         referenceStyleOnly: params.referenceStyleOnly,
+        referenceLockIdentity: params.referenceLockIdentity,
+        referenceLockStyle: params.referenceLockStyle,
         promptContext: params.promptContext,
         datingPlotCharacterRefCount: params.datingPlotCharacterRefCount,
         datingPlotPlayerGenderHint: params.datingPlotPlayerGenderHint,
@@ -1392,6 +1514,8 @@ async function generateCustomGeminiNativeImage(
     characterGenderHint: params.characterGenderHint,
     characterAppearanceRefNote: params.characterAppearanceRefNote,
     referenceStyleOnly: params.referenceStyleOnly,
+    referenceLockIdentity: params.referenceLockIdentity,
+    referenceLockStyle: params.referenceLockStyle,
     promptContext: params.promptContext,
     datingPlotCharacterRefCount: params.datingPlotCharacterRefCount,
     datingPlotPlayerGenderHint: params.datingPlotPlayerGenderHint,
@@ -1518,6 +1642,8 @@ async function generateCustomImage(params: MomentsImageGenParams): Promise<strin
           characterGenderHint: params.characterGenderHint,
           characterAppearanceRefNote: params.characterAppearanceRefNote,
           referenceStyleOnly: params.referenceStyleOnly,
+          referenceLockIdentity: params.referenceLockIdentity,
+          referenceLockStyle: params.referenceLockStyle,
           promptContext: params.promptContext,
           datingPlotCharacterRefCount: params.datingPlotCharacterRefCount,
           datingPlotPlayerGenderHint: params.datingPlotPlayerGenderHint,

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#20 影院选座 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 0 28px}
+.hero{width:100%;height:128px;object-fit:cover;display:block;filter:saturate(1.05) contrast(1.04)}
+.shell{max-width:800px;margin:0 auto;border-radius:0 0 18px 18px;overflow:hidden;box-shadow:0 18px 48px rgba(20,16,12,.18)}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750;letter-spacing:.04em}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px;opacity:.82}
+.stats b{font-weight:750}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;flex-shrink:0;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.npc b{font-weight:700}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.list{padding:4px 12px 8px}
+.row{padding:9px 10px;margin-bottom:7px;border-radius:10px;font-size:12.5px;line-height:1.55}
+.row .m{font-size:10px;opacity:.6}
+.tabbar{display:flex;gap:0}
+.tabbar button{flex:1;border:0;padding:11px 8px;font-size:12px;cursor:pointer;background:transparent;font-weight:650}
+.tabbar button.on{font-weight:800}
+.panel{display:none}.panel.on{display:block}
+.pulse{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.55}}
+@keyframes blink{50%{opacity:.45}}
+@keyframes flip{0%{transform:rotateX(0)}40%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+.flip{animation:flip .45s ease}
+body{background:#0e0e10;color:#eee}
+.shell{background:linear-gradient(180deg,#1a1a1c,#121214);border:1px solid #2a2a30;color:#eee}
+.title-custom{background:#141416;border-bottom:1px solid #2a2a30;color:#f5e3a8}
+.stats{background:#101012;color:#c8c0b0}
+.screen{text-align:center;padding:10px;margin:10px 28px 6px;background:linear-gradient(180deg,#3a3a42,#222);border-radius:4px;font-size:10px;letter-spacing:.35em;color:#aaa;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.cinema{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;padding:8px 16px 16px}
+.cs{aspect-ratio:1;border:0;border-radius:4px 4px 6px 6px;background:#3a3a40;color:#ddd;font-size:8px;cursor:pointer;padding:0}
+.cs.sold{opacity:.28;cursor:default}
+.cs.pick{background:#c9a24b;color:#1a1208;font-weight:800}
+.cs.gap{background:transparent;outline:1px dashed #f5e3a8;box-shadow:none}
+.cs.breathe{animation:breathe 1.6s ease-in-out infinite}
+@keyframes breathe{50%{outline-color:#fff3c4;box-shadow:0 0 12px rgba(245,227,168,.35)}}
+.cs.sel{outline:2px solid #f5e3a8}
+.ticket{
+margin:8px 12px;padding:12px;border-radius:12px;
+background:repeating-linear-gradient(90deg,transparent,transparent 11px,rgba(255,255,255,.04) 11px,rgba(255,255,255,.04) 12px),linear-gradient(180deg,#2a2418,#1a1610);
+border:1px dashed #c9a24b55;font-size:12px;line-height:1.65;color:#f5e3a8
+}
+.row{background:#1c1c20;border:1px solid #2a2a30;color:#ddd}
+.tip{background:#1a2030;color:#f5e3a8;border:1px solid #2a3448}
+.npc{background:#1a2420;color:#c8e6c9}
+.btn{background:#c9a24b;color:#1a1208;margin:0 12px 10px}
+.foot{color:#888}
+.lock{font-variant-numeric:tabular-nums;color:#f5e3a8;font-weight:800}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./19.html">上一张</a><b>#20 影院选座</b><a href="./21.html">下一张</a></div>
+<p class="fore">中间空一格的呼吸光，比预告片更先把人钉在座位上。</p>
+<div class="stage">
+<div class="shell">
+<img class="hero" alt="影院选座" src="https://image.pollinations.ai/prompt/dark%20cinema%20auditorium%20empty%20seats%20screen%20glow%20ticket%20stub%20aesthetic%20no%20people">
+<p class="title-custom">选座 · 《未命名的雨夜》· 厅 3</p>
+<div class="stats"><span>余票 <b>18</b></span><span>锁座 <b class="lock" id="lock">04:59</b></span><span>双人优惠</span></div>
+<div class="screen">SCREEN</div>
+<div class="cinema"><button type="button" class="cs sold" data-i="0" disabled></button><button type="button" class="cs" data-i="1" ></button><button type="button" class="cs" data-i="2" ></button><button type="button" class="cs" data-i="3" ></button><button type="button" class="cs" data-i="4" ></button><button type="button" class="cs" data-i="5" ></button><button type="button" class="cs" data-i="6" ></button><button type="button" class="cs sold" data-i="7" disabled></button><button type="button" class="cs sold" data-i="8" disabled></button><button type="button" class="cs" data-i="9" ></button><button type="button" class="cs" data-i="10" ></button><button type="button" class="cs" data-i="11" ></button><button type="button" class="cs" data-i="12" ></button><button type="button" class="cs" data-i="13" ></button><button type="button" class="cs" data-i="14" ></button><button type="button" class="cs sold" data-i="15" disabled></button><button type="button" class="cs sold" data-i="16" disabled></button><button type="button" class="cs" data-i="17" ></button><button type="button" class="cs" data-i="18" ></button><button type="button" class="cs pick" data-i="19" >F4</button><button type="button" class="cs gap breathe" data-i="20" ></button><button type="button" class="cs pick" data-i="21" >F6</button><button type="button" class="cs" data-i="22" ></button><button type="button" class="cs sold" data-i="23" disabled></button><button type="button" class="cs sold" data-i="24" disabled></button><button type="button" class="cs" data-i="25" ></button><button type="button" class="cs" data-i="26" ></button><button type="button" class="cs" data-i="27" ></button><button type="button" class="cs" data-i="28" ></button><button type="button" class="cs" data-i="29" ></button><button type="button" class="cs" data-i="30" ></button><button type="button" class="cs sold" data-i="31" disabled></button><button type="button" class="cs sold" data-i="32" disabled></button><button type="button" class="cs" data-i="33" ></button><button type="button" class="cs" data-i="34" ></button><button type="button" class="cs" data-i="35" ></button><button type="button" class="cs" data-i="36" ></button><button type="button" class="cs" data-i="37" ></button><button type="button" class="cs" data-i="38" ></button><button type="button" class="cs sold" data-i="39" disabled></button></div>
+<div class="ticket" id="ticketInfo">已选 <b>F4 / F6</b> · <span style="color:#f5e3a8">中间空一格</span> · 锁座倒计时同步<br>空位备注：留给伞、留给犹豫、留给「靠过来一点」。<br>取票码 8821 · 便利店亦可代取 · 搭档待邀请：祁洵？</div>
+<div class="list">
+<div class="row"><span class="av">🎬</span><b>场次</b> <span class="m">今日 21:40 · 字幕中文</span></div>
+<div class="row"><span class="av">🎫</span><b>搭档</b> <span class="m">待邀请 · 祁洵？</span></div>
+<div class="row"><span class="av">🍿</span><b>套餐</b> <span class="m">关东煮味爆米花？系统无此 SKU</span></div>
+<div class="row"><span class="av">💡</span><b>无障碍</b> <span class="m">厅内灯可控 · 坏了请呼唤服务</span></div>
+<div class="row"><span class="av">↩️</span><b>退改</b> <span class="m">开场前 30 分 · 「别先走」不构成退票理由</span></div>
+<div class="row"><span class="av">🏪</span><b>取票</b> <span class="m">取票码 8821 · 便利店代取</span></div>
+</div>
+<button class="btn" type="button" id="confirm">确认选座 · 票根感</button>
+<div class="tip">中间空座正在呼吸发光 · 仪式已触发</div>
+<div class="npc"><span class="av">🕶️</span><div><b>旁观 NPC</b>：两个人中间空一格，比并排坐更像故事。</div></div>
+<div class="foot">影城会员：银卡 · 本片想看列表 +1 · 深色影厅材质</div>
+</div>
+</div>
+<script>
+(function(){
+var seats=document.querySelectorAll(".cs:not(.sold)");
+var lock=document.getElementById("lock");
+var confirm=document.getElementById("confirm");
+var left=4*60+59;
+for(var i=0;i<seats.length;i++){
+seats[i].addEventListener("click",function(){
+if(this.classList.contains("sold"))return;
+this.classList.toggle("sel");
+});
+}
+if(confirm)confirm.addEventListener("click",function(){
+this.textContent="已锁座 · 票根已生成（戏仿）";
+this.disabled=true;
+});
+setInterval(function(){
+if(left<=0)return;
+left--;
+var m=Math.floor(left/60),s=left%60;
+if(lock)lock.textContent=(m<10?"0":"")+m+":"+(s<10?"0":"")+s;
+},1000);
+})();
+</script>
+</body>
+</html>

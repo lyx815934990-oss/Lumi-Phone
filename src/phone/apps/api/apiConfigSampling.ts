@@ -39,7 +39,8 @@ export function pickApiConfigSamplingFields(raw: Partial<ApiConfig> | null | und
 
 export type ChatSamplingOptions = {
   temperature?: number
-  max_tokens?: number
+  /** null = 不在请求体写入 max_tokens / maxOutputTokens（不设输出上限） */
+  max_tokens?: number | null
   top_p?: number
   frequency_penalty?: number
   presence_penalty?: number
@@ -49,14 +50,15 @@ export type ChatSamplingOptions = {
 /**
  * 温度 / max_tokens / top_p / 惩罚：配置页有值则优先于各功能硬编码；
  * 配置页留空时，才回落单次 options（如起名等内置上限）；max_tokens 再无则用系统默认 12800。
- * 可选参数仅在有值时写入请求体（max_tokens 始终有有效上限）。
+ * 单次传入 max_tokens: null 时，不写入任何输出上限。
+ * 可选参数仅在有值时写入请求体。
  */
 export function resolveChatSampling(
   cfg: ApiConfig,
   options?: ChatSamplingOptions,
 ): {
   temperature: number
-  maxTokens: number
+  maxTokens?: number
   topP?: number
   frequencyPenalty?: number
   presencePenalty?: number
@@ -69,13 +71,15 @@ export function resolveChatSampling(
         ? options.temperature
         : 0.7
 
-  // 用户在 API 设置里调的最大 Token 覆盖各功能内置上限；未调则用 options，再无则系统默认
+  // null = 明确不限制；否则 API 设置 > 单次 options > 系统默认
   const maxTokens =
-    typeof cfg.maxTokens === 'number' && Number.isFinite(cfg.maxTokens)
-      ? Math.floor(cfg.maxTokens)
-      : typeof options?.max_tokens === 'number' && Number.isFinite(options.max_tokens)
-        ? Math.floor(options.max_tokens)
-        : DEFAULT_MAX_TOKENS
+    options && 'max_tokens' in options && options.max_tokens === null
+      ? undefined
+      : typeof cfg.maxTokens === 'number' && Number.isFinite(cfg.maxTokens)
+        ? Math.floor(cfg.maxTokens)
+        : typeof options?.max_tokens === 'number' && Number.isFinite(options.max_tokens)
+          ? Math.floor(options.max_tokens)
+          : DEFAULT_MAX_TOKENS
 
   const topP =
     typeof cfg.topP === 'number' && Number.isFinite(cfg.topP)
@@ -105,7 +109,7 @@ export function resolveChatSampling(
 
   return {
     temperature,
-    maxTokens,
+    ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(topP !== undefined ? { topP } : {}),
     ...(frequencyPenalty !== undefined ? { frequencyPenalty } : {}),
     ...(presencePenalty !== undefined ? { presencePenalty } : {}),

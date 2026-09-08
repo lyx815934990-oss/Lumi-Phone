@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#15 相亲评分 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 0 28px}
+.hero{width:100%;height:128px;object-fit:cover;display:block;filter:saturate(1.05) contrast(1.04)}
+.shell{max-width:800px;margin:0 auto;border-radius:0 0 18px 18px;overflow:hidden;box-shadow:0 18px 48px rgba(20,16,12,.18)}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750;letter-spacing:.04em}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px;opacity:.82}
+.stats b{font-weight:750}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;flex-shrink:0;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.npc b{font-weight:700}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.list{padding:4px 12px 8px}
+.row{padding:9px 10px;margin-bottom:7px;border-radius:10px;font-size:12.5px;line-height:1.55}
+.row .m{font-size:10px;opacity:.6}
+.tabbar{display:flex;gap:0}
+.tabbar button{flex:1;border:0;padding:11px 8px;font-size:12px;cursor:pointer;background:transparent;font-weight:650}
+.tabbar button.on{font-weight:800}
+.panel{display:none}.panel.on{display:block}
+.pulse{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.55}}
+@keyframes blink{50%{opacity:.45}}
+@keyframes flip{0%{transform:rotateX(0)}40%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+.flip{animation:flip .45s ease}
+body{background-color:#f4efe6;background-image:radial-gradient(rgba(90,70,40,.06) 0.6px,transparent 0.6px),linear-gradient(180deg,#f7f2e8,#efe6d6);background-size:3px 3px,auto;color:#2a2420}
+.shell{background:#fff;border:1px solid #e6dbc8}
+.title-custom{border-bottom:1px solid #efe6d8;background:#fffdf8}
+.stats{background:#f3ebe0}
+.card{display:flex;gap:12px;align-items:center;padding:12px 14px}
+.avatar-lg{width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#f5e3a8,#c9a24b);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:#4a3818;box-shadow:0 6px 16px rgba(160,120,40,.25)}
+.radar-wrap{padding:0 12px}
+.bars{padding:4px 14px 8px}
+.bar{margin:0 0 10px}
+.bar .lab{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
+.bar .track{height:10px;border-radius:99px;background:#efe6d8;overflow:hidden}
+.bar .fill{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#c9a24b,#e0c070);transition:width .7s ease}
+.bar.crit .fill{background:linear-gradient(90deg,#c45c2c,#e88a5a)}
+.bar.crit .lab b{color:#c45c2c}
+.warn{margin:8px 12px;padding:8px 10px;border-radius:8px;background:#fff0e8;color:#8a4030;font-size:12px;border:1px solid #f0c8b8}
+.panel-box{margin:8px 12px;padding:10px;border-radius:10px;background:#f7f1e6;font-size:12px;line-height:1.6}
+.toggle{display:flex;gap:0;margin:10px 12px;border:1px solid #ddd;border-radius:8px;overflow:hidden;width:fit-content}
+.toggle button{border:0;padding:7px 14px;font-size:11px;cursor:pointer;background:#fff;color:#666}
+.toggle button.on{background:#c9a24b;color:#fff;font-weight:700}
+.npc{background:#eef2ff}
+.btn{background:#2d6b57;color:#fff;margin:0 12px 10px}
+.view-radar .bars{display:none}
+.view-bars .radar-wrap{display:none}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./14.html">上一张</a><b>#15 相亲评分</b><a href="./16.html">下一张</a></div>
+<p class="fore">某一维暴击时，所有甜都显得像补考通知。</p>
+<div class="stage">
+<div class="shell" id="scoreApp">
+<img class="hero" alt="相亲评分" src="https://image.pollinations.ai/prompt/dating%20score%20app%20soft%20paper%20texture%20warm%20desk%20light%20radar%20chart%20aesthetic%20no%20people">
+<p class="title-custom">相亲评分 · 本场 · 雨夜加赛</p>
+<div class="stats"><span>综合 <b>3.2</b></span><span>评委 <b>5</b></span><span>暴击维 <b>1</b></span><span>场次 #8821</span></div>
+<div class="card"><div class="avatar-lg">祁</div><div><b>化名·阿洵</b><div class="m" style="font-size:11px;opacity:.65;margin-top:2px">综合 3.2 / 5 · 关键词：伞 / 关东煮 / 没事</div></div></div>
+<div class="toggle"><button type="button" class="on" data-view="radar">雷达</button><button type="button" data-view="bars">条形</button></div>
+<div class="radar-wrap">
+<svg viewBox="0 0 220 180" width="100%" height="170" aria-hidden="true">
+<polygon points="110,20 180,70 155,145 65,145 40,70" fill="none" stroke="#e0d4c0" stroke-width="1"/>
+<polygon points="110,50 150,80 138,125 82,125 70,80" fill="rgba(201,162,75,.25)" stroke="#c9a24b" stroke-width="2"/>
+<circle cx="110" cy="95" r="3" fill="#c45c2c"/>
+<text x="110" y="14" text-anchor="middle" font-size="10" fill="#8a6b28">共情</text>
+<text x="190" y="72" font-size="10" fill="#8a6b28">行动</text>
+<text x="160" y="160" font-size="10" fill="#c45c2c">表达欲↓</text>
+<text x="40" y="160" font-size="10" fill="#8a6b28">稳定</text>
+<text x="8" y="72" font-size="10" fill="#8a6b28">谈吐</text>
+</svg>
+</div>
+<div class="bars">
+<div class="bar" data-w="80"><div class="lab"><span>外貌</span><b>4.0</b></div><div class="track"><i class="fill"></i></div></div>
+<div class="bar" data-w="70"><div class="lab"><span>谈吐</span><b>3.5</b></div><div class="track"><i class="fill"></i></div></div>
+<div class="bar crit" data-w="24"><div class="lab"><span>表达欲</span><b>1.2 · 暴击</b></div><div class="track"><i class="fill"></i></div></div>
+<div class="bar" data-w="76"><div class="lab"><span>稳定</span><b>3.8</b></div><div class="track"><i class="fill"></i></div></div>
+<div class="bar" data-w="84"><div class="lab"><span>共情</span><b>4.2</b></div><div class="track"><i class="fill"></i></div></div>
+<div class="bar" data-w="90"><div class="lab"><span>行动力</span><b>4.5</b></div><div class="track"><i class="fill"></i></div></div>
+</div>
+<div class="warn">暴击维：表达欲 1.2 · 「总说没事」· 建议补一句「靠过来一点」</div>
+<div class="panel-box">评语：伞给得很及时，话给得很慢。便利店灯下表现 A，语言区待补考。「别先走」——这句是他今晚最高分。灯坏了也不先走，稳定项加分。</div>
+<button class="btn" type="button" id="replay">分数条再展开</button>
+<button class="btn" type="button" id="second" style="background:#c9a24b">是否二约 · 示意</button>
+<div class="npc"><span class="av">🎤</span><div><b>旁观 NPC</b>：雷达图最残酷的地方，是「没事」也能被量化成 1.2。</div></div>
+<div class="foot">评分仅供剧情 · 下一位候选人排队中 · 祁洵场次存档</div>
+</div>
+</div>
+<script>
+(function(){
+var app=document.getElementById("scoreApp");
+var toggles=document.querySelectorAll(".toggle button");
+var bars=document.querySelectorAll(".bar");
+function expand(){
+for(var i=0;i<bars.length;i++){
+var fill=bars[i].querySelector(".fill");
+var w=bars[i].getAttribute("data-w")||"50";
+if(fill){
+fill.style.width="0";
+(function(el,width,idx){
+setTimeout(function(){el.style.width=width+"%"},80+idx*90);
+})(fill,w,i);
+}
+}
+}
+for(var i=0;i<toggles.length;i++){
+toggles[i].addEventListener("click",function(){
+for(var j=0;j<toggles.length;j++)toggles[j].classList.remove("on");
+this.classList.add("on");
+var v=this.getAttribute("data-view");
+if(app){
+app.classList.remove("view-radar","view-bars");
+app.classList.add(v==="bars"?"view-bars":"view-radar");
+}
+if(v==="bars")expand();
+});
+}
+var rp=document.getElementById("replay");
+if(rp)rp.addEventListener("click",expand);
+var sec=document.getElementById("second");
+if(sec)sec.addEventListener("click",function(){
+this.textContent=this.textContent.indexOf("已示意")>=0?"是否二约 · 示意":"已示意二约 · 待对方回「别先走」";
+});
+app.classList.add("view-radar");
+expand();
+})();
+</script>
+</body>
+</html>

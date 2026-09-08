@@ -96,6 +96,55 @@ function TextQuoteCard({
   )
 }
 
+function InnerOsCard({
+  item,
+  onShare,
+  onOpenActions,
+  variant,
+}: {
+  item: Extract<FavoriteItem, { type: 'innerOs' }>
+  onShare: () => void
+  onOpenActions?: () => void
+  variant: 'page' | 'picker'
+}) {
+  const said = item.spokenText?.trim()
+  return (
+    <>
+      <FavoriteCardSource name={item.sourceName} avatarUrl={item.sourceAvatarUrl} />
+      <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.2em] text-gray-400">Whisper · 内心 OS</p>
+      {said ? (
+        <div className="mb-3 rounded-2xl bg-gray-50 px-3.5 py-2.5">
+          <p className="text-[10px] tracking-[0.14em] text-gray-400">嘴上</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-gray-500">{said}</p>
+        </div>
+      ) : null}
+      <div className="relative">
+        <span
+          className="pointer-events-none absolute -left-1 -top-3 select-none font-serif text-[72px] leading-none text-gray-900/[0.06]"
+          aria-hidden
+        >
+          “
+        </span>
+        <p
+          className="relative whitespace-pre-wrap font-serif text-[15.5px] leading-loose text-gray-900"
+          style={{ fontFamily: 'var(--wx-font, "Noto Serif SC", serif)' }}
+        >
+          {item.content}
+        </p>
+      </div>
+      <FavoriteCardFooter
+        timestamp={item.timestamp}
+        savedAt={item.savedAt}
+        tags={item.tags}
+        onShare={onShare}
+        onOpenActions={onOpenActions}
+        shareAriaLabel={variant === 'picker' ? '发送到当前聊天' : '分享'}
+        showMoreActions={variant === 'page'}
+      />
+    </>
+  )
+}
+
 function VoiceCard({
   item,
   onShare,
@@ -219,6 +268,8 @@ function FavoriteCard({
     >
       {item.type === 'text' ? (
         <TextQuoteCard item={item} onShare={onShare} onOpenActions={onOpenActions} variant={variant} />
+      ) : item.type === 'innerOs' ? (
+        <InnerOsCard item={item} onShare={onShare} onOpenActions={onOpenActions} variant={variant} />
       ) : item.type === 'voice' ? (
         <VoiceCard item={item} onShare={onShare} onOpenActions={onOpenActions} variant={variant} />
       ) : (
@@ -243,7 +294,7 @@ export function FavoritesStream({
     return (
       <div className="px-4 py-16 text-center">
         <p className="font-serif text-[15px] text-gray-400">暂无收藏切片</p>
-        <p className="mt-2 text-[12px] text-gray-300">在聊天中长按消息即可收藏</p>
+        <p className="mt-2 text-[12px] text-gray-300">在聊天中长按消息，或在内心 OS 弹窗中收藏</p>
       </div>
     )
   }

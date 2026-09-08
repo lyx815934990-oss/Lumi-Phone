@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { CircleHelp, Clapperboard, Eye, GitBranch, Layers, Users, X } from 'lucide-react'
 
 export function DirectorModeHelpButton(props: { onClick: () => void; className?: string }) {
@@ -70,10 +71,10 @@ function ModePoint(props: { label: string; children: ReactNode }) {
 }
 
 export function DirectorModeHelpPanel(props: { open: boolean; onClose: () => void }) {
-  if (!props.open) return null
-  return (
+  if (!props.open || typeof document === 'undefined') return null
+  return createPortal(
     <div
-      className="absolute inset-0 z-[70] flex items-end justify-center bg-black/40 p-4 backdrop-blur-[2px] sm:items-center"
+      className="fixed inset-0 z-[65000] flex items-end justify-center bg-black/40 p-4 backdrop-blur-[2px] sm:items-center"
       onClick={props.onClose}
     >
       <div
@@ -221,6 +222,7 @@ export function DirectorModeHelpPanel(props: { open: boolean; onClose: () => voi
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#22 入住单 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 0 28px}
+.hero{width:100%;height:128px;object-fit:cover;display:block;filter:saturate(1.05) contrast(1.04)}
+.shell{max-width:800px;margin:0 auto;border-radius:0 0 18px 18px;overflow:hidden;box-shadow:0 18px 48px rgba(20,16,12,.18)}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750;letter-spacing:.04em}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px;opacity:.82}
+.stats b{font-weight:750}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;flex-shrink:0;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.npc b{font-weight:700}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.list{padding:4px 12px 8px}
+.row{padding:9px 10px;margin-bottom:7px;border-radius:10px;font-size:12.5px;line-height:1.55}
+.row .m{font-size:10px;opacity:.6}
+.tabbar{display:flex;gap:0}
+.tabbar button{flex:1;border:0;padding:11px 8px;font-size:12px;cursor:pointer;background:transparent;font-weight:650}
+.tabbar button.on{font-weight:800}
+.panel{display:none}.panel.on{display:block}
+.pulse{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.55}}
+@keyframes blink{50%{opacity:.45}}
+@keyframes flip{0%{transform:rotateX(0)}40%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+.flip{animation:flip .45s ease}
+body{background:linear-gradient(180deg,#d8cfc2,#c4b8a6);color:#2a2420}
+.shell{
+background-color:#f4efe6;background-image:radial-gradient(rgba(90,70,40,.06) 0.6px,transparent 0.6px),linear-gradient(180deg,#f7f2e8,#efe6d6);background-size:3px 3px,auto;
+border:1px solid #c8b8a0;
+background-image:linear-gradient(180deg,rgba(255,255,255,.55),rgba(255,255,255,0) 48px),radial-gradient(rgba(90,70,40,.06) 0.6px,transparent 0.6px),linear-gradient(180deg,#f7f2e8,#efe6d6);
+background-size:auto,3px 3px,auto;
+position:relative
+}
+.letterhead{padding:16px 16px 8px;border-bottom:2px double #8a6b28;text-align:center}
+.letterhead .hotel{font-size:13px;letter-spacing:.28em;font-weight:800;color:#5a4018}
+.letterhead .sub{font-size:10px;opacity:.65;margin-top:4px}
+.title-custom{text-align:center;border:0;background:transparent;padding-top:8px}
+.stats{background:rgba(232,220,200,.55);justify-content:center}
+.form{padding:4px 16px 8px}
+.form-row{display:flex;gap:10px;padding:9px 0;border-bottom:1px dashed rgba(0,0,0,.1);font-size:13px;align-items:flex-start}
+.form-row label{min-width:72px;opacity:.65}
+.form-row.strike s{color:#999}
+.gold{color:#8a6b28;font-weight:800}
+.toggle{display:flex;gap:0;margin:10px 16px;border:1px solid #d0c4b0;border-radius:8px;overflow:hidden;width:fit-content}
+.toggle button{border:0;padding:7px 14px;font-size:11px;cursor:pointer;background:#fff;color:#666}
+.toggle button.on{background:#8a6b28;color:#fff;font-weight:700}
+.draft-only{display:none}
+.shell.show-draft .draft-only{display:inline}
+.shell.show-draft .final-only{display:none}
+.stamp{
+position:absolute;right:28px;top:120px;width:96px;height:96px;border-radius:50%;
+border:4px solid rgba(180,40,40,.75);color:rgba(180,40,40,.8);
+display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;font-weight:800;letter-spacing:.08em;
+transform:rotate(-18deg);opacity:0;pointer-events:none;transition:opacity .35s;
+box-shadow:inset 0 0 0 2px rgba(180,40,40,.35)
+}
+.stamp.on{opacity:.9}
+.sign{margin:12px 16px;font-size:12px;opacity:.75;display:flex;justify-content:space-between;gap:12px}
+.tip{background:#fff6e0;border:1px dashed #d0b060;color:#6a5020}
+.npc{background:#f3ebe0}
+.btn{background:#5a4018;color:#f5e3a8;margin:0 16px 10px}
+.note{margin:8px 16px;font-size:12px;line-height:1.7;opacity:.85}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./21.html">上一张</a><b>#22 入住单</b><a href="./23.html">下一张</a></div>
+<p class="fore">同住栏的涂改痕迹，夜审灯一亮就无处可藏。</p>
+<div class="stage">
+<div class="shell" id="reg">
+<img class="hero" alt="酒店入住登记单" src="https://image.pollinations.ai/prompt/hotel%20registration%20paper%20letterhead%20fountain%20pen%20stamp%20warm%20desk%20lamp%20no%20people">
+<div class="letterhead"><div class="hotel">雨巷旅馆 · RAIN LANE HOTEL</div><div class="sub">LETTERHEAD · 夜审前登记联 · NO. H-8821</div></div>
+<p class="title-custom">酒店入住登记单</p>
+<div class="stats"><span>房 <b>1208</b></span><span>大床</span><span>雨夜到店</span></div>
+<div class="stamp" id="stamp">已核验<br>夜审<br>通过</div>
+<div class="form">
+<div class="form-row"><label>住客</label><div>祁洵</div></div>
+<div class="form-row"><label>证件</label><div>尾号 8821 · 已核验</div></div>
+<div class="form-row"><label>房型</label><div>大床 · 1 晚 → 续住待确认</div></div>
+<div class="form-row strike"><label>同住</label><div><span class="draft-only"><s>1</s> → </span><b class="gold final-only">2</b><span class="draft-only"><b class="gold">2</b></span> <span class="m" style="font-size:11px;opacity:.6">涂改痕迹 · 前台已见证</span></div></div>
+<div class="form-row"><label>到店</label><div>23:41 · 伞架滴水</div></div>
+<div class="form-row"><label>特殊需求</label><div>台灯修好 / 勿先走催退房</div></div>
+<div class="form-row"><label>押金</label><div>¥300 · 可转关东煮券？否</div></div>
+<div class="form-row"><label>备注</label><div>靠过来一点写在房卡套内侧</div></div>
+</div>
+<div class="toggle"><button type="button" class="on" data-mode="final">涂改稿</button><button type="button" data-mode="draft">原稿</button></div>
+<div class="note">脚注：原稿同住栏为 1；涂改发生在便利店外通话之后。夜审系统将「别先走」识别为特殊备注并标黄。灯坏了的楼层请走安全通道。</div>
+<div class="sign"><span>前台签字 ________</span><span>住客确认 ________</span></div>
+<button class="btn" type="button" id="doStamp">盖章 · 夜审通过</button>
+<div class="tip">单号 H-8821 · 打印联交客 · 底联留店 · 信纸抬头材质</div>
+<div class="npc"><span class="av">🖋️</span><div><b>旁观 NPC</b>：同住人数从 1 涂成 2 的那一笔，比告白更像物证。</div></div>
+<div class="foot">酒店文书戏仿 · 禁止当作真实入住凭证</div>
+</div>
+</div>
+<script>
+(function(){
+var reg=document.getElementById("reg");
+var toggles=document.querySelectorAll(".toggle button");
+var stamp=document.getElementById("stamp");
+var btn=document.getElementById("doStamp");
+for(var i=0;i<toggles.length;i++){
+toggles[i].addEventListener("click",function(){
+for(var j=0;j<toggles.length;j++)toggles[j].classList.remove("on");
+this.classList.add("on");
+var mode=this.getAttribute("data-mode");
+if(!reg)return;
+if(mode==="draft")reg.classList.add("show-draft");
+else reg.classList.remove("show-draft");
+});
+}
+if(btn&&stamp)btn.addEventListener("click",function(){
+stamp.classList.add("on");
+this.textContent="印章已盖 · 夜审锁定";
+this.disabled=true;
+});
+})();
+</script>
+</body>
+</html>

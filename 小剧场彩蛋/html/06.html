@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#06 停车场小票 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:#2a2824;color:#2a2218;background-color:#f4efe6;background-image:radial-gradient(rgba(90,70,40,.06) 0.6px,transparent 0.6px),linear-gradient(180deg,#f7f2e8,#efe6d6);background-size:3px 3px,auto;}
+.stage{max-width:420px;margin:16px auto 40px;padding:0 12px}
+.ticket{background:
+repeating-linear-gradient(90deg,transparent,transparent 11px,rgba(0,0,0,.04) 11px,rgba(0,0,0,.04) 12px),
+linear-gradient(180deg,#fff8ee,#f3e6d2);border-radius:4px;padding:18px 16px 22px;box-shadow:0 16px 40px rgba(0,0,0,.35);position:relative;font-family:"Courier New",ui-monospace,Consolas,"PingFang SC",monospace}
+.ticket::before,.ticket::after{content:"";position:absolute;left:0;right:0;height:12px;background:radial-gradient(circle,transparent 4px,#2a2824 5px);background-size:12px 12px}
+.ticket::before{top:-6px}.ticket::after{bottom:-6px;transform:rotate(180deg)}
+.title-custom{text-align:center;font-size:15px;letter-spacing:.2em;margin-bottom:8px}
+.no{text-align:center;font-size:11px;opacity:.7;margin-bottom:12px}
+.row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed rgba(0,0,0,.15);font-size:13px}
+.row.big{font-size:16px;font-weight:800;color:#8a5a10;border-bottom:2px solid #c9a24b55;margin:8px 0}
+.stamp{position:absolute;right:18px;top:70px;width:72px;height:72px;border:3px solid #c45a4a;border-radius:50%;color:#c45a4a;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;transform:rotate(-18deg);opacity:.85;letter-spacing:.05em}
+.btn{display:block;width:100%;margin-top:14px;padding:10px;border:1px dashed #8a6b28;background:#fff8ee;cursor:pointer;font-weight:700}
+.npc{margin-top:14px;padding:10px;background:rgba(255,255,255,.7);border-radius:10px;font-size:12px}
+.av{display:inline-flex;width:26px;height:26px;border-radius:50%;align-items:center;justify-content:center;background:#efe4d0;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./05.html">上一张</a><b>#06 停车场小票</b><a href="./07.html">下一张</a></div>
+<p class="fore">过夜七小时——副驾还有一把伞。</p>
+<div class="stage">
+<div class="ticket" id="ticket">
+<div class="stamp" id="stamp">已缴费</div>
+<p class="title-custom">CITY PARK · 停车缴费</p>
+<div class="no">NO. P-8821 · 热敏纸质感</div>
+<div class="row"><span>车牌</span><span>京A·D**</span></div>
+<div class="row"><span>入场</span><span>昨日 23:58</span></div>
+<div class="row"><span>出场</span><span>今日 07:12</span></div>
+<div class="row big"><span>时长</span><span>7 小时 14 分</span></div>
+<div class="row"><span>费用</span><span>¥56.00</span></div>
+<div class="row"><span>备注</span><span>过夜 · 副驾 伞</span></div>
+<div class="row"><span>天气</span><span>雨夜 · 灯坏了</span></div>
+<div class="row"><span>关联</span><span>关东煮小票 · 草稿未发</span></div>
+<button class="btn" type="button" id="flip">翻转查看背面招领</button>
+</div>
+<div class="npc"><span class="av">🧾</span><b>收费员</b>：电子发票可发邮箱。伞遗失招领已关联工单。</div>
+</div>
+<script>
+(function(){var s=document.getElementById("stamp");var b=document.getElementById("flip");var back=false;if(b)b.addEventListener("click",function(){back=!back;if(back){b.textContent="正面 · 缴费信息";if(s)s.textContent="招领中"}else{b.textContent="翻转查看背面招领";if(s)s.textContent="已缴费"}})})();
+</script>
+</body>
+</html>

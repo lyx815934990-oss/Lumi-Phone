@@ -1,0 +1,79 @@
+---
+import { DirectorModeHelpButton, DirectorModeHelpPanel } from './DirectorModeHelp'
+import { DatingContinueProbeSheet } from './DatingContinueProbeSheet'
+---
+  const [continueProbeOpen, setContinueProbeOpen] = useState(false)
+  const [continueProbeTarget, setContinueProbeTarget] = useState<'normal' | 'vn'>('normal')
+---
+  const openContinueProbeSheet = useCallback((target: 'normal' | 'vn') => {
+    setContinueProbeTarget(target)
+    setContinueProbeOpen(true)
+  }, [])
+
+  const applyContinueProbeToInput = useCallback(
+    (text: string) => {
+      const t = text.trim()
+      if (!t) {
+        showHeartWhisperToast('内容为空')
+        return
+      }
+      setDirectorMode(true)
+      if (continueProbeTarget === 'vn') {
+        setVnCustomInput(t)
+        setVnCustomInputModalOpen(true)
+      } else {
+        setInput(t)
+        window.setTimeout(() => {
+          inputRef.current?.focus()
+          composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }, 40)
+      }
+      setContinueProbeOpen(false)
+      showHeartWhisperToast('已填入输入框（已开导演模式）')
+    },
+    [continueProbeTarget, setDirectorMode, showHeartWhisperToast],
+  )
+---
+  const openContinueProbeSheet = useCallback((target: 'normal' | 'vn') => {
+    setContinueProbeTarget(target)
+    setContinueProbeOpen(true)
+  }, [])
+
+  const applyContinueProbeToInput = useCallback(
+    (text: string) => {
+      const t = text.trim()
+      if (!t) {
+        showHeartWhisperToast('内容为空')
+        return
+      }
+      setDirectorMode(true)
+      if (continueProbeTarget === 'vn') {
+        setVnCustomInput(t)
+        setVnCustomInputModalOpen(true)
+      } else {
+        setInput(t)
+        window.setTimeout(() => {
+          inputRef.current?.focus()
+          composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }, 40)
+      }
+      setContinueProbeOpen(false)
+      showHeartWhisperToast('已填入输入框（已开导演模式）')
+    },
+    [continueProbeTarget, setDirectorMode, showHeartWhisperToast],
+  )
+---
+      <DatingContinueProbeSheet
+        open={continueProbeOpen}
+        onClose={() => setContinueProbeOpen(false)}
+        target={continueProbeTarget}
+        onApply={applyContinueProbeToInput}
+        showToast={showHeartWhisperToast}
+        apiConfig={apiConfig}
+        character={currentCharacter}
+        plots={currentArchive.plots}
+        playerDisplayName={vnUserDisplayName}
+        godPerspective={!!currentArchive.godPerspective}
+        mainCharacterOffstage={!!currentArchive.mainCharacterOffstage}
+        isVnMode={currentArchive.modePreference === 'vn'}
+      />

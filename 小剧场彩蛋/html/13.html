@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#13 树洞墙 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 0 28px}
+.hero{width:100%;height:128px;object-fit:cover;display:block;filter:saturate(1.05) contrast(1.04)}
+.shell{max-width:800px;margin:0 auto;border-radius:0 0 18px 18px;overflow:hidden;box-shadow:0 18px 48px rgba(20,16,12,.18)}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750;letter-spacing:.04em}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px;opacity:.82}
+.stats b{font-weight:750}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;flex-shrink:0;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.npc b{font-weight:700}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.list{padding:4px 12px 8px}
+.row{padding:9px 10px;margin-bottom:7px;border-radius:10px;font-size:12.5px;line-height:1.55}
+.row .m{font-size:10px;opacity:.6}
+.tabbar{display:flex;gap:0}
+.tabbar button{flex:1;border:0;padding:11px 8px;font-size:12px;cursor:pointer;background:transparent;font-weight:650}
+.tabbar button.on{font-weight:800}
+.panel{display:none}.panel.on{display:block}
+.pulse{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.55}}
+@keyframes blink{50%{opacity:.45}}
+@keyframes flip{0%{transform:rotateX(0)}40%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+.flip{animation:flip .45s ease}
+body{background-color:#f4efe6;background-image:radial-gradient(rgba(90,70,40,.06) 0.6px,transparent 0.6px),linear-gradient(180deg,#f7f2e8,#efe6d6);background-size:3px 3px,auto;color:#2a2420}
+.shell{background:linear-gradient(180deg,#fbf7f0,#efe6d8);border:1px solid #e2d6c4}
+.title-custom{background:linear-gradient(180deg,#fffdf8,#f3eadc);border-bottom:1px solid #e6dbc8;color:#3a2e24}
+.stats{background:#ebe2d4;border-bottom:1px solid #e0d4c0}
+.tabbar{background:#e8dfd0;border-bottom:1px solid #dccfb8}
+.tabbar button{color:#7a6a58}
+.tabbar button.on{background:#fffaf2;color:#8a6b28;box-shadow:inset 0 -2px 0 #c9a24b}
+.row{background:#fff;border:1px solid #ebe2d4;box-shadow:0 4px 12px rgba(60,40,20,.04)}
+.row.hot{border-color:#e0c98a;background:#fffdf5}
+.hot{color:#b8860b;font-size:11px;font-weight:700}
+.tip{background:#fff6e0;color:#7a5a20;border:1px dashed #e0c98a}
+.npc{background:#eef2ff;color:#2a3048}
+.btn{background:#c9a24b;color:#fff;margin:4px 12px 8px}
+.btn.dis{opacity:.4;pointer-events:none;text-decoration:line-through}
+.cmt{opacity:0;transform:translateY(6px);transition:.35s ease}
+.cmt.show{opacity:1;transform:none}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./12.html">上一张</a><b>#13 树洞墙</b><a href="./14.html">下一张</a></div>
+<p class="fore">匿名墙最吵的夜晚，往往只是有人把「别先走」写进了热评。</p>
+<div class="stage">
+<div class="shell">
+<img class="hero" alt="树洞墙雨夜" src="https://image.pollinations.ai/prompt/anonymous%20confession%20wall%20cork%20board%20neon%20rain%20city%20night%20soft%20light%20no%20people">
+<p class="title-custom">匿名树洞 · 热榜 #3 · 雨夜专场</p>
+<div class="stats"><span>热度 <b>12.4w</b></span><span>评论 <b>386</b></span><span>转发 <b>2.1w</b></span><span>锚点 · 祁洵</span></div>
+<div class="tabbar">
+<button type="button" class="on" data-tab="hot">热榜</button>
+<button type="button" data-tab="new">最新</button>
+<button type="button" data-tab="npc">路人区</button>
+</div>
+<div class="panel on" id="hot">
+<div class="list">
+<div class="row hot"><span class="av">🐸</span><b>洋葱头</b> <span class="m">23:58</span><div class="hot">热评 · 等待入场</div><div style="margin-top:6px">雨夜他还站着。我想问要不要共伞，嘴比手快点了两份关东煮。便利店 灯坏了一盏。我说靠过来一点，他说没事。我又说别先走——这回他没回没事。</div></div>
+<div class="row cmt" data-delay="0"><span class="av">💡</span><b>路过的灯</b> <span class="m">23:59</span><div>这就叫命中注定吧，灯都配合坏了。</div></div>
+<div class="row cmt" data-delay="1"><span class="av">🍢</span><b>不取关</b> <span class="m">00:01</span><div>两份是默认配额，三份才叫爱。</div></div>
+<div class="row cmt" data-delay="2"><span class="av">🌂</span><b>柜门证人</b> <span class="m">00:03</span><div>楼里那盏坏灯我也看见了，伞骨歪的那把。</div></div>
+<div class="row cmt" data-delay="3"><span class="av">🎧</span><b>修罗场观众</b> <span class="m">00:05</span><div>「别先走」三个字我磕到了，循环听。</div></div>
+<div class="row cmt" data-delay="4"><span class="av">🧾</span><b>便利店夜班</b> <span class="m">00:08</span><div>关东煮是我热的，收据尾号 8821 还留着。</div></div>
+<div class="row cmt" data-delay="5"><span class="av">🌧️</span><b>雨声后期</b> <span class="m">00:12</span><div>「靠过来一点」那段环境音我单抽出了。</div></div>
+<div class="row cmt" data-delay="6"><span class="av">🩺</span><b>匿名医生</b> <span class="m">00:15</span><div>心率偏高可参考样卡 12（误）。</div></div>
+<div class="row cmt" data-delay="7"><span class="av">🧅</span><b>洋葱头本人</b> <span class="m">00:20</span><div>……谢谢你们，祁洵如果刷到请装没看见。</div></div>
+</div>
+<button class="btn dis" type="button">我也要投稿（灰）</button>
+</div>
+<div class="panel" id="new">
+<div class="list">
+<div class="row"><span class="av">📡</span><b>弱网重试</b> <span class="m">00:22</span><div>同步失败 1 次。会话仍置顶。草稿还写着「其实不是没事」。</div></div>
+<div class="row"><span class="av">🎟️</span><b>取件码8821</b> <span class="m">00:24</span><div>格口 B07 热区。备注：两份关东煮 · 伞别忘。</div></div>
+<div class="row"><span class="av">🔦</span><b>报修单</b> <span class="m">00:27</span><div>灯坏了的路口电线杆旁，有人站了二十六分钟。</div></div>
+<div class="row"><span class="av">📝</span><b>未命名草稿</b> <span class="m">00:31</span><div>只剩三个字：别先走。</div></div>
+</div>
+</div>
+<div class="panel" id="npc">
+<div class="list">
+<div class="row"><span class="av">🧑‍💼</span><b>店员备忘</b><div>那位先生问了三次够不够热，又问灯什么时候修。</div></div>
+<div class="row"><span class="av">🚕</span><b>夜班司机</b><div>小区口雨没停，有两个人共一把伞。</div></div>
+<div class="row"><span class="av">🧹</span><b>保洁阿姨</b><div>我只负责拖地，不负责问他们为什么不走。</div></div>
+<div class="row"><span class="av">📦</span><b>快递员</b><div>取件码 8821 被念了两遍，像暗号。</div></div>
+</div>
+</div>
+<div class="tip">标签：#共伞 #关东煮配额 #灯坏了 · 禁止真名开盒 · 热评错峰入场是仪式</div>
+<div class="npc"><span class="av">👀</span><div><b>旁观 NPC</b>：树洞最狠的不是爆料，是有人认真写「别先走」，还有人认真回。</div></div>
+<div class="foot">热榜刷新于 00:22 · 小剧场番外 · 锚点：祁洵/雨夜/伞/便利店/关东煮</div>
+</div>
+</div>
+<script>
+(function(){
+var tabs=document.querySelectorAll(".tabbar button");
+var panels=document.querySelectorAll(".panel");
+var cmts=document.querySelectorAll(".cmt");
+function showCmts(){
+for(var i=0;i<cmts.length;i++){
+(function(el,idx){
+setTimeout(function(){el.classList.add("show")},180+idx*220);
+})(cmts[i],i);
+}
+}
+for(var i=0;i<tabs.length;i++){
+tabs[i].addEventListener("click",function(){
+var id=this.getAttribute("data-tab");
+for(var j=0;j<tabs.length;j++)tabs[j].classList.remove("on");
+this.classList.add("on");
+for(var k=0;k<panels.length;k++){
+panels[k].classList.remove("on");
+if(panels[k].id===id)panels[k].classList.add("on");
+}
+if(id==="hot"){
+for(var c=0;c<cmts.length;c++)cmts[c].classList.remove("show");
+showCmts();
+}
+});
+}
+showCmts();
+})();
+</script>
+</body>
+</html>

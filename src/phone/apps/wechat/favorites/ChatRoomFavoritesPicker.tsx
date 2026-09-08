@@ -73,14 +73,25 @@ export function ChatRoomFavoritesPicker({
     return names
   }, [personaContacts])
 
+  const avatarByCharId = useMemo(() => {
+    const avatars = new Map<string, string>()
+    for (const c of personaContacts) {
+      const id = c.characterId.trim()
+      const avatar = c.avatarUrl?.trim()
+      if (!id || !avatar) continue
+      avatars.set(id, avatar)
+    }
+    return avatars
+  }, [personaContacts])
+
   const reload = useCallback(async () => {
     setLoading(true)
     try {
-      setItems(await loadFavoriteItems(nameByCharId))
+      setItems(await loadFavoriteItems(nameByCharId, avatarByCharId))
     } finally {
       setLoading(false)
     }
-  }, [nameByCharId])
+  }, [avatarByCharId, nameByCharId])
 
   useEffect(() => {
     if (!open) return
@@ -117,10 +128,12 @@ export function ChatRoomFavoritesPicker({
       if (filter === 'voice' && item.type !== 'voice') return false
       if (filter === 'text' && item.type !== 'text') return false
       if (filter === 'image' && item.type !== 'image') return false
+      if (filter === 'innerOs' && item.type !== 'innerOs') return false
       if (!q) return true
       const hay = [
         item.sourceName,
-        item.type === 'text' ? item.content : '',
+        item.type === 'text' || item.type === 'innerOs' ? item.content : '',
+        item.type === 'innerOs' ? item.spokenText ?? '' : '',
         item.type === 'voice' ? item.transcript ?? '' : '',
         ...(item.tags ?? []),
       ]

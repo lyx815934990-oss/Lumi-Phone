@@ -124,10 +124,10 @@ export function chatBubbleSideFontCssVars(bubble: WeChatBubbleTheme): CSSPropert
   const selfFamily = bubble.selfFont?.family?.trim()
   const otherFamily = bubble.otherFont?.family?.trim()
   if (selfFamily) {
-    out['--wx-self-bubble-font'] = `"${selfFamily}", var(--wx-chat-font, var(--wx-font))`
+    out['--wx-self-bubble-font'] = `"${selfFamily}", var(--wx-chat-font, var(--wx-font, var(--phone-font)))`
   }
   if (otherFamily) {
-    out['--wx-other-bubble-font'] = `"${otherFamily}", var(--wx-chat-font, var(--wx-font))`
+    out['--wx-other-bubble-font'] = `"${otherFamily}", var(--wx-chat-font, var(--wx-font, var(--phone-font)))`
   }
   return out as CSSProperties
 }
@@ -142,8 +142,8 @@ export function bubbleSideHasCustomFont(
 
 export function bubbleSideFontFamilyCss(side: 'self' | 'other'): string {
   return side === 'self'
-    ? 'var(--wx-self-bubble-font, var(--wx-chat-font, var(--wx-font)))'
-    : 'var(--wx-other-bubble-font, var(--wx-chat-font, var(--wx-font)))'
+    ? 'var(--wx-self-bubble-font, var(--wx-chat-font, var(--wx-font, var(--phone-font))))'
+    : 'var(--wx-other-bubble-font, var(--wx-chat-font, var(--wx-font, var(--phone-font))))'
 }
 
 export async function uploadWeChatBubbleSideFont(file: File): Promise<{

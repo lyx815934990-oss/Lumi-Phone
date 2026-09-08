@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:16px;font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#1a2030;color:#e8eef4;overflow:auto;height:auto}
+.wrap{max-width:800px;margin:0 auto;background:#121820;border-radius:16px;overflow:hidden}
+.title-custom{margin:0;padding:14px;font-size:17px;font-weight:700;border-bottom:1px solid #2a3448}
+.tab{display:flex;gap:0}
+.tab button{flex:1;padding:10px;border:0;background:#1a2230;color:#9ab0c4;cursor:pointer}
+.tab button.on{background:#243044;color:#f5e3a8;font-weight:700}
+.panel{display:none;padding:12px}
+.panel.on{display:block}
+.post{padding:10px;margin-bottom:8px;border-radius:10px;background:#1a2434;font-size:13px;line-height:1.5}
+.avatar{width:26px;height:26px;border-radius:50%;background:#2a3848;display:inline-flex;align-items:center;justify-content:center;margin-right:6px}
+.hero{width:100%;height:110px;object-fit:cover;display:block}
+.hot{color:#f5e3a8;font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<img class="hero" alt="anonymous wall night rain" src="https://image.pollinations.ai/prompt/anonymous%20confession%20wall%20neon%20rain%20city%20night%20no%20people">
+<p class="title-custom">匿名树洞 · 热榜</p>
+<div class="tab">
+<button type="button" class="on" data-tab="hot">热榜</button>
+<button type="button" data-tab="new">最新</button>
+<button type="button" data-tab="npc">路人区</button>
+</div>
+<div class="panel on" id="hot">
+<div class="post"><span class="avatar">🐸</span><b>青蛙不下雨</b><div class="hot">热评 · 128</div>灯坏了也站着算不算表白。关东煮点了两份。</div>
+<div class="post"><span class="avatar">🌂</span><b>伞往中间</b>别删那张伞下的。别先走三个字我看见了。</div>
+<div class="post"><span class="avatar">🕯️</span><b>便利店蒸汽</b>草稿箱红点还在，发送键灰着。</div>
+</div>
+<div class="panel" id="new">
+<div class="post"><span class="avatar">📡</span><b>弱网重试</b>同步失败 1 次。会话仍置顶。</div>
+<div class="post"><span class="avatar">🎟️</span><b>取件码8821</b>格口 B07 热区。备注：两份关东煮。</div>
+</div>
+<div class="panel" id="npc">
+<div class="post"><span class="avatar">🧑‍💼</span><b>店员备忘</b>那位先生问了三次够不够热，又问灯什么时候修。</div>
+<div class="post"><span class="avatar">🚕</span><b>夜班司机</b>小区口雨没停，有两个人共一把伞。</div>
+</div>
+</div>
+<script>
+(function(){
+var buttons=document.querySelectorAll(".tab button");
+var panels=document.querySelectorAll(".panel");
+for(var i=0;i<buttons.length;i++){
+buttons[i].addEventListener("click",function(){
+var id=this.getAttribute("data-tab");
+for(var j=0;j<buttons.length;j++)buttons[j].classList.remove("on");
+this.classList.add("on");
+for(var k=0;k<panels.length;k++){
+panels[k].classList.remove("on");
+if(panels[k].id===id)panels[k].classList.add("on");
+}
+});
+}
+})();
+</script>
+</body>
+</html>

@@ -13,6 +13,7 @@ import {
 import { loadCharacterStorySpan } from './load'
 import { syncSharedSocialCircleBetweenSheets } from './sharedSocialCircle'
 import { finalizeLifeMutableSheetForStore } from './promptRules'
+import { appendLifeChangeHistory } from './lifeChangeHistory'
 import type { LifeMutableSheet, LifeStorySpan } from './types'
 
 export const LIFE_LEDGER_PATCH_MARKER = '---LIFE_LEDGER_PATCH---'
@@ -253,8 +254,9 @@ subject / 主体（character=角色本线，player=玩家本线）
 name/姓名，gender/性别，occupationMain/主业，occupationSide/副业，
 savings/存款，relationshipStatus/感情，educationTrack/学历轨道，educationNote/学历备注，
 extraNote/补充，currentAge/当前年龄（有「现在几岁」证据时写数字，由系统反推开篇岁数）
-住所/车产/家庭/社交圈/宠物若改，整表用一行 JSON 数组（无把握则整键省略，禁止清空）。
-住所项可含 label/placeKind/ownedBySubject/isPrimary/location（location 须「虚构市+区+具体校名或路门牌+楼栋+房间号」；**禁止**某高校/某大学/某小区及任何「某」占位；勿用现实一线省会名除非剧情已写；**勿套固定示范城市，按证据自行新编**）；家庭项可含 name(真实姓名，禁X父/X母)/relation(父亲母亲等)/age/residence（同粒度，禁「某」）；社交圈项可含 name/relation(短称呼)/age/residence/attitude(关系补充长描述)/note。
+住所/车产/家庭/社交圈/宠物若改，整表用一行 JSON 数组（**无把握或本轮未变则整键省略**，禁止清空、禁止用残缺条目覆盖）。
+车产项必须含 model 品牌车型全文，可含 valueWan（估值，单位万元）；社交圈/家庭项必须含 name 真实姓名。**禁止**空 model / 空 name；没看清原名就不要输出该列表键。
+住所项可含 label/placeKind/ownedBySubject/isPrimary/location/valueWan（location 须「虚构市+区+具体校名或路门牌+楼栋+房间号」；valueWan 为估值万元；**禁止**某高校/某大学/某小区及任何「某」占位；勿用现实一线省会名除非剧情已写；**勿套固定示范城市，按证据自行新编**）；家庭项可含 name(真实姓名，禁X父/X母)/relation(父亲母亲等)/age/residence（同粒度，禁「某」）；社交圈项可含 name/relation(短称呼)/age/residence/attitude(关系补充长描述)/note。
 **共同好友**：角色与玩家两边社交圈若出现同名人，其学校/职业/住址/年龄/生日/性别必须一致（仅 relation/attitude/note 可不同）。
 ${playerHint}
 规则：
@@ -262,7 +264,7 @@ ${playerHint}
 - 学年：每年 9 月升段；9 月前勿提前写成下一学年。occupation 年级须与学历推算及近端明示的「现在」一致；世界书开篇年级不得压过近端已更新的大四/大二等表述。校名须具体虚构专名。
 - 地址/校名/单位禁止「某／某某／××」糊弄写法；宿舍必须带楼栋号与房间号；禁止照抄提示词样板地名。
 - 共同社交对象客观事实禁止角色侧与玩家侧各写一套学校。
-- 没有证据的字段不要写。
+- 没有证据的字段不要写；社交圈/车产/家庭未变 → 不要输出对应键（写 status：无变化 或只写确有变化的标量字段）。
 - 本段不得进入可见聊天气泡。
 ---------------------
 `.trim()
@@ -472,6 +474,12 @@ export async function applyLifeLedgerInlinePatches(params: {
     latestChar = sheet
     const diff = describeSheetDiff(before, sheet)
     if (diff.length) {
+      sheet = appendLifeChangeHistory(sheet, {
+        before,
+        summary: `同请求同步 · ${diff.join('、')}`,
+        source: 'inline',
+      })
+      latestChar = sheet
       await personaDb.putCharacterLifeMutable(cid, sheet)
       changedLabels.push(...diff.map((x) => `角色·${x}`))
       appliedCount += 1
@@ -511,6 +519,12 @@ export async function applyLifeLedgerInlinePatches(params: {
     latestPlayer = sheet
     const diff = describeSheetDiff(before, sheet)
     if (diff.length) {
+      sheet = appendLifeChangeHistory(sheet, {
+        before,
+        summary: `同请求同步 · ${diff.join('、')}`,
+        source: 'inline',
+      })
+      latestPlayer = sheet
       await personaDb.putPlayerLifeMutable(pid, cid, sheet)
       changedLabels.push(...diff.map((x) => `玩家·${x}`))
       appliedCount += 1
@@ -529,10 +543,23 @@ export async function applyLifeLedgerInlinePatches(params: {
       const charSheet = charRow?.sheet
       const playerSheet = playerRow?.sheet
       if (charSheet && playerSheet) {
+        const beforeChar = charSheet
+        const beforePlayer = playerSheet
         const synced = syncSharedSocialCircleBetweenSheets(charSheet, playerSheet)
         if (synced.syncedNames.length) {
-          await personaDb.putCharacterLifeMutable(cid, synced.character)
-          await personaDb.putPlayerLifeMutable(pid, cid, synced.player)
+          const names = synced.syncedNames.slice(0, 4).join('/')
+          const nextChar = appendLifeChangeHistory(synced.character, {
+            before: beforeChar,
+            summary: `共同社交圈 · ${names}`,
+            source: 'sync_circle',
+          })
+          const nextPlayer = appendLifeChangeHistory(synced.player, {
+            before: beforePlayer,
+            summary: `共同社交圈 · ${names}`,
+            source: 'sync_circle',
+          })
+          await personaDb.putCharacterLifeMutable(cid, nextChar)
+          await personaDb.putPlayerLifeMutable(pid, cid, nextPlayer)
           changedLabels.push(`共同社交圈·${synced.syncedNames.slice(0, 4).join('/')}`)
           appliedCount += 1
         }

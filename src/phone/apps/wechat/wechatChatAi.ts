@@ -106,7 +106,11 @@ import { buildWeChatPulseDmScreenshotOutputBlock } from './pulse/pulseDmScreensh
 import { splitRawByForwardHistory } from './chatHistory/parseForwardHistoryXml'
 import type { WeChatChatHistoryPayload } from './newFriendsPersona/types'
 import { WECHAT_FRIEND_REQUEST_ADJUDICATION_OUTPUT_APPENDIX } from './wechatFriendRequestAdjudicationPrompt'
-import { WECHAT_ROLEPLAY_SYSTEM_PROMPT } from './wechatChatPrompt'
+import {
+  WECHAT_ROLEPLAY_SYSTEM_PROMPT,
+  buildWeChatSystemPrompt,
+  type RelationshipStage,
+} from './wechatChatPrompt'
 import { PROACTIVE_INITIATION_USER_NUDGE } from './proactivePrivateMessageTypes'
 
 /**
@@ -144,7 +148,7 @@ import {
   resolveEffectiveClassicEmojiRoundTriggerPercent,
   resolveStickerCatalogPromptBlockForSession,
 } from './wechatMediaSendFrequency'
-import { buildCharacterImageGenPromptBlock } from './wechatCharacterImageGen'
+import { buildCharacterImageGenPromptBlock, expandInlineCharacterImageGenBubbles } from './wechatCharacterImageGen'
 import { buildChatContextTailFromTranscript } from './nsfwPoseLibrary/buildWeChatNsfwPoseLibraryPromptBlock'
 import { shouldInjectImageGenCompositionLifeFeelCot } from '../../../components/moments/imageGenCompositionLifeFeelCot'
 import {
@@ -188,6 +192,7 @@ import { logConsole } from './consoleLogger'
 import { VOICE_CALL_SYSTEM_PROMPT } from './voiceCall/voiceCallSystemPrompt'
 import { VOICE_CALL_DECISION_SYSTEM_PROMPT } from './voiceCall/callDecisionSystemPrompt'
 import { buildMbtiPersonalityWorldBookText, getMbtiPersonalityWorldBookName, isMbtiPersonalityWorldBookName, normalizeMbti } from './mbtiPersonalityWorldBook'
+import { formatAnimalArchetypeForCharacterCard } from './newFriendsPersona/animalArchetype'
 import type { WorldBookPromptVoice } from './newFriendsPersona/worldBookPronounGuide'
 import { formatWorldBookItemLineForPrompt } from './newFriendsPersona/worldBookPronounGuide'
 import type { WeChatGroupMultiSpeakerOrderedItem } from './groupChatModelMeta'
@@ -634,6 +639,7 @@ export function buildCharacterCard(
     c.zodiac ? `星座：${c.zodiac}` : '',
     displayIdentity ? `身份：${displayIdentity}` : '',
     c.mbti ? `MBTI：${c.mbti}` : '',
+    formatAnimalArchetypeForCharacterCard(c.animalArchetype),
     c.wechatNickname ? `微信昵称：${c.wechatNickname}` : '',
     c.wechatSignature ? `微信签名：${c.wechatSignature}` : '',
     c.wechatRegion ? `微信地区：${c.wechatRegion}` : '',
@@ -872,6 +878,11 @@ export function buildSystemContent(params: {
   lifeOverlayCharacter?: BuildCharacterCardOptions['lifeOverlay']
   /** 叠到玩家身份卡上的本线当前值 */
   lifeOverlayPlayer?: BuildCharacterCardOptions['lifeOverlay']
+  /**
+   * 可选：显式指定关系阶段时才拼接对应模块。
+   * **默认不传**——只注入核心层，关系分寸交给人设/尾声/观察笔记，由模型自行把握。
+   */
+  relationshipStage?: RelationshipStage | null
 }): string {
   const worldBookIdentity = params.worldBookPlayerIdentity ?? params.playerIdentity
   const expandNames = resolveCharUserNamesForPrompt({
@@ -1083,8 +1094,12 @@ export function buildSystemContent(params: {
    * 重新回复偏向（若有）→ 角色档案/私藏侧写/可变人生账本/人设世界书/全局档案室（同级）→ 输出格式硬约束 → 玩家身份 →
    * NPC/尾声 → 时间轴·当前状态 → 尚未总结/线下末尾 → 语义召回/近端 → 向量长期记忆
    */
+  const roleplayPrompt =
+    params.promptMode === 'persona' && params.character && params.relationshipStage
+      ? buildWeChatSystemPrompt(params.relationshipStage)
+      : WECHAT_ROLEPLAY_SYSTEM_PROMPT
   const rawMain =
-    `${WECHAT_ROLEPLAY_SYSTEM_PROMPT}${priorityLadder}` +
+    `${roleplayPrompt}${priorityLadder}` +
     `${replyBias}${regenAppendix}${earlyOutput}${fictionCot}` +
     `${pi}${userPulse}${loreBlock}${extra}${networkRelationships}${networkNpcPronoun}${mutualFriendChainBlock}` +
     `${memoryTail}` +
@@ -1170,7 +1185,7 @@ export async function materializeSystemContent(params: BuildSystemContentParams)
           playerOverlay: null,
           characterBlock: '',
           playerBlock: '',
-        }),
+        })
   ])
   const mergedNetworkRelationships = [networkRelationshipsBlock, pulseFollowingBlock]
     .map((s) => s.trim())
@@ -1539,8 +1554,8 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
     judged: lifeLedgerJudged,
   } = extractLifeLedgerPatchBlock(afterWbPatch)
   const parts = splitRawByForwardHistory(afterLifeLedger)
-  const orderedSegments: WeChatPeerReplyOrderedSegment[] = []
-  const bubbles: string[] = []
+  let orderedSegments: WeChatPeerReplyOrderedSegment[] = []
+  let bubbles: string[] = []
   const danmakuMerged: string[] = []
   let forwardHistory: WeChatChatHistoryPayload | undefined
 
@@ -1574,6 +1589,15 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
       groupHeartWhisperEntries: inlineGroupHeartWhisper ?? undefined,
     }
   }
+
+  bubbles = expandInlineCharacterImageGenBubbles(bubbles)
+  orderedSegments = orderedSegments.flatMap((seg): WeChatPeerReplyOrderedSegment[] => {
+    if (seg.kind !== 'bubble') return [seg]
+    return expandInlineCharacterImageGenBubbles([seg.text]).map((text) => ({
+      kind: 'bubble' as const,
+      text,
+    }))
+  })
 
   const sanitizedBubbles = sanitizeCharacterMediaImageGenBubbles(bubbles)
   const sanitizedSegments = orderedSegments

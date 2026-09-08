@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#18 失物招领 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 0 28px}
+.hero{width:100%;height:128px;object-fit:cover;display:block;filter:saturate(1.05) contrast(1.04)}
+.shell{max-width:800px;margin:0 auto;border-radius:0 0 18px 18px;overflow:hidden;box-shadow:0 18px 48px rgba(20,16,12,.18)}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750;letter-spacing:.04em}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px;opacity:.82}
+.stats b{font-weight:750}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;flex-shrink:0;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.npc b{font-weight:700}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.list{padding:4px 12px 8px}
+.row{padding:9px 10px;margin-bottom:7px;border-radius:10px;font-size:12.5px;line-height:1.55}
+.row .m{font-size:10px;opacity:.6}
+.tabbar{display:flex;gap:0}
+.tabbar button{flex:1;border:0;padding:11px 8px;font-size:12px;cursor:pointer;background:transparent;font-weight:650}
+.tabbar button.on{font-weight:800}
+.panel{display:none}.panel.on{display:block}
+.pulse{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.55}}
+@keyframes blink{50%{opacity:.45}}
+@keyframes flip{0%{transform:rotateX(0)}40%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+.flip{animation:flip .45s ease}
+body{background:#3a2a1c;color:#2a1e14}
+.shell{
+background-color:#c4a574;
+background-image:
+radial-gradient(rgba(80,50,20,.18) 1px,transparent 1px),
+radial-gradient(rgba(120,80,40,.12) 1.2px,transparent 1.2px),
+linear-gradient(135deg,rgba(255,255,255,.08),transparent 40%),
+linear-gradient(180deg,#d2b48c,#b8956a);
+background-size:5px 5px,9px 9px,auto,auto;
+border:8px solid #5a3e28;box-shadow:inset 0 0 40px rgba(40,20,8,.25),0 18px 40px rgba(0,0,0,.35)
+}
+.title-custom{background:rgba(255,248,230,.92);border-bottom:2px solid #2a1e14;text-align:center;letter-spacing:.2em}
+.stats{background:rgba(255,248,230,.75)}
+.board{position:relative;padding:14px 12px 8px}
+.note{
+position:relative;margin:0 8px 14px;padding:14px 14px 12px;background:#fff8e8;
+border:1px solid #e8dcc0;box-shadow:2px 3px 0 rgba(60,40,20,.15);
+transform:rotate(-1.2deg);font-size:13px;line-height:1.65
+}
+.note.alt{transform:rotate(1deg);background:#fff}
+.pin-dot{position:absolute;top:-8px;left:50%;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#ff8a80,#c62828);box-shadow:0 2px 4px rgba(0,0,0,.35)}
+.note h3{margin:0 0 8px;font-size:15px;letter-spacing:.12em}
+.blur{filter:blur(5px);user-select:none;transition:filter .25s}
+.blur.open{filter:none}
+.tip{background:rgba(255,248,230,.9);border:1px dashed #8a6b28;color:#5a4018}
+.npc{background:rgba(255,248,230,.88)}
+.btn{background:#5a3e28;color:#f5e3a8;margin:0 12px 10px}
+.meta{font-size:11px;opacity:.7;margin-top:8px}
+.tear{position:absolute;right:-2px;bottom:-2px;width:28px;height:28px;background:linear-gradient(135deg,transparent 50%,#c4a574 50%);box-shadow:-1px -1px 0 #5a3e28}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./17.html">上一张</a><b>#18 失物招领</b><a href="./19.html">下一张</a></div>
+<p class="fore">软木板上的别针，钉住一把只共淋过一场雨的伞。</p>
+<div class="stage">
+<div class="shell">
+<img class="hero" alt="软木塞失物招领" src="https://image.pollinations.ai/prompt/cork%20bulletin%20board%20thumbtacks%20lost%20and%20found%20paper%20notes%20warm%20lamp%20no%20people">
+<p class="title-custom">失物招领</p>
+<div class="stats"><span>张贴点 · 便利店窗</span><span>有效 <b>7</b> 日</span><span>别针 <b>4</b></span></div>
+<div class="board">
+<div class="note"><span class="pin-dot"></span><h3>物品</h3>
+黑色折叠伞一把，骨略歪，只共淋过一场雨。伞柄胶带上写着铅笔字：「靠过来一点」。
+<div class="meta">附加：伞袋内便签——「别先走」。字迹被雨洇开一半。</div>
+</div>
+<div class="note alt"><span class="pin-dot"></span><h3>发现地点</h3>
+小区南门 → 便利店路口，灯坏了的那根电线杆旁。监控模糊：共伞两人走向相反方向后折返。
+</div>
+<div class="note"><span class="pin-dot"></span><h3>认领条件</h3>
+能说出「靠过来一点」出现的路口；或能对上关东煮双人套收据尾号 <b>8821</b>。
+<div class="meta">已有 3 人留言「是我的伞」· 均未通过暗号</div>
+</div>
+<div class="note alt" style="position:relative"><span class="pin-dot"></span><h3>联系方式</h3>
+<span class="blur" id="phone">138****8821 · 转交 祁洵</span>
+<div class="meta">若无人认领，将转交门禁访客记录里的那位。</div>
+<span class="tear" aria-hidden="true"></span>
+</div>
+</div>
+<button class="btn" type="button" id="reveal">揭开联系方式</button>
+<div class="tip">张贴日 9/4 · 撕角有效 · 请勿覆盖其他告示 · 软木板纹为戏仿材质</div>
+<div class="npc"><span class="av">📌</span><div><b>旁观 NPC</b>：认领规则离谱，信物描述却准得像故意写给一个人看的。</div></div>
+<div class="foot">告示栏 · 雨夜物证 · 禁止当真外传电话</div>
+</div>
+</div>
+<script>
+(function(){
+var phone=document.getElementById("phone");
+var btn=document.getElementById("reveal");
+if(btn&&phone)btn.addEventListener("click",function(){
+phone.classList.toggle("open");
+this.textContent=phone.classList.contains("open")?"重新打码":"揭开联系方式";
+});
+})();
+</script>
+</body>
+</html>

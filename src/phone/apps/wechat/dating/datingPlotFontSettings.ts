@@ -38,6 +38,8 @@ export type DatingPlotFontPreset = {
   /** 全局字体（未勾选区域的回退） */
   globalAssetId: string | null
   followGlobal: boolean
+  /** 剧情正文字号 px；缺省跟随当前设置 */
+  baseFontSizePx?: number
   createdAt: number
 }
 
@@ -50,6 +52,8 @@ export type DatingPlotFontSettings = {
   /** 全局字体 id；未指定区域且 followGlobal 时使用 */
   globalAssetId: string | null
   followGlobal: boolean
+  /** 剧情正文/对白/内心统一字号 px */
+  baseFontSizePx: number
   presets: DatingPlotFontPreset[]
   /** 旧字段兼容 */
   assets?: DatingPlotFontAsset[]
@@ -59,6 +63,17 @@ export type DatingPlotFontCssVars = {
   '--dating-font-narrative': string
   '--dating-font-dialogue': string
   '--dating-font-inner-os': string
+  '--dating-font-size': string
+}
+
+export const DATING_PLOT_FONT_SIZE_MIN = 12
+export const DATING_PLOT_FONT_SIZE_MAX = 22
+export const DATING_PLOT_FONT_SIZE_DEFAULT = 15
+
+export function clampDatingPlotFontSizePx(n: unknown): number {
+  const v = typeof n === 'number' ? n : Number(n)
+  if (!Number.isFinite(v)) return DATING_PLOT_FONT_SIZE_DEFAULT
+  return Math.max(DATING_PLOT_FONT_SIZE_MIN, Math.min(DATING_PLOT_FONT_SIZE_MAX, Math.round(v)))
 }
 
 const FAMILY_PREFIX = 'DatingPlotFont'
@@ -72,6 +87,7 @@ export function createEmptyDatingPlotFontSettings(): DatingPlotFontSettings {
     innerOsAssetId: null,
     globalAssetId: null,
     followGlobal: true,
+    baseFontSizePx: DATING_PLOT_FONT_SIZE_DEFAULT,
     presets: [],
   }
 }
@@ -123,6 +139,7 @@ function migrateFromLegacyAssets(assets: DatingPlotFontAsset[]): DatingPlotFontS
     innerOsAssetId,
     globalAssetId,
     followGlobal: true,
+    baseFontSizePx: DATING_PLOT_FONT_SIZE_DEFAULT,
     presets: [],
   }
 }
@@ -138,6 +155,7 @@ export function normalizeDatingPlotFontSettings(
     return {
       ...migrated,
       followGlobal: raw.followGlobal !== false,
+      baseFontSizePx: clampDatingPlotFontSizePx(raw.baseFontSizePx ?? migrated.baseFontSizePx),
       presets: normalizePresets(raw.presets),
     }
   }
@@ -171,6 +189,7 @@ export function normalizeDatingPlotFontSettings(
     innerOsAssetId: pickId(raw.innerOsAssetId),
     globalAssetId: pickId(raw.globalAssetId),
     followGlobal: raw.followGlobal !== false,
+    baseFontSizePx: clampDatingPlotFontSizePx(raw.baseFontSizePx),
     presets: normalizePresets(raw.presets),
   }
 }
@@ -190,6 +209,9 @@ function normalizePresets(raw: DatingPlotFontPreset[] | null | undefined): Datin
       innerOsAssetId: String(p.innerOsAssetId ?? '').trim() || null,
       globalAssetId: String(p.globalAssetId ?? '').trim() || null,
       followGlobal: p.followGlobal !== false,
+      baseFontSizePx: clampDatingPlotFontSizePx(
+        p.baseFontSizePx ?? DATING_PLOT_FONT_SIZE_DEFAULT,
+      ),
       createdAt: Number.isFinite(p.createdAt) ? Number(p.createdAt) : Date.now(),
     })
   }
@@ -314,6 +336,7 @@ export function saveDatingPlotFontPreset(
     innerOsAssetId: base.innerOsAssetId,
     globalAssetId: base.globalAssetId,
     followGlobal: base.followGlobal,
+    baseFontSizePx: base.baseFontSizePx,
     createdAt: Date.now(),
   }
   return { ...base, presets: [preset, ...base.presets].slice(0, 30) }
@@ -368,6 +391,9 @@ export function applyDatingPlotFontPreset(
       innerOsAssetId: preset.innerOsAssetId,
       globalAssetId: preset.globalAssetId,
       followGlobal: preset.followGlobal,
+      baseFontSizePx: clampDatingPlotFontSizePx(
+        preset.baseFontSizePx ?? base.baseFontSizePx,
+      ),
     },
   }
 }
@@ -499,18 +525,22 @@ export function buildDatingPlotFontCssVars(
 ): DatingPlotFontCssVars {
   const wrap = (family: string | null) =>
     family ? `"${family}", ${PHONE_GLOBAL_FONT_FALLBACK}` : PHONE_GLOBAL_FONT_FALLBACK
+  const sizePx = clampDatingPlotFontSizePx(
+    normalizeDatingPlotFontSettings(settings).baseFontSizePx,
+  )
   return {
     '--dating-font-narrative': wrap(pickFamilyForRegion(settings, 'narrative', dataUrlById)),
     '--dating-font-dialogue': wrap(pickFamilyForRegion(settings, 'dialogue', dataUrlById)),
     '--dating-font-inner-os': wrap(pickFamilyForRegion(settings, 'innerOs', dataUrlById)),
+    '--dating-font-size': `${sizePx}px`,
   }
 }
 
 export function summarizeDatingPlotFontSettings(settings: DatingPlotFontSettings): string {
   const s = normalizeDatingPlotFontSettings(settings)
   const n = s.library.length
-  if (!n) return '系统默认'
-  const bits: string[] = [`库${n}`]
+  if (!n) return `系统默认 · ${s.baseFontSizePx}px`
+  const bits: string[] = [`库${n}`, `${s.baseFontSizePx}px`]
   if (s.presets.length) bits.push(`预设${s.presets.length}`)
   const regions: string[] = []
   if (s.narrativeAssetId) regions.push('正文')

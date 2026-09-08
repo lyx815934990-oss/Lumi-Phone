@@ -3,7 +3,8 @@ import { DEFAULT_CHAT_THEME, type ChatTheme } from './chatTheme/types'
 import type { WeChatBubbleTheme, WeChatChatRoomBg, WeChatTheme } from '../../types'
 import {
   DEFAULT_CUSTOMIZATION,
-  DEFAULT_WECHAT_CHAT_WALLPAPER_PATH,
+  DEFAULT_WECHAT_CHAT_ROOM_BG,
+  LUMI_PAPER_CHAT_SKIN_OVERRIDES,
   wechatBubbleThemesEqual,
 } from '../../types'
 import {
@@ -20,9 +21,16 @@ export type WeChatBubblePreset = {
   otherBubbleText: string
   /** 套用后写入聊天室默认背景（不影响 Tab 页底图） */
   chatRoomDefaultBg: WeChatChatRoomBg
-  /** 全局套用预设时一并写入 wechatTheme（不含 bubbleGlobal / Tab 背景） */
+  /** 全局套用预设时一并写入 wechatTheme（仅聊天相关；不含 Tab 壳色） */
   wechatThemePatch?: Partial<
-    Pick<WeChatTheme, 'chatRoomDefaultBg' | 'chatInputBg' | 'chatInputBorder'>
+    Pick<
+      WeChatTheme,
+      | 'chatRoomDefaultBg'
+      | 'chatInputBg'
+      | 'chatInputBorder'
+      | 'timestampText'
+      | 'chatSkinOverrides'
+    >
   >
   /** 全局套用预设时一并写入 IndexedDB 聊天输入栏主题 */
   chatThemePatch?: ChatThemePatch
@@ -36,8 +44,8 @@ export const WECHAT_APP_CLASSIC_BUBBLE_PRESET: WeChatBubblePreset = {
   bubble: {
     selfBubbleBg: '#95EC69',
     otherBubbleBg: '#FFFFFF',
-    selfBubbleRadiusPx: 8,
-    otherBubbleRadiusPx: 8,
+    selfBubbleRadiusPx: 4,
+    otherBubbleRadiusPx: 4,
     showAvatar: true,
     showAvatarSelf: true,
     showAvatarOther: true,
@@ -354,39 +362,33 @@ export function resolveTwitterXThemePatch(
 /** 本项目默认气泡样式，便于从预设切回 */
 export const WECHAT_APP_DEFAULT_BUBBLE_PRESET: WeChatBubblePreset = {
   id: 'wechat-app-default',
-  name: '简约灰蓝',
-  description: '低饱和灰蓝己方 + 浅灰对方，无三角；不改聊天室背景图。',
+  name: '纸墨柔光',
+  description: '与微信纸墨壳同系：暖石己方 + 白底对方 + 纸感聊天底；柔和顶栏/输入；不改其它 Tab。',
   bubble: {
     ...DEFAULT_CUSTOMIZATION.wechatTheme.bubbleGlobal,
   },
   selfBubbleText: DEFAULT_CUSTOMIZATION.wechatTheme.selfBubbleText,
   otherBubbleText: DEFAULT_CUSTOMIZATION.wechatTheme.otherBubbleText,
-  chatRoomDefaultBg: {
-    mode: 'image',
-    imageUrl: DEFAULT_WECHAT_CHAT_WALLPAPER_PATH,
-    fallbackColor: '#EDEDED',
-  },
+  chatRoomDefaultBg: { ...DEFAULT_WECHAT_CHAT_ROOM_BG },
   wechatThemePatch: {
-    chatRoomDefaultBg: {
-      mode: 'image',
-      imageUrl: DEFAULT_WECHAT_CHAT_WALLPAPER_PATH,
-      fallbackColor: '#EDEDED',
-    },
+    chatRoomDefaultBg: { ...DEFAULT_WECHAT_CHAT_ROOM_BG },
     chatInputBg: DEFAULT_CUSTOMIZATION.wechatTheme.chatInputBg,
     chatInputBorder: DEFAULT_CUSTOMIZATION.wechatTheme.chatInputBorder,
+    timestampText: DEFAULT_CUSTOMIZATION.wechatTheme.timestampText,
+    chatSkinOverrides: { ...LUMI_PAPER_CHAT_SKIN_OVERRIDES },
   },
   chatThemePatch: {
     inputBar: {
-      borderRadius: 16,
-      borderColor: '#e5e5e5',
-      backgroundColor: '#ffffff',
-      buttonColor: '#000000',
+      borderRadius: 20,
+      borderColor: 'rgba(230, 228, 224, 0.85)',
+      backgroundColor: 'rgba(255, 255, 255, 0.92)',
+      buttonColor: '#8B8B8F',
       buttonSize: 20,
     },
   },
 }
 
-/** 与 DEFAULT_CUSTOMIZATION.wechatTheme.bubbleGlobal 形态一致（简约灰蓝） */
+/** 与 DEFAULT_CUSTOMIZATION.wechatTheme.bubbleGlobal 形态一致（纸墨柔光） */
 export function isLumiDefaultBubbleShape(bubble: WeChatBubbleTheme): boolean {
   const lumi = DEFAULT_CUSTOMIZATION.wechatTheme.bubbleGlobal
   return (

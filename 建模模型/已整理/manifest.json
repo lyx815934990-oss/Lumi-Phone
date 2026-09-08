@@ -1,0 +1,6636 @@
+{
+  "generatedAt": "2026-08-27T08:45:30.468Z",
+  "totalInput": 849,
+  "totalOutput": 654,
+  "totalSkipped": 263,
+  "categories": {
+    "03-桌": 43,
+    "14-食物": 191,
+    "09-厨房电器": 28,
+    "13-运动休闲": 33,
+    "06-装饰": 50,
+    "16-台面小物": 40,
+    "02-沙发": 24,
+    "07-收纳柜": 68,
+    "12-办公电子": 33,
+    "10-卫浴": 15,
+    "01-床": 13,
+    "08-灯光": 21,
+    "05-绿植": 41,
+    "15-椅子": 19,
+    "11-墙面门窗": 35
+  },
+  "items": [
+    {
+      "id": "升降桌",
+      "category": "03-桌",
+      "chineseName": "升降桌",
+      "englishKey": "adjustable desk",
+      "source": "家具3/Adjustable Desk.glb",
+      "output": "已整理/03-桌/升降桌.glb"
+    },
+    {
+      "id": "半个牛油果",
+      "category": "14-食物",
+      "chineseName": "半个牛油果",
+      "englishKey": "advocado half",
+      "source": "食物1/Models/GLB format/advocado-half.glb",
+      "output": "已整理/14-食物/半个牛油果.glb"
+    },
+    {
+      "id": "空气炸锅",
+      "category": "09-厨房电器",
+      "chineseName": "空气炸锅",
+      "englishKey": "air fryer",
+      "source": "家具5/Air Fryer.glb",
+      "output": "已整理/09-厨房电器/空气炸锅.glb"
+    },
+    {
+      "id": "通风口",
+      "category": "13-运动休闲",
+      "chineseName": "通风口",
+      "englishKey": "air vent",
+      "source": "家具3/Air Vent.glb",
+      "output": "已整理/13-运动休闲/通风口.glb"
+    },
+    {
+      "id": "闹钟",
+      "category": "06-装饰",
+      "chineseName": "闹钟",
+      "englishKey": "alarm clock",
+      "source": "家具2/Alarm Clock.glb",
+      "output": "已整理/06-装饰/闹钟.glb"
+    },
+    {
+      "id": "美式足球",
+      "category": "13-运动休闲",
+      "chineseName": "美式足球",
+      "englishKey": "americanfootball ball",
+      "source": "家具5/Americanfootball Ball.glb",
+      "output": "已整理/13-运动休闲/美式足球.glb"
+    },
+    {
+      "id": "指针钟",
+      "category": "06-装饰",
+      "chineseName": "指针钟",
+      "englishKey": "analog clock",
+      "source": "家具3/Analog clock.glb",
+      "output": "已整理/06-装饰/指针钟.glb"
+    },
+    {
+      "id": "角形画笔",
+      "category": "16-台面小物",
+      "chineseName": "角形画笔",
+      "englishKey": "angle brush",
+      "source": "家具5/Angle Brush.glb",
+      "output": "已整理/16-台面小物/角形画笔.glb"
+    },
+    {
+      "id": "苹果",
+      "category": "14-食物",
+      "chineseName": "苹果",
+      "englishKey": "apple",
+      "source": "食物1/Models/GLB format/apple.glb",
+      "output": "已整理/14-食物/苹果.glb"
+    },
+    {
+      "id": "半颗苹果",
+      "category": "14-食物",
+      "chineseName": "半颗苹果",
+      "englishKey": "apple half",
+      "source": "食物1/Models/GLB format/apple-half.glb",
+      "output": "已整理/14-食物/半颗苹果.glb"
+    },
+    {
+      "id": "扶手椅",
+      "category": "02-沙发",
+      "chineseName": "扶手椅",
+      "englishKey": "armchair",
+      "source": "家具2/Armchair.glb",
+      "output": "已整理/02-沙发/扶手椅.glb"
+    },
+    {
+      "id": "牛油果",
+      "category": "14-食物",
+      "chineseName": "牛油果",
+      "englishKey": "avocado",
+      "source": "食物1/Models/GLB format/avocado.glb",
+      "output": "已整理/14-食物/牛油果.glb"
+    },
+    {
+      "id": "单身梳妆台",
+      "category": "07-收纳柜",
+      "chineseName": "单身梳妆台",
+      "englishKey": "bachelor dresser",
+      "source": "家具5/Bachelor Dresser.glb",
+      "output": "已整理/07-收纳柜/单身梳妆台.glb"
+    },
+    {
+      "id": "培根",
+      "category": "14-食物",
+      "chineseName": "培根",
+      "englishKey": "bacon",
+      "source": "食物1/Models/GLB format/bacon.glb",
+      "output": "已整理/14-食物/培根.glb"
+    },
+    {
+      "id": "生培根",
+      "category": "14-食物",
+      "chineseName": "生培根",
+      "englishKey": "bacon raw",
+      "source": "食物1/Models/GLB format/bacon-raw.glb",
+      "output": "已整理/14-食物/生培根.glb"
+    },
+    {
+      "id": "包装袋",
+      "category": "14-食物",
+      "chineseName": "包装袋",
+      "englishKey": "bag",
+      "source": "食物1/Models/GLB format/bag.glb",
+      "output": "已整理/14-食物/包装袋.glb"
+    },
+    {
+      "id": "扁包装袋",
+      "category": "14-食物",
+      "chineseName": "扁包装袋",
+      "englishKey": "bag flat",
+      "source": "食物1/Models/GLB format/bag-flat.glb",
+      "output": "已整理/14-食物/扁包装袋.glb"
+    },
+    {
+      "id": "香蕉",
+      "category": "14-食物",
+      "chineseName": "香蕉",
+      "englishKey": "banana",
+      "source": "食物1/Models/GLB format/banana.glb",
+      "output": "已整理/14-食物/香蕉.glb"
+    },
+    {
+      "id": "烧烤架",
+      "category": "09-厨房电器",
+      "chineseName": "烧烤架",
+      "englishKey": "barbecue",
+      "source": "家具2/Barbecue.glb",
+      "output": "已整理/09-厨房电器/烧烤架.glb"
+    },
+    {
+      "id": "杠铃",
+      "category": "13-运动休闲",
+      "chineseName": "杠铃",
+      "englishKey": "barbell",
+      "source": "家具5/Barbell.glb",
+      "output": "已整理/13-运动休闲/杠铃.glb"
+    },
+    {
+      "id": "木桶",
+      "category": "14-食物",
+      "chineseName": "木桶",
+      "englishKey": "barrel",
+      "source": "食物1/Models/GLB format/barrel.glb",
+      "output": "已整理/14-食物/木桶.glb"
+    },
+    {
+      "id": "棒球棍",
+      "category": "13-运动休闲",
+      "chineseName": "棒球棍",
+      "englishKey": "baseball bat",
+      "source": "家具5/Baseball Bat.glb",
+      "output": "已整理/13-运动休闲/棒球棍.glb"
+    },
+    {
+      "id": "篮球",
+      "category": "13-运动休闲",
+      "chineseName": "篮球",
+      "englishKey": "basket ball",
+      "source": "家具5/Basket Ball.glb",
+      "output": "已整理/13-运动休闲/篮球.glb"
+    },
+    {
+      "id": "贝斯",
+      "category": "13-运动休闲",
+      "chineseName": "贝斯",
+      "englishKey": "bass",
+      "source": "家具5/Bass.glb",
+      "output": "已整理/13-运动休闲/贝斯.glb"
+    },
+    {
+      "id": "低音音箱",
+      "category": "12-办公电子",
+      "chineseName": "低音音箱",
+      "englishKey": "bass speakers",
+      "source": "家具5/Bass Speakers.glb",
+      "output": "已整理/12-办公电子/低音音箱.glb"
+    },
+    {
+      "id": "浴室柜",
+      "category": "07-收纳柜",
+      "chineseName": "浴室柜",
+      "englishKey": "bathroom cabinet",
+      "source": "家具1/Models/GLTF format/bathroomCabinet.glb",
+      "output": "已整理/07-收纳柜/浴室柜.glb"
+    },
+    {
+      "id": "浴室抽屉柜",
+      "category": "07-收纳柜",
+      "chineseName": "浴室抽屉柜",
+      "englishKey": "bathroom cabinet drawer",
+      "source": "家具1/Models/GLTF format/bathroomCabinetDrawer.glb",
+      "output": "已整理/07-收纳柜/浴室抽屉柜.glb"
+    },
+    {
+      "id": "浴室镜",
+      "category": "06-装饰",
+      "chineseName": "浴室镜",
+      "englishKey": "bathroom mirror",
+      "source": "家具1/Models/GLTF format/bathroomMirror.glb",
+      "output": "已整理/06-装饰/浴室镜.glb"
+    },
+    {
+      "id": "洗手台",
+      "category": "10-卫浴",
+      "chineseName": "洗手台",
+      "englishKey": "bathroom sink",
+      "source": "家具1/Models/GLTF format/bathroomSink.glb",
+      "output": "已整理/10-卫浴/洗手台.glb"
+    },
+    {
+      "id": "方形洗手台",
+      "category": "10-卫浴",
+      "chineseName": "方形洗手台",
+      "englishKey": "bathroom sink square",
+      "source": "家具1/Models/GLTF format/bathroomSinkSquare.glb",
+      "output": "已整理/10-卫浴/方形洗手台.glb"
+    },
+    {
+      "id": "厕纸",
+      "category": "10-卫浴",
+      "chineseName": "厕纸",
+      "englishKey": "bathroom toilet paper",
+      "source": "家具4/Bathroom Toilet Paper.glb",
+      "output": "已整理/10-卫浴/厕纸.glb"
+    },
+    {
+      "id": "浴缸",
+      "category": "10-卫浴",
+      "chineseName": "浴缸",
+      "englishKey": "bathtub",
+      "source": "家具1/Models/GLTF format/bathtub.glb",
+      "output": "已整理/10-卫浴/浴缸.glb"
+    },
+    {
+      "id": "熊头挂饰",
+      "category": "06-装饰",
+      "chineseName": "熊头挂饰",
+      "englishKey": "bear",
+      "source": "家具1/Models/GLTF format/bear.glb",
+      "output": "已整理/06-装饰/熊头挂饰.glb"
+    },
+    {
+      "id": "床",
+      "category": "01-床",
+      "chineseName": "床",
+      "englishKey": "bed",
+      "source": "家具2/Bed.glb",
+      "output": "已整理/01-床/床.glb"
+    },
+    {
+      "id": "上下铺",
+      "category": "01-床",
+      "chineseName": "上下铺",
+      "englishKey": "bed bunk",
+      "source": "家具1/Models/GLTF format/bedBunk.glb",
+      "output": "已整理/01-床/上下铺.glb"
+    },
+    {
+      "id": "双人床",
+      "category": "01-床",
+      "chineseName": "双人床",
+      "englishKey": "bed double",
+      "source": "家具1/Models/GLTF format/bedDouble.glb",
+      "output": "已整理/01-床/双人床.glb"
+    },
+    {
+      "id": "特大床",
+      "category": "01-床",
+      "chineseName": "特大床",
+      "englishKey": "bed king",
+      "source": "家具4/Bed King.glb",
+      "output": "已整理/01-床/特大床.glb"
+    },
+    {
+      "id": "单人床",
+      "category": "01-床",
+      "chineseName": "单人床",
+      "englishKey": "bed single",
+      "source": "家具1/Models/GLTF format/bedSingle.glb",
+      "output": "已整理/01-床/单人床.glb"
+    },
+    {
+      "id": "床头灯",
+      "category": "08-灯光",
+      "chineseName": "床头灯",
+      "englishKey": "bedside lamp",
+      "source": "家具5/Bedside Lamp.glb",
+      "output": "已整理/08-灯光/床头灯.glb"
+    },
+    {
+      "id": "甜菜",
+      "category": "14-食物",
+      "chineseName": "甜菜",
+      "englishKey": "beet",
+      "source": "食物1/Models/GLB format/beet.glb",
+      "output": "已整理/14-食物/甜菜.glb"
+    },
+    {
+      "id": "长凳",
+      "category": "03-桌",
+      "chineseName": "长凳",
+      "englishKey": "bench",
+      "source": "家具1/Models/GLTF format/bench.glb",
+      "output": "已整理/03-桌/长凳.glb"
+    },
+    {
+      "id": "软垫长凳",
+      "category": "03-桌",
+      "chineseName": "软垫长凳",
+      "englishKey": "bench cushion",
+      "source": "家具1/Models/GLTF format/benchCushion.glb",
+      "output": "已整理/03-桌/软垫长凳.glb"
+    },
+    {
+      "id": "矮软垫凳",
+      "category": "03-桌",
+      "chineseName": "矮软垫凳",
+      "englishKey": "bench cushion low",
+      "source": "家具1/Models/GLTF format/benchCushionLow.glb",
+      "output": "已整理/03-桌/矮软垫凳.glb"
+    },
+    {
+      "id": "文件夹",
+      "category": "12-办公电子",
+      "chineseName": "文件夹",
+      "englishKey": "binder",
+      "source": "家具3/Binder.glb",
+      "output": "已整理/12-办公电子/文件夹.glb"
+    },
+    {
+      "id": "收纳箱组",
+      "category": "07-收纳柜",
+      "chineseName": "收纳箱组",
+      "englishKey": "bins",
+      "source": "家具3/Bins.glb",
+      "output": "已整理/07-收纳柜/收纳箱组.glb"
+    },
+    {
+      "id": "鸟屋",
+      "category": "06-装饰",
+      "chineseName": "鸟屋",
+      "englishKey": "bird house",
+      "source": "家具2/Bird House.glb",
+      "output": "已整理/06-装饰/鸟屋.glb"
+    },
+    {
+      "id": "空白相框",
+      "category": "06-装饰",
+      "chineseName": "空白相框",
+      "englishKey": "blank picture frame",
+      "source": "家具3/Blank Picture Frame.glb",
+      "output": "已整理/06-装饰/空白相框.glb"
+    },
+    {
+      "id": "搅拌机",
+      "category": "09-厨房电器",
+      "chineseName": "搅拌机",
+      "englishKey": "blender",
+      "source": "家具5/Blender.glb",
+      "output": "已整理/09-厨房电器/搅拌机.glb"
+    },
+    {
+      "id": "书堆",
+      "category": "16-台面小物",
+      "chineseName": "书堆",
+      "englishKey": "book stack",
+      "source": "家具3/Book Stack.glb",
+      "output": "已整理/16-台面小物/书堆.glb"
+    },
+    {
+      "id": "封闭书柜",
+      "category": "07-收纳柜",
+      "chineseName": "封闭书柜",
+      "englishKey": "bookcase closed",
+      "source": "家具1/Models/GLTF format/bookcaseClosed.glb",
+      "output": "已整理/07-收纳柜/封闭书柜.glb"
+    },
+    {
+      "id": "带门书柜",
+      "category": "07-收纳柜",
+      "chineseName": "带门书柜",
+      "englishKey": "bookcase closed doors",
+      "source": "家具1/Models/GLTF format/bookcaseClosedDoors.glb",
+      "output": "已整理/07-收纳柜/带门书柜.glb"
+    },
+    {
+      "id": "宽封闭书柜",
+      "category": "07-收纳柜",
+      "chineseName": "宽封闭书柜",
+      "englishKey": "bookcase closed wide",
+      "source": "家具1/Models/GLTF format/bookcaseClosedWide.glb",
+      "output": "已整理/07-收纳柜/宽封闭书柜.glb"
+    },
+    {
+      "id": "开放书柜",
+      "category": "07-收纳柜",
+      "chineseName": "开放书柜",
+      "englishKey": "bookcase open",
+      "source": "家具1/Models/GLTF format/bookcaseOpen.glb",
+      "output": "已整理/07-收纳柜/开放书柜.glb"
+    },
+    {
+      "id": "矮开放书柜",
+      "category": "07-收纳柜",
+      "chineseName": "矮开放书柜",
+      "englishKey": "bookcase open low",
+      "source": "家具1/Models/GLTF format/bookcaseOpenLow.glb",
+      "output": "已整理/07-收纳柜/矮开放书柜.glb"
+    },
+    {
+      "id": "书本",
+      "category": "06-装饰",
+      "chineseName": "书本",
+      "englishKey": "books",
+      "source": "家具1/Models/GLTF format/books.glb",
+      "output": "已整理/06-装饰/书本.glb"
+    },
+    {
+      "id": "书架",
+      "category": "07-收纳柜",
+      "chineseName": "书架",
+      "englishKey": "bookshelf",
+      "source": "家具2/Bookshelf.glb",
+      "output": "已整理/07-收纳柜/书架.glb"
+    },
+    {
+      "id": "番茄酱",
+      "category": "14-食物",
+      "chineseName": "番茄酱",
+      "englishKey": "bottle ketchup",
+      "source": "食物1/Models/GLB format/bottle-ketchup.glb",
+      "output": "已整理/14-食物/番茄酱.glb"
+    },
+    {
+      "id": "芥末酱",
+      "category": "14-食物",
+      "chineseName": "芥末酱",
+      "englishKey": "bottle musterd",
+      "source": "食物1/Models/GLB format/bottle-musterd.glb",
+      "output": "已整理/14-食物/芥末酱.glb"
+    },
+    {
+      "id": "油瓶",
+      "category": "14-食物",
+      "chineseName": "油瓶",
+      "englishKey": "bottle oil",
+      "source": "食物1/Models/GLB format/bottle-oil.glb",
+      "output": "已整理/14-食物/油瓶.glb"
+    },
+    {
+      "id": "碗",
+      "category": "16-台面小物",
+      "chineseName": "碗",
+      "englishKey": "bowl",
+      "source": "家具5/Bowl.glb",
+      "output": "已整理/16-台面小物/碗.glb"
+    },
+    {
+      "id": "汤碗",
+      "category": "14-食物",
+      "chineseName": "汤碗",
+      "englishKey": "bowl broth",
+      "source": "食物1/Models/GLB format/bowl-broth.glb",
+      "output": "已整理/14-食物/汤碗.glb"
+    },
+    {
+      "id": "麦片碗",
+      "category": "14-食物",
+      "chineseName": "麦片碗",
+      "englishKey": "bowl cereal",
+      "source": "食物1/Models/GLB format/bowl-cereal.glb",
+      "output": "已整理/14-食物/麦片碗.glb"
+    },
+    {
+      "id": "汤碗_2",
+      "category": "14-食物",
+      "chineseName": "汤碗_2",
+      "englishKey": "bowl soup",
+      "source": "食物1/Models/GLB format/bowl-soup.glb",
+      "output": "已整理/14-食物/汤碗_2.glb"
+    },
+    {
+      "id": "拳击手套",
+      "category": "13-运动休闲",
+      "chineseName": "拳击手套",
+      "englishKey": "boxing gloves",
+      "source": "家具5/Boxing Gloves.glb",
+      "output": "已整理/13-运动休闲/拳击手套.glb"
+    },
+    {
+      "id": "面包",
+      "category": "14-食物",
+      "chineseName": "面包",
+      "englishKey": "bread",
+      "source": "食物1/Models/GLB format/bread.glb",
+      "output": "已整理/14-食物/面包.glb"
+    },
+    {
+      "id": "公文包",
+      "category": "12-办公电子",
+      "chineseName": "公文包",
+      "englishKey": "briefcase",
+      "source": "家具3/Briefcase.glb",
+      "output": "已整理/12-办公电子/公文包.glb"
+    },
+    {
+      "id": "西兰花",
+      "category": "14-食物",
+      "chineseName": "西兰花",
+      "englishKey": "broccoli",
+      "source": "食物1/Models/GLB format/broccoli.glb",
+      "output": "已整理/14-食物/西兰花.glb"
+    },
+    {
+      "id": "上下铺_2",
+      "category": "01-床",
+      "chineseName": "上下铺_2",
+      "englishKey": "bunk bed",
+      "source": "家具4/Bunk Bed.glb",
+      "output": "已整理/01-床/上下铺_2.glb"
+    },
+    {
+      "id": "汉堡",
+      "category": "14-食物",
+      "chineseName": "汉堡",
+      "englishKey": "burger",
+      "source": "食物1/Models/GLB format/burger.glb",
+      "output": "已整理/14-食物/汉堡.glb"
+    },
+    {
+      "id": "芝士汉堡",
+      "category": "14-食物",
+      "chineseName": "芝士汉堡",
+      "englishKey": "burger cheese",
+      "source": "食物1/Models/GLB format/burger-cheese.glb",
+      "output": "已整理/14-食物/芝士汉堡.glb"
+    },
+    {
+      "id": "双层芝士汉堡",
+      "category": "14-食物",
+      "chineseName": "双层芝士汉堡",
+      "englishKey": "burger cheese double",
+      "source": "食物1/Models/GLB format/burger-cheese-double.glb",
+      "output": "已整理/14-食物/双层芝士汉堡.glb"
+    },
+    {
+      "id": "双层汉堡",
+      "category": "14-食物",
+      "chineseName": "双层汉堡",
+      "englishKey": "burger double",
+      "source": "食物1/Models/GLB format/burger-double.glb",
+      "output": "已整理/14-食物/双层汉堡.glb"
+    },
+    {
+      "id": "卷心菜",
+      "category": "14-食物",
+      "chineseName": "卷心菜",
+      "englishKey": "cabbage",
+      "source": "食物1/Models/GLB format/cabbage.glb",
+      "output": "已整理/14-食物/卷心菜.glb"
+    },
+    {
+      "id": "柜子",
+      "category": "07-收纳柜",
+      "chineseName": "柜子",
+      "englishKey": "cabinet",
+      "source": "家具2/Cabinet.glb",
+      "output": "已整理/07-收纳柜/柜子.glb"
+    },
+    {
+      "id": "床底柜",
+      "category": "01-床",
+      "chineseName": "床底柜",
+      "englishKey": "cabinet bed",
+      "source": "家具1/Models/GLTF format/cabinetBed.glb",
+      "output": "已整理/01-床/床底柜.glb"
+    },
+    {
+      "id": "床底抽屉柜",
+      "category": "01-床",
+      "chineseName": "床底抽屉柜",
+      "englishKey": "cabinet bed drawer",
+      "source": "家具1/Models/GLTF format/cabinetBedDrawer.glb",
+      "output": "已整理/01-床/床底抽屉柜.glb"
+    },
+    {
+      "id": "床底抽屉桌",
+      "category": "01-床",
+      "chineseName": "床底抽屉桌",
+      "englishKey": "cabinet bed drawer tabl",
+      "source": "家具3/Cabinet Bed Drawer Tabl.glb",
+      "output": "已整理/01-床/床底抽屉桌.glb"
+    },
+    {
+      "id": "床底抽屉桌_2",
+      "category": "01-床",
+      "chineseName": "床底抽屉桌_2",
+      "englishKey": "cabinet bed drawer table",
+      "source": "家具1/Models/GLTF format/cabinetBedDrawerTable.glb",
+      "output": "已整理/01-床/床底抽屉桌_2.glb"
+    },
+    {
+      "id": "电视柜",
+      "category": "07-收纳柜",
+      "chineseName": "电视柜",
+      "englishKey": "cabinet television",
+      "source": "家具1/Models/GLTF format/cabinetTelevision.glb",
+      "output": "已整理/07-收纳柜/电视柜.glb"
+    },
+    {
+      "id": "带门电视柜",
+      "category": "07-收纳柜",
+      "chineseName": "带门电视柜",
+      "englishKey": "cabinet television doors",
+      "source": "家具1/Models/GLTF format/cabinetTelevisionDoors.glb",
+      "output": "已整理/07-收纳柜/带门电视柜.glb"
+    },
+    {
+      "id": "仙人掌",
+      "category": "05-绿植",
+      "chineseName": "仙人掌",
+      "englishKey": "cactus",
+      "source": "家具4/Cactus.glb",
+      "output": "已整理/05-绿植/仙人掌.glb"
+    },
+    {
+      "id": "蛋糕",
+      "category": "14-食物",
+      "chineseName": "蛋糕",
+      "englishKey": "cake",
+      "source": "食物1/Models/GLB format/cake.glb",
+      "output": "已整理/14-食物/蛋糕.glb"
+    },
+    {
+      "id": "生日蛋糕",
+      "category": "14-食物",
+      "chineseName": "生日蛋糕",
+      "englishKey": "cake birthday",
+      "source": "食物1/Models/GLB format/cake-birthday.glb",
+      "output": "已整理/14-食物/生日蛋糕.glb"
+    },
+    {
+      "id": "蛋糕铲",
+      "category": "14-食物",
+      "chineseName": "蛋糕铲",
+      "englishKey": "cake slicer",
+      "source": "食物1/Models/GLB format/cake-slicer.glb",
+      "output": "已整理/14-食物/蛋糕铲.glb"
+    },
+    {
+      "id": "大坩埚",
+      "category": "16-台面小物",
+      "chineseName": "大坩埚",
+      "englishKey": "caldron",
+      "source": "家具2/Caldron.glb",
+      "output": "已整理/16-台面小物/大坩埚.glb"
+    },
+    {
+      "id": "日历",
+      "category": "12-办公电子",
+      "chineseName": "日历",
+      "englishKey": "calendar",
+      "source": "家具3/Calendar.glb",
+      "output": "已整理/12-办公电子/日历.glb"
+    },
+    {
+      "id": "罐头",
+      "category": "14-食物",
+      "chineseName": "罐头",
+      "englishKey": "can",
+      "source": "食物1/Models/GLB format/can.glb",
+      "output": "已整理/14-食物/罐头.glb"
+    },
+    {
+      "id": "开盖罐头",
+      "category": "14-食物",
+      "chineseName": "开盖罐头",
+      "englishKey": "can open",
+      "source": "食物1/Models/GLB format/can-open.glb",
+      "output": "已整理/14-食物/开盖罐头.glb"
+    },
+    {
+      "id": "小罐头",
+      "category": "14-食物",
+      "chineseName": "小罐头",
+      "englishKey": "can small",
+      "source": "食物1/Models/GLB format/can-small.glb",
+      "output": "已整理/14-食物/小罐头.glb"
+    },
+    {
+      "id": "烛台",
+      "category": "06-装饰",
+      "chineseName": "烛台",
+      "englishKey": "candlestick",
+      "source": "家具2/Candlestick.glb",
+      "output": "已整理/06-装饰/烛台.glb"
+    },
+    {
+      "id": "巧克力棒",
+      "category": "14-食物",
+      "chineseName": "巧克力棒",
+      "englishKey": "candy bar",
+      "source": "食物1/Models/GLB format/candy-bar.glb",
+      "output": "已整理/14-食物/巧克力棒.glb"
+    },
+    {
+      "id": "巧克力棒包装",
+      "category": "14-食物",
+      "chineseName": "巧克力棒包装",
+      "englishKey": "candy bar wrapper",
+      "source": "食物1/Models/GLB format/candy-bar-wrapper.glb",
+      "output": "已整理/14-食物/巧克力棒包装.glb"
+    },
+    {
+      "id": "纸箱",
+      "category": "07-收纳柜",
+      "chineseName": "纸箱",
+      "englishKey": "cardboard box",
+      "source": "家具3/Cardboard Box.glb",
+      "output": "已整理/07-收纳柜/纸箱.glb"
+    },
+    {
+      "id": "封闭纸箱",
+      "category": "07-收纳柜",
+      "chineseName": "封闭纸箱",
+      "englishKey": "cardboard box closed",
+      "source": "家具1/Models/GLTF format/cardboardBoxClosed.glb",
+      "output": "已整理/07-收纳柜/封闭纸箱.glb"
+    },
+    {
+      "id": "打开纸箱",
+      "category": "07-收纳柜",
+      "chineseName": "打开纸箱",
+      "englishKey": "cardboard box open",
+      "source": "家具1/Models/GLTF format/cardboardBoxOpen.glb",
+      "output": "已整理/07-收纳柜/打开纸箱.glb"
+    },
+    {
+      "id": "纸箱组",
+      "category": "07-收纳柜",
+      "chineseName": "纸箱组",
+      "englishKey": "cardboard boxes",
+      "source": "家具3/Cardboard Boxes.glb",
+      "output": "已整理/07-收纳柜/纸箱组.glb"
+    },
+    {
+      "id": "胡萝卜",
+      "category": "14-食物",
+      "chineseName": "胡萝卜",
+      "englishKey": "carrot",
+      "source": "食物1/Models/GLB format/carrot.glb",
+      "output": "已整理/14-食物/胡萝卜.glb"
+    },
+    {
+      "id": "纸盒",
+      "category": "14-食物",
+      "chineseName": "纸盒",
+      "englishKey": "carton",
+      "source": "食物1/Models/GLB format/carton.glb",
+      "output": "已整理/14-食物/纸盒.glb"
+    },
+    {
+      "id": "小纸盒",
+      "category": "14-食物",
+      "chineseName": "小纸盒",
+      "englishKey": "carton small",
+      "source": "食物1/Models/GLB format/carton-small.glb",
+      "output": "已整理/14-食物/小纸盒.glb"
+    },
+    {
+      "id": "花菜",
+      "category": "14-食物",
+      "chineseName": "花菜",
+      "englishKey": "cauliflower",
+      "source": "食物1/Models/GLB format/cauliflower.glb",
+      "output": "已整理/14-食物/花菜.glb"
+    },
+    {
+      "id": "监控摄像头",
+      "category": "12-办公电子",
+      "chineseName": "监控摄像头",
+      "englishKey": "cctv camera",
+      "source": "家具3/CCTV Camera.glb",
+      "output": "已整理/12-办公电子/监控摄像头.glb"
+    },
+    {
+      "id": "吊扇",
+      "category": "08-灯光",
+      "chineseName": "吊扇",
+      "englishKey": "ceiling fan",
+      "source": "家具1/Models/GLTF format/ceilingFan.glb",
+      "output": "已整理/08-灯光/吊扇.glb"
+    },
+    {
+      "id": "天花灯",
+      "category": "08-灯光",
+      "chineseName": "天花灯",
+      "englishKey": "ceiling lamp",
+      "source": "家具5/Ceiling Lamp.glb",
+      "output": "已整理/08-灯光/天花灯.glb"
+    },
+    {
+      "id": "吸顶灯",
+      "category": "08-灯光",
+      "chineseName": "吸顶灯",
+      "englishKey": "ceiling light",
+      "source": "家具4/Ceiling Light.glb",
+      "output": "已整理/08-灯光/吸顶灯.glb"
+    },
+    {
+      "id": "芹菜",
+      "category": "14-食物",
+      "chineseName": "芹菜",
+      "englishKey": "celery stick",
+      "source": "食物1/Models/GLB format/celery-stick.glb",
+      "output": "已整理/14-食物/芹菜.glb"
+    },
+    {
+      "id": "椅子",
+      "category": "15-椅子",
+      "chineseName": "椅子",
+      "englishKey": "chair",
+      "source": "家具1/Models/GLTF format/chair.glb",
+      "output": "已整理/15-椅子/椅子.glb"
+    },
+    {
+      "id": "软垫椅",
+      "category": "15-椅子",
+      "chineseName": "软垫椅",
+      "englishKey": "chair cushion",
+      "source": "家具1/Models/GLTF format/chairCushion.glb",
+      "output": "已整理/15-椅子/软垫椅.glb"
+    },
+    {
+      "id": "书椅",
+      "category": "15-椅子",
+      "chineseName": "书椅",
+      "englishKey": "chair desk",
+      "source": "家具1/Models/GLTF format/chairDesk.glb",
+      "output": "已整理/15-椅子/书椅.glb"
+    },
+    {
+      "id": "现代软垫椅",
+      "category": "15-椅子",
+      "chineseName": "现代软垫椅",
+      "englishKey": "chair modern cushion",
+      "source": "家具1/Models/GLTF format/chairModernCushion.glb",
+      "output": "已整理/15-椅子/现代软垫椅.glb"
+    },
+    {
+      "id": "现代框架椅",
+      "category": "15-椅子",
+      "chineseName": "现代框架椅",
+      "englishKey": "chair modern frame cushion",
+      "source": "家具1/Models/GLTF format/chairModernFrameCushion.glb",
+      "output": "已整理/15-椅子/现代框架椅.glb"
+    },
+    {
+      "id": "圆角椅",
+      "category": "15-椅子",
+      "chineseName": "圆角椅",
+      "englishKey": "chair rounded",
+      "source": "家具1/Models/GLTF format/chairRounded.glb",
+      "output": "已整理/15-椅子/圆角椅.glb"
+    },
+    {
+      "id": "吊灯",
+      "category": "06-装饰",
+      "chineseName": "吊灯",
+      "englishKey": "chandelier",
+      "source": "家具2/Chandelier.glb",
+      "output": "已整理/06-装饰/吊灯.glb"
+    },
+    {
+      "id": "奶酪",
+      "category": "14-食物",
+      "chineseName": "奶酪",
+      "englishKey": "cheese",
+      "source": "食物1/Models/GLB format/cheese.glb",
+      "output": "已整理/14-食物/奶酪.glb"
+    },
+    {
+      "id": "切开的奶酪",
+      "category": "14-食物",
+      "chineseName": "切开的奶酪",
+      "englishKey": "cheese cut",
+      "source": "食物1/Models/GLB format/cheese-cut.glb",
+      "output": "已整理/14-食物/切开的奶酪.glb"
+    },
+    {
+      "id": "奶酪切片器",
+      "category": "14-食物",
+      "chineseName": "奶酪切片器",
+      "englishKey": "cheese slicer",
+      "source": "食物1/Models/GLB format/cheese-slicer.glb",
+      "output": "已整理/14-食物/奶酪切片器.glb"
+    },
+    {
+      "id": "樱桃",
+      "category": "14-食物",
+      "chineseName": "樱桃",
+      "englishKey": "cherries",
+      "source": "食物1/Models/GLB format/cherries.glb",
+      "output": "已整理/14-食物/樱桃.glb"
+    },
+    {
+      "id": "中式餐盒",
+      "category": "14-食物",
+      "chineseName": "中式餐盒",
+      "englishKey": "chinese",
+      "source": "食物1/Models/GLB format/chinese.glb",
+      "output": "已整理/14-食物/中式餐盒.glb"
+    },
+    {
+      "id": "薯片",
+      "category": "16-台面小物",
+      "chineseName": "薯片",
+      "englishKey": "chips",
+      "source": "家具2/Chips.glb",
+      "output": "已整理/16-台面小物/薯片.glb"
+    },
+    {
+      "id": "巧克力",
+      "category": "14-食物",
+      "chineseName": "巧克力",
+      "englishKey": "chocolate",
+      "source": "食物1/Models/GLB format/chocolate.glb",
+      "output": "已整理/14-食物/巧克力.glb"
+    },
+    {
+      "id": "巧克力包装",
+      "category": "14-食物",
+      "chineseName": "巧克力包装",
+      "englishKey": "chocolate wrapper",
+      "source": "食物1/Models/GLB format/chocolate-wrapper.glb",
+      "output": "已整理/14-食物/巧克力包装.glb"
+    },
+    {
+      "id": "装饰筷子",
+      "category": "14-食物",
+      "chineseName": "装饰筷子",
+      "englishKey": "chopstic decorative",
+      "source": "食物1/Models/GLB format/chopstic-decorative.glb",
+      "output": "已整理/14-食物/装饰筷子.glb"
+    },
+    {
+      "id": "筷子",
+      "category": "14-食物",
+      "chineseName": "筷子",
+      "englishKey": "chopstick",
+      "source": "食物1/Models/GLB format/chopstick.glb",
+      "output": "已整理/14-食物/筷子.glb"
+    },
+    {
+      "id": "收拢伞",
+      "category": "13-运动休闲",
+      "chineseName": "收拢伞",
+      "englishKey": "closed umbrella",
+      "source": "家具2/Closed Umbrella.glb",
+      "output": "已整理/13-运动休闲/收拢伞.glb"
+    },
+    {
+      "id": "俱乐部扶手椅",
+      "category": "02-沙发",
+      "chineseName": "俱乐部扶手椅",
+      "englishKey": "club arm chair",
+      "source": "家具5/Club Arm Chair.glb",
+      "output": "已整理/02-沙发/俱乐部扶手椅.glb"
+    },
+    {
+      "id": "衣帽架",
+      "category": "07-收纳柜",
+      "chineseName": "衣帽架",
+      "englishKey": "coat rack",
+      "source": "家具1/Models/GLTF format/coatRack.glb",
+      "output": "已整理/07-收纳柜/衣帽架.glb"
+    },
+    {
+      "id": "立式衣帽架",
+      "category": "07-收纳柜",
+      "chineseName": "立式衣帽架",
+      "englishKey": "coat rack standing",
+      "source": "家具1/Models/GLTF format/coatRackStanding.glb",
+      "output": "已整理/07-收纳柜/立式衣帽架.glb"
+    },
+    {
+      "id": "鸡尾酒",
+      "category": "14-食物",
+      "chineseName": "鸡尾酒",
+      "englishKey": "cocktail",
+      "source": "食物1/Models/GLB format/cocktail.glb",
+      "output": "已整理/14-食物/鸡尾酒.glb"
+    },
+    {
+      "id": "椰子",
+      "category": "14-食物",
+      "chineseName": "椰子",
+      "englishKey": "coconut",
+      "source": "食物1/Models/GLB format/coconut.glb",
+      "output": "已整理/14-食物/椰子.glb"
+    },
+    {
+      "id": "半个椰子",
+      "category": "14-食物",
+      "chineseName": "半个椰子",
+      "englishKey": "coconut half",
+      "source": "食物1/Models/GLB format/coconut-half.glb",
+      "output": "已整理/14-食物/半个椰子.glb"
+    },
+    {
+      "id": "咖啡杯",
+      "category": "16-台面小物",
+      "chineseName": "咖啡杯",
+      "englishKey": "coffee cup",
+      "source": "家具5/Coffee Cup.glb",
+      "output": "已整理/16-台面小物/咖啡杯.glb"
+    },
+    {
+      "id": "咖啡机",
+      "category": "09-厨房电器",
+      "chineseName": "咖啡机",
+      "englishKey": "coffee machine",
+      "source": "家具5/Coffee Machine.glb",
+      "output": "已整理/09-厨房电器/咖啡机.glb"
+    },
+    {
+      "id": "茶几",
+      "category": "03-桌",
+      "chineseName": "茶几",
+      "englishKey": "coffee table",
+      "source": "家具3/Coffee Table.glb",
+      "output": "已整理/03-桌/茶几.glb"
+    },
+    {
+      "id": "彩色铅笔",
+      "category": "16-台面小物",
+      "chineseName": "彩色铅笔",
+      "englishKey": "colored pencil",
+      "source": "家具5/Colored Pencil.glb",
+      "output": "已整理/16-台面小物/彩色铅笔.glb"
+    },
+    {
+      "id": "圆柱",
+      "category": "11-墙面门窗",
+      "chineseName": "圆柱",
+      "englishKey": "column round",
+      "source": "家具4/Column Round.glb",
+      "output": "已整理/11-墙面门窗/圆柱.glb"
+    },
+    {
+      "id": "电脑",
+      "category": "12-办公电子",
+      "chineseName": "电脑",
+      "englishKey": "computer",
+      "source": "家具2/Computer.glb",
+      "output": "已整理/12-办公电子/电脑.glb"
+    },
+    {
+      "id": "电脑桌",
+      "category": "03-桌",
+      "chineseName": "电脑桌",
+      "englishKey": "computer desk",
+      "source": "家具5/Computer Desk.glb",
+      "output": "已整理/03-桌/电脑桌.glb"
+    },
+    {
+      "id": "键盘",
+      "category": "12-办公电子",
+      "chineseName": "键盘",
+      "englishKey": "computer keyboard",
+      "source": "家具1/Models/GLTF format/computerKeyboard.glb",
+      "output": "已整理/12-办公电子/键盘.glb"
+    },
+    {
+      "id": "鼠标",
+      "category": "12-办公电子",
+      "chineseName": "鼠标",
+      "englishKey": "computer mouse",
+      "source": "家具1/Models/GLTF format/computerMouse.glb",
+      "output": "已整理/12-办公电子/鼠标.glb"
+    },
+    {
+      "id": "显示器",
+      "category": "12-办公电子",
+      "chineseName": "显示器",
+      "englishKey": "computer screen",
+      "source": "家具1/Models/GLTF format/computerScreen.glb",
+      "output": "已整理/12-办公电子/显示器.glb"
+    },
+    {
+      "id": "曲奇",
+      "category": "14-食物",
+      "chineseName": "曲奇",
+      "englishKey": "cookie",
+      "source": "食物1/Models/GLB format/cookie.glb",
+      "output": "已整理/14-食物/曲奇.glb"
+    },
+    {
+      "id": "巧克力曲奇",
+      "category": "14-食物",
+      "chineseName": "巧克力曲奇",
+      "englishKey": "cookie chocolate",
+      "source": "食物1/Models/GLB format/cookie-chocolate.glb",
+      "output": "已整理/14-食物/巧克力曲奇.glb"
+    },
+    {
+      "id": "烹饪叉",
+      "category": "14-食物",
+      "chineseName": "烹饪叉",
+      "englishKey": "cooking fork",
+      "source": "食物1/Models/GLB format/cooking-fork.glb",
+      "output": "已整理/14-食物/烹饪叉.glb"
+    },
+    {
+      "id": "厨刀",
+      "category": "14-食物",
+      "chineseName": "厨刀",
+      "englishKey": "cooking knife",
+      "source": "食物1/Models/GLB format/cooking-knife.glb",
+      "output": "已整理/14-食物/厨刀.glb"
+    },
+    {
+      "id": "剁骨厨刀",
+      "category": "14-食物",
+      "chineseName": "剁骨厨刀",
+      "englishKey": "cooking knife chopping",
+      "source": "食物1/Models/GLB format/cooking-knife-chopping.glb",
+      "output": "已整理/14-食物/剁骨厨刀.glb"
+    },
+    {
+      "id": "锅铲",
+      "category": "14-食物",
+      "chineseName": "锅铲",
+      "englishKey": "cooking spatula",
+      "source": "食物1/Models/GLB format/cooking-spatula.glb",
+      "output": "已整理/14-食物/锅铲.glb"
+    },
+    {
+      "id": "汤勺",
+      "category": "14-食物",
+      "chineseName": "汤勺",
+      "englishKey": "cooking spoon",
+      "source": "食物1/Models/GLB format/cooking-spoon.glb",
+      "output": "已整理/14-食物/汤勺.glb"
+    },
+    {
+      "id": "玉米",
+      "category": "14-食物",
+      "chineseName": "玉米",
+      "englishKey": "corn",
+      "source": "食物1/Models/GLB format/corn.glb",
+      "output": "已整理/14-食物/玉米.glb"
+    },
+    {
+      "id": "玉米热狗",
+      "category": "14-食物",
+      "chineseName": "玉米热狗",
+      "englishKey": "corn dog",
+      "source": "食物1/Models/GLB format/corn-dog.glb",
+      "output": "已整理/14-食物/玉米热狗.glb"
+    },
+    {
+      "id": "沙发",
+      "category": "02-沙发",
+      "chineseName": "沙发",
+      "englishKey": "couch",
+      "source": "家具2/Couch.glb",
+      "output": "已整理/02-沙发/沙发.glb"
+    },
+    {
+      "id": "大沙发",
+      "category": "02-沙发",
+      "chineseName": "大沙发",
+      "englishKey": "couch large",
+      "source": "家具4/Couch Large.glb",
+      "output": "已整理/02-沙发/大沙发.glb"
+    },
+    {
+      "id": "中沙发",
+      "category": "02-沙发",
+      "chineseName": "中沙发",
+      "englishKey": "couch medium",
+      "source": "家具4/Couch Medium.glb",
+      "output": "已整理/02-沙发/中沙发.glb"
+    },
+    {
+      "id": "小沙发",
+      "category": "02-沙发",
+      "chineseName": "小沙发",
+      "englishKey": "couch small",
+      "source": "家具4/Couch Small.glb",
+      "output": "已整理/02-沙发/小沙发.glb"
+    },
+    {
+      "id": "宽沙发",
+      "category": "02-沙发",
+      "chineseName": "宽沙发",
+      "englishKey": "couch wide",
+      "source": "家具3/Couch _ Wide.glb",
+      "output": "已整理/02-沙发/宽沙发.glb"
+    },
+    {
+      "id": "可颂",
+      "category": "14-食物",
+      "chineseName": "可颂",
+      "englishKey": "croissant",
+      "source": "食物1/Models/GLB format/croissant.glb",
+      "output": "已整理/14-食物/可颂.glb"
+    },
+    {
+      "id": "压扁汽水罐",
+      "category": "16-台面小物",
+      "chineseName": "压扁汽水罐",
+      "englishKey": "crushed soda can",
+      "source": "家具3/Crushed Soda Can.glb",
+      "output": "已整理/16-台面小物/压扁汽水罐.glb"
+    },
+    {
+      "id": "方格柜",
+      "category": "07-收纳柜",
+      "chineseName": "方格柜",
+      "englishKey": "cube cabinet",
+      "source": "家具5/Cube Cabinet.glb",
+      "output": "已整理/07-收纳柜/方格柜.glb"
+    },
+    {
+      "id": "杯子",
+      "category": "16-台面小物",
+      "chineseName": "杯子",
+      "englishKey": "cup",
+      "source": "家具3/Cup.glb",
+      "output": "已整理/16-台面小物/杯子.glb"
+    },
+    {
+      "id": "咖啡杯",
+      "category": "14-食物",
+      "chineseName": "咖啡杯",
+      "englishKey": "cup coffee",
+      "source": "食物1/Models/GLB format/cup-coffee.glb",
+      "output": "已整理/14-食物/咖啡杯.glb"
+    },
+    {
+      "id": "茶杯",
+      "category": "16-台面小物",
+      "chineseName": "茶杯",
+      "englishKey": "cup of tea",
+      "source": "家具2/Cup Of Tea.glb",
+      "output": "已整理/16-台面小物/茶杯.glb"
+    },
+    {
+      "id": "茶杯碟",
+      "category": "14-食物",
+      "chineseName": "茶杯碟",
+      "englishKey": "cup saucer",
+      "source": "食物1/Models/GLB format/cup-saucer.glb",
+      "output": "已整理/14-食物/茶杯碟.glb"
+    },
+    {
+      "id": "茶杯",
+      "category": "14-食物",
+      "chineseName": "茶杯",
+      "englishKey": "cup tea",
+      "source": "食物1/Models/GLB format/cup-tea.glb",
+      "output": "已整理/14-食物/茶杯.glb"
+    },
+    {
+      "id": "纸杯蛋糕",
+      "category": "14-食物",
+      "chineseName": "纸杯蛋糕",
+      "englishKey": "cupcake",
+      "source": "食物1/Models/GLB format/cupcake.glb",
+      "output": "已整理/14-食物/纸杯蛋糕.glb"
+    },
+    {
+      "id": "双层窗帘",
+      "category": "06-装饰",
+      "chineseName": "双层窗帘",
+      "englishKey": "curtains double",
+      "source": "家具4/Curtains Double.glb",
+      "output": "已整理/06-装饰/双层窗帘.glb"
+    },
+    {
+      "id": "靠垫",
+      "category": "06-装饰",
+      "chineseName": "靠垫",
+      "englishKey": "cushions",
+      "source": "家具3/Cushions.glb",
+      "output": "已整理/06-装饰/靠垫.glb"
+    },
+    {
+      "id": "砧板",
+      "category": "14-食物",
+      "chineseName": "砧板",
+      "englishKey": "cutting board",
+      "source": "食物1/Models/GLB format/cutting-board.glb",
+      "output": "已整理/14-食物/砧板.glb"
+    },
+    {
+      "id": "日式砧板",
+      "category": "14-食物",
+      "chineseName": "日式砧板",
+      "englishKey": "cutting board japanese",
+      "source": "食物1/Models/GLB format/cutting-board-japanese.glb",
+      "output": "已整理/14-食物/日式砧板.glb"
+    },
+    {
+      "id": "圆形砧板",
+      "category": "14-食物",
+      "chineseName": "圆形砧板",
+      "englishKey": "cutting board round",
+      "source": "食物1/Models/GLB format/cutting-board-round.glb",
+      "output": "已整理/14-食物/圆形砧板.glb"
+    },
+    {
+      "id": "飞镖盘",
+      "category": "06-装饰",
+      "chineseName": "飞镖盘",
+      "englishKey": "dartboard",
+      "source": "家具3/Dartboard.glb",
+      "output": "已整理/06-装饰/飞镖盘.glb"
+    },
+    {
+      "id": "飞镖",
+      "category": "06-装饰",
+      "chineseName": "飞镖",
+      "englishKey": "darts",
+      "source": "家具3/Darts.glb",
+      "output": "已整理/06-装饰/飞镖.glb"
+    },
+    {
+      "id": "枯萎绿植",
+      "category": "05-绿植",
+      "chineseName": "枯萎绿植",
+      "englishKey": "dead houseplant",
+      "source": "家具4/Dead Houseplant.glb",
+      "output": "已整理/05-绿植/枯萎绿植.glb"
+    },
+    {
+      "id": "书桌",
+      "category": "03-桌",
+      "chineseName": "书桌",
+      "englishKey": "desk",
+      "source": "家具1/Models/GLTF format/desk.glb",
+      "output": "已整理/03-桌/书桌.glb"
+    },
+    {
+      "id": "转角书桌",
+      "category": "03-桌",
+      "chineseName": "转角书桌",
+      "englishKey": "desk corner",
+      "source": "家具1/Models/GLTF format/deskCorner.glb",
+      "output": "已整理/03-桌/转角书桌.glb"
+    },
+    {
+      "id": "桌面风扇",
+      "category": "03-桌",
+      "chineseName": "桌面风扇",
+      "englishKey": "desk fan",
+      "source": "家具2/Desk Fan.glb",
+      "output": "已整理/03-桌/桌面风扇.glb"
+    },
+    {
+      "id": "台灯",
+      "category": "03-桌",
+      "chineseName": "台灯",
+      "englishKey": "desk lamp",
+      "source": "家具5/Desk Lamp.glb",
+      "output": "已整理/03-桌/台灯.glb"
+    },
+    {
+      "id": "桌面玩具",
+      "category": "03-桌",
+      "chineseName": "桌面玩具",
+      "englishKey": "desk toy",
+      "source": "家具3/Desk Toy.glb",
+      "output": "已整理/03-桌/桌面玩具.glb"
+    },
+    {
+      "id": "点心",
+      "category": "14-食物",
+      "chineseName": "点心",
+      "englishKey": "dim sum",
+      "source": "食物1/Models/GLB format/dim-sum.glb",
+      "output": "已整理/14-食物/点心.glb"
+    },
+    {
+      "id": "洗碗机",
+      "category": "09-厨房电器",
+      "chineseName": "洗碗机",
+      "englishKey": "dish washer",
+      "source": "家具5/Dish Washer.glb",
+      "output": "已整理/09-厨房电器/洗碗机.glb"
+    },
+    {
+      "id": "玩偶",
+      "category": "06-装饰",
+      "chineseName": "玩偶",
+      "englishKey": "doll",
+      "source": "家具2/Doll.glb",
+      "output": "已整理/06-装饰/玩偶.glb"
+    },
+    {
+      "id": "甜甜圈",
+      "category": "14-食物",
+      "chineseName": "甜甜圈",
+      "englishKey": "donut",
+      "source": "食物1/Models/GLB format/donut.glb",
+      "output": "已整理/14-食物/甜甜圈.glb"
+    },
+    {
+      "id": "巧克力甜甜圈",
+      "category": "14-食物",
+      "chineseName": "巧克力甜甜圈",
+      "englishKey": "donut chocolate",
+      "source": "食物1/Models/GLB format/donut-chocolate.glb",
+      "output": "已整理/14-食物/巧克力甜甜圈.glb"
+    },
+    {
+      "id": "糖针甜甜圈",
+      "category": "14-食物",
+      "chineseName": "糖针甜甜圈",
+      "englishKey": "donut sprinkles",
+      "source": "食物1/Models/GLB format/donut-sprinkles.glb",
+      "output": "已整理/14-食物/糖针甜甜圈.glb"
+    },
+    {
+      "id": "门",
+      "category": "11-墙面门窗",
+      "chineseName": "门",
+      "englishKey": "door",
+      "source": "家具4/Door.glb",
+      "output": "已整理/11-墙面门窗/门.glb"
+    },
+    {
+      "id": "双开门",
+      "category": "11-墙面门窗",
+      "chineseName": "双开门",
+      "englishKey": "door double",
+      "source": "家具4/Door Double.glb",
+      "output": "已整理/11-墙面门窗/双开门.glb"
+    },
+    {
+      "id": "门洞",
+      "category": "11-墙面门窗",
+      "chineseName": "门洞",
+      "englishKey": "doorway",
+      "source": "家具1/Models/GLTF format/doorway.glb",
+      "output": "已整理/11-墙面门窗/门洞.glb"
+    },
+    {
+      "id": "正门洞",
+      "category": "11-墙面门窗",
+      "chineseName": "正门洞",
+      "englishKey": "doorway front",
+      "source": "家具1/Models/GLTF format/doorwayFront.glb",
+      "output": "已整理/11-墙面门窗/正门洞.glb"
+    },
+    {
+      "id": "开放门洞",
+      "category": "11-墙面门窗",
+      "chineseName": "开放门洞",
+      "englishKey": "doorway open",
+      "source": "家具1/Models/GLTF format/doorwayOpen.glb",
+      "output": "已整理/11-墙面门窗/开放门洞.glb"
+    },
+    {
+      "id": "双人床_2",
+      "category": "01-床",
+      "chineseName": "双人床_2",
+      "englishKey": "double bed",
+      "source": "家具5/Double Bed.glb",
+      "output": "已整理/01-床/双人床_2.glb"
+    },
+    {
+      "id": "双门底柜",
+      "category": "07-收纳柜",
+      "chineseName": "双门底柜",
+      "englishKey": "double door base cabinet",
+      "source": "家具5/Double Door Base Cabinet.glb",
+      "output": "已整理/07-收纳柜/双门底柜.glb"
+    },
+    {
+      "id": "双门高柜",
+      "category": "07-收纳柜",
+      "chineseName": "双门高柜",
+      "englishKey": "double door tall cabinet",
+      "source": "家具5/Double Door Tall Cabinet.glb",
+      "output": "已整理/07-收纳柜/双门高柜.glb"
+    },
+    {
+      "id": "双门吊柜",
+      "category": "11-墙面门窗",
+      "chineseName": "双门吊柜",
+      "englishKey": "double door upper cabin",
+      "source": "家具5/Double Door Upper Cabin.glb",
+      "output": "已整理/11-墙面门窗/双门吊柜.glb"
+    },
+    {
+      "id": "抽屉柜",
+      "category": "07-收纳柜",
+      "chineseName": "抽屉柜",
+      "englishKey": "drawer",
+      "source": "家具4/Drawer.glb",
+      "output": "已整理/07-收纳柜/抽屉柜.glb"
+    },
+    {
+      "id": "抽屉底柜",
+      "category": "07-收纳柜",
+      "chineseName": "抽屉底柜",
+      "englishKey": "drawers base cabinet",
+      "source": "家具5/Drawers Base Cabinet.glb",
+      "output": "已整理/07-收纳柜/抽屉底柜.glb"
+    },
+    {
+      "id": "双门抽屉底柜",
+      "category": "11-墙面门窗",
+      "chineseName": "双门抽屉底柜",
+      "englishKey": "drawers double door bas",
+      "source": "家具5/Drawers Double Door Bas.glb",
+      "output": "已整理/11-墙面门窗/双门抽屉底柜.glb"
+    },
+    {
+      "id": "梳妆台",
+      "category": "07-收纳柜",
+      "chineseName": "梳妆台",
+      "englishKey": "dresser",
+      "source": "家具2/Dresser.glb",
+      "output": "已整理/07-收纳柜/梳妆台.glb"
+    },
+    {
+      "id": "架子鼓",
+      "category": "13-运动休闲",
+      "chineseName": "架子鼓",
+      "englishKey": "drum set",
+      "source": "家具5/Drum Set.glb",
+      "output": "已整理/13-运动休闲/架子鼓.glb"
+    },
+    {
+      "id": "烘干机",
+      "category": "10-卫浴",
+      "chineseName": "烘干机",
+      "englishKey": "dryer",
+      "source": "家具1/Models/GLTF format/dryer.glb",
+      "output": "已整理/10-卫浴/烘干机.glb"
+    },
+    {
+      "id": "双显示器支架",
+      "category": "12-办公电子",
+      "chineseName": "双显示器支架",
+      "englishKey": "dual monitors on sit stand arm",
+      "source": "家具3/Dual Monitors on sit-stand arm.glb",
+      "output": "已整理/12-办公电子/双显示器支架.glb"
+    },
+    {
+      "id": "哑铃",
+      "category": "13-运动休闲",
+      "chineseName": "哑铃",
+      "englishKey": "dumbbell",
+      "source": "家具2/Dumbbell.glb",
+      "output": "已整理/13-运动休闲/哑铃.glb"
+    },
+    {
+      "id": "哑铃_2",
+      "category": "13-运动休闲",
+      "chineseName": "哑铃_2",
+      "englishKey": "dumbell",
+      "source": "家具5/Dumbell.glb",
+      "output": "已整理/13-运动休闲/哑铃_2.glb"
+    },
+    {
+      "id": "鸡蛋",
+      "category": "14-食物",
+      "chineseName": "鸡蛋",
+      "englishKey": "egg",
+      "source": "食物1/Models/GLB format/egg.glb",
+      "output": "已整理/14-食物/鸡蛋.glb"
+    },
+    {
+      "id": "熟鸡蛋",
+      "category": "14-食物",
+      "chineseName": "熟鸡蛋",
+      "englishKey": "egg cooked",
+      "source": "食物1/Models/GLB format/egg-cooked.glb",
+      "output": "已整理/14-食物/熟鸡蛋.glb"
+    },
+    {
+      "id": "鸡蛋杯子",
+      "category": "14-食物",
+      "chineseName": "鸡蛋杯子",
+      "englishKey": "egg cup",
+      "source": "食物1/Models/GLB format/egg-cup.glb",
+      "output": "已整理/14-食物/鸡蛋杯子.glb"
+    },
+    {
+      "id": "半个鸡蛋",
+      "category": "14-食物",
+      "chineseName": "半个鸡蛋",
+      "englishKey": "egg half",
+      "source": "食物1/Models/GLB format/egg-half.glb",
+      "output": "已整理/14-食物/半个鸡蛋.glb"
+    },
+    {
+      "id": "茄子",
+      "category": "14-食物",
+      "chineseName": "茄子",
+      "englishKey": "eggplant",
+      "source": "食物1/Models/GLB format/eggplant.glb",
+      "output": "已整理/14-食物/茄子.glb"
+    },
+    {
+      "id": "电源插座",
+      "category": "13-运动休闲",
+      "chineseName": "电源插座",
+      "englishKey": "electrical outlet",
+      "source": "家具3/Electrical outlet.glb",
+      "output": "已整理/13-运动休闲/电源插座.glb"
+    },
+    {
+      "id": "空盒子",
+      "category": "16-台面小物",
+      "chineseName": "空盒子",
+      "englishKey": "empty box",
+      "source": "家具2/Empty Box.glb",
+      "output": "已整理/16-台面小物/空盒子.glb"
+    },
+    {
+      "id": "边桌",
+      "category": "03-桌",
+      "chineseName": "边桌",
+      "englishKey": "end table",
+      "source": "家具2/End Table.glb",
+      "output": "已整理/03-桌/边桌.glb"
+    },
+    {
+      "id": "橡皮",
+      "category": "16-台面小物",
+      "chineseName": "橡皮",
+      "englishKey": "eraser",
+      "source": "家具5/Eraser.glb",
+      "output": "已整理/16-台面小物/橡皮.glb"
+    },
+    {
+      "id": "老板椅",
+      "category": "15-椅子",
+      "chineseName": "老板椅",
+      "englishKey": "executive chair",
+      "source": "家具5/Executive Chair.glb",
+      "output": "已整理/15-椅子/老板椅.glb"
+    },
+    {
+      "id": "老板桌",
+      "category": "03-桌",
+      "chineseName": "老板桌",
+      "englishKey": "executive desk",
+      "source": "家具5/Executive Desk.glb",
+      "output": "已整理/03-桌/老板桌.glb"
+    },
+    {
+      "id": "扇形画笔",
+      "category": "16-台面小物",
+      "chineseName": "扇形画笔",
+      "englishKey": "fan brush",
+      "source": "家具5/Fan Brush.glb",
+      "output": "已整理/16-台面小物/扇形画笔.glb"
+    },
+    {
+      "id": "榛形画笔",
+      "category": "16-台面小物",
+      "chineseName": "榛形画笔",
+      "englishKey": "filbert brush",
+      "source": "家具5/Filbert Brush.glb",
+      "output": "已整理/16-台面小物/榛形画笔.glb"
+    },
+    {
+      "id": "文件柜",
+      "category": "07-收纳柜",
+      "chineseName": "文件柜",
+      "englishKey": "file cabinet",
+      "source": "家具3/File Cabinet.glb",
+      "output": "已整理/07-收纳柜/文件柜.glb"
+    },
+    {
+      "id": "安全出口标志",
+      "category": "13-运动休闲",
+      "chineseName": "安全出口标志",
+      "englishKey": "fire exit sign",
+      "source": "家具3/Fire Exit Sign.glb",
+      "output": "已整理/13-运动休闲/安全出口标志.glb"
+    },
+    {
+      "id": "灭火器",
+      "category": "13-运动休闲",
+      "chineseName": "灭火器",
+      "englishKey": "fire extinguisher",
+      "source": "家具3/Fire Extinguisher.glb",
+      "output": "已整理/13-运动休闲/灭火器.glb"
+    },
+    {
+      "id": "壁炉",
+      "category": "06-装饰",
+      "chineseName": "壁炉",
+      "englishKey": "fireplace",
+      "source": "家具4/Fireplace.glb",
+      "output": "已整理/06-装饰/壁炉.glb"
+    },
+    {
+      "id": "鱼",
+      "category": "14-食物",
+      "chineseName": "鱼",
+      "englishKey": "fish",
+      "source": "食物1/Models/GLB format/fish.glb",
+      "output": "已整理/14-食物/鱼.glb"
+    },
+    {
+      "id": "鱼骨",
+      "category": "14-食物",
+      "chineseName": "鱼骨",
+      "englishKey": "fish bones",
+      "source": "食物1/Models/GLB format/fish-bones.glb",
+      "output": "已整理/14-食物/鱼骨.glb"
+    },
+    {
+      "id": "浮动搁板",
+      "category": "07-收纳柜",
+      "chineseName": "浮动搁板",
+      "englishKey": "floating shelf",
+      "source": "家具5/Floating Shelf.glb",
+      "output": "已整理/07-收纳柜/浮动搁板.glb"
+    },
+    {
+      "id": "转角地板",
+      "category": "11-墙面门窗",
+      "chineseName": "转角地板",
+      "englishKey": "floor corner",
+      "source": "家具1/Models/GLTF format/floorCorner.glb",
+      "output": "已整理/11-墙面门窗/转角地板.glb"
+    },
+    {
+      "id": "圆角地板",
+      "category": "11-墙面门窗",
+      "chineseName": "圆角地板",
+      "englishKey": "floor corner round",
+      "source": "家具1/Models/GLTF format/floorCornerRound.glb",
+      "output": "已整理/11-墙面门窗/圆角地板.glb"
+    },
+    {
+      "id": "整地板",
+      "category": "11-墙面门窗",
+      "chineseName": "整地板",
+      "englishKey": "floor full",
+      "source": "家具1/Models/GLTF format/floorFull.glb",
+      "output": "已整理/11-墙面门窗/整地板.glb"
+    },
+    {
+      "id": "半地板",
+      "category": "11-墙面门窗",
+      "chineseName": "半地板",
+      "englishKey": "floor half",
+      "source": "家具1/Models/GLTF format/floorHalf.glb",
+      "output": "已整理/11-墙面门窗/半地板.glb"
+    },
+    {
+      "id": "落地灯",
+      "category": "08-灯光",
+      "chineseName": "落地灯",
+      "englishKey": "floor lamp",
+      "source": "家具5/Floor Lamp.glb",
+      "output": "已整理/08-灯光/落地灯.glb"
+    },
+    {
+      "id": "花束",
+      "category": "05-绿植",
+      "chineseName": "花束",
+      "englishKey": "flowers",
+      "source": "家具2/Flowers.glb",
+      "output": "已整理/05-绿植/花束.glb"
+    },
+    {
+      "id": "长笛",
+      "category": "13-运动休闲",
+      "chineseName": "长笛",
+      "englishKey": "flute",
+      "source": "家具5/Flute.glb",
+      "output": "已整理/13-运动休闲/长笛.glb"
+    },
+    {
+      "id": "橄榄球",
+      "category": "13-运动休闲",
+      "chineseName": "橄榄球",
+      "englishKey": "football",
+      "source": "家具5/Football.glb",
+      "output": "已整理/13-运动休闲/橄榄球.glb"
+    },
+    {
+      "id": "叉子",
+      "category": "16-台面小物",
+      "chineseName": "叉子",
+      "englishKey": "fork",
+      "source": "家具5/Fork.glb",
+      "output": "已整理/16-台面小物/叉子.glb"
+    },
+    {
+      "id": "星冰乐",
+      "category": "14-食物",
+      "chineseName": "星冰乐",
+      "englishKey": "frappe",
+      "source": "食物1/Models/GLB format/frappe.glb",
+      "output": "已整理/14-食物/星冰乐.glb"
+    },
+    {
+      "id": "冰箱",
+      "category": "09-厨房电器",
+      "chineseName": "冰箱",
+      "englishKey": "fridge",
+      "source": "家具5/Fridge.glb",
+      "output": "已整理/09-厨房电器/冰箱.glb"
+    },
+    {
+      "id": "薯条",
+      "category": "14-食物",
+      "chineseName": "薯条",
+      "englishKey": "fries",
+      "source": "食物1/Models/GLB format/fries.glb",
+      "output": "已整理/14-食物/薯条.glb"
+    },
+    {
+      "id": "空薯条盒",
+      "category": "14-食物",
+      "chineseName": "空薯条盒",
+      "englishKey": "fries empty",
+      "source": "食物1/Models/GLB format/fries-empty.glb",
+      "output": "已整理/14-食物/空薯条盒.glb"
+    },
+    {
+      "id": "荷兰特色炸肉卷",
+      "category": "14-食物",
+      "chineseName": "荷兰特色炸肉卷",
+      "englishKey": "frikandel speciaal",
+      "source": "食物1/Models/GLB format/frikandel-speciaal.glb",
+      "output": "已整理/14-食物/荷兰特色炸肉卷.glb"
+    },
+    {
+      "id": "水果碗",
+      "category": "16-台面小物",
+      "chineseName": "水果碗",
+      "englishKey": "fruit bowl",
+      "source": "家具2/Fruit Bowl.glb",
+      "output": "已整理/16-台面小物/水果碗.glb"
+    },
+    {
+      "id": "平底锅",
+      "category": "09-厨房电器",
+      "chineseName": "平底锅",
+      "englishKey": "fry pan",
+      "source": "家具5/Fry Pan.glb",
+      "output": "已整理/09-厨房电器/平底锅.glb"
+    },
+    {
+      "id": "煎锅",
+      "category": "09-厨房电器",
+      "chineseName": "煎锅",
+      "englishKey": "frying pan",
+      "source": "家具2/Frying Pan.glb",
+      "output": "已整理/09-厨房电器/煎锅.glb"
+    },
+    {
+      "id": "煎锅盖",
+      "category": "14-食物",
+      "chineseName": "煎锅盖",
+      "englishKey": "frying pan lid",
+      "source": "食物1/Models/GLB format/frying-pan-lid.glb",
+      "output": "已整理/14-食物/煎锅盖.glb"
+    },
+    {
+      "id": "燃气灶",
+      "category": "09-厨房电器",
+      "chineseName": "燃气灶",
+      "englishKey": "gas stove",
+      "source": "家具5/Gas Stove.glb",
+      "output": "已整理/09-厨房电器/燃气灶.glb"
+    },
+    {
+      "id": "姜饼",
+      "category": "14-食物",
+      "chineseName": "姜饼",
+      "englishKey": "ginger bread",
+      "source": "食物1/Models/GLB format/ginger-bread.glb",
+      "output": "已整理/14-食物/姜饼.glb"
+    },
+    {
+      "id": "姜饼模具",
+      "category": "14-食物",
+      "chineseName": "姜饼模具",
+      "englishKey": "ginger bread cutter",
+      "source": "食物1/Models/GLB format/ginger-bread-cutter.glb",
+      "output": "已整理/14-食物/姜饼模具.glb"
+    },
+    {
+      "id": "玻璃杯",
+      "category": "14-食物",
+      "chineseName": "玻璃杯",
+      "englishKey": "glass",
+      "source": "食物1/Models/GLB format/glass.glb",
+      "output": "已整理/14-食物/玻璃杯.glb"
+    },
+    {
+      "id": "玻璃杯",
+      "category": "16-台面小物",
+      "chineseName": "玻璃杯",
+      "englishKey": "glass cup",
+      "source": "家具5/Glass Cup.glb",
+      "output": "已整理/16-台面小物/玻璃杯.glb"
+    },
+    {
+      "id": "酒杯",
+      "category": "14-食物",
+      "chineseName": "酒杯",
+      "englishKey": "glass wine",
+      "source": "食物1/Models/GLB format/glass-wine.glb",
+      "output": "已整理/14-食物/酒杯.glb"
+    },
+    {
+      "id": "地球仪",
+      "category": "06-装饰",
+      "chineseName": "地球仪",
+      "englishKey": "globe",
+      "source": "家具2/Globe.glb",
+      "output": "已整理/06-装饰/地球仪.glb"
+    },
+    {
+      "id": "胶水",
+      "category": "16-台面小物",
+      "chineseName": "胶水",
+      "englishKey": "glue",
+      "source": "家具5/Glue.glb",
+      "output": "已整理/16-台面小物/胶水.glb"
+    },
+    {
+      "id": "落地钟",
+      "category": "06-装饰",
+      "chineseName": "落地钟",
+      "englishKey": "grandfathers clock",
+      "source": "家具2/Grandfathers Clock.glb",
+      "output": "已整理/06-装饰/落地钟.glb"
+    },
+    {
+      "id": "葡萄",
+      "category": "14-食物",
+      "chineseName": "葡萄",
+      "englishKey": "grapes",
+      "source": "食物1/Models/GLB format/grapes.glb",
+      "output": "已整理/14-食物/葡萄.glb"
+    },
+    {
+      "id": "吉他",
+      "category": "13-运动休闲",
+      "chineseName": "吉他",
+      "englishKey": "guitar",
+      "source": "家具5/Guitar.glb",
+      "output": "已整理/13-运动休闲/吉他.glb"
+    },
+    {
+      "id": "健身垫",
+      "category": "13-运动休闲",
+      "chineseName": "健身垫",
+      "englishKey": "gymmat",
+      "source": "家具5/Gymmat.glb",
+      "output": "已整理/13-运动休闲/健身垫.glb"
+    },
+    {
+      "id": "吹风机",
+      "category": "10-卫浴",
+      "chineseName": "吹风机",
+      "englishKey": "hair dryer",
+      "source": "家具2/Hair Dryer.glb",
+      "output": "已整理/10-卫浴/吹风机.glb"
+    },
+    {
+      "id": "汉堡",
+      "category": "16-台面小物",
+      "chineseName": "汉堡",
+      "englishKey": "hamburger",
+      "source": "家具2/Hamburger.glb",
+      "output": "已整理/16-台面小物/汉堡.glb"
+    },
+    {
+      "id": "锤子",
+      "category": "13-运动休闲",
+      "chineseName": "锤子",
+      "englishKey": "hammer",
+      "source": "家具2/Hammer.glb",
+      "output": "已整理/13-运动休闲/锤子.glb"
+    },
+    {
+      "id": "手耙",
+      "category": "13-运动休闲",
+      "chineseName": "手耙",
+      "englishKey": "hand rake",
+      "source": "家具2/Hand Rake.glb",
+      "output": "已整理/13-运动休闲/手耙.glb"
+    },
+    {
+      "id": "手锯",
+      "category": "13-运动休闲",
+      "chineseName": "手锯",
+      "englishKey": "hand saw",
+      "source": "家具2/Hand Saw.glb",
+      "output": "已整理/13-运动休闲/手锯.glb"
+    },
+    {
+      "id": "耳机",
+      "category": "12-办公电子",
+      "chineseName": "耳机",
+      "englishKey": "headphones",
+      "source": "家具2/Headphones.glb",
+      "output": "已整理/12-办公电子/耳机.glb"
+    },
+    {
+      "id": "锄头",
+      "category": "13-运动休闲",
+      "chineseName": "锄头",
+      "englishKey": "hoe",
+      "source": "家具2/Hoe.glb",
+      "output": "已整理/13-运动休闲/锄头.glb"
+    },
+    {
+      "id": "蜂蜜",
+      "category": "14-食物",
+      "chineseName": "蜂蜜",
+      "englishKey": "honey",
+      "source": "食物1/Models/GLB format/honey.glb",
+      "output": "已整理/14-食物/蜂蜜.glb"
+    },
+    {
+      "id": "大抽油烟机",
+      "category": "09-厨房电器",
+      "chineseName": "大抽油烟机",
+      "englishKey": "hood large",
+      "source": "家具1/Models/GLTF format/hoodLarge.glb",
+      "output": "已整理/09-厨房电器/大抽油烟机.glb"
+    },
+    {
+      "id": "现代抽油烟机",
+      "category": "09-厨房电器",
+      "chineseName": "现代抽油烟机",
+      "englishKey": "hood modern",
+      "source": "家具1/Models/GLTF format/hoodModern.glb",
+      "output": "已整理/09-厨房电器/现代抽油烟机.glb"
+    },
+    {
+      "id": "热狗",
+      "category": "14-食物",
+      "chineseName": "热狗",
+      "englishKey": "hot dog",
+      "source": "食物1/Models/GLB format/hot-dog.glb",
+      "output": "已整理/14-食物/热狗.glb"
+    },
+    {
+      "id": "生热狗",
+      "category": "14-食物",
+      "chineseName": "生热狗",
+      "englishKey": "hot dog raw",
+      "source": "食物1/Models/GLB format/hot-dog-raw.glb",
+      "output": "已整理/14-食物/生热狗.glb"
+    },
+    {
+      "id": "室内绿植",
+      "category": "05-绿植",
+      "chineseName": "室内绿植",
+      "englishKey": "houseplant",
+      "source": "家具4/Houseplant.glb",
+      "output": "已整理/05-绿植/室内绿植.glb"
+    },
+    {
+      "id": "冰淇淋",
+      "category": "14-食物",
+      "chineseName": "冰淇淋",
+      "englishKey": "ice cream",
+      "source": "食物1/Models/GLB format/ice-cream.glb",
+      "output": "已整理/14-食物/冰淇淋.glb"
+    },
+    {
+      "id": "甜筒冰淇淋",
+      "category": "14-食物",
+      "chineseName": "甜筒冰淇淋",
+      "englishKey": "ice cream cne",
+      "source": "食物1/Models/GLB format/ice-cream-cne.glb",
+      "output": "已整理/14-食物/甜筒冰淇淋.glb"
+    },
+    {
+      "id": "冰淇淋杯",
+      "category": "14-食物",
+      "chineseName": "冰淇淋杯",
+      "englishKey": "ice cream cup",
+      "source": "食物1/Models/GLB format/ice-cream-cup.glb",
+      "output": "已整理/14-食物/冰淇淋杯.glb"
+    },
+    {
+      "id": "巧克力冰淇淋球",
+      "category": "14-食物",
+      "chineseName": "巧克力冰淇淋球",
+      "englishKey": "ice cream scoop chocolate",
+      "source": "食物1/Models/GLB format/ice-cream-scoop-chocolate.glb",
+      "output": "已整理/14-食物/巧克力冰淇淋球.glb"
+    },
+    {
+      "id": "薄荷冰淇淋球",
+      "category": "14-食物",
+      "chineseName": "薄荷冰淇淋球",
+      "englishKey": "ice cream scoop mint",
+      "source": "食物1/Models/GLB format/ice-cream-scoop-mint.glb",
+      "output": "已整理/14-食物/薄荷冰淇淋球.glb"
+    },
+    {
+      "id": "玻璃罐",
+      "category": "16-台面小物",
+      "chineseName": "玻璃罐",
+      "englishKey": "jar",
+      "source": "家具2/Jar.glb",
+      "output": "已整理/16-台面小物/玻璃罐.glb"
+    },
+    {
+      "id": "键盘_2",
+      "category": "12-办公电子",
+      "chineseName": "键盘_2",
+      "englishKey": "keyboard",
+      "source": "家具3/Keyboard-fOy2zvPJAj-.glb",
+      "output": "已整理/12-办公电子/键盘_2.glb"
+    },
+    {
+      "id": "厨房吧台",
+      "category": "03-桌",
+      "chineseName": "厨房吧台",
+      "englishKey": "kitchen bar",
+      "source": "家具1/Models/GLTF format/kitchenBar.glb",
+      "output": "已整理/03-桌/厨房吧台.glb"
+    },
+    {
+      "id": "厨房吧台端",
+      "category": "03-桌",
+      "chineseName": "厨房吧台端",
+      "englishKey": "kitchen bar end",
+      "source": "家具1/Models/GLTF format/kitchenBarEnd.glb",
+      "output": "已整理/03-桌/厨房吧台端.glb"
+    },
+    {
+      "id": "搅拌机_2",
+      "category": "09-厨房电器",
+      "chineseName": "搅拌机_2",
+      "englishKey": "kitchen blender",
+      "source": "家具1/Models/GLTF format/kitchenBlender.glb",
+      "output": "已整理/09-厨房电器/搅拌机_2.glb"
+    },
+    {
+      "id": "厨房底柜",
+      "category": "07-收纳柜",
+      "chineseName": "厨房底柜",
+      "englishKey": "kitchen cabinet",
+      "source": "家具1/Models/GLTF format/kitchenCabinet.glb",
+      "output": "已整理/07-收纳柜/厨房底柜.glb"
+    },
+    {
+      "id": "厨房内转角柜",
+      "category": "07-收纳柜",
+      "chineseName": "厨房内转角柜",
+      "englishKey": "kitchen cabinet corner inner",
+      "source": "家具1/Models/GLTF format/kitchenCabinetCornerInner.glb",
+      "output": "已整理/07-收纳柜/厨房内转角柜.glb"
+    },
+    {
+      "id": "厨房圆角柜",
+      "category": "07-收纳柜",
+      "chineseName": "厨房圆角柜",
+      "englishKey": "kitchen cabinet corner round",
+      "source": "家具1/Models/GLTF format/kitchenCabinetCornerRound.glb",
+      "output": "已整理/07-收纳柜/厨房圆角柜.glb"
+    },
+    {
+      "id": "厨房抽屉柜",
+      "category": "07-收纳柜",
+      "chineseName": "厨房抽屉柜",
+      "englishKey": "kitchen cabinet drawer",
+      "source": "家具1/Models/GLTF format/kitchenCabinetDrawer.glb",
+      "output": "已整理/07-收纳柜/厨房抽屉柜.glb"
+    },
+    {
+      "id": "厨房吊柜",
+      "category": "07-收纳柜",
+      "chineseName": "厨房吊柜",
+      "englishKey": "kitchen cabinet upper",
+      "source": "家具1/Models/GLTF format/kitchenCabinetUpper.glb",
+      "output": "已整理/07-收纳柜/厨房吊柜.glb"
+    },
+    {
+      "id": "厨房转角吊柜",
+      "category": "07-收纳柜",
+      "chineseName": "厨房转角吊柜",
+      "englishKey": "kitchen cabinet upper corner",
+      "source": "家具1/Models/GLTF format/kitchenCabinetUpperCorner.glb",
+      "output": "已整理/07-收纳柜/厨房转角吊柜.glb"
+    },
+    {
+      "id": "双门吊柜",
+      "category": "07-收纳柜",
+      "chineseName": "双门吊柜",
+      "englishKey": "kitchen cabinet upper double",
+      "source": "家具1/Models/GLTF format/kitchenCabinetUpperDouble.glb",
+      "output": "已整理/07-收纳柜/双门吊柜.glb"
+    },
+    {
+      "id": "矮吊柜",
+      "category": "07-收纳柜",
+      "chineseName": "矮吊柜",
+      "englishKey": "kitchen cabinet upper low",
+      "source": "家具1/Models/GLTF format/kitchenCabinetUpperLow.glb",
+      "output": "已整理/07-收纳柜/矮吊柜.glb"
+    },
+    {
+      "id": "咖啡机_2",
+      "category": "09-厨房电器",
+      "chineseName": "咖啡机_2",
+      "englishKey": "kitchen coffee machine",
+      "source": "家具1/Models/GLTF format/kitchenCoffeeMachine.glb",
+      "output": "已整理/09-厨房电器/咖啡机_2.glb"
+    },
+    {
+      "id": "冰箱_2",
+      "category": "09-厨房电器",
+      "chineseName": "冰箱_2",
+      "englishKey": "kitchen fridge",
+      "source": "家具1/Models/GLTF format/kitchenFridge.glb",
+      "output": "已整理/09-厨房电器/冰箱_2.glb"
+    },
+    {
+      "id": "嵌入式冰箱",
+      "category": "09-厨房电器",
+      "chineseName": "嵌入式冰箱",
+      "englishKey": "kitchen fridge built in",
+      "source": "家具1/Models/GLTF format/kitchenFridgeBuiltIn.glb",
+      "output": "已整理/09-厨房电器/嵌入式冰箱.glb"
+    },
+    {
+      "id": "大冰箱",
+      "category": "09-厨房电器",
+      "chineseName": "大冰箱",
+      "englishKey": "kitchen fridge large",
+      "source": "家具1/Models/GLTF format/kitchenFridgeLarge.glb",
+      "output": "已整理/09-厨房电器/大冰箱.glb"
+    },
+    {
+      "id": "小冰箱",
+      "category": "09-厨房电器",
+      "chineseName": "小冰箱",
+      "englishKey": "kitchen fridge small",
+      "source": "家具1/Models/GLTF format/kitchenFridgeSmall.glb",
+      "output": "已整理/09-厨房电器/小冰箱.glb"
+    },
+    {
+      "id": "微波炉",
+      "category": "09-厨房电器",
+      "chineseName": "微波炉",
+      "englishKey": "kitchen microwave",
+      "source": "家具1/Models/GLTF format/kitchenMicrowave.glb",
+      "output": "已整理/09-厨房电器/微波炉.glb"
+    },
+    {
+      "id": "厨房水槽",
+      "category": "09-厨房电器",
+      "chineseName": "厨房水槽",
+      "englishKey": "kitchen sink",
+      "source": "家具1/Models/GLTF format/kitchenSink.glb",
+      "output": "已整理/09-厨房电器/厨房水槽.glb"
+    },
+    {
+      "id": "厨房凳",
+      "category": "15-椅子",
+      "chineseName": "厨房凳",
+      "englishKey": "kitchen stool",
+      "source": "家具5/Kitchen Stool.glb",
+      "output": "已整理/15-椅子/厨房凳.glb"
+    },
+    {
+      "id": "燃气灶_2",
+      "category": "09-厨房电器",
+      "chineseName": "燃气灶_2",
+      "englishKey": "kitchen stove",
+      "source": "家具1/Models/GLTF format/kitchenStove.glb",
+      "output": "已整理/09-厨房电器/燃气灶_2.glb"
+    },
+    {
+      "id": "电灶",
+      "category": "09-厨房电器",
+      "chineseName": "电灶",
+      "englishKey": "kitchen stove electric",
+      "source": "家具1/Models/GLTF format/kitchenStoveElectric.glb",
+      "output": "已整理/09-厨房电器/电灶.glb"
+    },
+    {
+      "id": "刀",
+      "category": "16-台面小物",
+      "chineseName": "刀",
+      "englishKey": "knife",
+      "source": "家具5/Knife.glb",
+      "output": "已整理/16-台面小物/刀.glb"
+    },
+    {
+      "id": "刀架",
+      "category": "14-食物",
+      "chineseName": "刀架",
+      "englishKey": "knife block",
+      "source": "食物1/Models/GLB format/knife-block.glb",
+      "output": "已整理/14-食物/刀架.glb"
+    },
+    {
+      "id": "L型沙发",
+      "category": "02-沙发",
+      "chineseName": "L型沙发",
+      "englishKey": "l couch",
+      "source": "家具4/L Couch.glb",
+      "output": "已整理/02-沙发/L型沙发.glb"
+    },
+    {
+      "id": "L型书桌",
+      "category": "03-桌",
+      "chineseName": "L型书桌",
+      "englishKey": "l shaped desk",
+      "source": "家具5/L Shaped Desk.glb",
+      "output": "已整理/03-桌/L型书桌.glb"
+    },
+    {
+      "id": "梯子",
+      "category": "13-运动休闲",
+      "chineseName": "梯子",
+      "englishKey": "ladder",
+      "source": "家具2/Ladder.glb",
+      "output": "已整理/13-运动休闲/梯子.glb"
+    },
+    {
+      "id": "灯",
+      "category": "08-灯光",
+      "chineseName": "灯",
+      "englishKey": "lamp",
+      "source": "家具4/Lamp.glb",
+      "output": "已整理/08-灯光/灯.glb"
+    },
+    {
+      "id": "圆形落地灯",
+      "category": "08-灯光",
+      "chineseName": "圆形落地灯",
+      "englishKey": "lamp round floor",
+      "source": "家具1/Models/GLTF format/lampRoundFloor.glb",
+      "output": "已整理/08-灯光/圆形落地灯.glb"
+    },
+    {
+      "id": "圆形台灯",
+      "category": "03-桌",
+      "chineseName": "圆形台灯",
+      "englishKey": "lamp round table",
+      "source": "家具1/Models/GLTF format/lampRoundTable.glb",
+      "output": "已整理/03-桌/圆形台灯.glb"
+    },
+    {
+      "id": "方形吸顶灯",
+      "category": "08-灯光",
+      "chineseName": "方形吸顶灯",
+      "englishKey": "lamp square ceiling",
+      "source": "家具1/Models/GLTF format/lampSquareCeiling.glb",
+      "output": "已整理/08-灯光/方形吸顶灯.glb"
+    },
+    {
+      "id": "方形落地灯",
+      "category": "08-灯光",
+      "chineseName": "方形落地灯",
+      "englishKey": "lamp square floor",
+      "source": "家具1/Models/GLTF format/lampSquareFloor.glb",
+      "output": "已整理/08-灯光/方形落地灯.glb"
+    },
+    {
+      "id": "方形台灯",
+      "category": "03-桌",
+      "chineseName": "方形台灯",
+      "englishKey": "lamp square table",
+      "source": "家具1/Models/GLTF format/lampSquareTable.glb",
+      "output": "已整理/03-桌/方形台灯.glb"
+    },
+    {
+      "id": "壁灯",
+      "category": "08-灯光",
+      "chineseName": "壁灯",
+      "englishKey": "lamp wall",
+      "source": "家具1/Models/GLTF format/lampWall.glb",
+      "output": "已整理/08-灯光/壁灯.glb"
+    },
+    {
+      "id": "带罩灯",
+      "category": "08-灯光",
+      "chineseName": "带罩灯",
+      "englishKey": "lamp with shade",
+      "source": "家具2/Lamp With Shade.glb",
+      "output": "已整理/08-灯光/带罩灯.glb"
+    },
+    {
+      "id": "笔记本",
+      "category": "12-办公电子",
+      "chineseName": "笔记本",
+      "englishKey": "laptop",
+      "source": "家具1/Models/GLTF format/laptop.glb",
+      "output": "已整理/12-办公电子/笔记本.glb"
+    },
+    {
+      "id": "电脑包",
+      "category": "12-办公电子",
+      "chineseName": "电脑包",
+      "englishKey": "laptop bag",
+      "source": "家具3/Laptop bag.glb",
+      "output": "已整理/12-办公电子/电脑包.glb"
+    },
+    {
+      "id": "大型书架",
+      "category": "07-收纳柜",
+      "chineseName": "大型书架",
+      "englishKey": "large book shelf",
+      "source": "家具5/Large Book Shelf.glb",
+      "output": "已整理/07-收纳柜/大型书架.glb"
+    },
+    {
+      "id": "大衣柜",
+      "category": "07-收纳柜",
+      "chineseName": "大衣柜",
+      "englishKey": "large wardrobe",
+      "source": "家具5/Large Wardrobe.glb",
+      "output": "已整理/07-收纳柜/大衣柜.glb"
+    },
+    {
+      "id": "韭葱",
+      "category": "14-食物",
+      "chineseName": "韭葱",
+      "englishKey": "leek",
+      "source": "食物1/Models/GLB format/leek.glb",
+      "output": "已整理/14-食物/韭葱.glb"
+    },
+    {
+      "id": "柠檬",
+      "category": "14-食物",
+      "chineseName": "柠檬",
+      "englishKey": "lemon",
+      "source": "食物1/Models/GLB format/lemon.glb",
+      "output": "已整理/14-食物/柠檬.glb"
+    },
+    {
+      "id": "半颗柠檬",
+      "category": "14-食物",
+      "chineseName": "半颗柠檬",
+      "englishKey": "lemon half",
+      "source": "食物1/Models/GLB format/lemon-half.glb",
+      "output": "已整理/14-食物/半颗柠檬.glb"
+    },
+    {
+      "id": "吸顶灯_2",
+      "category": "08-灯光",
+      "chineseName": "吸顶灯_2",
+      "englishKey": "light ceiling",
+      "source": "家具4/Light Ceiling.glb",
+      "output": "已整理/08-灯光/吸顶灯_2.glb"
+    },
+    {
+      "id": "单头吸顶灯",
+      "category": "08-灯光",
+      "chineseName": "单头吸顶灯",
+      "englishKey": "light ceiling single",
+      "source": "家具4/Light Ceiling Single.glb",
+      "output": "已整理/08-灯光/单头吸顶灯.glb"
+    },
+    {
+      "id": "枝形吊灯",
+      "category": "06-装饰",
+      "chineseName": "枝形吊灯",
+      "englishKey": "light chandelier",
+      "source": "家具4/Light Chandelier.glb",
+      "output": "已整理/06-装饰/枝形吊灯.glb"
+    },
+    {
+      "id": "立方灯",
+      "category": "08-灯光",
+      "chineseName": "立方灯",
+      "englishKey": "light cube",
+      "source": "家具4/Light Cube.glb",
+      "output": "已整理/08-灯光/立方灯.glb"
+    },
+    {
+      "id": "台灯桌",
+      "category": "03-桌",
+      "chineseName": "台灯桌",
+      "englishKey": "light desk",
+      "source": "家具4/Light Desk.glb",
+      "output": "已整理/03-桌/台灯桌.glb"
+    },
+    {
+      "id": "落地灯_2",
+      "category": "08-灯光",
+      "chineseName": "落地灯_2",
+      "englishKey": "light floor",
+      "source": "家具4/Light Floor.glb",
+      "output": "已整理/08-灯光/落地灯_2.glb"
+    },
+    {
+      "id": "二十面体灯",
+      "category": "08-灯光",
+      "chineseName": "二十面体灯",
+      "englishKey": "light icosahedron",
+      "source": "家具4/Light Icosahedron.glb",
+      "output": "已整理/08-灯光/二十面体灯.glb"
+    },
+    {
+      "id": "立灯",
+      "category": "08-灯光",
+      "chineseName": "立灯",
+      "englishKey": "light stand",
+      "source": "家具4/Light Stand.glb",
+      "output": "已整理/08-灯光/立灯.glb"
+    },
+    {
+      "id": "电灯开关",
+      "category": "08-灯光",
+      "chineseName": "电灯开关",
+      "englishKey": "light switch",
+      "source": "家具3/Light Switch.glb",
+      "output": "已整理/08-灯光/电灯开关.glb"
+    },
+    {
+      "id": "内衣柜",
+      "category": "07-收纳柜",
+      "chineseName": "内衣柜",
+      "englishKey": "lingerie dresser",
+      "source": "家具5/Lingerie Dresser.glb",
+      "output": "已整理/07-收纳柜/内衣柜.glb"
+    },
+    {
+      "id": "长面包",
+      "category": "14-食物",
+      "chineseName": "长面包",
+      "englishKey": "loaf",
+      "source": "食物1/Models/GLB format/loaf.glb",
+      "output": "已整理/14-食物/长面包.glb"
+    },
+    {
+      "id": "法棍",
+      "category": "14-食物",
+      "chineseName": "法棍",
+      "englishKey": "loaf baguette",
+      "source": "食物1/Models/GLB format/loaf-baguette.glb",
+      "output": "已整理/14-食物/法棍.glb"
+    },
+    {
+      "id": "圆面包",
+      "category": "14-食物",
+      "chineseName": "圆面包",
+      "englishKey": "loaf round",
+      "source": "食物1/Models/GLB format/loaf-round.glb",
+      "output": "已整理/14-食物/圆面包.glb"
+    },
+    {
+      "id": "棒棒糖",
+      "category": "14-食物",
+      "chineseName": "棒棒糖",
+      "englishKey": "lollypop",
+      "source": "食物1/Models/GLB format/lollypop.glb",
+      "output": "已整理/14-食物/棒棒糖.glb"
+    },
+    {
+      "id": "休闲椅",
+      "category": "02-沙发",
+      "chineseName": "休闲椅",
+      "englishKey": "lounge chair",
+      "source": "家具1/Models/GLTF format/loungeChair.glb",
+      "output": "已整理/02-沙发/休闲椅.glb"
+    },
+    {
+      "id": "躺椅",
+      "category": "02-沙发",
+      "chineseName": "躺椅",
+      "englishKey": "lounge chair relax",
+      "source": "家具1/Models/GLTF format/loungeChairRelax.glb",
+      "output": "已整理/02-沙发/躺椅.glb"
+    },
+    {
+      "id": "设计款单椅",
+      "category": "02-沙发",
+      "chineseName": "设计款单椅",
+      "englishKey": "lounge design chair",
+      "source": "家具1/Models/GLTF format/loungeDesignChair.glb",
+      "output": "已整理/02-沙发/设计款单椅.glb"
+    },
+    {
+      "id": "设计款沙发",
+      "category": "02-沙发",
+      "chineseName": "设计款沙发",
+      "englishKey": "lounge design sofa",
+      "source": "家具1/Models/GLTF format/loungeDesignSofa.glb",
+      "output": "已整理/02-沙发/设计款沙发.glb"
+    },
+    {
+      "id": "设计款转角沙发",
+      "category": "02-沙发",
+      "chineseName": "设计款转角沙发",
+      "englishKey": "lounge design sofa corner",
+      "source": "家具1/Models/GLTF format/loungeDesignSofaCorner.glb",
+      "output": "已整理/02-沙发/设计款转角沙发.glb"
+    },
+    {
+      "id": "休闲沙发",
+      "category": "02-沙发",
+      "chineseName": "休闲沙发",
+      "englishKey": "lounge sofa",
+      "source": "家具1/Models/GLTF format/loungeSofa.glb",
+      "output": "已整理/02-沙发/休闲沙发.glb"
+    },
+    {
+      "id": "转角沙发",
+      "category": "02-沙发",
+      "chineseName": "转角沙发",
+      "englishKey": "lounge sofa corner",
+      "source": "家具1/Models/GLTF format/loungeSofaCorner.glb",
+      "output": "已整理/02-沙发/转角沙发.glb"
+    },
+    {
+      "id": "长沙发",
+      "category": "02-沙发",
+      "chineseName": "长沙发",
+      "englishKey": "lounge sofa long",
+      "source": "家具1/Models/GLTF format/loungeSofaLong.glb",
+      "output": "已整理/02-沙发/长沙发.glb"
+    },
+    {
+      "id": "沙发脚凳",
+      "category": "02-沙发",
+      "chineseName": "沙发脚凳",
+      "englishKey": "lounge sofa ottoman",
+      "source": "家具1/Models/GLTF format/loungeSofaOttoman.glb",
+      "output": "已整理/02-沙发/沙发脚凳.glb"
+    },
+    {
+      "id": "杂志",
+      "category": "12-办公电子",
+      "chineseName": "杂志",
+      "englishKey": "magazine",
+      "source": "家具3/Magazine.glb",
+      "output": "已整理/12-办公电子/杂志.glb"
+    },
+    {
+      "id": "邮箱",
+      "category": "13-运动休闲",
+      "chineseName": "邮箱",
+      "englishKey": "mailbox",
+      "source": "家具2/Mailbox.glb",
+      "output": "已整理/13-运动休闲/邮箱.glb"
+    },
+    {
+      "id": "鱼籽卷",
+      "category": "14-食物",
+      "chineseName": "鱼籽卷",
+      "englishKey": "maki roe",
+      "source": "食物1/Models/GLB format/maki-roe.glb",
+      "output": "已整理/14-食物/鱼籽卷.glb"
+    },
+    {
+      "id": "三文鱼卷",
+      "category": "14-食物",
+      "chineseName": "三文鱼卷",
+      "englishKey": "maki salmon",
+      "source": "食物1/Models/GLB format/maki-salmon.glb",
+      "output": "已整理/14-食物/三文鱼卷.glb"
+    },
+    {
+      "id": "蔬菜卷",
+      "category": "14-食物",
+      "chineseName": "蔬菜卷",
+      "englishKey": "maki vegetable",
+      "source": "食物1/Models/GLB format/maki-vegetable.glb",
+      "output": "已整理/14-食物/蔬菜卷.glb"
+    },
+    {
+      "id": "井盖",
+      "category": "13-运动休闲",
+      "chineseName": "井盖",
+      "englishKey": "manhole cover",
+      "source": "家具3/Manhole cover.glb",
+      "output": "已整理/13-运动休闲/井盖.glb"
+    },
+    {
+      "id": "熟肉",
+      "category": "14-食物",
+      "chineseName": "熟肉",
+      "englishKey": "meat cooked",
+      "source": "食物1/Models/GLB format/meat-cooked.glb",
+      "output": "已整理/14-食物/熟肉.glb"
+    },
+    {
+      "id": "肉饼",
+      "category": "14-食物",
+      "chineseName": "肉饼",
+      "englishKey": "meat patty",
+      "source": "食物1/Models/GLB format/meat-patty.glb",
+      "output": "已整理/14-食物/肉饼.glb"
+    },
+    {
+      "id": "生肉",
+      "category": "14-食物",
+      "chineseName": "生肉",
+      "englishKey": "meat raw",
+      "source": "食物1/Models/GLB format/meat-raw.glb",
+      "output": "已整理/14-食物/生肉.glb"
+    },
+    {
+      "id": "排骨",
+      "category": "14-食物",
+      "chineseName": "排骨",
+      "englishKey": "meat ribs",
+      "source": "食物1/Models/GLB format/meat-ribs.glb",
+      "output": "已整理/14-食物/排骨.glb"
+    },
+    {
+      "id": "肉香肠",
+      "category": "14-食物",
+      "chineseName": "肉香肠",
+      "englishKey": "meat sausage",
+      "source": "食物1/Models/GLB format/meat-sausage.glb",
+      "output": "已整理/14-食物/肉香肠.glb"
+    },
+    {
+      "id": "松肉锤",
+      "category": "14-食物",
+      "chineseName": "松肉锤",
+      "englishKey": "meat tenderizer",
+      "source": "食物1/Models/GLB format/meat-tenderizer.glb",
+      "output": "已整理/14-食物/松肉锤.glb"
+    },
+    {
+      "id": "中型书架",
+      "category": "07-收纳柜",
+      "chineseName": "中型书架",
+      "englishKey": "medium book shelf",
+      "source": "家具5/Medium Book Shelf.glb",
+      "output": "已整理/07-收纳柜/中型书架.glb"
+    },
+    {
+      "id": "中衣柜",
+      "category": "07-收纳柜",
+      "chineseName": "中衣柜",
+      "englishKey": "medium wardrobe",
+      "source": "家具5/Medium Wardrobe.glb",
+      "output": "已整理/07-收纳柜/中衣柜.glb"
+    },
+    {
+      "id": "留言板",
+      "category": "06-装饰",
+      "chineseName": "留言板",
+      "englishKey": "message board",
+      "source": "家具3/Message board.glb",
+      "output": "已整理/06-装饰/留言板.glb"
+    },
+    {
+      "id": "牛奶罐",
+      "category": "16-台面小物",
+      "chineseName": "牛奶罐",
+      "englishKey": "milkjar",
+      "source": "家具5/Milkjar.glb",
+      "output": "已整理/16-台面小物/牛奶罐.glb"
+    },
+    {
+      "id": "碎肉馅饼",
+      "category": "14-食物",
+      "chineseName": "碎肉馅饼",
+      "englishKey": "mincemeat pie",
+      "source": "食物1/Models/GLB format/mincemeat-pie.glb",
+      "output": "已整理/14-食物/碎肉馅饼.glb"
+    },
+    {
+      "id": "极简现代椅",
+      "category": "15-椅子",
+      "chineseName": "极简现代椅",
+      "englishKey": "minimalist modern chair",
+      "source": "家具5/Minimalist Modern Chair.glb",
+      "output": "已整理/15-椅子/极简现代椅.glb"
+    },
+    {
+      "id": "镜子",
+      "category": "06-装饰",
+      "chineseName": "镜子",
+      "englishKey": "mirror",
+      "source": "家具5/Mirror.glb",
+      "output": "已整理/06-装饰/镜子.glb"
+    },
+    {
+      "id": "现代餐桌",
+      "category": "03-桌",
+      "chineseName": "现代餐桌",
+      "englishKey": "modern kitchen table",
+      "source": "家具5/Modern Kitchen Table.glb",
+      "output": "已整理/03-桌/现代餐桌.glb"
+    },
+    {
+      "id": "显示器_2",
+      "category": "12-办公电子",
+      "chineseName": "显示器_2",
+      "englishKey": "monitor",
+      "source": "家具5/Monitor.glb",
+      "output": "已整理/12-办公电子/显示器_2.glb"
+    },
+    {
+      "id": "研钵",
+      "category": "14-食物",
+      "chineseName": "研钵",
+      "englishKey": "mortar",
+      "source": "食物1/Models/GLB format/mortar.glb",
+      "output": "已整理/14-食物/研钵.glb"
+    },
+    {
+      "id": "研钵_2",
+      "category": "14-食物",
+      "chineseName": "研钵_2",
+      "englishKey": "mortar pestle",
+      "source": "食物1/Models/GLB format/mortar-pestle.glb",
+      "output": "已整理/14-食物/研钵_2.glb"
+    },
+    {
+      "id": "鼠标_2",
+      "category": "12-办公电子",
+      "chineseName": "鼠标_2",
+      "englishKey": "mouse",
+      "source": "家具5/Mouse.glb",
+      "output": "已整理/12-办公电子/鼠标_2.glb"
+    },
+    {
+      "id": "鼠标垫",
+      "category": "12-办公电子",
+      "chineseName": "鼠标垫",
+      "englishKey": "mousepad",
+      "source": "家具3/Mousepad.glb",
+      "output": "已整理/12-办公电子/鼠标垫.glb"
+    },
+    {
+      "id": "高达模型",
+      "category": "13-运动休闲",
+      "chineseName": "高达模型",
+      "englishKey": "ms gundam rx 78 2 with weapons",
+      "source": "家具3/MS Gundam RX-78-2 with weapons.glb",
+      "output": "已整理/13-运动休闲/高达模型.glb"
+    },
+    {
+      "id": "玛芬",
+      "category": "14-食物",
+      "chineseName": "玛芬",
+      "englishKey": "muffin",
+      "source": "食物1/Models/GLB format/muffin.glb",
+      "output": "已整理/14-食物/玛芬.glb"
+    },
+    {
+      "id": "马克杯",
+      "category": "16-台面小物",
+      "chineseName": "马克杯",
+      "englishKey": "mug",
+      "source": "家具3/Mug.glb",
+      "output": "已整理/16-台面小物/马克杯.glb"
+    },
+    {
+      "id": "办公杯",
+      "category": "12-办公电子",
+      "chineseName": "办公杯",
+      "englishKey": "mug with office tool",
+      "source": "家具2/Mug With Office Tool.glb",
+      "output": "已整理/12-办公电子/办公杯.glb"
+    },
+    {
+      "id": "蘑菇",
+      "category": "14-食物",
+      "chineseName": "蘑菇",
+      "englishKey": "mushroom",
+      "source": "食物1/Models/GLB format/mushroom.glb",
+      "output": "已整理/14-食物/蘑菇.glb"
+    },
+    {
+      "id": "半个蘑菇",
+      "category": "14-食物",
+      "chineseName": "半个蘑菇",
+      "englishKey": "mushroom half",
+      "source": "食物1/Models/GLB format/mushroom-half.glb",
+      "output": "已整理/14-食物/半个蘑菇.glb"
+    },
+    {
+      "id": "贻贝",
+      "category": "14-食物",
+      "chineseName": "贻贝",
+      "englishKey": "mussel",
+      "source": "食物1/Models/GLB format/mussel.glb",
+      "output": "已整理/14-食物/贻贝.glb"
+    },
+    {
+      "id": "打开的贻贝",
+      "category": "14-食物",
+      "chineseName": "打开的贻贝",
+      "englishKey": "mussel open",
+      "source": "食物1/Models/GLB format/mussel-open.glb",
+      "output": "已整理/14-食物/打开的贻贝.glb"
+    },
+    {
+      "id": "床头柜",
+      "category": "03-桌",
+      "chineseName": "床头柜",
+      "englishKey": "night stand",
+      "source": "家具4/Night Stand.glb",
+      "output": "已整理/03-桌/床头柜.glb"
+    },
+    {
+      "id": "笔记本_2",
+      "category": "12-办公电子",
+      "chineseName": "笔记本_2",
+      "englishKey": "notebook",
+      "source": "家具5/Notebook.glb",
+      "output": "已整理/12-办公电子/笔记本_2.glb"
+    },
+    {
+      "id": "办公椅",
+      "category": "15-椅子",
+      "chineseName": "办公椅",
+      "englishKey": "office chair",
+      "source": "家具3/Office Chair.glb",
+      "output": "已整理/15-椅子/办公椅.glb"
+    },
+    {
+      "id": "办公电话",
+      "category": "12-办公电子",
+      "chineseName": "办公电话",
+      "englishKey": "office phone",
+      "source": "家具3/Office Phone.glb",
+      "output": "已整理/12-办公电子/办公电话.glb"
+    },
+    {
+      "id": "洋葱",
+      "category": "14-食物",
+      "chineseName": "洋葱",
+      "englishKey": "onion",
+      "source": "食物1/Models/GLB format/onion.glb",
+      "output": "已整理/14-食物/洋葱.glb"
+    },
+    {
+      "id": "半个洋葱",
+      "category": "14-食物",
+      "chineseName": "半个洋葱",
+      "englishKey": "onion half",
+      "source": "食物1/Models/GLB format/onion-half.glb",
+      "output": "已整理/14-食物/半个洋葱.glb"
+    },
+    {
+      "id": "开放底柜",
+      "category": "07-收纳柜",
+      "chineseName": "开放底柜",
+      "englishKey": "open base cabinet",
+      "source": "家具5/Open Base Cabinet.glb",
+      "output": "已整理/07-收纳柜/开放底柜.glb"
+    },
+    {
+      "id": "橙子",
+      "category": "14-食物",
+      "chineseName": "橙子",
+      "englishKey": "orange",
+      "source": "食物1/Models/GLB format/orange.glb",
+      "output": "已整理/14-食物/橙子.glb"
+    },
+    {
+      "id": "脚凳茶几",
+      "category": "02-沙发",
+      "chineseName": "脚凳茶几",
+      "englishKey": "ottoman coffe table",
+      "source": "家具5/Ottoman Coffe Table.glb",
+      "output": "已整理/02-沙发/脚凳茶几.glb"
+    },
+    {
+      "id": "烤箱",
+      "category": "09-厨房电器",
+      "chineseName": "烤箱",
+      "englishKey": "oven",
+      "source": "家具4/Oven.glb",
+      "output": "已整理/09-厨房电器/烤箱.glb"
+    },
+    {
+      "id": "独立烤箱",
+      "category": "09-厨房电器",
+      "chineseName": "独立烤箱",
+      "englishKey": "oven solo",
+      "source": "家具5/Oven Solo.glb",
+      "output": "已整理/09-厨房电器/独立烤箱.glb"
+    },
+    {
+      "id": "挂画",
+      "category": "06-装饰",
+      "chineseName": "挂画",
+      "englishKey": "painting",
+      "source": "家具2/Painting.glb",
+      "output": "已整理/06-装饰/挂画.glb"
+    },
+    {
+      "id": "画布",
+      "category": "06-装饰",
+      "chineseName": "画布",
+      "englishKey": "painting canvas",
+      "source": "家具5/Painting Canvas.glb",
+      "output": "已整理/06-装饰/画布.glb"
+    },
+    {
+      "id": "平底锅",
+      "category": "14-食物",
+      "chineseName": "平底锅",
+      "englishKey": "pan",
+      "source": "食物1/Models/GLB format/pan.glb",
+      "output": "已整理/14-食物/平底锅.glb"
+    },
+    {
+      "id": "炖锅",
+      "category": "14-食物",
+      "chineseName": "炖锅",
+      "englishKey": "pan stew",
+      "source": "食物1/Models/GLB format/pan-stew.glb",
+      "output": "已整理/14-食物/炖锅.glb"
+    },
+    {
+      "id": "松饼",
+      "category": "14-食物",
+      "chineseName": "松饼",
+      "englishKey": "pancakes",
+      "source": "食物1/Models/GLB format/pancakes.glb",
+      "output": "已整理/14-食物/松饼.glb"
+    },
+    {
+      "id": "墙板",
+      "category": "11-墙面门窗",
+      "chineseName": "墙板",
+      "englishKey": "paneling",
+      "source": "家具1/Models/GLTF format/paneling.glb",
+      "output": "已整理/11-墙面门窗/墙板.glb"
+    },
+    {
+      "id": "彩椒",
+      "category": "14-食物",
+      "chineseName": "彩椒",
+      "englishKey": "paprika",
+      "source": "食物1/Models/GLB format/paprika.glb",
+      "output": "已整理/14-食物/彩椒.glb"
+    },
+    {
+      "id": "彩椒片",
+      "category": "14-食物",
+      "chineseName": "彩椒片",
+      "englishKey": "paprika slice",
+      "source": "食物1/Models/GLB format/paprika-slice.glb",
+      "output": "已整理/14-食物/彩椒片.glb"
+    },
+    {
+      "id": "花生酱",
+      "category": "14-食物",
+      "chineseName": "花生酱",
+      "englishKey": "peanut butter",
+      "source": "食物1/Models/GLB format/peanut-butter.glb",
+      "output": "已整理/14-食物/花生酱.glb"
+    },
+    {
+      "id": "梨",
+      "category": "14-食物",
+      "chineseName": "梨",
+      "englishKey": "pear",
+      "source": "食物1/Models/GLB format/pear.glb",
+      "output": "已整理/14-食物/梨.glb"
+    },
+    {
+      "id": "半颗梨",
+      "category": "14-食物",
+      "chineseName": "半颗梨",
+      "englishKey": "pear half",
+      "source": "食物1/Models/GLB format/pear-half.glb",
+      "output": "已整理/14-食物/半颗梨.glb"
+    },
+    {
+      "id": "铅笔",
+      "category": "16-台面小物",
+      "chineseName": "铅笔",
+      "englishKey": "pencil",
+      "source": "家具5/Pencil.glb",
+      "output": "已整理/16-台面小物/铅笔.glb"
+    },
+    {
+      "id": "笔",
+      "category": "16-台面小物",
+      "chineseName": "笔",
+      "englishKey": "pens",
+      "source": "家具3/Pens.glb",
+      "output": "已整理/16-台面小物/笔.glb"
+    },
+    {
+      "id": "甜椒",
+      "category": "14-食物",
+      "chineseName": "甜椒",
+      "englishKey": "pepper",
+      "source": "食物1/Models/GLB format/pepper.glb",
+      "output": "已整理/14-食物/甜椒.glb"
+    },
+    {
+      "id": "胡椒研磨器",
+      "category": "14-食物",
+      "chineseName": "胡椒研磨器",
+      "englishKey": "pepper mill",
+      "source": "食物1/Models/GLB format/pepper-mill.glb",
+      "output": "已整理/14-食物/胡椒研磨器.glb"
+    },
+    {
+      "id": "电话",
+      "category": "12-办公电子",
+      "chineseName": "电话",
+      "englishKey": "phone",
+      "source": "家具3/Phone.glb",
+      "output": "已整理/12-办公电子/电话.glb"
+    },
+    {
+      "id": "派",
+      "category": "14-食物",
+      "chineseName": "派",
+      "englishKey": "pie",
+      "source": "食物1/Models/GLB format/pie.glb",
+      "output": "已整理/14-食物/派.glb"
+    },
+    {
+      "id": "存钱罐",
+      "category": "06-装饰",
+      "chineseName": "存钱罐",
+      "englishKey": "piggy bank",
+      "source": "家具2/Piggy Bank.glb",
+      "output": "已整理/06-装饰/存钱罐.glb"
+    },
+    {
+      "id": "抱枕",
+      "category": "06-装饰",
+      "chineseName": "抱枕",
+      "englishKey": "pillow",
+      "source": "家具1/Models/GLTF format/pillow.glb",
+      "output": "已整理/06-装饰/抱枕.glb"
+    },
+    {
+      "id": "蓝色抱枕",
+      "category": "06-装饰",
+      "chineseName": "蓝色抱枕",
+      "englishKey": "pillow blue",
+      "source": "家具1/Models/GLTF format/pillowBlue.glb",
+      "output": "已整理/06-装饰/蓝色抱枕.glb"
+    },
+    {
+      "id": "蓝色长抱枕",
+      "category": "06-装饰",
+      "chineseName": "蓝色长抱枕",
+      "englishKey": "pillow blue long",
+      "source": "家具1/Models/GLTF format/pillowBlueLong.glb",
+      "output": "已整理/06-装饰/蓝色长抱枕.glb"
+    },
+    {
+      "id": "长抱枕",
+      "category": "06-装饰",
+      "chineseName": "长抱枕",
+      "englishKey": "pillow long",
+      "source": "家具1/Models/GLTF format/pillowLong.glb",
+      "output": "已整理/06-装饰/长抱枕.glb"
+    },
+    {
+      "id": "菠萝",
+      "category": "14-食物",
+      "chineseName": "菠萝",
+      "englishKey": "pineapple",
+      "source": "食物1/Models/GLB format/pineapple.glb",
+      "output": "已整理/14-食物/菠萝.glb"
+    },
+    {
+      "id": "披萨",
+      "category": "14-食物",
+      "chineseName": "披萨",
+      "englishKey": "pizza",
+      "source": "食物1/Models/GLB format/pizza.glb",
+      "output": "已整理/14-食物/披萨.glb"
+    },
+    {
+      "id": "披萨盒",
+      "category": "14-食物",
+      "chineseName": "披萨盒",
+      "englishKey": "pizza box",
+      "source": "食物1/Models/GLB format/pizza-box.glb",
+      "output": "已整理/14-食物/披萨盒.glb"
+    },
+    {
+      "id": "披萨刀",
+      "category": "14-食物",
+      "chineseName": "披萨刀",
+      "englishKey": "pizza cutter",
+      "source": "食物1/Models/GLB format/pizza-cutter.glb",
+      "output": "已整理/14-食物/披萨刀.glb"
+    },
+    {
+      "id": "小盆栽1",
+      "category": "05-绿植",
+      "chineseName": "小盆栽1",
+      "englishKey": "plant small1",
+      "source": "家具1/Models/GLTF format/plantSmall1.glb",
+      "output": "已整理/05-绿植/小盆栽1.glb"
+    },
+    {
+      "id": "小盆栽2",
+      "category": "05-绿植",
+      "chineseName": "小盆栽2",
+      "englishKey": "plant small2",
+      "source": "家具1/Models/GLTF format/plantSmall2.glb",
+      "output": "已整理/05-绿植/小盆栽2.glb"
+    },
+    {
+      "id": "小盆栽3",
+      "category": "05-绿植",
+      "chineseName": "小盆栽3",
+      "englishKey": "plant small3",
+      "source": "家具1/Models/GLTF format/plantSmall3.glb",
+      "output": "已整理/05-绿植/小盆栽3.glb"
+    },
+    {
+      "id": "白盆绿植",
+      "category": "05-绿植",
+      "chineseName": "白盆绿植",
+      "englishKey": "plant white pot",
+      "source": "家具3/Plant - White Pot.glb",
+      "output": "已整理/05-绿植/白盆绿植.glb"
+    },
+    {
+      "id": "塑料杯",
+      "category": "16-台面小物",
+      "chineseName": "塑料杯",
+      "englishKey": "plastic cup",
+      "source": "家具5/Plastic Cup.glb",
+      "output": "已整理/16-台面小物/塑料杯.glb"
+    },
+    {
+      "id": "盘子",
+      "category": "16-台面小物",
+      "chineseName": "盘子",
+      "englishKey": "plate",
+      "source": "家具5/Plate.glb",
+      "output": "已整理/16-台面小物/盘子.glb"
+    },
+    {
+      "id": "碎盘子",
+      "category": "14-食物",
+      "chineseName": "碎盘子",
+      "englishKey": "plate broken",
+      "source": "食物1/Models/GLB format/plate-broken.glb",
+      "output": "已整理/14-食物/碎盘子.glb"
+    },
+    {
+      "id": "深盘",
+      "category": "14-食物",
+      "chineseName": "深盘",
+      "englishKey": "plate deep",
+      "source": "食物1/Models/GLB format/plate-deep.glb",
+      "output": "已整理/14-食物/深盘.glb"
+    },
+    {
+      "id": "餐盘",
+      "category": "14-食物",
+      "chineseName": "餐盘",
+      "englishKey": "plate dinner",
+      "source": "食物1/Models/GLB format/plate-dinner.glb",
+      "output": "已整理/14-食物/餐盘.glb"
+    },
+    {
+      "id": "长方盘",
+      "category": "14-食物",
+      "chineseName": "长方盘",
+      "englishKey": "plate rectangle",
+      "source": "食物1/Models/GLB format/plate-rectangle.glb",
+      "output": "已整理/14-食物/长方盘.glb"
+    },
+    {
+      "id": "酸菜盘",
+      "category": "14-食物",
+      "chineseName": "酸菜盘",
+      "englishKey": "plate sauerkraut",
+      "source": "食物1/Models/GLB format/plate-sauerkraut.glb",
+      "output": "已整理/14-食物/酸菜盘.glb"
+    },
+    {
+      "id": "拍立得照片",
+      "category": "16-台面小物",
+      "chineseName": "拍立得照片",
+      "englishKey": "polaroids",
+      "source": "家具3/Polaroids.glb",
+      "output": "已整理/16-台面小物/拍立得照片.glb"
+    },
+    {
+      "id": "冰棒",
+      "category": "14-食物",
+      "chineseName": "冰棒",
+      "englishKey": "popsicle",
+      "source": "食物1/Models/GLB format/popsicle.glb",
+      "output": "已整理/14-食物/冰棒.glb"
+    },
+    {
+      "id": "巧克力冰棒",
+      "category": "14-食物",
+      "chineseName": "巧克力冰棒",
+      "englishKey": "popsicle chocolate",
+      "source": "食物1/Models/GLB format/popsicle-chocolate.glb",
+      "output": "已整理/14-食物/巧克力冰棒.glb"
+    },
+    {
+      "id": "冰棒棍",
+      "category": "14-食物",
+      "chineseName": "冰棒棍",
+      "englishKey": "popsicle stick",
+      "source": "食物1/Models/GLB format/popsicle-stick.glb",
+      "output": "已整理/14-食物/冰棒棍.glb"
+    },
+    {
+      "id": "锅",
+      "category": "16-台面小物",
+      "chineseName": "锅",
+      "englishKey": "pot",
+      "source": "家具5/Pot.glb",
+      "output": "已整理/16-台面小物/锅.glb"
+    },
+    {
+      "id": "锅盖",
+      "category": "14-食物",
+      "chineseName": "锅盖",
+      "englishKey": "pot lid",
+      "source": "食物1/Models/GLB format/pot-lid.glb",
+      "output": "已整理/14-食物/锅盖.glb"
+    },
+    {
+      "id": "炖锅_2",
+      "category": "14-食物",
+      "chineseName": "炖锅_2",
+      "englishKey": "pot stew",
+      "source": "食物1/Models/GLB format/pot-stew.glb",
+      "output": "已整理/14-食物/炖锅_2.glb"
+    },
+    {
+      "id": "炖锅盖",
+      "category": "14-食物",
+      "chineseName": "炖锅盖",
+      "englishKey": "pot stew lid",
+      "source": "食物1/Models/GLB format/pot-stew-lid.glb",
+      "output": "已整理/14-食物/炖锅盖.glb"
+    },
+    {
+      "id": "盆栽",
+      "category": "05-绿植",
+      "chineseName": "盆栽",
+      "englishKey": "potted plant",
+      "source": "家具1/Models/GLTF format/pottedPlant.glb",
+      "output": "已整理/05-绿植/盆栽.glb"
+    },
+    {
+      "id": "礼物盒",
+      "category": "06-装饰",
+      "chineseName": "礼物盒",
+      "englishKey": "present",
+      "source": "家具2/Present.glb",
+      "output": "已整理/06-装饰/礼物盒.glb"
+    },
+    {
+      "id": "打印机",
+      "category": "12-办公电子",
+      "chineseName": "打印机",
+      "englishKey": "printer",
+      "source": "家具2/Printer.glb",
+      "output": "已整理/12-办公电子/打印机.glb"
+    },
+    {
+      "id": "燃气罐",
+      "category": "13-运动休闲",
+      "chineseName": "燃气罐",
+      "englishKey": "propane tank",
+      "source": "家具2/Propane Tank.glb",
+      "output": "已整理/13-运动休闲/燃气罐.glb"
+    },
+    {
+      "id": "蛋白粉",
+      "category": "16-台面小物",
+      "chineseName": "蛋白粉",
+      "englishKey": "protein powder",
+      "source": "家具5/Protein Powder.glb",
+      "output": "已整理/16-台面小物/蛋白粉.glb"
+    },
+    {
+      "id": "布丁",
+      "category": "14-食物",
+      "chineseName": "布丁",
+      "englishKey": "pudding",
+      "source": "食物1/Models/GLB format/pudding.glb",
+      "output": "已整理/14-食物/布丁.glb"
+    },
+    {
+      "id": "南瓜",
+      "category": "06-装饰",
+      "chineseName": "南瓜",
+      "englishKey": "pumpkin",
+      "source": "家具2/Pumpkin.glb",
+      "output": "已整理/06-装饰/南瓜.glb"
+    },
+    {
+      "id": "小南瓜",
+      "category": "14-食物",
+      "chineseName": "小南瓜",
+      "englishKey": "pumpkin basic",
+      "source": "食物1/Models/GLB format/pumpkin-basic.glb",
+      "output": "已整理/14-食物/小南瓜.glb"
+    },
+    {
+      "id": "沙袋",
+      "category": "13-运动休闲",
+      "chineseName": "沙袋",
+      "englishKey": "punching bag",
+      "source": "家具5/Punching Bag.glb",
+      "output": "已整理/13-运动休闲/沙袋.glb"
+    },
+    {
+      "id": "收音机",
+      "category": "12-办公电子",
+      "chineseName": "收音机",
+      "englishKey": "radio",
+      "source": "家具1/Models/GLTF format/radio.glb",
+      "output": "已整理/12-办公电子/收音机.glb"
+    },
+    {
+      "id": "萝卜",
+      "category": "14-食物",
+      "chineseName": "萝卜",
+      "englishKey": "radish",
+      "source": "食物1/Models/GLB format/radish.glb",
+      "output": "已整理/14-食物/萝卜.glb"
+    },
+    {
+      "id": "冰箱_3",
+      "category": "09-厨房电器",
+      "chineseName": "冰箱_3",
+      "englishKey": "refrigirator",
+      "source": "家具2/Refrigirator.glb",
+      "output": "已整理/09-厨房电器/冰箱_3.glb"
+    },
+    {
+      "id": "饭团",
+      "category": "14-食物",
+      "chineseName": "饭团",
+      "englishKey": "rice ball",
+      "source": "食物1/Models/GLB format/rice-ball.glb",
+      "output": "已整理/14-食物/饭团.glb"
+    },
+    {
+      "id": "摇椅",
+      "category": "02-沙发",
+      "chineseName": "摇椅",
+      "englishKey": "rocking chair",
+      "source": "家具2/Rocking Chair.glb",
+      "output": "已整理/02-沙发/摇椅.glb"
+    },
+    {
+      "id": "擀面杖",
+      "category": "14-食物",
+      "chineseName": "擀面杖",
+      "englishKey": "rolling pin",
+      "source": "食物1/Models/GLB format/rollingPin.glb",
+      "output": "已整理/14-食物/擀面杖.glb"
+    },
+    {
+      "id": "圆头画笔",
+      "category": "16-台面小物",
+      "chineseName": "圆头画笔",
+      "englishKey": "round brush",
+      "source": "家具5/Round Brush.glb",
+      "output": "已整理/16-台面小物/圆头画笔.glb"
+    },
+    {
+      "id": "圆形地毯",
+      "category": "06-装饰",
+      "chineseName": "圆形地毯",
+      "englishKey": "round rug",
+      "source": "家具4/Round Rug.glb",
+      "output": "已整理/06-装饰/圆形地毯.glb"
+    },
+    {
+      "id": "圆角茶几",
+      "category": "03-桌",
+      "chineseName": "圆角茶几",
+      "englishKey": "rounded coffee table",
+      "source": "家具5/Rounded Coffee Table.glb",
+      "output": "已整理/03-桌/圆角茶几.glb"
+    },
+    {
+      "id": "橡皮鸭",
+      "category": "06-装饰",
+      "chineseName": "橡皮鸭",
+      "englishKey": "rubber duck",
+      "source": "家具2/Rubber Duck.glb",
+      "output": "已整理/06-装饰/橡皮鸭.glb"
+    },
+    {
+      "id": "魔方",
+      "category": "06-装饰",
+      "chineseName": "魔方",
+      "englishKey": "rubik's cube",
+      "source": "家具3/Rubik's cube.glb",
+      "output": "已整理/06-装饰/魔方.glb"
+    },
+    {
+      "id": "地毯",
+      "category": "06-装饰",
+      "chineseName": "地毯",
+      "englishKey": "rug",
+      "source": "家具4/Rug.glb",
+      "output": "已整理/06-装饰/地毯.glb"
+    },
+    {
+      "id": "门垫",
+      "category": "06-装饰",
+      "chineseName": "门垫",
+      "englishKey": "rug doormat",
+      "source": "家具1/Models/GLTF format/rugDoormat.glb",
+      "output": "已整理/06-装饰/门垫.glb"
+    },
+    {
+      "id": "矩形地毯",
+      "category": "06-装饰",
+      "chineseName": "矩形地毯",
+      "englishKey": "rug rectangle",
+      "source": "家具1/Models/GLTF format/rugRectangle.glb",
+      "output": "已整理/06-装饰/矩形地毯.glb"
+    },
+    {
+      "id": "圆地毯",
+      "category": "06-装饰",
+      "chineseName": "圆地毯",
+      "englishKey": "rug round",
+      "source": "家具1/Models/GLTF format/rugRound.glb",
+      "output": "已整理/06-装饰/圆地毯.glb"
+    },
+    {
+      "id": "圆角地毯",
+      "category": "06-装饰",
+      "chineseName": "圆角地毯",
+      "englishKey": "rug rounded",
+      "source": "家具1/Models/GLTF format/rugRounded.glb",
+      "output": "已整理/06-装饰/圆角地毯.glb"
+    },
+    {
+      "id": "方地毯",
+      "category": "06-装饰",
+      "chineseName": "方地毯",
+      "englishKey": "rug square",
+      "source": "家具1/Models/GLTF format/rugSquare.glb",
+      "output": "已整理/06-装饰/方地毯.glb"
+    },
+    {
+      "id": "保险柜",
+      "category": "07-收纳柜",
+      "chineseName": "保险柜",
+      "englishKey": "safe",
+      "source": "家具2/Safe.glb",
+      "output": "已整理/07-收纳柜/保险柜.glb"
+    },
+    {
+      "id": "沙拉",
+      "category": "14-食物",
+      "chineseName": "沙拉",
+      "englishKey": "salad",
+      "source": "食物1/Models/GLB format/salad.glb",
+      "output": "已整理/14-食物/沙拉.glb"
+    },
+    {
+      "id": "三明治",
+      "category": "14-食物",
+      "chineseName": "三明治",
+      "englishKey": "sandwich",
+      "source": "食物1/Models/GLB format/sandwich.glb",
+      "output": "已整理/14-食物/三明治.glb"
+    },
+    {
+      "id": "汤锅",
+      "category": "09-厨房电器",
+      "chineseName": "汤锅",
+      "englishKey": "sauce pan",
+      "source": "家具5/Sauce Pan.glb",
+      "output": "已整理/09-厨房电器/汤锅.glb"
+    },
+    {
+      "id": "香肠",
+      "category": "14-食物",
+      "chineseName": "香肠",
+      "englishKey": "sausage",
+      "source": "食物1/Models/GLB format/sausage.glb",
+      "output": "已整理/14-食物/香肠.glb"
+    },
+    {
+      "id": "半根香肠",
+      "category": "14-食物",
+      "chineseName": "半根香肠",
+      "englishKey": "sausage half",
+      "source": "食物1/Models/GLB format/sausage-half.glb",
+      "output": "已整理/14-食物/半根香肠.glb"
+    },
+    {
+      "id": "剪刀",
+      "category": "16-台面小物",
+      "chineseName": "剪刀",
+      "englishKey": "scissors",
+      "source": "家具5/Scissors.glb",
+      "output": "已整理/16-台面小物/剪刀.glb"
+    },
+    {
+      "id": "螺丝刀",
+      "category": "13-运动休闲",
+      "chineseName": "螺丝刀",
+      "englishKey": "screwdriver",
+      "source": "家具2/Screwdriver.glb",
+      "output": "已整理/13-运动休闲/螺丝刀.glb"
+    },
+    {
+      "id": "胡椒瓶",
+      "category": "14-食物",
+      "chineseName": "胡椒瓶",
+      "englishKey": "shaker pepper",
+      "source": "食物1/Models/GLB format/shaker-pepper.glb",
+      "output": "已整理/14-食物/胡椒瓶.glb"
+    },
+    {
+      "id": "盐瓶",
+      "category": "14-食物",
+      "chineseName": "盐瓶",
+      "englishKey": "shaker salt",
+      "source": "食物1/Models/GLB format/shaker-salt.glb",
+      "output": "已整理/14-食物/盐瓶.glb"
+    },
+    {
+      "id": "搁板",
+      "category": "07-收纳柜",
+      "chineseName": "搁板",
+      "englishKey": "shelf",
+      "source": "家具3/Shelf.glb",
+      "output": "已整理/07-收纳柜/搁板.glb"
+    },
+    {
+      "id": "大搁板",
+      "category": "07-收纳柜",
+      "chineseName": "大搁板",
+      "englishKey": "shelf large",
+      "source": "家具4/Shelf Large.glb",
+      "output": "已整理/07-收纳柜/大搁板.glb"
+    },
+    {
+      "id": "小搁板",
+      "category": "07-收纳柜",
+      "chineseName": "小搁板",
+      "englishKey": "shelf small",
+      "source": "家具4/Shelf Small.glb",
+      "output": "已整理/07-收纳柜/小搁板.glb"
+    },
+    {
+      "id": "淋浴",
+      "category": "10-卫浴",
+      "chineseName": "淋浴",
+      "englishKey": "shower",
+      "source": "家具1/Models/GLTF format/shower.glb",
+      "output": "已整理/10-卫浴/淋浴.glb"
+    },
+    {
+      "id": "圆形淋浴",
+      "category": "10-卫浴",
+      "chineseName": "圆形淋浴",
+      "englishKey": "shower round",
+      "source": "家具1/Models/GLTF format/showerRound.glb",
+      "output": "已整理/10-卫浴/圆形淋浴.glb"
+    },
+    {
+      "id": "边几",
+      "category": "03-桌",
+      "chineseName": "边几",
+      "englishKey": "side table",
+      "source": "家具1/Models/GLTF format/sideTable.glb",
+      "output": "已整理/03-桌/边几.glb"
+    },
+    {
+      "id": "抽屉边几",
+      "category": "03-桌",
+      "chineseName": "抽屉边几",
+      "englishKey": "side table drawers",
+      "source": "家具1/Models/GLTF format/sideTableDrawers.glb",
+      "output": "已整理/03-桌/抽屉边几.glb"
+    },
+    {
+      "id": "单人床_2",
+      "category": "01-床",
+      "chineseName": "单人床_2",
+      "englishKey": "single bed",
+      "source": "家具5/Single Bed.glb",
+      "output": "已整理/01-床/单人床_2.glb"
+    },
+    {
+      "id": "单门底柜",
+      "category": "07-收纳柜",
+      "chineseName": "单门底柜",
+      "englishKey": "single door base cabinet",
+      "source": "家具5/Single Door Base Cabinet.glb",
+      "output": "已整理/07-收纳柜/单门底柜.glb"
+    },
+    {
+      "id": "单门高柜",
+      "category": "11-墙面门窗",
+      "chineseName": "单门高柜",
+      "englishKey": "single door tall cabine",
+      "source": "家具5/Single Door Tall Cabine.glb",
+      "output": "已整理/11-墙面门窗/单门高柜.glb"
+    },
+    {
+      "id": "单门吊柜",
+      "category": "07-收纳柜",
+      "chineseName": "单门吊柜",
+      "englishKey": "single door upper cabinet",
+      "source": "家具5/Single Door Upper Cabinet.glb",
+      "output": "已整理/07-收纳柜/单门吊柜.glb"
+    },
+    {
+      "id": "水槽厨柜",
+      "category": "07-收纳柜",
+      "chineseName": "水槽厨柜",
+      "englishKey": "sink kitchen cabinet",
+      "source": "家具5/Sink Kitchen Cabinet.glb",
+      "output": "已整理/07-收纳柜/水槽厨柜.glb"
+    },
+    {
+      "id": "滑板",
+      "category": "06-装饰",
+      "chineseName": "滑板",
+      "englishKey": "skateboard",
+      "source": "家具3/Skateboard.glb",
+      "output": "已整理/06-装饰/滑板.glb"
+    },
+    {
+      "id": "烤串",
+      "category": "14-食物",
+      "chineseName": "烤串",
+      "englishKey": "skewer",
+      "source": "食物1/Models/GLB format/skewer.glb",
+      "output": "已整理/14-食物/烤串.glb"
+    },
+    {
+      "id": "蔬菜烤串",
+      "category": "14-食物",
+      "chineseName": "蔬菜烤串",
+      "englishKey": "skewer vegetables",
+      "source": "食物1/Models/GLB format/skewer-vegetables.glb",
+      "output": "已整理/14-食物/蔬菜烤串.glb"
+    },
+    {
+      "id": "小书架",
+      "category": "07-收纳柜",
+      "chineseName": "小书架",
+      "englishKey": "small bookshelf",
+      "source": "家具5/Small Bookshelf.glb",
+      "output": "已整理/07-收纳柜/小书架.glb"
+    },
+    {
+      "id": "一叠纸",
+      "category": "16-台面小物",
+      "chineseName": "一叠纸",
+      "englishKey": "small stack of paper",
+      "source": "家具3/Small Stack of Paper.glb",
+      "output": "已整理/16-台面小物/一叠纸.glb"
+    },
+    {
+      "id": "小衣柜",
+      "category": "07-收纳柜",
+      "chineseName": "小衣柜",
+      "englishKey": "small wardrobe",
+      "source": "家具5/Small Wardrobe.glb",
+      "output": "已整理/07-收纳柜/小衣柜.glb"
+    },
+    {
+      "id": "苏打",
+      "category": "16-台面小物",
+      "chineseName": "苏打",
+      "englishKey": "soda",
+      "source": "家具3/Soda.glb",
+      "output": "已整理/16-台面小物/苏打.glb"
+    },
+    {
+      "id": "汽水瓶",
+      "category": "14-食物",
+      "chineseName": "汽水瓶",
+      "englishKey": "soda bottle",
+      "source": "食物1/Models/GLB format/soda-bottle.glb",
+      "output": "已整理/14-食物/汽水瓶.glb"
+    },
+    {
+      "id": "汽水罐",
+      "category": "16-台面小物",
+      "chineseName": "汽水罐",
+      "englishKey": "soda can",
+      "source": "家具3/Soda Can.glb",
+      "output": "已整理/16-台面小物/汽水罐.glb"
+    },
+    {
+      "id": "压扁汽水罐",
+      "category": "14-食物",
+      "chineseName": "压扁汽水罐",
+      "englishKey": "soda can crushed",
+      "source": "食物1/Models/GLB format/soda-can-crushed.glb",
+      "output": "已整理/14-食物/压扁汽水罐.glb"
+    },
+    {
+      "id": "汽水杯",
+      "category": "14-食物",
+      "chineseName": "汽水杯",
+      "englishKey": "soda glass",
+      "source": "食物1/Models/GLB format/soda-glass.glb",
+      "output": "已整理/14-食物/汽水杯.glb"
+    },
+    {
+      "id": "酱油",
+      "category": "14-食物",
+      "chineseName": "酱油",
+      "englishKey": "soy",
+      "source": "食物1/Models/GLB format/soy.glb",
+      "output": "已整理/14-食物/酱油.glb"
+    },
+    {
+      "id": "音箱",
+      "category": "12-办公电子",
+      "chineseName": "音箱",
+      "englishKey": "speaker",
+      "source": "家具1/Models/GLTF format/speaker.glb",
+      "output": "已整理/12-办公电子/音箱.glb"
+    },
+    {
+      "id": "小音箱",
+      "category": "12-办公电子",
+      "chineseName": "小音箱",
+      "englishKey": "speaker small",
+      "source": "家具1/Models/GLTF format/speakerSmall.glb",
+      "output": "已整理/12-办公电子/小音箱.glb"
+    },
+    {
+      "id": "音箱组",
+      "category": "12-办公电子",
+      "chineseName": "音箱组",
+      "englishKey": "speakers",
+      "source": "家具5/Speakers.glb",
+      "output": "已整理/12-办公电子/音箱组.glb"
+    },
+    {
+      "id": "勺子",
+      "category": "16-台面小物",
+      "chineseName": "勺子",
+      "englishKey": "spoon",
+      "source": "家具5/Spoon.glb",
+      "output": "已整理/16-台面小物/勺子.glb"
+    },
+    {
+      "id": "方盘",
+      "category": "16-台面小物",
+      "chineseName": "方盘",
+      "englishKey": "square plate",
+      "source": "家具4/Square Plate.glb",
+      "output": "已整理/16-台面小物/方盘.glb"
+    },
+    {
+      "id": "楼梯",
+      "category": "11-墙面门窗",
+      "chineseName": "楼梯",
+      "englishKey": "stairs",
+      "source": "家具1/Models/GLTF format/stairs.glb",
+      "output": "已整理/11-墙面门窗/楼梯.glb"
+    },
+    {
+      "id": "转角楼梯",
+      "category": "11-墙面门窗",
+      "chineseName": "转角楼梯",
+      "englishKey": "stairs corner",
+      "source": "家具1/Models/GLTF format/stairsCorner.glb",
+      "output": "已整理/11-墙面门窗/转角楼梯.glb"
+    },
+    {
+      "id": "开放楼梯",
+      "category": "11-墙面门窗",
+      "chineseName": "开放楼梯",
+      "englishKey": "stairs open",
+      "source": "家具1/Models/GLTF format/stairsOpen.glb",
+      "output": "已整理/11-墙面门窗/开放楼梯.glb"
+    },
+    {
+      "id": "单段开放楼梯",
+      "category": "11-墙面门窗",
+      "chineseName": "单段开放楼梯",
+      "englishKey": "stairs open single",
+      "source": "家具1/Models/GLTF format/stairsOpenSingle.glb",
+      "output": "已整理/11-墙面门窗/单段开放楼梯.glb"
+    },
+    {
+      "id": "楼梯4",
+      "category": "11-墙面门窗",
+      "chineseName": "楼梯4",
+      "englishKey": "stairs 4",
+      "source": "楼梯/楼梯4.glb",
+      "output": "已整理/11-墙面门窗/楼梯4.glb"
+    },
+    {
+      "id": "楼梯5",
+      "category": "11-墙面门窗",
+      "chineseName": "楼梯5",
+      "englishKey": "stairs 5",
+      "source": "楼梯/楼梯5.glb",
+      "output": "已整理/11-墙面门窗/楼梯5.glb"
+    },
+    {
+      "id": "楼梯6",
+      "category": "11-墙面门窗",
+      "chineseName": "楼梯6",
+      "englishKey": "stairs 6",
+      "source": "楼梯/楼梯6.glb",
+      "output": "已整理/11-墙面门窗/楼梯6.glb"
+    },
+    {
+      "id": "楼梯7",
+      "category": "11-墙面门窗",
+      "chineseName": "楼梯7",
+      "englishKey": "stairs 7",
+      "source": "楼梯/楼梯7.glb",
+      "output": "已整理/11-墙面门窗/楼梯7.glb"
+    },
+    {
+      "id": "楼梯3",
+      "category": "11-墙面门窗",
+      "chineseName": "楼梯3",
+      "englishKey": "stairs 3",
+      "source": "楼梯/楼梯3.glb",
+      "output": "已整理/11-墙面门窗/楼梯3.glb"
+    },
+    {
+      "id": "楼梯2",
+      "category": "11-墙面门窗",
+      "chineseName": "楼梯2",
+      "englishKey": "stairs 2",
+      "source": "楼梯/楼梯2.glb",
+      "output": "已整理/11-墙面门窗/楼梯2.glb"
+    },
+    {
+      "id": "站立书桌",
+      "category": "03-桌",
+      "chineseName": "站立书桌",
+      "englishKey": "standing desk",
+      "source": "家具5/Standing Desk.glb",
+      "output": "已整理/03-桌/站立书桌.glb"
+    },
+    {
+      "id": "订书机",
+      "category": "12-办公电子",
+      "chineseName": "订书机",
+      "englishKey": "stapler",
+      "source": "家具2/Stapler.glb",
+      "output": "已整理/12-办公电子/订书机.glb"
+    },
+    {
+      "id": "蒸笼",
+      "category": "14-食物",
+      "chineseName": "蒸笼",
+      "englishKey": "steamer",
+      "source": "食物1/Models/GLB format/steamer.glb",
+      "output": "已整理/14-食物/蒸笼.glb"
+    },
+    {
+      "id": "不锈钢水槽柜",
+      "category": "07-收纳柜",
+      "chineseName": "不锈钢水槽柜",
+      "englishKey": "steel sink kitchen cabinet",
+      "source": "家具5/Steel Sink Kitchen Cabinet.glb",
+      "output": "已整理/07-收纳柜/不锈钢水槽柜.glb"
+    },
+    {
+      "id": "便签",
+      "category": "12-办公电子",
+      "chineseName": "便签",
+      "englishKey": "sticky notes",
+      "source": "家具3/Sticky Notes.glb",
+      "output": "已整理/12-办公电子/便签.glb"
+    },
+    {
+      "id": "凳子",
+      "category": "15-椅子",
+      "chineseName": "凳子",
+      "englishKey": "stool",
+      "source": "家具4/Stool.glb",
+      "output": "已整理/15-椅子/凳子.glb"
+    },
+    {
+      "id": "吧台凳",
+      "category": "15-椅子",
+      "chineseName": "吧台凳",
+      "englishKey": "stool bar",
+      "source": "家具1/Models/GLTF format/stoolBar.glb",
+      "output": "已整理/15-椅子/吧台凳.glb"
+    },
+    {
+      "id": "方形吧台凳",
+      "category": "15-椅子",
+      "chineseName": "方形吧台凳",
+      "englishKey": "stool bar square",
+      "source": "家具1/Models/GLTF format/stoolBarSquare.glb",
+      "output": "已整理/15-椅子/方形吧台凳.glb"
+    },
+    {
+      "id": "炉灶",
+      "category": "09-厨房电器",
+      "chineseName": "炉灶",
+      "englishKey": "stove",
+      "source": "家具2/Stove.glb",
+      "output": "已整理/09-厨房电器/炉灶.glb"
+    },
+    {
+      "id": "草莓",
+      "category": "14-食物",
+      "chineseName": "草莓",
+      "englishKey": "strawberry",
+      "source": "食物1/Models/GLB format/strawberry.glb",
+      "output": "已整理/14-食物/草莓.glb"
+    },
+    {
+      "id": "泡沫盒",
+      "category": "14-食物",
+      "chineseName": "泡沫盒",
+      "englishKey": "styrofoam",
+      "source": "食物1/Models/GLB format/styrofoam.glb",
+      "output": "已整理/14-食物/泡沫盒.glb"
+    },
+    {
+      "id": "泡沫餐盒",
+      "category": "14-食物",
+      "chineseName": "泡沫餐盒",
+      "englishKey": "styrofoam dinner",
+      "source": "食物1/Models/GLB format/styrofoam-dinner.glb",
+      "output": "已整理/14-食物/泡沫餐盒.glb"
+    },
+    {
+      "id": "潜艇堡",
+      "category": "14-食物",
+      "chineseName": "潜艇堡",
+      "englishKey": "sub",
+      "source": "食物1/Models/GLB format/sub.glb",
+      "output": "已整理/14-食物/潜艇堡.glb"
+    },
+    {
+      "id": "圣代",
+      "category": "14-食物",
+      "chineseName": "圣代",
+      "englishKey": "sundae",
+      "source": "食物1/Models/GLB format/sundae.glb",
+      "output": "已整理/14-食物/圣代.glb"
+    },
+    {
+      "id": "玉子寿司",
+      "category": "14-食物",
+      "chineseName": "玉子寿司",
+      "englishKey": "sushi egg",
+      "source": "食物1/Models/GLB format/sushi-egg.glb",
+      "output": "已整理/14-食物/玉子寿司.glb"
+    },
+    {
+      "id": "三文鱼寿司",
+      "category": "14-食物",
+      "chineseName": "三文鱼寿司",
+      "englishKey": "sushi salmon",
+      "source": "食物1/Models/GLB format/sushi-salmon.glb",
+      "output": "已整理/14-食物/三文鱼寿司.glb"
+    },
+    {
+      "id": "餐桌",
+      "category": "03-桌",
+      "chineseName": "餐桌",
+      "englishKey": "table",
+      "source": "家具1/Models/GLTF format/table.glb",
+      "output": "已整理/03-桌/餐桌.glb"
+    },
+    {
+      "id": "铺桌布长桌",
+      "category": "03-桌",
+      "chineseName": "铺桌布长桌",
+      "englishKey": "table cloth",
+      "source": "家具1/Models/GLTF format/tableCloth.glb",
+      "output": "已整理/03-桌/铺桌布长桌.glb"
+    },
+    {
+      "id": "茶几_2",
+      "category": "03-桌",
+      "chineseName": "茶几_2",
+      "englishKey": "table coffee",
+      "source": "家具1/Models/GLTF format/tableCoffee.glb",
+      "output": "已整理/03-桌/茶几_2.glb"
+    },
+    {
+      "id": "玻璃茶几",
+      "category": "03-桌",
+      "chineseName": "玻璃茶几",
+      "englishKey": "table coffee glass",
+      "source": "家具1/Models/GLTF format/tableCoffeeGlass.glb",
+      "output": "已整理/03-桌/玻璃茶几.glb"
+    },
+    {
+      "id": "方玻璃茶几",
+      "category": "03-桌",
+      "chineseName": "方玻璃茶几",
+      "englishKey": "table coffee glass square",
+      "source": "家具1/Models/GLTF format/tableCoffeeGlassSquare.glb",
+      "output": "已整理/03-桌/方玻璃茶几.glb"
+    },
+    {
+      "id": "方茶几",
+      "category": "03-桌",
+      "chineseName": "方茶几",
+      "englishKey": "table coffee square",
+      "source": "家具1/Models/GLTF format/tableCoffeeSquare.glb",
+      "output": "已整理/03-桌/方茶几.glb"
+    },
+    {
+      "id": "十字腿餐桌",
+      "category": "03-桌",
+      "chineseName": "十字腿餐桌",
+      "englishKey": "table cross",
+      "source": "家具1/Models/GLTF format/tableCross.glb",
+      "output": "已整理/03-桌/十字腿餐桌.glb"
+    },
+    {
+      "id": "铺桌布餐桌",
+      "category": "03-桌",
+      "chineseName": "铺桌布餐桌",
+      "englishKey": "table cross cloth",
+      "source": "家具1/Models/GLTF format/tableCrossCloth.glb",
+      "output": "已整理/03-桌/铺桌布餐桌.glb"
+    },
+    {
+      "id": "玻璃餐桌",
+      "category": "03-桌",
+      "chineseName": "玻璃餐桌",
+      "englishKey": "table glass",
+      "source": "家具1/Models/GLTF format/tableGlass.glb",
+      "output": "已整理/03-桌/玻璃餐桌.glb"
+    },
+    {
+      "id": "桌灯",
+      "category": "08-灯光",
+      "chineseName": "桌灯",
+      "englishKey": "table lamp",
+      "source": "家具4/Table Lamp.glb",
+      "output": "已整理/08-灯光/桌灯.glb"
+    },
+    {
+      "id": "大圆餐桌",
+      "category": "03-桌",
+      "chineseName": "大圆餐桌",
+      "englishKey": "table large circular",
+      "source": "家具2/Table Large Circular.glb",
+      "output": "已整理/03-桌/大圆餐桌.glb"
+    },
+    {
+      "id": "圆桌",
+      "category": "03-桌",
+      "chineseName": "圆桌",
+      "englishKey": "table round",
+      "source": "家具1/Models/GLTF format/tableRound.glb",
+      "output": "已整理/03-桌/圆桌.glb"
+    },
+    {
+      "id": "大圆桌",
+      "category": "03-桌",
+      "chineseName": "大圆桌",
+      "englishKey": "table round large",
+      "source": "家具4/Table Round Large.glb",
+      "output": "已整理/03-桌/大圆桌.glb"
+    },
+    {
+      "id": "小圆桌",
+      "category": "03-桌",
+      "chineseName": "小圆桌",
+      "englishKey": "table round small",
+      "source": "家具4/Table Round Small.glb",
+      "output": "已整理/03-桌/小圆桌.glb"
+    },
+    {
+      "id": "塔可",
+      "category": "14-食物",
+      "chineseName": "塔可",
+      "englishKey": "taco",
+      "source": "食物1/Models/GLB format/taco.glb",
+      "output": "已整理/14-食物/塔可.glb"
+    },
+    {
+      "id": "塔吉锅",
+      "category": "14-食物",
+      "chineseName": "塔吉锅",
+      "englishKey": "tajine",
+      "source": "食物1/Models/GLB format/tajine.glb",
+      "output": "已整理/14-食物/塔吉锅.glb"
+    },
+    {
+      "id": "塔吉锅盖",
+      "category": "14-食物",
+      "chineseName": "塔吉锅盖",
+      "englishKey": "tajine lid",
+      "source": "食物1/Models/GLB format/tajine-lid.glb",
+      "output": "已整理/14-食物/塔吉锅盖.glb"
+    },
+    {
+      "id": "茶杯_2",
+      "category": "16-台面小物",
+      "chineseName": "茶杯_2",
+      "englishKey": "tea cup",
+      "source": "家具5/Tea Cup.glb",
+      "output": "已整理/16-台面小物/茶杯_2.glb"
+    },
+    {
+      "id": "望远镜",
+      "category": "06-装饰",
+      "chineseName": "望远镜",
+      "englishKey": "telescope",
+      "source": "家具2/Telescope.glb",
+      "output": "已整理/06-装饰/望远镜.glb"
+    },
+    {
+      "id": "天线电视",
+      "category": "12-办公电子",
+      "chineseName": "天线电视",
+      "englishKey": "television antenna",
+      "source": "家具1/Models/GLTF format/televisionAntenna.glb",
+      "output": "已整理/12-办公电子/天线电视.glb"
+    },
+    {
+      "id": "现代电视",
+      "category": "12-办公电子",
+      "chineseName": "现代电视",
+      "englishKey": "television modern",
+      "source": "家具1/Models/GLTF format/televisionModern.glb",
+      "output": "已整理/12-办公电子/现代电视.glb"
+    },
+    {
+      "id": "复古电视",
+      "category": "12-办公电子",
+      "chineseName": "复古电视",
+      "englishKey": "television vintage",
+      "source": "家具1/Models/GLTF format/televisionVintage.glb",
+      "output": "已整理/12-办公电子/复古电视.glb"
+    },
+    {
+      "id": "三人沙发",
+      "category": "02-沙发",
+      "chineseName": "三人沙发",
+      "englishKey": "three seater couch",
+      "source": "家具5/Three Seater Couch.glb",
+      "output": "已整理/02-沙发/三人沙发.glb"
+    },
+    {
+      "id": "纸巾盒",
+      "category": "07-收纳柜",
+      "chineseName": "纸巾盒",
+      "englishKey": "tissue box",
+      "source": "家具2/Tissue Box.glb",
+      "output": "已整理/07-收纳柜/纸巾盒.glb"
+    },
+    {
+      "id": "烤面包机",
+      "category": "09-厨房电器",
+      "chineseName": "烤面包机",
+      "englishKey": "toaster",
+      "source": "家具1/Models/GLTF format/toaster.glb",
+      "output": "已整理/09-厨房电器/烤面包机.glb"
+    },
+    {
+      "id": "马桶",
+      "category": "10-卫浴",
+      "chineseName": "马桶",
+      "englishKey": "toilet",
+      "source": "家具1/Models/GLTF format/toilet.glb",
+      "output": "已整理/10-卫浴/马桶.glb"
+    },
+    {
+      "id": "厕纸堆",
+      "category": "10-卫浴",
+      "chineseName": "厕纸堆",
+      "englishKey": "toilet paper stack",
+      "source": "家具4/Toilet Paper stack.glb",
+      "output": "已整理/10-卫浴/厕纸堆.glb"
+    },
+    {
+      "id": "方形马桶",
+      "category": "10-卫浴",
+      "chineseName": "方形马桶",
+      "englishKey": "toilet square",
+      "source": "家具1/Models/GLTF format/toiletSquare.glb",
+      "output": "已整理/10-卫浴/方形马桶.glb"
+    },
+    {
+      "id": "番茄",
+      "category": "14-食物",
+      "chineseName": "番茄",
+      "englishKey": "tomato",
+      "source": "食物1/Models/GLB format/tomato.glb",
+      "output": "已整理/14-食物/番茄.glb"
+    },
+    {
+      "id": "番茄片",
+      "category": "14-食物",
+      "chineseName": "番茄片",
+      "englishKey": "tomato slice",
+      "source": "食物1/Models/GLB format/tomato-slice.glb",
+      "output": "已整理/14-食物/番茄片.glb"
+    },
+    {
+      "id": "工具箱",
+      "category": "07-收纳柜",
+      "chineseName": "工具箱",
+      "englishKey": "toolbox",
+      "source": "家具2/Toolbox.glb",
+      "output": "已整理/07-收纳柜/工具箱.glb"
+    },
+    {
+      "id": "毛巾架",
+      "category": "07-收纳柜",
+      "chineseName": "毛巾架",
+      "englishKey": "towel rack",
+      "source": "家具4/Towel Rack.glb",
+      "output": "已整理/07-收纳柜/毛巾架.glb"
+    },
+    {
+      "id": "垃圾桶",
+      "category": "07-收纳柜",
+      "chineseName": "垃圾桶",
+      "englishKey": "trash bin",
+      "source": "家具2/Trash Bin.glb",
+      "output": "已整理/07-收纳柜/垃圾桶.glb"
+    },
+    {
+      "id": "垃圾桶_2",
+      "category": "07-收纳柜",
+      "chineseName": "垃圾桶_2",
+      "englishKey": "trashcan",
+      "source": "家具1/Models/GLTF format/trashcan.glb",
+      "output": "已整理/07-收纳柜/垃圾桶_2.glb"
+    },
+    {
+      "id": "大垃圾桶",
+      "category": "07-收纳柜",
+      "chineseName": "大垃圾桶",
+      "englishKey": "trashcan large",
+      "source": "家具4/Trashcan Large.glb",
+      "output": "已整理/07-收纳柜/大垃圾桶.glb"
+    },
+    {
+      "id": "小垃圾桶",
+      "category": "07-收纳柜",
+      "chineseName": "小垃圾桶",
+      "englishKey": "trashcan small",
+      "source": "家具4/Trashcan Small.glb",
+      "output": "已整理/07-收纳柜/小垃圾桶.glb"
+    },
+    {
+      "id": "跑步机",
+      "category": "13-运动休闲",
+      "chineseName": "跑步机",
+      "englishKey": "treadmill",
+      "source": "家具2/Treadmill.glb",
+      "output": "已整理/13-运动休闲/跑步机.glb"
+    },
+    {
+      "id": "奖杯",
+      "category": "06-装饰",
+      "chineseName": "奖杯",
+      "englishKey": "trophy",
+      "source": "家具2/Trophy.glb",
+      "output": "已整理/06-装饰/奖杯.glb"
+    },
+    {
+      "id": "火鸡",
+      "category": "14-食物",
+      "chineseName": "火鸡",
+      "englishKey": "turkey",
+      "source": "食物1/Models/GLB format/turkey.glb",
+      "output": "已整理/14-食物/火鸡.glb"
+    },
+    {
+      "id": "电视",
+      "category": "12-办公电子",
+      "chineseName": "电视",
+      "englishKey": "tv",
+      "source": "家具5/Tv.glb",
+      "output": "已整理/12-办公电子/电视.glb"
+    },
+    {
+      "id": "双人沙发",
+      "category": "02-沙发",
+      "chineseName": "双人沙发",
+      "englishKey": "two seater couch",
+      "source": "家具5/Two Seater Couch.glb",
+      "output": "已整理/02-沙发/双人沙发.glb"
+    },
+    {
+      "id": "餐叉",
+      "category": "14-食物",
+      "chineseName": "餐叉",
+      "englishKey": "utensil fork",
+      "source": "食物1/Models/GLB format/utensil-fork.glb",
+      "output": "已整理/14-食物/餐叉.glb"
+    },
+    {
+      "id": "餐刀",
+      "category": "14-食物",
+      "chineseName": "餐刀",
+      "englishKey": "utensil knife",
+      "source": "食物1/Models/GLB format/utensil-knife.glb",
+      "output": "已整理/14-食物/餐刀.glb"
+    },
+    {
+      "id": "汤匙",
+      "category": "14-食物",
+      "chineseName": "汤匙",
+      "englishKey": "utensil spoon",
+      "source": "食物1/Models/GLB format/utensil-spoon.glb",
+      "output": "已整理/14-食物/汤匙.glb"
+    },
+    {
+      "id": "排球",
+      "category": "13-运动休闲",
+      "chineseName": "排球",
+      "englishKey": "volleyball ball",
+      "source": "家具5/Volleyball Ball.glb",
+      "output": "已整理/13-运动休闲/排球.glb"
+    },
+    {
+      "id": "华夫饼",
+      "category": "14-食物",
+      "chineseName": "华夫饼",
+      "englishKey": "waffle",
+      "source": "食物1/Models/GLB format/waffle.glb",
+      "output": "已整理/14-食物/华夫饼.glb"
+    },
+    {
+      "id": "墙段",
+      "category": "11-墙面门窗",
+      "chineseName": "墙段",
+      "englishKey": "wall",
+      "source": "家具1/Models/GLTF format/wall.glb",
+      "output": "已整理/11-墙面门窗/墙段.glb"
+    },
+    {
+      "id": "软木板",
+      "category": "06-装饰",
+      "chineseName": "软木板",
+      "englishKey": "wall corkboard",
+      "source": "家具2/Wall Corkboard.glb",
+      "output": "已整理/06-装饰/软木板.glb"
+    },
+    {
+      "id": "转角墙",
+      "category": "11-墙面门窗",
+      "chineseName": "转角墙",
+      "englishKey": "wall corner",
+      "source": "家具1/Models/GLTF format/wallCorner.glb",
+      "output": "已整理/11-墙面门窗/转角墙.glb"
+    },
+    {
+      "id": "圆角墙",
+      "category": "11-墙面门窗",
+      "chineseName": "圆角墙",
+      "englishKey": "wall corner rond",
+      "source": "家具1/Models/GLTF format/wallCornerRond.glb",
+      "output": "已整理/11-墙面门窗/圆角墙.glb"
+    },
+    {
+      "id": "墙门洞",
+      "category": "11-墙面门窗",
+      "chineseName": "墙门洞",
+      "englishKey": "wall doorway",
+      "source": "家具1/Models/GLTF format/wallDoorway.glb",
+      "output": "已整理/11-墙面门窗/墙门洞.glb"
+    },
+    {
+      "id": "宽墙门洞",
+      "category": "11-墙面门窗",
+      "chineseName": "宽墙门洞",
+      "englishKey": "wall doorway wide",
+      "source": "家具1/Models/GLTF format/wallDoorwayWide.glb",
+      "output": "已整理/11-墙面门窗/宽墙门洞.glb"
+    },
+    {
+      "id": "半墙",
+      "category": "11-墙面门窗",
+      "chineseName": "半墙",
+      "englishKey": "wall half",
+      "source": "家具1/Models/GLTF format/wallHalf.glb",
+      "output": "已整理/11-墙面门窗/半墙.glb"
+    },
+    {
+      "id": "墙窗",
+      "category": "11-墙面门窗",
+      "chineseName": "墙窗",
+      "englishKey": "wall window",
+      "source": "家具1/Models/GLTF format/wallWindow.glb",
+      "output": "已整理/11-墙面门窗/墙窗.glb"
+    },
+    {
+      "id": "推拉窗",
+      "category": "11-墙面门窗",
+      "chineseName": "推拉窗",
+      "englishKey": "wall window slide",
+      "source": "家具1/Models/GLTF format/wallWindowSlide.glb",
+      "output": "已整理/11-墙面门窗/推拉窗.glb"
+    },
+    {
+      "id": "水洗画笔",
+      "category": "16-台面小物",
+      "chineseName": "水洗画笔",
+      "englishKey": "wash brush",
+      "source": "家具5/Wash Brush.glb",
+      "output": "已整理/16-台面小物/水洗画笔.glb"
+    },
+    {
+      "id": "洗衣机",
+      "category": "10-卫浴",
+      "chineseName": "洗衣机",
+      "englishKey": "washer",
+      "source": "家具1/Models/GLTF format/washer.glb",
+      "output": "已整理/10-卫浴/洗衣机.glb"
+    },
+    {
+      "id": "洗烘一体机",
+      "category": "10-卫浴",
+      "chineseName": "洗烘一体机",
+      "englishKey": "washer dryer stacked",
+      "source": "家具1/Models/GLTF format/washerDryerStacked.glb",
+      "output": "已整理/10-卫浴/洗烘一体机.glb"
+    },
+    {
+      "id": "洗衣机_2",
+      "category": "10-卫浴",
+      "chineseName": "洗衣机_2",
+      "englishKey": "washing machine",
+      "source": "家具4/Washing Machine.glb",
+      "output": "已整理/10-卫浴/洗衣机_2.glb"
+    },
+    {
+      "id": "浇水壶",
+      "category": "13-运动休闲",
+      "chineseName": "浇水壶",
+      "englishKey": "watering can",
+      "source": "家具2/Watering Can.glb",
+      "output": "已整理/13-运动休闲/浇水壶.glb"
+    },
+    {
+      "id": "西瓜",
+      "category": "14-食物",
+      "chineseName": "西瓜",
+      "englishKey": "watermelon",
+      "source": "食物1/Models/GLB format/watermelon.glb",
+      "output": "已整理/14-食物/西瓜.glb"
+    },
+    {
+      "id": "鲜奶油",
+      "category": "14-食物",
+      "chineseName": "鲜奶油",
+      "englishKey": "whipped cream",
+      "source": "食物1/Models/GLB format/whipped-cream.glb",
+      "output": "已整理/14-食物/鲜奶油.glb"
+    },
+    {
+      "id": "打蛋器",
+      "category": "14-食物",
+      "chineseName": "打蛋器",
+      "englishKey": "whisk",
+      "source": "食物1/Models/GLB format/whisk.glb",
+      "output": "已整理/14-食物/打蛋器.glb"
+    },
+    {
+      "id": "整火腿",
+      "category": "14-食物",
+      "chineseName": "整火腿",
+      "englishKey": "whole ham",
+      "source": "食物1/Models/GLB format/whole-ham.glb",
+      "output": "已整理/14-食物/整火腿.glb"
+    },
+    {
+      "id": "整火腿_2",
+      "category": "14-食物",
+      "chineseName": "整火腿_2",
+      "englishKey": "wholer ham",
+      "source": "食物1/Models/GLB format/wholer-ham.glb",
+      "output": "已整理/14-食物/整火腿_2.glb"
+    },
+    {
+      "id": "宽梳妆台",
+      "category": "07-收纳柜",
+      "chineseName": "宽梳妆台",
+      "englishKey": "wide dresser",
+      "source": "家具5/Wide Dresser.glb",
+      "output": "已整理/07-收纳柜/宽梳妆台.glb"
+    },
+    {
+      "id": "大窗",
+      "category": "11-墙面门窗",
+      "chineseName": "大窗",
+      "englishKey": "window large",
+      "source": "家具4/Window Large.glb",
+      "output": "已整理/11-墙面门窗/大窗.glb"
+    },
+    {
+      "id": "圆窗",
+      "category": "11-墙面门窗",
+      "chineseName": "圆窗",
+      "englishKey": "window round",
+      "source": "家具4/Window Round.glb",
+      "output": "已整理/11-墙面门窗/圆窗.glb"
+    },
+    {
+      "id": "小窗",
+      "category": "11-墙面门窗",
+      "chineseName": "小窗",
+      "englishKey": "window small",
+      "source": "家具4/Window Small.glb",
+      "output": "已整理/11-墙面门窗/小窗.glb"
+    },
+    {
+      "id": "红酒杯",
+      "category": "16-台面小物",
+      "chineseName": "红酒杯",
+      "englishKey": "wine glass",
+      "source": "家具2/Wine Glass.glb",
+      "output": "已整理/16-台面小物/红酒杯.glb"
+    },
+    {
+      "id": "红酒",
+      "category": "14-食物",
+      "chineseName": "红酒",
+      "englishKey": "wine red",
+      "source": "食物1/Models/GLB format/wine-red.glb",
+      "output": "已整理/14-食物/红酒.glb"
+    },
+    {
+      "id": "白葡萄酒",
+      "category": "14-食物",
+      "chineseName": "白葡萄酒",
+      "englishKey": "wine white",
+      "source": "食物1/Models/GLB format/wine-white.glb",
+      "output": "已整理/14-食物/白葡萄酒.glb"
+    },
+    {
+      "id": "厨房木椅",
+      "category": "15-椅子",
+      "chineseName": "厨房木椅",
+      "englishKey": "wood kitchen chair",
+      "source": "家具5/Wood Kitchen Chair.glb",
+      "output": "已整理/15-椅子/厨房木椅.glb"
+    },
+    {
+      "id": "木质餐桌",
+      "category": "03-桌",
+      "chineseName": "木质餐桌",
+      "englishKey": "wood kitchen table",
+      "source": "家具5/Wood Kitchen Table.glb",
+      "output": "已整理/03-桌/木质餐桌.glb"
+    },
+    {
+      "id": "木质扶手椅",
+      "category": "02-沙发",
+      "chineseName": "木质扶手椅",
+      "englishKey": "wooden arm chair",
+      "source": "家具5/Wooden Arm Chair.glb",
+      "output": "已整理/02-沙发/木质扶手椅.glb"
+    },
+    {
+      "id": "木椅",
+      "category": "15-椅子",
+      "chineseName": "木椅",
+      "englishKey": "wooden chair",
+      "source": "家具5/Wooden Chair.glb",
+      "output": "已整理/15-椅子/木椅.glb"
+    },
+    {
+      "id": "木质水槽台",
+      "category": "09-厨房电器",
+      "chineseName": "木质水槽台",
+      "englishKey": "wooden kitchen sink",
+      "source": "家具5/Wooden Kitchen Sink.glb",
+      "output": "已整理/09-厨房电器/木质水槽台.glb"
+    },
+    {
+      "id": "羊毛地毯",
+      "category": "06-装饰",
+      "chineseName": "羊毛地毯",
+      "englishKey": "wool carpet",
+      "source": "家具5/Wool Carpet.glb",
+      "output": "已整理/06-装饰/羊毛地毯.glb"
+    },
+    {
+      "id": "扳手",
+      "category": "13-运动休闲",
+      "chineseName": "扳手",
+      "englishKey": "wrench",
+      "source": "家具2/Wrench.glb",
+      "output": "已整理/13-运动休闲/扳手.glb"
+    },
+    {
+      "id": "绿植-花盆绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆绿植0",
+      "englishKey": "Pot_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆1绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆1绿植0",
+      "englishKey": "Pot_1_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆1绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆2绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆2绿植0",
+      "englishKey": "Pot_2_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆2绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆9绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆9绿植0",
+      "englishKey": "Pot_9_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆9绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆10绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆10绿植0",
+      "englishKey": "Pot_10_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆10绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆11绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆11绿植0",
+      "englishKey": "Pot_11_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆11绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆3绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆3绿植0",
+      "englishKey": "Pot_3_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆3绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆7绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆7绿植0",
+      "englishKey": "Pot_7_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆7绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆8绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆8绿植0",
+      "englishKey": "Pot_8_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆8绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆12绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆12绿植0",
+      "englishKey": "Pot_12_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆12绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆13绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆13绿植0",
+      "englishKey": "Pot_13_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆13绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆14绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆14绿植0",
+      "englishKey": "Pot_14_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆14绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆4绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆4绿植0",
+      "englishKey": "Pot_4_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆4绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆5绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆5绿植0",
+      "englishKey": "Pot_5_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆5绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆6绿植0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆6绿植0",
+      "englishKey": "Pot_6_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆6绿植0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆1",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆1",
+      "englishKey": "Pot_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆1.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆1-2",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆1-2",
+      "englishKey": "Pot_1_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆1-2.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆2",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆2",
+      "englishKey": "Pot_2_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆2.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆9",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆9",
+      "englishKey": "Pot_9_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆9.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆10",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆10",
+      "englishKey": "Pot_10_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆10.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆11",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆11",
+      "englishKey": "Pot_11_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆11.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆3",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆3",
+      "englishKey": "Pot_3_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆3.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆7",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆7",
+      "englishKey": "Pot_7_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆7.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆8",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆8",
+      "englishKey": "Pot_8_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆8.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆12",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆12",
+      "englishKey": "Pot_12_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆12.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆13",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆13",
+      "englishKey": "Pot_13_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆13.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆14",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆14",
+      "englishKey": "Pot_14_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆14.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆4",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆4",
+      "englishKey": "Pot_4_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆4.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆5",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆5",
+      "englishKey": "Pot_5_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆5.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆6",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆6",
+      "englishKey": "Pot_6_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆6.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "绿植-花盆0",
+      "category": "05-绿植",
+      "chineseName": "绿植-花盆0",
+      "englishKey": "Pot_Low_PolyPlant_0",
+      "source": "绿植/绿植1.glb",
+      "output": "已整理/05-绿植/绿植-花盆0.glb",
+      "splitFrom": "绿植1.glb"
+    },
+    {
+      "id": "墨菲床",
+      "category": "01-床",
+      "chineseName": "墨菲床",
+      "englishKey": "TinyLiving_MurphyBed_2",
+      "source": "家具.glb",
+      "output": "已整理/01-床/墨菲床.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "墨菲双人沙发",
+      "category": "02-沙发",
+      "chineseName": "墨菲双人沙发",
+      "englishKey": "TinyLiving_MurphyLoveSeat_4",
+      "source": "家具.glb",
+      "output": "已整理/02-沙发/墨菲双人沙发.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "植物书挡",
+      "category": "06-装饰",
+      "chineseName": "植物书挡",
+      "englishKey": "TinyLiving_BotanicalBookends_5",
+      "source": "家具.glb",
+      "output": "已整理/06-装饰/植物书挡.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "媒体电视柜",
+      "category": "07-收纳柜",
+      "chineseName": "媒体电视柜",
+      "englishKey": "TinyLiving_MediaMarathoner_8",
+      "source": "家具.glb",
+      "output": "已整理/07-收纳柜/媒体电视柜.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "壁挂媒体柜",
+      "category": "07-收纳柜",
+      "chineseName": "壁挂媒体柜",
+      "englishKey": "TinyLiving_MediaMarathoner_AllontheWall_10",
+      "source": "家具.glb",
+      "output": "已整理/07-收纳柜/壁挂媒体柜.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "圆形咖啡桌",
+      "category": "03-桌",
+      "chineseName": "圆形咖啡桌",
+      "englishKey": "TinyLiving_SirCumferenceCoffeeTable_11",
+      "source": "家具.glb",
+      "output": "已整理/03-桌/圆形咖啡桌.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "Lovely双人沙发",
+      "category": "02-沙发",
+      "chineseName": "Lovely双人沙发",
+      "englishKey": "TinyLiving_LovelyLoveseat_12",
+      "source": "家具.glb",
+      "output": "已整理/02-沙发/Lovely双人沙发.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "省空间单人件",
+      "category": "06-装饰",
+      "chineseName": "省空间单人件",
+      "englishKey": "TinyLiving_Space-SavingSingle_13",
+      "source": "家具.glb",
+      "output": "已整理/06-装饰/省空间单人件.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "窥视装饰",
+      "category": "06-装饰",
+      "chineseName": "窥视装饰",
+      "englishKey": "TinyLiving_JustALittlePeek_18",
+      "source": "家具.glb",
+      "output": "已整理/06-装饰/窥视装饰.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "无储物台灯",
+      "category": "08-灯光",
+      "chineseName": "无储物台灯",
+      "englishKey": "TinyLiving_LampWithoutStorage_20",
+      "source": "家具.glb",
+      "output": "已整理/08-灯光/无储物台灯.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "禅意装饰",
+      "category": "06-装饰",
+      "chineseName": "禅意装饰",
+      "englishKey": "TinyLiving_MyKindaZen_22",
+      "source": "家具.glb",
+      "output": "已整理/06-装饰/禅意装饰.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "现代台灯",
+      "category": "08-灯光",
+      "chineseName": "现代台灯",
+      "englishKey": "TinyLiving_TheModernDeskLamp_23",
+      "source": "家具.glb",
+      "output": "已整理/08-灯光/现代台灯.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "Power塔式梳妆台",
+      "category": "07-收纳柜",
+      "chineseName": "Power塔式梳妆台",
+      "englishKey": "TinyLiving_PowerTowerDresser_24",
+      "source": "家具.glb",
+      "output": "已整理/07-收纳柜/Power塔式梳妆台.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "全身镜",
+      "category": "06-装饰",
+      "chineseName": "全身镜",
+      "englishKey": "TinytLiving_MiracleMirror_26",
+      "source": "家具.glb",
+      "output": "已整理/06-装饰/全身镜.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "垂直迷你花园",
+      "category": "05-绿植",
+      "chineseName": "垂直迷你花园",
+      "englishKey": "TinyLiving_VerticalMiniGarden_27",
+      "source": "家具.glb",
+      "output": "已整理/05-绿植/垂直迷你花园.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "分层置物架",
+      "category": "07-收纳柜",
+      "chineseName": "分层置物架",
+      "englishKey": "TinyLiving_TieredShelf_29",
+      "source": "家具.glb",
+      "output": "已整理/07-收纳柜/分层置物架.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "开放置物架",
+      "category": "07-收纳柜",
+      "chineseName": "开放置物架",
+      "englishKey": "TinyLiving_OpenShelf_31",
+      "source": "家具.glb",
+      "output": "已整理/07-收纳柜/开放置物架.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "浴室洗漱台",
+      "category": "07-收纳柜",
+      "chineseName": "浴室洗漱台",
+      "englishKey": "TinyLiving_TheSinkzBathroomVanity_32",
+      "source": "家具.glb",
+      "output": "已整理/07-收纳柜/浴室洗漱台.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "Lovely单人沙发",
+      "category": "15-椅子",
+      "chineseName": "Lovely单人沙发",
+      "englishKey": "TinyLiving_LovelyArmchair_33",
+      "source": "家具.glb",
+      "output": "已整理/15-椅子/Lovely单人沙发.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "轨道高脚餐桌",
+      "category": "03-桌",
+      "chineseName": "轨道高脚餐桌",
+      "englishKey": "TinyLiving_OrbitalHighDining_35",
+      "source": "家具.glb",
+      "output": "已整理/03-桌/轨道高脚餐桌.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "现代脚凳",
+      "category": "15-椅子",
+      "chineseName": "现代脚凳",
+      "englishKey": "TinyLiving_ModernPouffe_36",
+      "source": "家具.glb",
+      "output": "已整理/15-椅子/现代脚凳.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "TinyLiving小书桌",
+      "category": "03-桌",
+      "chineseName": "TinyLiving小书桌",
+      "englishKey": "TinyLiving_TinyDeskForTinyLiving_37",
+      "source": "家具.glb",
+      "output": "已整理/03-桌/TinyLiving小书桌.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "矮款格柜梳妆台",
+      "category": "07-收纳柜",
+      "chineseName": "矮款格柜梳妆台",
+      "englishKey": "TinyLiving_StubbyCubbyDresser_38",
+      "source": "家具.glb",
+      "output": "已整理/07-收纳柜/矮款格柜梳妆台.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "简洁挂画",
+      "category": "06-装饰",
+      "chineseName": "简洁挂画",
+      "englishKey": "TinyLiving_SimpleandCleanArt_39",
+      "source": "家具.glb",
+      "output": "已整理/06-装饰/简洁挂画.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "现代地毯",
+      "category": "06-装饰",
+      "chineseName": "现代地毯",
+      "englishKey": "TinyLiving_ContemporaryCarpet_40",
+      "source": "家具.glb",
+      "output": "已整理/06-装饰/现代地毯.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "轨道餐椅",
+      "category": "15-椅子",
+      "chineseName": "轨道餐椅",
+      "englishKey": "TinyLiving_NotQuiteOrbitalSitting_41",
+      "source": "家具.glb",
+      "output": "已整理/15-椅子/轨道餐椅.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "Lovely餐椅",
+      "category": "15-椅子",
+      "chineseName": "Lovely餐椅",
+      "englishKey": "TinyLiving_LovelyDiningChair_42",
+      "source": "家具.glb",
+      "output": "已整理/15-椅子/Lovely餐椅.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "边几-2",
+      "category": "03-桌",
+      "chineseName": "边几-2",
+      "englishKey": "TinyLiving_NotATableEnd_43",
+      "source": "家具.glb",
+      "output": "已整理/03-桌/边几-2.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "玄关柜",
+      "category": "07-收纳柜",
+      "chineseName": "玄关柜",
+      "englishKey": "TinyLiving_TinyConsole_44",
+      "source": "家具.glb",
+      "output": "已整理/07-收纳柜/玄关柜.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "紧凑马桶",
+      "category": "10-卫浴",
+      "chineseName": "紧凑马桶",
+      "englishKey": "TinyLiving_CompactLavatory_45",
+      "source": "家具.glb",
+      "output": "已整理/10-卫浴/紧凑马桶.glb",
+      "splitFrom": "家具.glb"
+    },
+    {
+      "id": "Power塔式书柜",
+      "category": "07-收纳柜",
+      "chineseName": "Power塔式书柜",
+      "englishKey": "TinyLiving_PowerTowerBookcase_47",
+      "source": "家具.glb",
+      "output": "已整理/07-收纳柜/Power塔式书柜.glb",
+      "splitFrom": "家具.glb"
+    }
+  ],
+  "skipped": [
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bathroom cabinet",
+      "source": "家具6/Models/GLTF format/bathroomCabinet.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bathroom cabinet drawer",
+      "source": "家具6/Models/GLTF format/bathroomCabinetDrawer.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bathroom mirror",
+      "source": "家具6/Models/GLTF format/bathroomMirror.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "bathroom sink",
+      "source": "家具4/Bathroom Sink.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bathroom sink",
+      "source": "家具6/Models/GLTF format/bathroomSink.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "bathroom sink",
+      "source": "家具2/Bathroom Sink.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "bathroom sink",
+      "source": "家具3/Bathroom Sink.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bathroom sink square",
+      "source": "家具6/Models/GLTF format/bathroomSinkSquare.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "bathtub",
+      "source": "家具4/Bathtub.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bathtub",
+      "source": "家具6/Models/GLTF format/bathtub.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "bathtub",
+      "source": "家具2/Bathtub.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bear",
+      "source": "家具6/Models/GLTF format/bear.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bed bunk",
+      "source": "家具6/Models/GLTF format/bedBunk.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bed double",
+      "source": "家具6/Models/GLTF format/bedDouble.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "bed single",
+      "source": "家具4/Bed Single.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bed single",
+      "source": "家具6/Models/GLTF format/bedSingle.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bench",
+      "source": "家具6/Models/GLTF format/bench.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bench cushion",
+      "source": "家具6/Models/GLTF format/benchCushion.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bench cushion low",
+      "source": "家具6/Models/GLTF format/benchCushionLow.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bookcase closed",
+      "source": "家具6/Models/GLTF format/bookcaseClosed.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bookcase closed doors",
+      "source": "家具6/Models/GLTF format/bookcaseClosedDoors.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bookcase closed wide",
+      "source": "家具6/Models/GLTF format/bookcaseClosedWide.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bookcase open",
+      "source": "家具6/Models/GLTF format/bookcaseOpen.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bookcase open low",
+      "source": "家具6/Models/GLTF format/bookcaseOpenLow.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "books",
+      "source": "家具6/Models/GLTF format/books.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "books",
+      "source": "家具2/Books.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "cabinet bed",
+      "source": "家具6/Models/GLTF format/cabinetBed.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "cabinet bed drawer",
+      "source": "家具6/Models/GLTF format/cabinetBedDrawer.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "cabinet bed drawer table",
+      "source": "家具6/Models/GLTF format/cabinetBedDrawerTable.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "cabinet television",
+      "source": "家具6/Models/GLTF format/cabinetTelevision.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "cabinet television doors",
+      "source": "家具6/Models/GLTF format/cabinetTelevisionDoors.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "cardboard box closed",
+      "source": "家具6/Models/GLTF format/cardboardBoxClosed.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "cardboard box open",
+      "source": "家具6/Models/GLTF format/cardboardBoxOpen.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "ceiling fan",
+      "source": "家具6/Models/GLTF format/ceilingFan.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "ceiling fan",
+      "source": "家具2/Ceiling Fan.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "ceiling fan",
+      "source": "家具3/Ceiling Fan.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "chair",
+      "source": "家具4/Chair.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "chair",
+      "source": "家具6/Models/GLTF format/chair.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "chair",
+      "source": "家具2/Chair.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "chair",
+      "source": "家具3/Chair.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "chair",
+      "source": "家具4/Chair-Rlyhe93NNe.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "chair",
+      "source": "家具3/Chair-1MFMOaz3zqe.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "chair cushion",
+      "source": "家具6/Models/GLTF format/chairCushion.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "chair desk",
+      "source": "家具6/Models/GLTF format/chairDesk.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "chair modern cushion",
+      "source": "家具6/Models/GLTF format/chairModernCushion.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "chair modern frame cushion",
+      "source": "家具6/Models/GLTF format/chairModernFrameCushion.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "chair rounded",
+      "source": "家具6/Models/GLTF format/chairRounded.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "coat rack",
+      "source": "家具6/Models/GLTF format/coatRack.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "coat rack",
+      "source": "家具2/Coat Rack.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "coat rack",
+      "source": "家具3/Coat rack.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "coat rack standing",
+      "source": "家具6/Models/GLTF format/coatRackStanding.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "computer keyboard",
+      "source": "家具6/Models/GLTF format/computerKeyboard.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "computer mouse",
+      "source": "家具6/Models/GLTF format/computerMouse.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "computer mouse",
+      "source": "家具3/Computer mouse.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "computer screen",
+      "source": "家具6/Models/GLTF format/computerScreen.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "computer screen",
+      "source": "家具3/Computer Screen.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "desk",
+      "source": "家具6/Models/GLTF format/desk.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "desk",
+      "source": "家具2/Desk.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "desk",
+      "source": "家具3/Desk.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "desk",
+      "source": "家具3/Desk-EtJlOllzbf.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "desk",
+      "source": "家具3/Desk-ISpMh81QGq.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "desk",
+      "source": "家具3/Desk-V86Go2rlnq.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "desk",
+      "source": "家具3/Desk-7ban171PzCS.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "desk corner",
+      "source": "家具6/Models/GLTF format/deskCorner.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "doorway",
+      "source": "家具6/Models/GLTF format/doorway.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "doorway",
+      "source": "家具3/Doorway.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "doorway front",
+      "source": "家具6/Models/GLTF format/doorwayFront.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "doorway front",
+      "source": "家具3/Doorway Front.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "doorway open",
+      "source": "家具6/Models/GLTF format/doorwayOpen.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "dryer",
+      "source": "家具6/Models/GLTF format/dryer.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "floor corner",
+      "source": "家具6/Models/GLTF format/floorCorner.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "floor corner round",
+      "source": "家具6/Models/GLTF format/floorCornerRound.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "floor full",
+      "source": "家具6/Models/GLTF format/floorFull.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "floor half",
+      "source": "家具6/Models/GLTF format/floorHalf.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "hood large",
+      "source": "家具6/Models/GLTF format/hoodLarge.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "hood modern",
+      "source": "家具6/Models/GLTF format/hoodModern.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen bar",
+      "source": "家具6/Models/GLTF format/kitchenBar.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen bar end",
+      "source": "家具6/Models/GLTF format/kitchenBarEnd.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen blender",
+      "source": "家具6/Models/GLTF format/kitchenBlender.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen cabinet",
+      "source": "家具6/Models/GLTF format/kitchenCabinet.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen cabinet corner inner",
+      "source": "家具6/Models/GLTF format/kitchenCabinetCornerInner.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen cabinet corner round",
+      "source": "家具6/Models/GLTF format/kitchenCabinetCornerRound.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen cabinet drawer",
+      "source": "家具6/Models/GLTF format/kitchenCabinetDrawer.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen cabinet upper",
+      "source": "家具6/Models/GLTF format/kitchenCabinetUpper.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen cabinet upper corner",
+      "source": "家具6/Models/GLTF format/kitchenCabinetUpperCorner.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen cabinet upper double",
+      "source": "家具6/Models/GLTF format/kitchenCabinetUpperDouble.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen cabinet upper low",
+      "source": "家具6/Models/GLTF format/kitchenCabinetUpperLow.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen coffee machine",
+      "source": "家具6/Models/GLTF format/kitchenCoffeeMachine.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "kitchen fridge",
+      "source": "家具4/Kitchen Fridge.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen fridge",
+      "source": "家具6/Models/GLTF format/kitchenFridge.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen fridge built in",
+      "source": "家具6/Models/GLTF format/kitchenFridgeBuiltIn.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen fridge large",
+      "source": "家具6/Models/GLTF format/kitchenFridgeLarge.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen fridge small",
+      "source": "家具6/Models/GLTF format/kitchenFridgeSmall.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen microwave",
+      "source": "家具6/Models/GLTF format/kitchenMicrowave.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "kitchen sink",
+      "source": "家具4/Kitchen Sink.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen sink",
+      "source": "家具6/Models/GLTF format/kitchenSink.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen stove",
+      "source": "家具6/Models/GLTF format/kitchenStove.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "kitchen stove electric",
+      "source": "家具6/Models/GLTF format/kitchenStoveElectric.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lamp round floor",
+      "source": "家具6/Models/GLTF format/lampRoundFloor.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lamp round table",
+      "source": "家具6/Models/GLTF format/lampRoundTable.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lamp square ceiling",
+      "source": "家具6/Models/GLTF format/lampSquareCeiling.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lamp square floor",
+      "source": "家具6/Models/GLTF format/lampSquareFloor.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lamp square table",
+      "source": "家具6/Models/GLTF format/lampSquareTable.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lamp wall",
+      "source": "家具6/Models/GLTF format/lampWall.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "laptop",
+      "source": "家具6/Models/GLTF format/laptop.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lounge chair",
+      "source": "家具6/Models/GLTF format/loungeChair.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lounge chair relax",
+      "source": "家具6/Models/GLTF format/loungeChairRelax.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lounge design chair",
+      "source": "家具6/Models/GLTF format/loungeDesignChair.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lounge design sofa",
+      "source": "家具6/Models/GLTF format/loungeDesignSofa.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lounge design sofa corner",
+      "source": "家具6/Models/GLTF format/loungeDesignSofaCorner.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lounge sofa",
+      "source": "家具6/Models/GLTF format/loungeSofa.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lounge sofa corner",
+      "source": "家具6/Models/GLTF format/loungeSofaCorner.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lounge sofa long",
+      "source": "家具6/Models/GLTF format/loungeSofaLong.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "lounge sofa ottoman",
+      "source": "家具6/Models/GLTF format/loungeSofaOttoman.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "paneling",
+      "source": "家具6/Models/GLTF format/paneling.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "pillow",
+      "source": "家具6/Models/GLTF format/pillow.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "pillow blue",
+      "source": "家具6/Models/GLTF format/pillowBlue.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "pillow blue long",
+      "source": "家具6/Models/GLTF format/pillowBlueLong.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "pillow long",
+      "source": "家具6/Models/GLTF format/pillowLong.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "plant small1",
+      "source": "家具6/Models/GLTF format/plantSmall1.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "plant small2",
+      "source": "家具6/Models/GLTF format/plantSmall2.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "plant small3",
+      "source": "家具6/Models/GLTF format/plantSmall3.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "potted plant",
+      "source": "家具6/Models/GLTF format/pottedPlant.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "potted plant",
+      "source": "家具2/Potted Plant.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "potted plant",
+      "source": "家具3/Potted Plant.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "radio",
+      "source": "家具6/Models/GLTF format/radio.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "rug doormat",
+      "source": "家具6/Models/GLTF format/rugDoormat.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "rug rectangle",
+      "source": "家具6/Models/GLTF format/rugRectangle.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "rug round",
+      "source": "家具6/Models/GLTF format/rugRound.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "rug round",
+      "source": "家具3/Rug Round.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "rug rounded",
+      "source": "家具6/Models/GLTF format/rugRounded.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "rug square",
+      "source": "家具6/Models/GLTF format/rugSquare.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "shower",
+      "source": "家具6/Models/GLTF format/shower.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "shower round",
+      "source": "家具6/Models/GLTF format/showerRound.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "side table",
+      "source": "家具6/Models/GLTF format/sideTable.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "side table drawers",
+      "source": "家具6/Models/GLTF format/sideTableDrawers.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "speaker",
+      "source": "家具6/Models/GLTF format/speaker.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "speaker small",
+      "source": "家具6/Models/GLTF format/speakerSmall.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "stairs",
+      "source": "家具6/Models/GLTF format/stairs.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "stairs corner",
+      "source": "家具6/Models/GLTF format/stairsCorner.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "stairs open",
+      "source": "家具6/Models/GLTF format/stairsOpen.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "stairs open single",
+      "source": "家具6/Models/GLTF format/stairsOpenSingle.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "stool bar",
+      "source": "家具6/Models/GLTF format/stoolBar.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "stool bar square",
+      "source": "家具6/Models/GLTF format/stoolBarSquare.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "table",
+      "source": "家具6/Models/GLTF format/table.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "table",
+      "source": "家具2/Table.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "table cloth",
+      "source": "家具6/Models/GLTF format/tableCloth.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "table coffee",
+      "source": "家具6/Models/GLTF format/tableCoffee.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "table coffee glass",
+      "source": "家具6/Models/GLTF format/tableCoffeeGlass.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "table coffee glass square",
+      "source": "家具6/Models/GLTF format/tableCoffeeGlassSquare.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "table coffee square",
+      "source": "家具6/Models/GLTF format/tableCoffeeSquare.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "table cross",
+      "source": "家具6/Models/GLTF format/tableCross.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "table cross cloth",
+      "source": "家具6/Models/GLTF format/tableCrossCloth.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "table glass",
+      "source": "家具6/Models/GLTF format/tableGlass.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "table round",
+      "source": "家具6/Models/GLTF format/tableRound.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "television antenna",
+      "source": "家具6/Models/GLTF format/televisionAntenna.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "television modern",
+      "source": "家具6/Models/GLTF format/televisionModern.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "television vintage",
+      "source": "家具6/Models/GLTF format/televisionVintage.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "toaster",
+      "source": "家具5/Toaster.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "toaster",
+      "source": "家具6/Models/GLTF format/toaster.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "toilet",
+      "source": "家具4/Toilet.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "toilet",
+      "source": "家具6/Models/GLTF format/toilet.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "toilet",
+      "source": "家具2/Toilet.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "toilet square",
+      "source": "家具6/Models/GLTF format/toiletSquare.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "trashcan",
+      "source": "家具4/Trashcan.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "trashcan",
+      "source": "家具6/Models/GLTF format/trashcan.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "trashcan",
+      "source": "家具4/Trashcan-XSwahu252t.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "wall",
+      "source": "家具6/Models/GLTF format/wall.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "wall corner",
+      "source": "家具6/Models/GLTF format/wallCorner.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "wall corner rond",
+      "source": "家具6/Models/GLTF format/wallCornerRond.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "wall doorway",
+      "source": "家具6/Models/GLTF format/wallDoorway.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "wall doorway wide",
+      "source": "家具6/Models/GLTF format/wallDoorwayWide.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "wall half",
+      "source": "家具6/Models/GLTF format/wallHalf.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "wall window",
+      "source": "家具6/Models/GLTF format/wallWindow.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "wall window slide",
+      "source": "家具6/Models/GLTF format/wallWindowSlide.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "washer",
+      "source": "家具6/Models/GLTF format/washer.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "washer dryer stacked",
+      "source": "家具6/Models/GLTF format/washerDryerStacked.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "baseball bat",
+      "source": "家具2/Baseball Bat.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "cabinet",
+      "source": "家具3/Cabinet.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "computer",
+      "source": "家具3/Computer.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "desk lamp",
+      "source": "家具2/Desk Lamp.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "frying pan",
+      "source": "食物1/Models/GLB format/frying-pan.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "ladder",
+      "source": "家具3/Ladder.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "monitor",
+      "source": "家具2/Monitor.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "monitor",
+      "source": "家具3/Monitor.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "mouse",
+      "source": "家具2/Mouse.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "mouse",
+      "source": "家具3/Mouse.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "mug with office tool",
+      "source": "家具3/Mug With Office Tool.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "printer",
+      "source": "家具3/Printer.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "pumpkin",
+      "source": "食物1/Models/GLB format/pumpkin.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "stapler",
+      "source": "家具3/Stapler.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "stool",
+      "source": "家具2/Stool.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "bathroom toilet paper",
+      "source": "家具3/Bathroom Toilet Paper.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "calendar",
+      "source": "家具3/Calendar-8GqQAqxi3qk.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "cardboard boxes",
+      "source": "家具3/Cardboard Boxes-pMdXdrUHvX.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "ceiling light",
+      "source": "家具3/Ceiling Light.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "coffee cup",
+      "source": "家具3/Coffee cup.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "couch medium",
+      "source": "家具3/Couch Medium.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "couch medium",
+      "source": "家具4/Couch Medium-mWgQ94zhDZ.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "couch small",
+      "source": "家具3/Couch Small.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "couch small",
+      "source": "家具4/Couch Small-X9msj0gtb5.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "couch small",
+      "source": "家具3/Couch Small-ZOPP3KzNIk.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "cup",
+      "source": "食物1/Models/GLB format/cup.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "curtains double",
+      "source": "家具3/Curtains Double.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "fire exit sign",
+      "source": "家具3/Fire Exit Sign-0ywPpb36cyK.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "houseplant",
+      "source": "家具3/Houseplant-e9oRt-Ct6js.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "houseplant",
+      "source": "家具3/Houseplant.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "houseplant",
+      "source": "家具4/Houseplant-dveIJ0xNpX.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "houseplant",
+      "source": "家具4/Houseplant-IBLX2Jz90O.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "houseplant",
+      "source": "家具4/Houseplant-bfLOqIV5uP.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "houseplant",
+      "source": "家具4/Houseplant-VtJh4Irl4w.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "houseplant",
+      "source": "家具4/Houseplant-f6GPjbEgg0.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "houseplant",
+      "source": "家具3/Houseplant-bfLOqIV5uP.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "houseplant",
+      "source": "家具3/Houseplant-VtJh4Irl4w.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "keyboard",
+      "source": "家具3/Keyboard.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "lamp",
+      "source": "家具3/Lamp.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "light cube",
+      "source": "家具3/Light Cube.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "light cube",
+      "source": "家具4/Light Cube-gJpALEpLcy.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "light desk",
+      "source": "家具3/Light Desk.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "light floor",
+      "source": "家具3/Light Floor.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "light floor",
+      "source": "家具4/Light Floor-eBQtooeh43.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "light icosahedron",
+      "source": "家具3/Light Icosahedron.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "medium book shelf",
+      "source": "家具3/Medium Book Shelf.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "mug",
+      "source": "食物1/Models/GLB format/mug.glb"
+    },
+    {
+      "reason": "重复文件(相同内容)",
+      "key": "night stand",
+      "source": "家具3/Night Stand.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "night stand",
+      "source": "家具4/Night Stand-7cobkfclNv.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "night stand",
+      "source": "家具4/Night Stand-08S1j15Jcx.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "notebook",
+      "source": "家具3/Notebook.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "phone",
+      "source": "家具3/Phone-1L9oJAw6nY2.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "rug",
+      "source": "家具3/Rug.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "shelf small",
+      "source": "家具3/Shelf Small.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "shelf small",
+      "source": "家具4/Shelf Small-TfdgUV2RYe.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "soda can",
+      "source": "食物1/Models/GLB format/soda-can.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "soda",
+      "source": "食物1/Models/GLB format/soda.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "standing desk",
+      "source": "家具3/Standing Desk.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "bunk bed",
+      "source": "家具5/Bunk Bed.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "door",
+      "source": "家具4/Door-b0AIfzp6VL.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "door",
+      "source": "家具4/Door-xuFNaNLzfE.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "door",
+      "source": "家具4/Door-8it1hH1oRu.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "door",
+      "source": "家具4/Door-atrxVW0q9N.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "door",
+      "source": "家具4/Door-ihXwSN12P1.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "door",
+      "source": "家具4/Door-LI93WgnjyS.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "door",
+      "source": "家具4/Door-KGt4ztcKrM.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "drawer",
+      "source": "家具4/Drawer-T4uDbyP90C.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "drawer",
+      "source": "家具4/Drawer-N3ERi89OeO.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "drawer",
+      "source": "家具4/Drawer-8xZQEZL2w3.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "drawer",
+      "source": "家具4/Drawer-G1H0wnCHQf.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "fireplace",
+      "source": "家具5/Fireplace.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "light ceiling",
+      "source": "家具4/Light Ceiling-ToOLJDO5FI.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "light ceiling",
+      "source": "家具4/Light Ceiling-NNlnaiDJIh.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "table lamp",
+      "source": "家具5/Table Lamp.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "table round small",
+      "source": "家具4/Table Round Small-57W671WvS2.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "trashcan small",
+      "source": "家具4/Trashcan Small-ZWYTK2SmBA.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "bowl",
+      "source": "食物1/Models/GLB format/bowl.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "ceiling lamp",
+      "source": "家具5/Ceiling Lamp-Tz2NayqjsK.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "ceiling lamp",
+      "source": "家具5/Ceiling Lamp-OTJPOdps4p.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "ceiling lamp",
+      "source": "家具5/Ceiling Lamp-zq1Fus3I15.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "ceiling lamp",
+      "source": "家具5/Ceiling Lamp-76VCPcN5C8.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "fridge",
+      "source": "家具5/Fridge-fpJR5V04e0.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "fridge",
+      "source": "家具5/Fridge-z8Q30rFW6E.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "plate",
+      "source": "食物1/Models/GLB format/plate.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "pot",
+      "source": "食物1/Models/GLB format/pot.glb"
+    },
+    {
+      "reason": "重复款式(保留更优版本)",
+      "key": "single door base cabinet",
+      "source": "家具5/Single Door Base Cabinet-DKfKjxQyWX.glb"
+    }
+  ]
+}

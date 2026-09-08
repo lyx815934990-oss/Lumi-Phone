@@ -1,0 +1,12 @@
+
+
+=====
+    patchDatingPlotFontSettings,
+    patchStoryAppearance,
+    sendPlayerInput,
+
+
+=====
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [portraitSetupOpen, setPortraitSetupOpen] = useState(false)

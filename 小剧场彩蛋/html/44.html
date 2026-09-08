@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#44 迷你吧消费单 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:radial-gradient(ellipse at 30% 20%,#3a2438,#140e18 70%);color:#f3e6f0;}
+.stage{max-width:800px;margin:0 auto;padding:0 12px 32px}
+.shell{border-radius:16px;overflow:hidden;border:1px solid rgba(232,160,191,.25);box-shadow:0 20px 50px rgba(0,0,0,.45);background:linear-gradient(180deg,#1c1520,#120e18);color:#f0e6f2}
+.title-custom{margin:0;padding:14px 16px;font-size:17px;color:#f0c0d4;border-bottom:1px solid rgba(255,255,255,.08)}
+.stats{display:flex;flex-wrap:wrap;gap:10px;padding:8px 14px;font-size:11px;opacity:.85}
+.row{margin:6px 12px;padding:10px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);font-size:12px;line-height:1.55}
+.btn{margin:8px 12px;padding:9px 14px;border:0;border-radius:10px;background:#e8a0bf;color:#1a1018;font-weight:700;cursor:pointer}
+.btn.dis{opacity:.4;pointer-events:none}
+.av{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#2a2030;margin-right:6px}
+.npc{margin:10px 12px;padding:10px;background:rgba(232,160,191,.08);border-radius:10px;font-size:12px;display:flex;gap:8px}
+.foot{padding:10px 14px 16px;font-size:10px;opacity:.5}
+.hero{width:100%;height:110px;object-fit:cover;display:block;opacity:.9}
+.check{display:flex;gap:8px;align-items:flex-start}
+.ticket{margin:12px;padding:14px;border-radius:8px;background:linear-gradient(180deg,#2a2030,#1a1520);border:1px dashed #e8a0bf55;font-family:ui-monospace,Consolas,monospace}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./43.html">上一张</a><b>#44 迷你吧消费单</b><a href="./45.html">下一张</a></div>
+<p class="fore">房单上多了两杯——像默认有人留下。</p>
+<div class="stage"><div class="shell"><p class="title-custom">酒店迷你吧 · 消费单</p><div class="ticket"><div class="row" style="margin:0;border:0">房号 1208</div><div class="row" style="margin:4px 0;border:0">香槟 ×1 · ¥168</div><div class="row" style="margin:4px 0;border:0">水 ×2 · ¥30</div><div class="row" style="margin:4px 0;border:0">巧克力学费 · ¥48</div><div class="row" style="margin:4px 0;border:0">备注：雨夜 · 请勿打扰</div><div class="row" style="margin:4px 0;border:0"><b>合计 ¥246</b></div></div><button class="btn" type="button" id="stamp">盖章 · 挂账</button><div class="npc"><span class="av">🛎️</span><div id="st"><b>前台</b>：印章待盖。</div></div><div class="foot">单据质感</div></div></div>
+<script>
+(function(){document.getElementById("stamp").addEventListener("click",function(){document.getElementById("st").textContent="已挂账 · 章：雨夜 1208";this.classList.add("dis")})})();
+</script>
+</body>
+</html>

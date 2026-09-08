@@ -42,11 +42,16 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
 
     let cancelled = false
     const mobile = isMobileBootClient()
+    let stuckWatch = 0
 
     const sealReady = () => {
       // 不看 cancelled：StrictMode 清理不能吞掉唯一一次进桌面
       if (sealedRef.current) return
       sealedRef.current = true
+      if (stuckWatch) {
+        window.clearInterval(stuckWatch)
+        stuckWatch = 0
+      }
       markBootProgress(100, '准备就绪')
       try {
         onReadyRef.current()
@@ -65,13 +70,14 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
 
     const run = async () => {
       try {
-        markBootProgress(78, '核心模块就绪…')
+        // 须高于 main.tsx 的 82，否则 Math.max 进度条看起来一直不动
+        markBootProgress(84, '核心模块就绪…')
 
         // 七夕当天：一进开屏就开下信纸字库（约 7MB），与后续预热并行
         const qixiDay = isQixiEnvelopeEventDay()
         if (qixiDay) {
           warmQixiLetterFont()
-          markBootProgress(80, '正在准备七夕信纸…')
+          markBootProgress(85, '正在准备七夕信纸…')
         }
 
         // 系统字体最多等 400ms；七夕手写体另算
@@ -83,11 +89,26 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
         ])
         if (cancelled || sealedRef.current) return
 
-        markBootProgress(82, mobile ? '正在准备微信与常用应用…' : '正在准备全部应用资源…')
+        markBootProgress(86, mobile ? '正在准备微信与常用应用…' : '正在准备全部应用资源…')
+
+        let lastProgressAt = Date.now()
+        let lastRatio = 0
+        stuckWatch = window.setInterval(() => {
+          if (sealedRef.current) return
+          // 预加载长时间无进展：先提示，再强制进桌面（后台继续暖包）
+          if (Date.now() - lastProgressAt < 18_000) return
+          markBootProgress(96, '资源较慢，先进入桌面…')
+          sealReady()
+        }, 2500)
+
         const bootWarm = preloadAllNonJubenshaBootResources((p) => {
           if (sealedRef.current) return
-          const pct = 82 + Math.round(p.ratio * 16)
-          markBootProgress(Math.min(pct, 98), p.label)
+          if (p.ratio > lastRatio + 0.01 || (p.label && p.ratio !== lastRatio)) {
+            lastProgressAt = Date.now()
+            lastRatio = p.ratio
+          }
+          const pct = 86 + Math.round(p.ratio * 12)
+          markBootProgress(Math.min(pct, 98), p.label || '正在准备应用资源…')
         })
         // 七夕日额外等信纸（最多约 50s），尽量进信封前就就绪
         if (qixiDay) {
@@ -95,13 +116,18 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
         }
         await Promise.race([
           bootWarm,
-          sleep(mobile ? 95_000 : 110_000),
+          // 手机上别干等近两分钟；超时后进桌面，剩余 chunk 后台继续
+          sleep(mobile ? 55_000 : 75_000),
         ])
+        if (stuckWatch) {
+          window.clearInterval(stuckWatch)
+          stuckWatch = 0
+        }
         if (sealedRef.current) return
 
         if (qixiDay && !cancelled) {
           markBootProgress(98, '正在铺开七夕信纸…')
-          await Promise.race([ensureQixiLetterFontLoaded(), sleep(mobile ? 50_000 : 35_000)])
+          await Promise.race([ensureQixiLetterFontLoaded(), sleep(mobile ? 20_000 : 18_000)])
         }
         if (sealedRef.current) return
 
@@ -116,6 +142,10 @@ export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
     void run()
     return () => {
       cancelled = true
+      if (stuckWatch) {
+        window.clearInterval(stuckWatch)
+        stuckWatch = 0
+      }
       window.removeEventListener('lumi-boot-timeout', onBootTimeout)
     }
   }, [enabled])

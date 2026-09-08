@@ -432,7 +432,7 @@ import { WeChatChatSkinEngineProvider } from './WeChatChatSkinEngineContext'
 import { formatWorldBackgroundForPrompt } from './newFriendsPersona/worldBackgroundFormat'
 import { WeChatMessageBubbleRow, type WeChatBubbleReplyPreview } from './WeChatMessageBubbleRow'
 import { ImessageDetachedReplyBubble } from './wechatMessengerSpecialBubbles'
-import { WechatDetachedQuoteReply, WECHAT_CLASSIC } from './wechatBubbleWechatUi'
+import { WechatDetachedQuoteReply, WECHAT_CLASSIC, WECHAT_CLASSIC_AVATAR_SIZE_PX } from './wechatBubbleWechatUi'
 import { WeChatChatImageBubbleRow } from './WeChatChatImageBubbleRow'
 import {
   WeChatMessageActionPanel,
@@ -1339,6 +1339,10 @@ function normalizeQuoteTargetId(raw: string | undefined | null): string | undefi
 function parseReplyMarker(raw: string): { replyMessageId?: string; text: string } {
   const line = stripMessageIdProtocolLeak(raw)
   if (!line) return { text: '' }
+  // 模型误把历史通道标记单独打成气泡：整行丢弃
+  if (/^\[引用回复\]$/.test(line) || /^【引用回复】$/.test(line) || /^引用回复$/.test(line)) {
+    return { text: '' }
+  }
   const spaceQuote = matchAnyDirectiveName(line, [WxCmd.quote])
   if (spaceQuote) {
     const idRaw =
@@ -1366,18 +1370,20 @@ function parseReplyMarker(raw: string): { replyMessageId?: string; text: string 
     const replyMessageId = normalizeQuoteTargetId(pure[1])
     return replyMessageId ? { replyMessageId, text: '' } : { text: '' }
   }
-  // 兼容旧格式：
-  // [引用回复] 本条正在回复：消息ID=xxx; 发送者=xxx; 原文=xxx; <正文>
-  // 以及仅有头部、正文另起一行/下一条的场景
+  // 兼容旧格式 / 模型仿历史泄漏：
+  // [引用回复] 本条正在回复：消息ID=xxx; 发送者=xxx; 原文=xxx
+  // 或拆成两行：先 [引用回复]，再 本条正在回复：…
   const legacyHeader = line.match(
-    /^\[引用回复\]\s*本条正在回复[:：]\s*消息ID\s*[=：:]\s*([^;；\s]+)\s*[;；]?\s*([\s\S]*)$/,
+    /^(?:\[引用回复\]\s*)?本条正在回复[:：]\s*消息ID\s*[=：:]\s*([^;；\s]+)\s*[;；]?\s*([\s\S]*)$/,
   )
   if (legacyHeader) {
     const replyMessageId = normalizeQuoteTargetId(legacyHeader[1])
     const tail = (legacyHeader[2] ?? '').trim()
-    // 尽量剥离 "发送者=...; 原文=...;" 的元信息，保留真正正文
+    // 元信息整段丢掉；「原文=」后是被引用内容，不是角色要发的口语
     const text = stripMessageIdProtocolLeak(
       tail
+        .replace(/^(?:发送者\s*[=：:]\s*[^;；\n]*[;；]?\s*)+/u, '')
+        .replace(/^(?:原文\s*[=：:]\s*[\s\S]*)$/u, '')
         .replace(/^(?:发送者\s*[=：:]\s*[^;；\n]+[;；]?\s*)+/u, '')
         .replace(/^(?:原文\s*[=：:]\s*[^;；\n]+[;；]?\s*)+/u, '')
         .trim(),
@@ -1385,6 +1391,8 @@ function parseReplyMarker(raw: string): { replyMessageId?: string; text: string 
     if (replyMessageId) return { replyMessageId, text }
     return { text }
   }
+  // 纯元信息行（发送者=/原文=）勿进气泡
+  if (/^(?:发送者|原文)\s*[=：:]/.test(line)) return { text: '' }
   return { text: line }
 }
 
@@ -3511,7 +3519,15 @@ export function ChatRoomInner({
   const [heartWhisperSyncEnabled, setHeartWhisperSyncEnabled] = useState(false)
   const [innerOsSyncEnabled, setInnerOsSyncEnabled] = useState(false)
   /** 气泡内心 OS 查看弹层 */
-  const [innerOsView, setInnerOsView] = useState<null | { bubbleText: string; innerOs: string }>(null)
+  const [innerOsView, setInnerOsView] = useState<null | {
+    messageId: string
+    characterId: string
+    bubbleText: string
+    innerOs: string
+    timestamp: number
+  }>(null)
+  const [innerOsFavorited, setInnerOsFavorited] = useState(false)
+  const [innerOsFavoriteBusy, setInnerOsFavoriteBusy] = useState(false)
   /** 本轮 AI 露出结束后是否自动刷心语 */
   const pendingHeartWhisperSyncRef = useRef(false)
   /** 本轮主回复已内联解析并落库心语，露出结束后不再二次请求 */
@@ -6158,16 +6174,94 @@ export function ChatRoomInner({
   )
 
   /** 单击对方气泡：有内心 OS 则查看；否则 X 风格揭晓时间 */
+  const openInnerOsView = useCallback(
+    async (params: {
+      messageId: string
+      characterId?: string
+      bubbleText: string
+      innerOs: string
+      timestamp?: number
+    }) => {
+      const messageId = params.messageId.trim()
+      const innerOs = params.innerOs.trim()
+      if (!messageId || !innerOs) return
+      const characterId =
+        params.characterId?.trim() ||
+        personaCharacterId?.trim() ||
+        conversationCharacterId?.trim() ||
+        ''
+      setInnerOsView({
+        messageId,
+        characterId,
+        bubbleText: params.bubbleText.trim(),
+        innerOs,
+        timestamp: params.timestamp && Number.isFinite(params.timestamp) ? params.timestamp : Date.now(),
+      })
+      setInnerOsFavorited(false)
+      if (!characterId) return
+      try {
+        const existing = await personaDb.findInnerOsFavoriteByMessageId(messageId)
+        setInnerOsFavorited(!!existing)
+      } catch {
+        setInnerOsFavorited(false)
+      }
+    },
+    [conversationCharacterId, personaCharacterId],
+  )
+
+  const toggleInnerOsFavorite = useCallback(async () => {
+    const view = innerOsView
+    if (!view || innerOsFavoriteBusy) return
+    const characterId = view.characterId.trim()
+    if (!characterId) {
+      showCenterToast('无法识别角色，暂不能收藏')
+      return
+    }
+    setInnerOsFavoriteBusy(true)
+    try {
+      if (innerOsFavorited) {
+        const existing = await personaDb.findInnerOsFavoriteByMessageId(view.messageId)
+        if (existing) await personaDb.deleteFavorite(existing.id)
+        setInnerOsFavorited(false)
+        showCenterToast('已取消收藏')
+      } else {
+        const result = await personaDb.addFavoriteFromInnerOs({
+          messageId: view.messageId,
+          characterId,
+          innerOs: view.innerOs,
+          spokenText: view.bubbleText,
+          timestamp: view.timestamp,
+        })
+        if (!result) {
+          showCenterToast('收藏失败')
+          return
+        }
+        setInnerOsFavorited(true)
+        showCenterToast(result.created ? '已收藏内心 OS' : '已在收藏中')
+      }
+    } catch {
+      showCenterToast('收藏失败，请稍后重试')
+    } finally {
+      setInnerOsFavoriteBusy(false)
+    }
+  }, [innerOsFavoriteBusy, innerOsFavorited, innerOsView, showCenterToast])
+
   const onOtherBubbleTap = useCallback(
     (m: ChatMsg) => {
       const os = m.innerOs?.trim()
       if (os) {
-        setInnerOsView({ bubbleText: m.text?.trim() || '', innerOs: os })
+        void openInnerOsView({
+          messageId: m.id,
+          characterId: m.senderCharacterId || personaCharacterId || conversationCharacterId,
+          bubbleText: m.text?.trim() || '',
+          innerOs: os,
+          timestamp: m.timestamp,
+        })
         return
       }
       if (twitterDmActive) toggleTwitterTapTime(m.id)
     },
-    [twitterDmActive],
+    [conversationCharacterId, openInnerOsView, personaCharacterId, twitterDmActive],
   )
 
   const exitMultiSelect = useCallback(() => {
@@ -7209,7 +7303,8 @@ export function ChatRoomInner({
         }
         case 'viewInnerOs': {
           const local = itemsRef.current.find((it): it is ChatMsg => it.kind === 'msg' && it.id === mid)
-          const os = local?.innerOs?.trim() || (await personaDb.getWeChatChatMessageById(mid))?.innerOs?.trim() || ''
+          const row = local ? null : await personaDb.getWeChatChatMessageById(mid)
+          const os = local?.innerOs?.trim() || row?.innerOs?.trim() || ''
           if (!os) {
             if (!convReplyLangRef.current.innerOsSyncEnabled) {
               showCenterToast('请先在心语面板开启「每句内心 OS」')
@@ -7218,9 +7313,16 @@ export function ChatRoomInner({
             }
             return
           }
-          setInnerOsView({
-            bubbleText: local?.text?.trim() || actionMessageText?.trim() || '',
+          void openInnerOsView({
+            messageId: mid,
+            characterId:
+              local?.senderCharacterId ||
+              row?.characterId ||
+              personaCharacterId ||
+              conversationCharacterId,
+            bubbleText: local?.text?.trim() || actionMessageText?.trim() || row?.content?.trim() || '',
             innerOs: os,
+            timestamp: local?.timestamp ?? row?.timestamp,
           })
           return
         }
@@ -16337,7 +16439,7 @@ export function ChatRoomInner({
             <div className="flex justify-center">
               <span
                 className="rounded-full bg-[#f2f2f2] px-3 py-1 text-[12px]"
-                style={{ color: '#999999', lineHeight: 1.1, fontFamily: 'var(--wx-chat-font, var(--wx-font))' }}
+                style={{ color: '#999999', lineHeight: 1.1, fontFamily: 'var(--wx-chat-font, var(--wx-font, var(--phone-font)))' }}
               >
                 <WeChatChatMixedText text={m.text} />
               </span>
@@ -17542,7 +17644,7 @@ export function ChatRoomInner({
               bubbleSelected={actionPanelOpen && actionMessageId === m.id}
               bubbleCluster={rowBubbleCluster}
               twitterStyle={twitterDmActive}
-              avatarSizePx={twitterDmActive ? 28 : undefined}
+              avatarSizePx={twitterDmActive ? 28 : bubbleTailStyle === 'wechat' ? WECHAT_CLASSIC_AVATAR_SIZE_PX : undefined}
               onBubbleTap={() => onOtherBubbleTap(m)}
               onBubbleLongPress={
                 isMultiSelectMode
@@ -17580,7 +17682,7 @@ export function ChatRoomInner({
             bubbleSelected={actionPanelOpen && actionMessageId === m.id}
             bubbleCluster={rowBubbleCluster}
             twitterStyle={twitterDmActive}
-            avatarSizePx={twitterDmActive ? 28 : undefined}
+            avatarSizePx={twitterDmActive ? 28 : bubbleTailStyle === 'wechat' ? WECHAT_CLASSIC_AVATAR_SIZE_PX : undefined}
             onBubbleTap={twitterDmActive ? () => toggleTwitterTapTime(m.id) : undefined}
             onBubbleLongPress={
               isMultiSelectMode
@@ -18699,7 +18801,18 @@ export function ChatRoomInner({
         open={!!innerOsView}
         bubbleText={innerOsView?.bubbleText}
         innerOs={innerOsView?.innerOs ?? ''}
-        onClose={() => setInnerOsView(null)}
+        favorited={innerOsFavorited}
+        favoriteBusy={innerOsFavoriteBusy}
+        onToggleFavorite={
+          innerOsView?.messageId && innerOsView.characterId
+            ? () => void toggleInnerOsFavorite()
+            : undefined
+        }
+        onClose={() => {
+          setInnerOsView(null)
+          setInnerOsFavorited(false)
+          setInnerOsFavoriteBusy(false)
+        }}
       />
 
       {redPacketModalSender ? (

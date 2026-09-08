@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#36 投票踢人 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:#0b0f14;color:#9dffc2;font-family:ui-monospace,Consolas,"PingFang SC",monospace;}
+.stage{max-width:800px;margin:0 auto;padding:0 12px 32px}
+.shell{border-radius:14px;overflow:hidden;border:1px solid #2a4a3a;box-shadow:0 0 40px #1a3a2844;background:#10161c}
+.title-custom{margin:0;padding:14px 16px;font-size:16px;color:#7dffb0;border-bottom:1px solid #243028;letter-spacing:.08em}
+.stats{display:flex;flex-wrap:wrap;gap:10px;padding:8px 14px;font-size:11px;opacity:.85}
+.row{margin:6px 12px;padding:10px;border-radius:8px;background:#1a2420;border:1px solid #243028;font-size:12px;line-height:1.55}
+.btn{margin:8px 12px;padding:9px 14px;border:1px solid #3dff9a55;background:#1a2820;color:#7dffb0;border-radius:8px;cursor:pointer;font-weight:700}
+.btn.dis{opacity:.4;pointer-events:none}
+.av{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#243028;margin-right:6px}
+.npc{margin:10px 12px;padding:10px;background:#1a2420;border-radius:10px;font-size:12px;display:flex;gap:8px}
+.foot{padding:10px 14px 16px;font-size:10px;opacity:.5}
+.bar{height:10px;background:#1a2820;border-radius:99px;overflow:hidden;margin:8px 12px}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,#3dff9a,#c9a24b);transition:width .4s}
+.hero{width:100%;height:110px;object-fit:cover;display:block}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./35.html">上一张</a><b>#36 投票踢人</b><a href="./37.html">下一张</a></div>
+<p class="fore">队友发起投票：是否踢出「装没事的人」。</p>
+<div class="stage"><div class="shell"><p class="title-custom">投票 · 踢出伪装</p><div class="stats"><span>赞成 <b id="y">3</b></span><span>反对 <b id="n">1</b></span><span>弃权 0</span></div><div class="bar"><i id="bar" style="width:75%"></i></div><div class="row">动议：踢出总说「没事」的玩家</div><div class="row">附议：祁洵 · 理由：雨夜证据确凿</div><button class="btn" type="button" id="yes">赞成</button><button class="btn" type="button" id="no">反对</button><div class="npc"><span class="av">🎭</span><div><b>队长</b>：投完之前请先把关东煮吃完。</div></div><div class="foot">演示计数</div></div></div>
+<script>
+(function(){var y=3,n=1;function paint(){document.getElementById("y").textContent=String(y);document.getElementById("n").textContent=String(n);document.getElementById("bar").style.width=Math.round(y/(y+n)*100)+"%"}document.getElementById("yes").addEventListener("click",function(){y++;paint()});document.getElementById("no").addEventListener("click",function(){n++;paint()});paint()})();
+</script>
+</body>
+</html>

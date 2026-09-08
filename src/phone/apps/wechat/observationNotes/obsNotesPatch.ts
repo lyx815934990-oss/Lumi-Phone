@@ -4,11 +4,11 @@
  */
 
 import {
-  affectionStageFromValue,
   clampPct,
   emptyField,
   OBS_ABILITY_AXIS_LABELS,
   OBS_MBTI_AXIS_LABELS,
+  resolveAffectionStageDisplay,
   type ObservationFieldDiff,
   type ObservationNotesDoc,
   type ObservationRadarAxis,
@@ -431,11 +431,13 @@ function applyOnePatch(
   }
   if (path === 'affection') {
     next.affection = clampPct(Number(text.replace(/[^\d.]/g, '')))
-    next.affectionStageLabel = affectionStageFromValue(next.affection)
+    // 阶段文案跟「关系」标签，不按数值硬套系统阶段名
+    next.affectionStageLabel = resolveAffectionStageDisplay(next.relationshipLabel)
     return next
   }
   if (path === 'relationshipLabel') {
     next.relationshipLabel = text || '关系未明'
+    next.affectionStageLabel = resolveAffectionStageDisplay(next.relationshipLabel)
     return next
   }
   if (path === 'strengths') {

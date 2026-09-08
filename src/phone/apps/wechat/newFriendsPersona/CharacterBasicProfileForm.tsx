@@ -18,6 +18,8 @@ import {
 import { resolveCharacterAvatarUrl } from '../../../utils/characterAvatarUrl'
 import { PHONE_NUM_FONT_FAMILY } from '../../../types'
 import { MbtiPersonalityPickerGrid } from './MbtiPersonalityPickerGrid'
+import { AnimalArchetypePickerGrid } from './AnimalArchetypePickerGrid'
+import { getAnimalArchetypeOption } from './animalArchetype'
 import { DEFAULT_WORLD_BACKGROUND_ID } from './worldBackgroundConstants'
 import { formatWorldBackgroundForPrompt } from './worldBackgroundFormat'
 import { IDENTITY_POOL, daysInMonth, formatMD, randomChineseName } from './utils'
@@ -66,6 +68,7 @@ type FormShape = {
   weight: string
   birthdayMD: string
   mbti: string
+  animalArchetype: string
   identity: string
   bio: string
   avatarUrl: string
@@ -81,6 +84,7 @@ function toForm(character: Character): FormShape {
     weight: character.weight ?? '',
     birthdayMD: character.birthdayMD ?? '01-01',
     mbti: character.mbti ?? '',
+    animalArchetype: character.animalArchetype ?? '',
     identity: character.identity ?? '',
     bio: character.bio ?? '',
     avatarUrl: character.avatarUrl ?? '',
@@ -101,6 +105,7 @@ function formToPatch(f: FormShape): Partial<Character> {
     birthdayMD: md,
     zodiac: zodiacZhFromStoredMD(md),
     mbti: f.mbti.trim() || undefined,
+    animalArchetype: f.animalArchetype.trim() || undefined,
     identity: f.identity,
     bio: f.bio,
     avatarUrl: f.avatarUrl.trim(),
@@ -129,6 +134,7 @@ export function CharacterBasicProfileForm({
   const [urlDialog, setUrlDialog] = useState(false)
   const [urlDraft, setUrlDraft] = useState('')
   const [mbtiSheet, setMbtiSheet] = useState(false)
+  const [animalSheet, setAnimalSheet] = useState(false)
   const [identityFocused, setIdentityFocused] = useState(false)
 
   /** 打字机：临时正文，结束时写回表单与 Character */
@@ -183,6 +189,11 @@ export function CharacterBasicProfileForm({
     const m = character.mbti ?? ''
     setForm((prev) => (prev.mbti === m ? prev : { ...prev, mbti: m }))
   }, [character.mbti])
+
+  useEffect(() => {
+    const a = character.animalArchetype ?? ''
+    setForm((prev) => (prev.animalArchetype === a ? prev : { ...prev, animalArchetype: a }))
+  }, [character.animalArchetype])
 
   const pushField = useCallback(
     (patch: Partial<FormShape>) => {
@@ -510,6 +521,22 @@ export function CharacterBasicProfileForm({
         </div>
 
         <div className="mt-10">
+          <p className={gridLabel}>动物塑 · 气质倾向</p>
+          <p className="mt-2 text-[11px] leading-relaxed font-light text-neutral-400">
+            选一种动物系气质作参考（猫系慢热、狗系黏人等）；AI 会内化到言行，不会在聊天里直说「猫塑」。
+          </p>
+          <button
+            type="button"
+            onClick={() => setAnimalSheet(true)}
+            className={`${inputUnderline} mt-1 flex w-full items-center justify-between text-left`}
+          >
+            <span className={form.animalArchetype?.trim() ? 'text-neutral-950' : 'text-neutral-300'}>
+              {getAnimalArchetypeOption(form.animalArchetype)?.label || '未选择'}
+            </span>
+          </button>
+        </div>
+
+        <div className="mt-10">
           <p className={gridLabel}>ROLE · 身份（职业 / 定位）</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {IDENTITY_POOL.map((x) => (
@@ -697,6 +724,48 @@ export function CharacterBasicProfileForm({
                   setForm((prev) => ({ ...prev, mbti: '' }))
                   onMbtiSelect('')
                   setMbtiSheet(false)
+                }}
+              >
+                清空选择
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {animalSheet && (
+          <motion.div className="fixed inset-0 z-[1252]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <button type="button" className="absolute inset-0 bg-black/35" aria-label="关闭" onClick={() => setAnimalSheet(false)} />
+            <motion.div
+              initial={{ y: '115%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '115%' }}
+              transition={{ type: 'spring', damping: 36, stiffness: 400 }}
+              className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-[22px] border-t border-neutral-200 bg-white px-5 pt-8"
+              style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="mx-auto mb-6 h-1 w-9 rounded-full bg-neutral-300" aria-hidden />
+              <p className="text-[15px] font-semibold text-neutral-950">动物塑 · 气质倾向</p>
+              <p className="mt-1 text-[11px] text-neutral-500">十三种常见动物系气质 · 点击下方卡片选择</p>
+              <div className="mt-5 pb-4">
+                <AnimalArchetypePickerGrid
+                  value={form.animalArchetype ?? ''}
+                  onSelect={(id) => {
+                    setForm((prev) => ({ ...prev, animalArchetype: id }))
+                    pushField({ animalArchetype: id })
+                    setAnimalSheet(false)
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                className="mx-auto mb-16 mt-4 block px-10 py-3 text-[13px] font-medium text-neutral-400 underline-offset-4 hover:text-neutral-600"
+                onClick={() => {
+                  setForm((prev) => ({ ...prev, animalArchetype: '' }))
+                  pushField({ animalArchetype: undefined })
+                  setAnimalSheet(false)
                 }}
               >
                 清空选择

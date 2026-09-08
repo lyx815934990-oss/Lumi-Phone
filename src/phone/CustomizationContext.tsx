@@ -12,6 +12,7 @@ import { flushSync } from 'react-dom'
 import { personaDb, pullPhoneKvWithLocalStorageLegacy } from './apps/wechat/newFriendsPersona/idb'
 import { wechatChatRoomBgFallbackColor } from './apps/wechat/wechatChatRoomBg'
 import {
+  isLumiDefaultBubbleShape,
   mergeWeChatBubbleGlobal,
   migrateMislabeledLumiDefaultBubble,
   TWITTER_X_BUBBLE_PRESET,
@@ -23,9 +24,10 @@ import {
   WECHAT_CLASSIC_PRESET_MARK,
   WECHAT_CLASSIC_NIGHT_MARK,
 } from './apps/wechat/wechatBubblePresets'
-import { twitterXSpecialSkinOverrides } from './apps/wechat/wechatBubbleTwitterUi'
+import { twitterXSpecialSkinOverrides, TWITTER_X_FONT_STACK } from './apps/wechat/wechatBubbleTwitterUi'
 import { wechatClassicSpecialSkinOverrides } from './apps/wechat/wechatBubbleWechatUi'
 import { normalizeWeChatBubbleSideFont } from './apps/wechat/wechatBubbleSideFonts'
+import { isLegacyWeChatLockedFontStack } from './apps/wechat/wechatBubbleTemplateFonts'
 import {
   emptyWeChatAvatarChrome,
   normalizeWeChatAvatarChrome,
@@ -55,9 +57,9 @@ import {
   DEFAULT_CUSTOMIZATION,
   DEFAULT_PERSONAL_CARD_BG_PATH,
   DEFAULT_PERSONAL_CARD_PROFILE,
-  DEFAULT_WECHAT_CHAT_ROOM_BG,
   DEFAULT_WECHAT_CHAT_WALLPAPER_PATH,
   DEFAULT_WECHAT_UI_FONT_FAMILY,
+  LUMI_PAPER_CHAT_SKIN_OVERRIDES,
   PHONE_NUM_FONT_FAMILY,
   DEFAULT_PUBLIC_AVATAR_PATH,
   DEFAULT_WECHAT_MIRROR_PROFILE,
@@ -492,7 +494,7 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
       ? raw.timestampStyle
       : base.timestampStyle
 
-  // 迁移：历史 Inter / 苹方 / 系统 UI 默认栈 → 空字符串（跟随手机全局 --phone-font）
+  // 迁移：历史 Inter / 苹方 / 系统 UI / 气泡模版 / Twitter 锁字 → 空字符串（跟随手机全局 --phone-font）
   const rawFont = typeof raw.fontFamily === 'string' ? raw.fontFamily : base.fontFamily
   const normalizedFont =
     !rawFont.trim() ||
@@ -500,7 +502,9 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
     rawFont === LEGACY_WECHAT_FONT_INTER ||
     rawFont === LEGACY_WECHAT_FONT_INTER_UNQUOTED ||
     rawFont === LEGACY_WECHAT_FONT_PINGFANG_FIRST ||
-    rawFont === LEGACY_WECHAT_FONT_SYSTEM_FIRST
+    rawFont === LEGACY_WECHAT_FONT_SYSTEM_FIRST ||
+    rawFont === TWITTER_X_FONT_STACK ||
+    isLegacyWeChatLockedFontStack(rawFont)
       ? ''
       : rawFont
 
@@ -524,6 +528,11 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
     }
   }
 
+  const isLegacyDefaultChatWallpaper = (url: string) =>
+    !url ||
+    url === DEFAULT_WECHAT_CHAT_WALLPAPER_PATH ||
+    url.includes('聊天壁纸默认')
+
   const normalizeChatRoomBg = (b: unknown, fallback: WeChatChatRoomBg): WeChatChatRoomBg => {
     if (!b || typeof b !== 'object') return fallback
     const r = b as Record<string, unknown>
@@ -531,12 +540,20 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
       const imageUrl = migrateLegacyRootPublicUrl(
         pick(r.imageUrl, fallback.mode === 'image' ? fallback.imageUrl : ''),
       )
+      // 迁移：去掉仓库自带的默认聊天壁纸 → 纸墨柔光（用户自定义图保留）
+      if (isLegacyDefaultChatWallpaper(imageUrl.trim())) {
+        return { ...fallback }
+      }
       return {
         mode: 'image',
         imageUrl,
         fallbackColor: pick(
           r.fallbackColor,
-          fallback.mode === 'image' ? fallback.fallbackColor : '#EDEDED',
+          fallback.mode === 'image'
+            ? fallback.fallbackColor
+            : fallback.mode === 'solid'
+              ? fallback.color
+              : '#F7F6F4',
         ),
       }
     }
@@ -550,9 +567,18 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
       const angle =
         typeof r.angle === 'number' && Number.isFinite(r.angle) ? Math.round(r.angle) : undefined
       const gradientType = r.gradientType === 'radial' ? 'radial' : 'linear'
+      // 旧默认渐变（雪落/焦糖/复古）→ 纸墨柔光
+      const isLegacyDefaultGradient =
+        (colorStart === '#E4EAF0' && colorEnd === '#D3DBE2') ||
+        ((colorStart === '#fff9e6' || colorStart === '#FFF9E6') &&
+          (colorEnd === '#ece1c6' || colorEnd === '#ECE1C6')) ||
+        (colorStart === '#FFFBFF' && (colorEnd === '#F1DABF' || colorEnd === '#f1dabf'))
+      if (isLegacyDefaultGradient && !css) {
+        return { ...fallback }
+      }
       const fallbackColor = pick(
         r.fallbackColor,
-        colorStart || (fallback.mode === 'solid' ? fallback.color : '#EDEDED'),
+        colorStart || (fallback.mode === 'solid' ? fallback.color : '#F7F6F4'),
       )
       const out: WeChatChatRoomBg = {
         mode: 'gradient',
@@ -567,10 +593,19 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
       return out
     }
     if (r.mode === 'solid') {
-      const color = pick(r.color, fallback.mode === 'solid' ? fallback.color : '#EDEDED')
-      // 迁移：旧版默认纯灰底 → 简约灰蓝配套的默认聊天壁纸
-      if (color === '#EDEDED' || color === '#ededed') {
-        return { ...DEFAULT_WECHAT_CHAT_ROOM_BG }
+      const color = pick(r.color, fallback.mode === 'solid' ? fallback.color : '#F7F6F4')
+      // 旧默认纯色底 → 纸墨柔光渐变
+      if (
+        color === '#EDEDED' ||
+        color === '#ededed' ||
+        color === '#D3DBE2' ||
+        color === '#d3dbe2' ||
+        color === '#ece1c6' ||
+        color === '#ECE1C6' ||
+        color === '#F1DABF' ||
+        color === '#f1dabf'
+      ) {
+        return { ...fallback }
       }
       return { mode: 'solid', color }
     }
@@ -580,11 +615,25 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
   const normalizeBubble = (b: unknown, fallback: WeChatBubbleTheme): WeChatBubbleTheme => {
     if (!b || typeof b !== 'object') return fallback
     const r = b as Partial<WeChatBubbleTheme>
+    let selfRadius = clamp(r.selfBubbleRadiusPx, 4, 28, fallback.selfBubbleRadiusPx)
+    let otherRadius = clamp(r.otherBubbleRadiusPx, 4, 28, fallback.otherBubbleRadiusPx)
+    const tailStyle =
+      r.bubbleTailStyle === 'imessage' ||
+      r.bubbleTailStyle === 'telegram' ||
+      r.bubbleTailStyle === 'wechat' ||
+      r.bubbleTailStyle === 'talkmaker'
+        ? r.bubbleTailStyle
+        : fallback.bubbleTailStyle
+    // 微信 App 经典圆角 8 → 4（更矩形）；仅迁移旧默认
+    if (tailStyle === 'wechat' && selfRadius === 8 && otherRadius === 8) {
+      selfRadius = 4
+      otherRadius = 4
+    }
     return {
       selfBubbleBg: pick(r.selfBubbleBg, fallback.selfBubbleBg),
       otherBubbleBg: pick(r.otherBubbleBg, fallback.otherBubbleBg),
-      selfBubbleRadiusPx: clamp(r.selfBubbleRadiusPx, 4, 28, fallback.selfBubbleRadiusPx),
-      otherBubbleRadiusPx: clamp(r.otherBubbleRadiusPx, 4, 28, fallback.otherBubbleRadiusPx),
+      selfBubbleRadiusPx: selfRadius,
+      otherBubbleRadiusPx: otherRadius,
       showAvatar: bool(r.showAvatar, fallback.showAvatar),
       ...(typeof r.showAvatarSelf === 'boolean' ? { showAvatarSelf: r.showAvatarSelf } : {}),
       ...(typeof r.showAvatarOther === 'boolean' ? { showAvatarOther: r.showAvatarOther } : {}),
@@ -594,13 +643,7 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
       ...(typeof r.showBubbleTailOther === 'boolean' ? { showBubbleTailOther: r.showBubbleTailOther } : {}),
       ...(typeof r.glassBubbleStyleSelf === 'boolean' ? { glassBubbleStyleSelf: r.glassBubbleStyleSelf } : {}),
       ...(typeof r.glassBubbleStyleOther === 'boolean' ? { glassBubbleStyleOther: r.glassBubbleStyleOther } : {}),
-      bubbleTailStyle:
-        r.bubbleTailStyle === 'imessage' ||
-        r.bubbleTailStyle === 'telegram' ||
-        r.bubbleTailStyle === 'wechat' ||
-        r.bubbleTailStyle === 'talkmaker'
-          ? r.bubbleTailStyle
-          : fallback.bubbleTailStyle,
+      bubbleTailStyle: tailStyle,
       mergeConsecutiveAvatarGroup: bool(r.mergeConsecutiveAvatarGroup, fallback.mergeConsecutiveAvatarGroup),
       ...(r.avatarClusterSelf === 'every' ||
       r.avatarClusterSelf === 'first' ||
@@ -639,11 +682,60 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
   }
 
   const LEGACY_OTHER_BUBBLE_SEMI = 'rgba(0, 0, 0, 0.04)'
-  const OTHER_BUBBLE_SOLID_DEFAULT = '#EEEFF2'
+  /** 历代默认气泡 → 纸墨柔光 */
+  const LEGACY_DEFAULT_SELF_BUBBLE = 'rgba(123, 138, 166, 0.22)'
+  const LEGACY_DEFAULT_OTHER_BUBBLE = '#EEEFF2'
+  const LEGACY_SOFT_SELF_BUBBLE = '#E2E8F2'
+  const LEGACY_SOFT_OTHER_BUBBLE = '#F5F5F7'
+  const LEGACY_SNOW_SELF = '#C5CCD3'
+  const LEGACY_SNOW_OTHER = '#F0F3F6'
+  const LEGACY_CARAMEL_SELF = '#fbe19e'
+  const LEGACY_CARAMEL_OTHER = '#fdf6c9'
+  const LEGACY_RETRO_SELF = '#F1DABF'
+  const LEGACY_RETRO_OTHER = '#FFFBFF'
+  const OTHER_BUBBLE_SOLID_DEFAULT = base.bubbleGlobal.otherBubbleBg
 
   let bubbleGlobal = migrateMislabeledLumiDefaultBubble(normalizeBubble(raw.bubbleGlobal, base.bubbleGlobal))
   if (bubbleGlobal.otherBubbleBg === LEGACY_OTHER_BUBBLE_SEMI) {
     bubbleGlobal = { ...bubbleGlobal, otherBubbleBg: OTHER_BUBBLE_SOLID_DEFAULT }
+  }
+  const isLegacyDefaultBubbleColors = (b: WeChatBubbleTheme) => {
+    const classicGreyBlue =
+      b.selfBubbleBg === LEGACY_DEFAULT_SELF_BUBBLE &&
+      (b.otherBubbleBg === LEGACY_DEFAULT_OTHER_BUBBLE ||
+        b.otherBubbleBg === OTHER_BUBBLE_SOLID_DEFAULT) &&
+      b.selfBubbleRadiusPx === 18 &&
+      b.otherBubbleRadiusPx === 18
+    const softMist =
+      b.selfBubbleBg === LEGACY_SOFT_SELF_BUBBLE &&
+      b.otherBubbleBg === LEGACY_SOFT_OTHER_BUBBLE &&
+      b.selfBubbleRadiusPx === 20 &&
+      b.otherBubbleRadiusPx === 20
+    const snowShengjing =
+      b.selfBubbleBg === LEGACY_SNOW_SELF &&
+      b.otherBubbleBg === LEGACY_SNOW_OTHER &&
+      b.selfBubbleRadiusPx === 22 &&
+      b.otherBubbleRadiusPx === 22
+    const caramelPuff =
+      (b.selfBubbleBg === LEGACY_CARAMEL_SELF || b.selfBubbleBg === '#FBE19E') &&
+      (b.otherBubbleBg === LEGACY_CARAMEL_OTHER || b.otherBubbleBg === '#FDF6C9') &&
+      b.selfBubbleRadiusPx === 22 &&
+      b.otherBubbleRadiusPx === 22
+    const retroGradient =
+      (b.selfBubbleBg === LEGACY_RETRO_SELF || b.selfBubbleBg === '#f1dabf') &&
+      (b.otherBubbleBg === LEGACY_RETRO_OTHER || b.otherBubbleBg === '#fffbff') &&
+      b.selfBubbleRadiusPx === 22 &&
+      b.otherBubbleRadiusPx === 22
+    return classicGreyBlue || softMist || snowShengjing || caramelPuff || retroGradient
+  }
+
+  if (isLegacyDefaultBubbleColors(bubbleGlobal)) {
+    bubbleGlobal = {
+      ...bubbleGlobal,
+      ...base.bubbleGlobal,
+      selfFont: bubbleGlobal.selfFont ?? null,
+      otherFont: bubbleGlobal.otherFont ?? null,
+    }
   }
 
   const bubbleByRole: Record<string, WeChatBubbleTheme> = {}
@@ -653,6 +745,14 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
       let roleBubble = migrateMislabeledLumiDefaultBubble(normalizeBubble(v, bubbleGlobal))
       if (roleBubble.otherBubbleBg === LEGACY_OTHER_BUBBLE_SEMI) {
         roleBubble = { ...roleBubble, otherBubbleBg: OTHER_BUBBLE_SOLID_DEFAULT }
+      }
+      if (isLegacyDefaultBubbleColors(roleBubble)) {
+        roleBubble = {
+          ...roleBubble,
+          ...base.bubbleGlobal,
+          selfFont: roleBubble.selfFont ?? null,
+          otherFont: roleBubble.otherFont ?? null,
+        }
       }
       bubbleByRole[k] = roleBubble
     }
@@ -685,6 +785,13 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
   for (const k of Object.keys(pageBgByTab)) {
     const cur = pageBgByTab[k as keyof typeof pageBgByTab]
     if (cur) (pageBgByTab as Record<string, WxFillStyle>)[k] = repairPageBgImage(cur)
+  }
+  // 迁移：误把雪落盛京铺到 Tab 页底 → 改回纸感（聊天室渐变不受影响）
+  if (
+    pageBgGlobal.mode === 'solid' &&
+    (pageBgGlobal.solidColor === '#D3DBE2' || pageBgGlobal.solidColor === '#d3dbe2')
+  ) {
+    pageBgGlobal = { ...base.pageBgGlobal }
   }
 
   const headerByTab: WeChatTheme['headerByTab'] = {}
@@ -737,29 +844,92 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
       : base.tabBarStyle,
   )
 
+  // 回滚：雪落盛京曾误写进 Tab/壳色，改回纸感（气泡主题本身保留）
+  const revertMistakenShell = (rawVal: string, mistaken: string | string[], paper: string) => {
+    const list = Array.isArray(mistaken) ? mistaken : [mistaken]
+    return list.includes(rawVal) ? paper : rawVal
+  }
+
+  const primaryRaw = pick(raw.primary, base.primary)
+  const backgroundRaw = pick(raw.background, base.background)
+  const surfaceRaw = pick(raw.surface, base.surface)
+  const textRaw = pick(raw.text, base.text)
+  const textMutedRaw = pick(raw.textMuted, base.textMuted)
+  const borderRaw = pick(raw.border, base.border)
+  const shadowRaw = pick(raw.shadow, base.shadow)
+  const tabBarActiveRaw = pick(raw.tabBarActive, base.tabBarActive)
+  const tabBarInactiveRaw = pick(raw.tabBarInactive, base.tabBarInactive)
+  const tabBarLabelActiveRaw = pick(raw.tabBarLabelActive, base.tabBarLabelActive)
+  const tabBarLabelInactiveRaw = pick(raw.tabBarLabelInactive, base.tabBarLabelInactive)
+  const tabBarBgCandidate = normalizedTabBarBg ? normalizedTabBarBg : base.tabBarBg
+
   return {
-    primary: pick(raw.primary, base.primary),
-    background: pick(raw.background, base.background),
-    surface: pick(raw.surface, base.surface),
-    text: pick(raw.text, base.text),
-    textMuted: pick(raw.textMuted, base.textMuted),
-    border: pick(raw.border, base.border),
-    shadow: pick(raw.shadow, base.shadow),
+    primary: revertMistakenShell(primaryRaw, '#5A626B', base.primary),
+    background: revertMistakenShell(backgroundRaw, ['#D3DBE2', '#d3dbe2'], base.background),
+    surface: revertMistakenShell(surfaceRaw, ['#F0F3F6', '#f0f3f6'], base.surface),
+    text: revertMistakenShell(textRaw, '#5A626B', base.text),
+    textMuted: revertMistakenShell(textMutedRaw, '#828A93', base.textMuted),
+    border: revertMistakenShell(borderRaw, ['#C5CCD3', '#c5ccd3'], base.border),
+    shadow: revertMistakenShell(
+      shadowRaw,
+      '0 10px 28px rgba(130, 138, 147, 0.14)',
+      base.shadow,
+    ),
     fontFamily: typeof normalizedFont === 'string' ? normalizedFont : base.fontFamily,
     numberFontFamily: pick(raw.numberFontFamily, base.numberFontFamily),
     fontSizeBasePx: clamp(raw.fontSizeBasePx, 12, 18, base.fontSizeBasePx),
     radiusPx: clamp(raw.radiusPx, 10, 24, base.radiusPx),
 
-    tabBarBg: normalizedTabBarBg ? normalizedTabBarBg : base.tabBarBg,
-    tabBarStyle,
-    tabBarActive: pick(raw.tabBarActive, base.tabBarActive),
-    tabBarInactive: pick(raw.tabBarInactive, base.tabBarInactive),
-    tabBarLabelActive: pick(raw.tabBarLabelActive, base.tabBarLabelActive),
-    tabBarLabelInactive: pick(raw.tabBarLabelInactive, base.tabBarLabelInactive),
+    tabBarBg: revertMistakenShell(
+      tabBarBgCandidate,
+      'rgba(211, 219, 226, 0.72)',
+      base.tabBarBg,
+    ),
+    tabBarStyle:
+      tabBarStyle.mode === 'solid' &&
+      (tabBarStyle.solidColor === 'rgba(211, 219, 226, 0.72)' ||
+        tabBarStyle.solidColor === '#D3DBE2')
+        ? { ...base.tabBarStyle }
+        : tabBarStyle,
+    tabBarActive: revertMistakenShell(tabBarActiveRaw, '#5A626B', base.tabBarActive),
+    tabBarInactive: revertMistakenShell(tabBarInactiveRaw, '#828A93', base.tabBarInactive),
+    tabBarLabelActive: revertMistakenShell(tabBarLabelActiveRaw, '#5A626B', base.tabBarLabelActive),
+    tabBarLabelInactive: revertMistakenShell(
+      tabBarLabelInactiveRaw,
+      '#828A93',
+      base.tabBarLabelInactive,
+    ),
     tabBarItems: normalizeTabItems(raw.tabBarItems),
 
-    chatInputBg: pick(raw.chatInputBg, base.chatInputBg),
-    chatInputBorder: pick(raw.chatInputBorder, base.chatInputBorder),
+    chatInputBg: (() => {
+      const v = pick(raw.chatInputBg, base.chatInputBg)
+      if (
+        isLumiDefaultBubbleShape(bubbleGlobal) &&
+        (v === 'rgba(240, 243, 246, 0.94)' ||
+          v === 'rgba(228, 234, 240, 0.42)' ||
+          v === 'rgba(236, 225, 198, 0.42)' ||
+          v === 'rgba(241, 218, 191, 0.38)' ||
+          v === '#F0F3F6' ||
+          v === '#f0f3f6' ||
+          v === 'rgba(255, 255, 255, 0.92)')
+      ) {
+        return base.chatInputBg
+      }
+      return v
+    })(),
+    chatInputBorder: (() => {
+      const v = pick(raw.chatInputBorder, base.chatInputBorder)
+      if (
+        isLumiDefaultBubbleShape(bubbleGlobal) &&
+        (v === '#C5CCD3' ||
+          v === '#c5ccd3' ||
+          v === 'rgba(0, 0, 0, 0.06)' ||
+          v === '#e8e8ea')
+      ) {
+        return base.chatInputBorder
+      }
+      return v
+    })(),
     chatRoomDefaultBg: normalizeChatRoomBg(raw.chatRoomDefaultBg, base.chatRoomDefaultBg),
     ...((): {
       bubbleGlobal: WeChatBubbleTheme
@@ -825,21 +995,92 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
           overrides = { ...overrides, ...wechatClassicSpecialSkinOverrides(true) }
         }
       }
+
+      // 纸墨柔光默认气泡：补/刷新顶栏输入覆写（不覆盖微信/X 等已有皮肤标记）
+      const hasForeignPresetMark =
+        (overrides[WECHAT_CLASSIC_PRESET_MARK] ?? '').trim() === '1' ||
+        (overrides[TWITTER_X_PRESET_MARK] ?? '').trim() === '1'
+      if (isLumiDefaultBubbleShape(nextGlobal) && !hasForeignPresetMark) {
+        const headerBg = (overrides['--wx-chat-header-bg'] ?? '').trim()
+        const isLegacySoftHeader =
+          !headerBg ||
+          headerBg.includes('244, 247, 250') ||
+          headerBg.includes('253, 246, 201') ||
+          headerBg.includes('228, 234, 240') ||
+          headerBg.includes('241, 218, 191') ||
+          headerBg.includes('236, 225, 198')
+        if (isLegacySoftHeader) {
+          overrides = { ...overrides, ...LUMI_PAPER_CHAT_SKIN_OVERRIDES }
+        }
+      }
+
       return {
         bubbleGlobal: nextGlobal,
         bubbleByRole: nextByRole,
         chatSkinOverrides: overrides,
       }
     })(),
-    selfBubbleText: pick(raw.selfBubbleText, base.selfBubbleText),
-    otherBubbleText: pick(raw.otherBubbleText, base.otherBubbleText),
+    selfBubbleText: (() => {
+      const t = pick(raw.selfBubbleText, base.selfBubbleText)
+      // 旧默认字色 → 纸墨 Ink
+      if (
+        (t === '#1B1B1F' ||
+          t === '#2C2C30' ||
+          t === '#5A626B' ||
+          t === '#9e5129' ||
+          t === '#9E5129' ||
+          t === '#362417') &&
+        isLumiDefaultBubbleShape(bubbleGlobal)
+      ) {
+        return base.selfBubbleText
+      }
+      return t
+    })(),
+    otherBubbleText: (() => {
+      const t = pick(raw.otherBubbleText, base.otherBubbleText)
+      if (
+        (t === '#1B1B1F' ||
+          t === '#2C2C30' ||
+          t === '#5A626B' ||
+          t === '#9e5129' ||
+          t === '#9E5129' ||
+          t === '#362417') &&
+        isLumiDefaultBubbleShape(bubbleGlobal)
+      ) {
+        return base.otherBubbleText
+      }
+      return t
+    })(),
     timestampStyle: ts,
-    timestampText: pick(raw.timestampText, base.timestampText),
+    timestampText: (() => {
+      const t = pick(raw.timestampText, base.timestampText)
+      if (
+        (t === 'rgba(27, 27, 31, 0.38)' ||
+          t === 'rgba(44, 44, 48, 0.36)' ||
+          t === 'rgba(130, 138, 147, 0.7)' ||
+          t === 'rgba(158, 81, 41, 0.55)' ||
+          t === 'rgba(146, 129, 122, 0.65)') &&
+        isLumiDefaultBubbleShape(bubbleGlobal)
+      ) {
+        return base.timestampText
+      }
+      return t
+    })(),
 
     pageBgGlobal,
     pageBgByTab,
     headerByTab,
-    conversationCard: normalizeFill(raw.conversationCard, base.conversationCard),
+    conversationCard: (() => {
+      const card = normalizeFill(raw.conversationCard, base.conversationCard)
+      // 误把会话卡铺成雪片灰 → 白卡
+      if (
+        card.mode === 'solid' &&
+        (card.solidColor === '#F0F3F6' || card.solidColor === '#f0f3f6')
+      ) {
+        return { ...base.conversationCard }
+      }
+      return card
+    })(),
     chatSkinScopedCss:
       typeof raw.chatSkinScopedCss === 'string' ? raw.chatSkinScopedCss : '',
     // 刷新后必须保留；若历史脏数据丢了 engine，用液态玻璃 CSS 标记回填
@@ -1109,11 +1350,12 @@ function themeToStyle(theme: PhoneTheme): React.CSSProperties {
   } as React.CSSProperties
 }
 
-function wechatThemeToStyle(theme: WeChatTheme, globalFontFamily: string): React.CSSProperties {
-  const resolvedFont = theme.fontFamily?.trim() ? theme.fontFamily : globalFontFamily
+function wechatThemeToStyle(theme: WeChatTheme, _globalFontFamily: string): React.CSSProperties {
+  // 空覆盖：用 var(--phone-font) 跟随全局（含上传字体）；勿拷贝字面量以免与 CSS 变量脱节
+  const resolvedFont = theme.fontFamily?.trim() ? theme.fontFamily : 'var(--phone-font)'
   const resolvedNumFont = theme.numberFontFamily?.trim()
     ? theme.numberFontFamily
-    : PHONE_NUM_FONT_FAMILY
+    : 'var(--phone-num-font)'
   return {
     '--wx-primary': theme.primary,
     '--wx-bg': theme.background,
@@ -1123,6 +1365,7 @@ function wechatThemeToStyle(theme: WeChatTheme, globalFontFamily: string): React
     '--wx-border': theme.border,
     '--wx-shadow': theme.shadow,
     '--wx-font': resolvedFont,
+    '--wx-chat-font': 'var(--wx-font)',
     '--wx-num-font': resolvedNumFont,
     '--wx-font-size': `${theme.fontSizeBasePx}px`,
     '--wx-radius': `${theme.radiusPx}px`,

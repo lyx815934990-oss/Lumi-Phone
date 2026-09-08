@@ -50,6 +50,21 @@ export function mapFavoriteToItem(
     tags: buildTags(msg),
   }
 
+  if (fav.kind === 'innerOs') {
+    const spoken =
+      fav.spokenText?.trim() ||
+      (msg?.content?.trim() && !msg.voice && !msg.images?.length ? msg.content.trim() : '') ||
+      undefined
+    const os = (fav.content || msg?.innerOs || '').trim() || '（空内心）'
+    return {
+      ...base,
+      type: 'innerOs',
+      content: os,
+      spokenText: spoken,
+      tags: [...(base.tags ?? []), '内心OS'].filter((t, i, a) => a.indexOf(t) === i),
+    }
+  }
+
   if (msg?.voice || fav.voiceDurationSec) {
     const duration = Math.max(
       1,

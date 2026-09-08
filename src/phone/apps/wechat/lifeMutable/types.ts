@@ -38,6 +38,8 @@ export type LifeRealEstate = {
   area: string
   layout: string
   floor: string
+  /** 估值，单位：万元 */
+  valueWan: string
   payKind: LifePayKind
   loanRemaining: string
   monthlyPayment: string
@@ -48,6 +50,8 @@ export type LifeVehicle = {
   id: string
   boughtAt: string
   model: string
+  /** 估值，单位：万元 */
+  valueWan: string
   payKind: LifePayKind
   loanRemaining: string
   monthlyPayment: string
@@ -123,6 +127,23 @@ export type LifeMutableSheet = {
   storyStartDay: string
   /** 开篇年龄；空则用人设卡 age */
   ageAtStart: number | null
+  /** 变更历史（对齐 / 同步 / 手动）；旧档可无此字段 */
+  changeHistory?: LifeChangeEvent[]
+}
+
+export type LifeFieldDiff = {
+  path: string
+  label: string
+  previousText: string
+  currentText: string
+}
+
+export type LifeChangeEvent = {
+  id: string
+  at: number
+  summary: string
+  source: 'align' | 'inline' | 'manual' | 'sync_circle'
+  diffs: LifeFieldDiff[]
 }
 
 export type CharacterLifeMutableRow = {

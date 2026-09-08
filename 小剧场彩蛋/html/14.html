@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#14 职场吐槽 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 0 28px}
+.hero{width:100%;height:128px;object-fit:cover;display:block;filter:saturate(1.05) contrast(1.04)}
+.shell{max-width:800px;margin:0 auto;border-radius:0 0 18px 18px;overflow:hidden;box-shadow:0 18px 48px rgba(20,16,12,.18)}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750;letter-spacing:.04em}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px;opacity:.82}
+.stats b{font-weight:750}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;flex-shrink:0;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.npc b{font-weight:700}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.list{padding:4px 12px 8px}
+.row{padding:9px 10px;margin-bottom:7px;border-radius:10px;font-size:12.5px;line-height:1.55}
+.row .m{font-size:10px;opacity:.6}
+.tabbar{display:flex;gap:0}
+.tabbar button{flex:1;border:0;padding:11px 8px;font-size:12px;cursor:pointer;background:transparent;font-weight:650}
+.tabbar button.on{font-weight:800}
+.panel{display:none}.panel.on{display:block}
+.pulse{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.55}}
+@keyframes blink{50%{opacity:.45}}
+@keyframes flip{0%{transform:rotateX(0)}40%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+.flip{animation:flip .45s ease}
+body{background:linear-gradient(180deg,#e8eaee,#d8dde6);color:#222}
+.shell{background:#f5f5f7;border:1px solid #d8dce4}
+.title-custom{background:#fff;border-bottom:1px solid #e6e8ee}
+.stats{background:#eceff4}
+.tabbar{background:#e4e8ef}
+.tabbar button{color:#667}
+.tabbar button.on{background:#fff;color:#2d5a9a;box-shadow:inset 0 -2px 0 #2d5a9a}
+.row{background:#fff;border:1px solid #e6e8ee}
+.row.flash{animation:flash .9s ease}
+@keyframes flash{0%,100%{box-shadow:none}40%{box-shadow:0 0 0 3px #c9a24b55;background:#fffbeb}}
+.chip{display:inline-block;padding:2px 8px;border-radius:99px;background:#eef2ff;color:#3a5080;font-size:10px;margin-right:4px}
+.tip{background:#fff3e0;color:#8a6b28;border:1px solid #f0dfb8}
+.npc{background:#f0f4ff}
+.btn{background:#2d5a9a;color:#fff;margin:0 12px 10px}
+.pin{color:#c45c2c;font-size:11px;font-weight:800}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./13.html">上一张</a><b>#14 职场吐槽</b><a href="./15.html">下一张</a></div>
+<p class="fore">茶水间不点名，只点座——座位表却总指向祁洵。</p>
+<div class="stage">
+<div class="shell">
+<img class="hero" alt="茶水间吐槽墙" src="https://image.pollinations.ai/prompt/office%20tea%20room%20bulletin%20board%20fluorescent%20light%20paperwork%20no%20people">
+<p class="title-custom">茶水间吐槽墙 · 匿名区 · HR 戏仿</p>
+<div class="stats"><span>新帖 <b>9</b></span><span>回复 <b>47</b></span><span>禁言 <b>2</b></span><span>频道 · 今日热帖</span></div>
+<div class="tabbar">
+<button type="button" class="on" data-tab="today">今日热帖</button>
+<button type="button" data-tab="tea">茶水间</button>
+<button type="button" data-tab="arc">已归档</button>
+</div>
+<div class="panel on" id="today">
+<div class="list">
+<div class="row flash" id="pinPost"><span class="pin">置顶闪</span> <span class="chip">茶水间</span><span class="chip">不点名</span>
+<div style="margin-top:6px"><span class="av">☕</span><b>工位八卦</b> <span class="m">09:12</span></div>
+<div style="margin-top:6px">谁又能解释「会议室·见面？」连续三周同一时段？还有人雨夜在便利店灯下对账关东煮？「靠过来一点」是商务礼仪吗？</div>
+</div>
+<div class="row"><span class="av">📋</span><b>HR观察员</b> <span class="m">09:15</span><div>建议走流程而不是走心；「别先走」写入考勤会很麻烦。</div></div>
+<div class="row"><span class="av">🧹</span><b>保洁阿姨</b> <span class="m">09:18</span><div>我只负责关灯，不负责关感情；灯坏了请报修单。</div></div>
+<div class="row"><span class="av">🌸</span><b>前台小叶</b> <span class="m">09:22</span><div>访客登记里出现过「祁洵」· 伞滴了一地。</div></div>
+<div class="row"><span class="av">💻</span><b>IT运维</b> <span class="m">09:30</span><div>会议室日历冲突告警已忽略三次，系统也累了。</div></div>
+<div class="row"><span class="av">🛡️</span><b>夜班保安</b> <span class="m">09:41</span><div>监控里两人共一把伞，像素很糊，但很甜。</div></div>
+<div class="row"><span class="av">🧾</span><b>本人？</b> <span class="m">10:02</span><div>……谢谢你们，关东煮发票我可以交行政报销吗。</div></div>
+<div class="row"><span class="av">📎</span><b>行政小陈</b> <span class="m">10:11</span><div>报销科目没有「共伞耗材」。灯管倒是有。</div></div>
+</div>
+<button class="btn" type="button" id="reflash">再闪一次置顶</button>
+</div>
+<div class="panel" id="tea">
+<div class="list">
+<div class="row"><span class="av">🫖</span><b>茶水间实录</b><div>有人把「别先走」写在纸杯外壁，被当成暗号传了一圈。</div></div>
+<div class="row"><span class="av">🖨️</span><b>打印机旁</b><div>卡纸那页正好印着：靠过来一点——会议纪要误入。</div></div>
+<div class="row"><span class="av">🚪</span><b>门禁日志</b><div>祁洵 23:41 进门 · 雨痕 · 未刷出。</div></div>
+</div>
+</div>
+<div class="panel" id="arc">
+<div class="list">
+<div class="row"><span class="av">📁</span><b>归档·上周</b><div>「灯坏了先报修再聊八卦」成为版规第一条。</div></div>
+<div class="row"><span class="av">🗂️</span><b>归档·上月</b><div>关东煮双人套被列为「非正式团建」。</div></div>
+</div>
+</div>
+<div class="tip">版规：禁止人肉 · 允许磕糖 · 灯坏了先报修再聊八卦</div>
+<div class="npc"><span class="av">🕶️</span><div><b>旁观 NPC</b>：HR 墙最恐怖的不是点名，是大家都能对号入座还假装看戏。</div></div>
+<div class="foot">本墙由行政部戏仿维护 · 非官方公告 · 公司免责声明适用（笑）</div>
+</div>
+</div>
+<script>
+(function(){
+var tabs=document.querySelectorAll(".tabbar button");
+var panels=document.querySelectorAll(".panel");
+var pin=document.getElementById("pinPost");
+var btn=document.getElementById("reflash");
+for(var i=0;i<tabs.length;i++){
+tabs[i].addEventListener("click",function(){
+var id=this.getAttribute("data-tab");
+for(var j=0;j<tabs.length;j++)tabs[j].classList.remove("on");
+this.classList.add("on");
+for(var k=0;k<panels.length;k++){
+panels[k].classList.remove("on");
+if(panels[k].id===id)panels[k].classList.add("on");
+}
+});
+}
+function flash(){
+if(!pin)return;
+pin.classList.remove("flash");
+void pin.offsetWidth;
+pin.classList.add("flash");
+}
+if(btn)btn.addEventListener("click",flash);
+flash();
+})();
+</script>
+</body>
+</html>

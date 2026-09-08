@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:16px;font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#ebe4d8;color:#2a2622;overflow:auto;height:auto}
+.wrap{max-width:800px;margin:0 auto;background:#f7f8fa;border-radius:16px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.12)}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:700;background:#fff;border-bottom:1px solid #e8e0d4}
+.stats{display:flex;gap:12px;padding:8px 14px;font-size:11px;background:#f0ece4}
+.draft{margin:8px 12px;padding:10px;border-radius:10px;background:#fff;border:1px solid #e8e0d4;cursor:pointer}
+.draft.open{border-color:#c9a24b;background:#fffaf0}
+.draft .body{display:none;margin-top:8px;font-size:13px;line-height:1.55}
+.draft.open .body{display:block}
+.avatar{width:28px;height:28px;border-radius:50%;background:#e8e0d4;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px}
+.npc{margin:10px 12px;padding:10px;border-radius:10px;background:#eef2ff;font-size:12px}
+.hero{width:100%;height:120px;object-fit:cover;display:block}
+.btn{margin:12px;padding:10px 14px;border:0;border-radius:8px;background:#c9a24b;color:#fff;font-weight:700;cursor:pointer}
+.btn.dis{opacity:.45;pointer-events:none}
+.foot{padding:10px 14px 16px;font-size:10px;opacity:.55}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+<img class="hero" alt="rain umbrella night convenience store steam" src="https://image.pollinations.ai/prompt/rainy%20night%20empty%20convenience%20store%20umbrella%20steam%20warm%20light%20no%20people">
+<p class="title-custom">未发送 · 草稿箱</p>
+<div class="stats"><span>未发送 <b id="cnt">3</b></span><span>自动存 23:41</span><span>祁洵置顶</span></div>
+<div class="draft open" data-id="1"><div><span class="avatar">☔</span><b>祁洵</b> · 23:40</div><div class="body">其实我想说的不是「没事」。伞还可以再往中间挪一点。关东煮我点了两份——你别先走。</div></div>
+<div class="draft" data-id="2"><div><span class="avatar">📝</span><b>祁洵</b> · 昨夜</div><div class="body">灯坏了也没关系，我还能站一会儿。靠过来一点，好吗。</div></div>
+<div class="draft" data-id="3"><div><span class="avatar">🏪</span><b>备注·便利店</b></div><div class="body">到了说一声。关东煮柜还热着。</div></div>
+<div class="npc"><span class="avatar">🧑</span><b>路人甲</b>：灯坏了也站着，关东煮点两份的人很少只是路过。</div>
+<button class="btn dis" id="send" type="button">发送（灰显）</button>
+<button class="btn" id="toggle" type="button">展开/收起全部草稿</button>
+<div class="foot">小剧场 JS 示范 · 点击草稿切换展开 · 禁 createElement</div>
+</div>
+<script>
+(function(){
+var drafts=document.querySelectorAll(".draft");
+var openAll=true;
+function sync(){
+var n=0;
+for(var i=0;i<drafts.length;i++){if(drafts[i].classList.contains("open"))n++}
+var c=document.getElementById("cnt");
+if(c)c.textContent=String(drafts.length);
+}
+for(var i=0;i<drafts.length;i++){
+drafts[i].addEventListener("click",function(){
+this.classList.toggle("open");
+sync();
+});
+}
+var t=document.getElementById("toggle");
+if(t)t.addEventListener("click",function(){
+openAll=!openAll;
+for(var j=0;j<drafts.length;j++){
+if(openAll)drafts[j].classList.add("open");
+else drafts[j].classList.remove("open");
+}
+if(drafts[0])drafts[0].classList.add("open");
+sync();
+});
+sync();
+})();
+</script>
+</body>
+</html>

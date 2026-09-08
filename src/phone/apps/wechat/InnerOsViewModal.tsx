@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { X } from 'lucide-react'
+import { Bookmark, BookmarkCheck, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 import { Pressable } from '../../components/Pressable'
 
@@ -14,6 +15,9 @@ export function InnerOsViewModal({
   open,
   bubbleText,
   innerOs,
+  favorited = false,
+  favoriteBusy = false,
+  onToggleFavorite,
   onClose,
 }: {
   open: boolean
@@ -21,11 +25,27 @@ export function InnerOsViewModal({
   bubbleText?: string
   /** 心里想的 */
   innerOs: string
+  /** 是否已收藏到微信收藏 */
+  favorited?: boolean
+  favoriteBusy?: boolean
+  /** 有消息上下文时可收藏；无回调则不显示按钮 */
+  onToggleFavorite?: () => void
   onClose: () => void
 }) {
   const os = innerOs.trim()
   const said = String(bubbleText ?? '').trim()
+  const [pulse, setPulse] = useState(false)
+
+  useEffect(() => {
+    if (!favorited) return
+    setPulse(true)
+    const t = window.setTimeout(() => setPulse(false), 420)
+    return () => window.clearTimeout(t)
+  }, [favorited])
+
   if (!open || !os) return null
+
+  const FavoriteIcon = favorited ? BookmarkCheck : Bookmark
 
   return (
     <AnimatePresence>
@@ -105,15 +125,38 @@ export function InnerOsViewModal({
                   </h2>
                 </div>
               </div>
-              <Pressable
-                type="button"
-                onClick={onClose}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
-                style={{ background: 'rgba(28,28,30,0.05)', color: 'rgba(60,60,67,0.55)' }}
-                aria-label="关闭"
-              >
-                <X className="size-3.5" strokeWidth={1.75} />
-              </Pressable>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {onToggleFavorite ? (
+                  <Pressable
+                    type="button"
+                    onClick={onToggleFavorite}
+                    disabled={favoriteBusy}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-45"
+                    style={{
+                      background: favorited ? 'rgba(28,28,30,0.1)' : 'rgba(28,28,30,0.05)',
+                      color: favorited ? '#1C1C1E' : 'rgba(60,60,67,0.55)',
+                      transform: pulse ? 'scale(1.08)' : undefined,
+                    }}
+                    aria-label={favorited ? '取消收藏内心 OS' : '收藏内心 OS'}
+                    aria-pressed={favorited}
+                  >
+                    <FavoriteIcon
+                      className="size-3.5"
+                      strokeWidth={1.75}
+                      fill={favorited ? 'currentColor' : 'none'}
+                    />
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  type="button"
+                  onClick={onClose}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
+                  style={{ background: 'rgba(28,28,30,0.05)', color: 'rgba(60,60,67,0.55)' }}
+                  aria-label="关闭"
+                >
+                  <X className="size-3.5" strokeWidth={1.75} />
+                </Pressable>
+              </div>
             </div>
 
             {said ? (
@@ -155,10 +198,7 @@ export function InnerOsViewModal({
               transition={{ delay: said ? 0.12 : 0.06, duration: 0.32 }}
               className="relative mt-4"
             >
-              <div
-                className="mb-2 flex items-center gap-2"
-                aria-hidden
-              >
+              <div className="mb-2 flex items-center gap-2" aria-hidden>
                 <span
                   className="h-px flex-1"
                   style={{
@@ -211,7 +251,11 @@ export function InnerOsViewModal({
               className="mt-5 text-center text-[10px] tracking-wide"
               style={{ color: 'rgba(60,60,67,0.35)' }}
             >
-              点空白处关闭
+              {onToggleFavorite
+                ? favorited
+                  ? '已收藏 · 点空白处关闭'
+                  : '点书签收藏 · 点空白处关闭'
+                : '点空白处关闭'}
             </motion.p>
           </div>
         </motion.div>

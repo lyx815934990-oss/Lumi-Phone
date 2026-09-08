@@ -82,7 +82,7 @@ export type PersonaAiGenerateForm = {
   jealousyHint: string
   /** 与恋人冲突的样子 */
   conflictHint: string
-  /** 角色本人通用口语 / 口头禅习惯（写入「能力与日常」，非对 {{user}} 专属） */
+  /** 角色本人通用口语 / 口头禅习惯（写入独立条目「口语习惯」，非对 {{user}} 专属） */
   speechStyleHint: string
   /** 性取向；空或「不限」= 交给 AI */
   orientationHint: string
@@ -631,8 +631,8 @@ export const PERSONA_AI_HOBBIES_PRESETS = [
 ] as const
 
 export const PERSONA_AI_LIFE_HABITS_PRESETS = [
-  '不抽烟',
-  '不喝酒',
+  '有烟瘾',
+  '有酒瘾',
   '偶尔小酌',
   '社交才喝酒',
   '烟民但量少',
@@ -828,18 +828,22 @@ export const PERSONA_AI_ORIENTATION_PRESETS = [
 ] as const
 
 export const PERSONA_AI_NSFW_PRESETS = [
-  '慢热羞涩',
-  '主动热情',
-  '温柔引导型',
-  '占有欲强',
-  '嘴硬身体诚实',
-  '重氛围轻尺度',
-  '喜欢被夸奖',
-  '喜欢掌控节奏',
-  '喜欢被主导',
-  '事后需要拥抱',
-  '偏好安静亲密',
-  '偏好激烈直接',
+  '表面正经 · 床上很骚',
+  '嘴上不要 · 身体很诚实',
+  '喜欢被按着做',
+  '喜欢把人压着操',
+  '边骂边咬 · 占有欲爆棚',
+  '爱听脏话 / dirty talk',
+  '敏感点多 · 一碰就软',
+  '喜欢被边做边夸骚',
+  '事后还要黏着要第二次',
+  '偏好用力、直接、不磨叽',
+  '喜欢慢磨到求饶',
+  '有点 Dom 倾向',
+  '有点 Sub 倾向',
+  '喜欢留痕迹（吻痕/咬痕）',
+  '高潮时会失控乱叫',
+  '平时高冷 · 做的时候反差很大',
 ] as const
 
 export function emptyPersonaAiGenerateForm(): PersonaAiGenerateForm {

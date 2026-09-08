@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#30 胶囊解封 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:radial-gradient(ellipse at 40% 10%,#3a2a20,#1a1410 65%);color:#f0e6d8}
+.stage{max-width:420px;margin:12px auto 28px;padding:0 12px 24px}
+.hero{width:100%;height:120px;object-fit:cover;border-radius:12px;display:block}
+.title-custom{padding:12px 4px;font-size:19px;color:#f5e3a8}
+.cap{position:relative;padding:22px 18px 20px;border-radius:16px;background-color:#f4efe6;background-image:radial-gradient(rgba(90,70,40,.06) 0.6px,transparent 0.6px),linear-gradient(180deg,#f7f2e8,#efe6d6);background-size:3px 3px,auto;color:#2a2218;
+box-shadow:0 18px 40px rgba(0,0,0,.45);border:1px solid #c4b090}
+.cap-time{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px;text-align:center}
+.cap-time>div{flex:1;padding:10px;border-radius:10px;background:rgba(255,255,255,.4);border:1px solid #d8ccb4}
+.cap-time .m{font-size:10px;opacity:.6;letter-spacing:.12em}
+.cap-time b{display:block;margin-top:4px;font-size:16px}
+.cap-time b.gold{color:#8a6b28}
+.stats{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;font-size:11px;opacity:.75;margin-bottom:12px}
+.seal-wrap{display:flex;flex-direction:column;align-items:center;gap:8px;margin:8px 0 14px}
+.wax{width:72px;height:72px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#c45c4a,#7a2418 55%,#4a120c);
+box-shadow:0 6px 16px rgba(80,20,10,.35),inset 0 2px 4px rgba(255,200,160,.3);display:flex;align-items:center;justify-content:center;color:#f5e3a8;font-size:11px;font-weight:800;letter-spacing:.2em;transition:transform .5s,opacity .5s,filter .5s}
+.wax.broken{transform:scale(1.08) rotate(18deg);opacity:.35;filter:blur(1px)}
+.cd{font-family:ui-monospace,Consolas,monospace;font-size:22px;font-weight:700;color:#8a6b28}
+.lock{position:relative}
+.lock .veil{position:absolute;inset:0;border-radius:10px;background:rgba(42,34,24,.72);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;color:#f5e3a8;font-size:13px;letter-spacing:.08em;transition:opacity .5s;z-index:2}
+.lock.open .veil{opacity:0;pointer-events:none}
+.body{padding:12px;border-radius:10px;background:rgba(255,255,255,.45);font-size:13px;line-height:1.75;border:1px solid #d8ccb4;min-height:120px}
+.btn{width:100%;margin-top:12px;padding:11px;border:0;border-radius:8px;background:linear-gradient(180deg,#5a3a28,#3a2418);color:#f5e3a8;font-weight:700;cursor:pointer}
+.btn.dis{opacity:.45;pointer-events:none}
+.btn.alt{background:transparent;border:1px solid #c4b090;color:#5a4a38;margin-top:8px}
+.rel{margin-top:10px;font-size:11px;opacity:.7;line-height:1.55}
+.foot{margin-top:8px;font-size:10px;opacity:.5;text-align:center}
+.npc-block{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.npc-row{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:12px;background:rgba(240,230,210,.08);border:1px solid rgba(201,162,75,.2);font-size:12px;line-height:1.5;color:#e8dcc8}
+.av{flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(145deg,#4a4030,#2a2418);display:inline-flex;align-items:center;justify-content:center;font-size:15px}
+.dense{margin-top:16px;padding:14px;border-radius:14px;background:#1e1a14;border:1px solid #3a3228;font-size:12px;color:#e8dcc8}
+.dx-h{font-weight:700;font-size:14px}.dx-sub{margin:4px 0 10px;font-size:11px;opacity:.75}
+.dx-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;font-size:11px}
+.dx-list{border-radius:8px;overflow:hidden;background:rgba(255,255,255,.04)}
+.dx-row{display:flex;gap:8px;padding:8px 10px;border-bottom:1px dashed rgba(255,255,255,.08);line-height:1.45}
+.dx-t{font-family:ui-monospace,Consolas,monospace;opacity:.55;min-width:22px}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./29.html">上一张</a><b>#30 胶囊解封</b><a href="./31.html">下一张</a></div>
+<p class="fore">时间胶囊 · 蜡封锁态 / 到日开盖 · 倒计时解封</p>
+<div class="stage">
+<img class="hero" alt="time capsule wax" src="https://image.pollinations.ai/prompt/time%20capsule%20wax%20seal%20parchment%20letter%20warm%20candlelight%20no%20people">
+<p class="title-custom">🫙 时间胶囊 · 解封倒计时</p>
+<div class="cap">
+<div class="cap-time">
+<div><div class="m">埋下</div><b>2024.09.04</b></div>
+<div><div class="m">开启</div><b class="gold" id="openDay">倒计时中</b></div>
+</div>
+<div class="stats"><span>密封 365 天</span><span>地点：便利店旁</span><span>TC-8821</span></div>
+<div class="seal-wrap">
+<div class="wax" id="wax">封</div>
+<div class="cd" id="capCd">00:15</div>
+</div>
+<div class="lock" id="lock">
+<div class="veil" id="veil">蜡封未解 · 倒计时结束前不可读</div>
+<div class="body" id="letter">
+<div class="m" style="font-size:11px;opacity:.65;margin-bottom:6px">写给一年后的你们 · 署名：祁洵 &amp; 你</div>
+<p>如果伞还在，就再往中间挪一寸。关东煮默认两份。灯坏了也可以站一会儿。若有人说「没事」，请追问一次。若要走，请先听见「别先走」。「靠过来一点」——这句话一年过期。</p>
+<p style="margin-top:8px">附：票根两张、积分卡一张、被雨洇开的便签复印件。打开时若仍在下雨，请就地共伞读完。</p>
+</div>
+</div>
+<button type="button" class="btn dis" id="unseal">解封（等待倒计时）</button>
+<button type="button" class="btn alt" id="skip">演示：加速至解封</button>
+<div class="rel">解封校验：口令「8821」或指纹任一 · 后续可再埋下一封 · 再次封存将灰显</div>
+<div class="foot">胶囊编号 TC-8821 · 剧情道具 · 无实物快递 · 仪式感=解封分层</div>
+</div>
+<div class="npc-block"><div class="npc-row"><span class="av">🕯️</span><span>温虐党：蜡封裂开的那一下，比告白台词响。</span></div><div class="npc-row"><span class="av">💬</span><span>祁洵：一年前写的，今天读给你听。</span></div><div class="npc-row"><span class="av">🧑</span><span>路人：便利店旁两个人共伞读信。</span></div><div class="npc-row"><span class="av">🏪</span><span>店员：关东煮我先给你们留两份。</span></div><div class="npc-row"><span class="av">📝</span><span>你（自言）：「靠过来一点」一年过期——那就不让它过期。</span></div><div class="npc-row"><span class="av">🌧️</span><span>雨声：灯坏了也可以站一会儿。</span></div><div class="npc-row"><span class="av">📦</span><span>系统：本区为「胶囊解封」番外旁观串。</span></div><div class="npc-row"><span class="av">🫙</span><span>旁白：锁态与开盖两态，今天是开盖日。</span></div></div>
+<div class="dense">
+<div class="dx-h">关联碎片 · 胶囊解封 · #30</div>
+<div class="dx-sub">未到日锁态 / 到日开盖的两种时态切换</div>
+<div class="dx-stats"><span>线索 <b>12</b></span><span>旁观 <b>8</b></span><span>结构 <b>9</b></span><span>仪式 <b>开</b></span></div>
+<div class="dx-list"><div class="dx-row"><span class="dx-t">01</span><span>时间戳对照：埋下 2024.09.04 ↔ 开启今天</span></div><div class="dx-row"><span class="dx-t">02</span><span>锁态：蜡封蒙层不可读</span></div><div class="dx-row"><span class="dx-t">03</span><span>解封态：留言正文展开</span></div><div class="dx-row"><span class="dx-t">04</span><span>写给未来的称谓：祁洵 & 你</span></div><div class="dx-row"><span class="dx-t">05</span><span>口令 8821 · 共伞读完</span></div><div class="dx-row"><span class="dx-t">06</span><span>附：票根 / 积分卡 / 雨洇便签</span></div><div class="dx-row"><span class="dx-t">07</span><span>再次封存灰显</span></div><div class="dx-row"><span class="dx-t">08</span><span>系统注记：样卡 #30 · C类 · 标签 互动·甜</span></div></div>
+</div>
+</div>
+<script>
+(function(){
+var left=15,opened=false;
+var cd=document.getElementById("capCd");
+var wax=document.getElementById("wax");
+var lock=document.getElementById("lock");
+var unseal=document.getElementById("unseal");
+var skip=document.getElementById("skip");
+var openDay=document.getElementById("openDay");
+function pad(n){return n<10?"0"+n:String(n)}
+function paint(){
+if(cd)cd.textContent="00:"+pad(left);
+}
+function openCap(){
+if(opened)return;
+opened=true;
+if(wax)wax.classList.add("broken");
+if(lock)lock.classList.add("open");
+if(unseal){unseal.classList.remove("dis");unseal.textContent="已解封 · 正文可读";unseal.classList.add("dis")}
+if(openDay)openDay.textContent="今天";
+if(cd)cd.textContent="OPEN";
+if(skip){skip.classList.add("dis");skip.textContent="已解封"}
+}
+if(unseal)unseal.addEventListener("click",function(){
+if(left>0||opened)return;
+openCap();
+});
+if(skip)skip.addEventListener("click",function(){
+if(opened)return;
+left=0;
+paint();
+if(unseal)unseal.classList.remove("dis");
+unseal.textContent="解封蜡印";
+});
+var t=setInterval(function(){
+if(opened){clearInterval(t);return}
+if(left>0){left--;paint()}
+if(left<=0){
+clearInterval(t);
+if(unseal){unseal.classList.remove("dis");unseal.textContent="解封蜡印"}
+if(cd)cd.textContent="READY";
+}
+},1000);
+paint();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,244 @@
+  return (
+    <div
+      className="ds-story-shell relative h-full min-h-0 overflow-hidden"
+      style={storyShellStyle}
+    >
+      {!isVn ? (
+        <motion.div
+          className="flex h-full min-h-0 flex-col"
+          initial={ceremonyEnter ? { opacity: 0 } : false}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.35 }}
+          onAnimationComplete={() => {
+            if (ceremonyEnter) onCeremonyEnterDone?.()
+          }}
+        >
+          <header className="ds-story-topbar sticky top-0 z-20 shrink-0 px-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pb-1.5">
+            <div className="relative flex h-10 items-center gap-0.5">
+              <button
+                type="button"
+                onClick={onBackToSelect}
+                className="ds-icon-btn shrink-0"
+                aria-label="返回"
+              >
+                <ArrowLeft className="size-[18px]" strokeWidth={1.7} />
+              </button>
+
+              <div className="min-w-0 flex-1 px-1 text-center">
+                {floorJumpItems.length > 0 ? (
+                  <p className="text-[11px] tabular-nums tracking-wide text-[color:var(--ds-muted)]">
+                    #{floorJumpItems[floorJumpItems.length - 1]?.floor}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="relative z-10 flex shrink-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  title="楼层目录"
+                  onClick={() => {
+                    setFloorsPanelOpen((v) => !v)
+                    setMenuOpen(false)
+                    setPaletteOpen(false)
+                  }}
+                  className="ds-icon-btn"
+                  data-active={floorsPanelOpen ? 'true' : 'false'}
+                  aria-label="楼层目录"
+                >
+                  <Layers className="size-[17px]" strokeWidth={1.7} />
+                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    title="色卡与夜间"
+                    onClick={() => {
+                      setPaletteOpen((v) => !v)
+                      setMenuOpen(false)
+                      setFloorsPanelOpen(false)
+                    }}
+                    className="ds-icon-btn"
+                    data-active={paletteOpen ? 'true' : 'false'}
+                    aria-label="色卡与夜间"
+                  >
+                    <Palette className="size-[17px]" strokeWidth={1.7} />
+                  </button>
+                  <DatingStoryPalettePopover
+                    open={paletteOpen}
+                    appearance={storyAppearance}
+                    onClose={() => setPaletteOpen(false)}
+                    onPickPalette={(id) => {
+                      patchStoryAppearance({ paletteId: id })
+                    }}
+                    onToggleDayNight={() => {
+                      patchStoryAppearance({
+                        dayNight: storyAppearance.dayNight === 'night' ? 'day' : 'night',
+                      })
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen((v) => !v)
+                    setFloorsPanelOpen(false)
+                    setPaletteOpen(false)
+                  }}
+                  className="ds-icon-btn"
+                  data-active={menuOpen ? 'true' : 'false'}
+                  aria-label="更多"
+                >
+                  <MoreHorizontal className="size-[18px]" strokeWidth={1.7} />
+                </button>
+              </div>
+              {menuOpen ? (
+                <div className="ds-menu-panel absolute right-0 top-[calc(100%+4px)] z-30 w-52 overflow-hidden p-1">
+                  <button
+                    className="w-full rounded-xl px-3 py-2.5 text-left text-[13px] text-[color:var(--ds-ink)] hover:bg-[color:var(--ds-accent-soft)]"
+                    onClick={() => {
+                      setMode('vn')
+                      setMenuOpen(false)
+                    }}
+                  >
+                    切换到 VN 模式
+                  </button>
+                  <div
+                    className="flex items-center justify-between rounded-xl px-3 py-2.5 text-[13px] text-[color:var(--ds-ink)] hover:bg-[color:var(--ds-accent-soft)]"
+                    title="开启后每轮 AI 剧情结束会请求弹幕（使用 API 设置中的弹幕预设；需在弹幕配置中为该角色启用）"
+                  >
+                    <span>弹幕模式</span>
+                    <DatingCapsuleSwitch
+                      checked={!!currentArchive.offlineDanmakuEnabled}
+                      onToggle={() => setOfflineDanmakuEnabled(!currentArchive.offlineDanmakuEnabled)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl px-3 py-2.5 text-[13px] text-[color:var(--ds-ink)] hover:bg-[color:var(--ds-accent-soft)]">
+                    <span>剧情分支</span>
+                    <DatingCapsuleSwitch
+                      checked={currentArchive.branchEnabled}
+                      onToggle={() => setBranchEnabled(!currentArchive.branchEnabled)}
+                    />
+                  </div>
+                  <button
+                    className="w-full rounded-xl px-3 py-2.5 text-left text-[13px] text-[color:var(--ds-ink)] hover:bg-[color:var(--ds-accent-soft)]"
+                    onClick={() => {
+                      setEditOpen(true)
+                      setMenuOpen(false)
+                      setSwitchOpen(false)
+                    }}
+                  >
+                    编辑当前角色卡片信息
+                  </button>
+                  <button
+                    className="w-full rounded-xl px-3 py-2.5 text-left text-[13px] text-[color:var(--ds-danger)] hover:bg-[color:var(--ds-accent-soft)]"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setSwitchOpen(false)
+                      setResetArchiveConfirmOpen(true)
+                    }}
+                  >
+                    重置当前角色进度
+                  </button>
+                  <button
+                    className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-[13px] text-[color:var(--ds-ink)] hover:bg-[color:var(--ds-accent-soft)]"
+                    onClick={() => setSwitchOpen((v) => !v)}
+                  >
+                    切换其他AI角色 <ChevronDown className="size-4" />
+                  </button>
+                  {switchOpen ? (
+                    <div className="mt-1 rounded-xl border border-[color:var(--ds-rule)] bg-[color:var(--ds-surface)] p-1">
+                      {characters.map((x) => (
+                        <button
+                          key={x.id}
+                          className="w-full rounded-lg px-2 py-1.5 text-left text-[12px] text-[color:var(--ds-ink)] hover:bg-[color:var(--ds-bg-elevated)]"
+                          onClick={() => {
+                            setCurrentCharacterId(x.id)
+                            setMenuOpen(false)
+                            setSwitchOpen(false)
+                          }}
+                        >
+                          {x.realName}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </header>
+
+          <DatingStoryFloorDrawer
+            open={floorsPanelOpen}
+            onClose={() => setFloorsPanelOpen(false)}
+            items={floorJumpItems}
+            currentPlotId={floorJumpItems.length ? floorJumpItems[floorJumpItems.length - 1]?.plotId : null}
+            onJump={jumpToPlotFloor}
+            tailVisibleCount={floorsDisplay}
+            floorsMax={floorsMax}
+            onTailVisibleCountChange={persistPlotTail}
+            appearanceStyle={storyAppearanceCssVars}
+          />
+
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {showOfflineDmOverlay ? (
+              <div className="pointer-events-none absolute inset-0 z-[60]">
+                <DanmakuOverlay bullets={offlineDmBullets} zoneStyle={offlineDmZoneStyle} />
+              </div>
+            ) : null}
+            <div
+              ref={normalScrollRef}
+              className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
+            {currentArchive.plots.length ? (
+              <div className="mx-auto w-full max-w-xl pb-2">
+                <StoryFeed
+                  plots={currentArchive.plots}
+                  timelineExpandCharacterId={currentCharacter.id}
+                  characterAvatarUrl={displayAvatarUrl}
+                  characterName={currentCharacter.realName}
+                  tailVisibleCount={plotTailVisible}
+                  onTailVisibleCountChange={persistPlotTail}
+                  regeneratingPlotId={regeneratingPlotId}
+                  interactionLocked={branchesLoading || Boolean(regeneratingPlotId)}
+                  narrativePerspective={perspective}
+                  onUpdatePlot={(id, patch) => updatePlotItem(id, patch)}
+                  onRegeneratePlot={openRetryBiasPanel}
+                  onSetPlotVersionIndex={(id, idx) => setPlotVersionIndex(id, idx)}
+                  onDeletePlot={(id) => deletePlotItem(id)}
+                  branchEnabled={currentArchive.branchEnabled}
+                  pendingBranches={currentArchive.pendingBranches}
+                  branchesLoading={branchesLoading}
+                  onBranchPick={handleBranchPick}
+                />
+              </div>
+            ) : (
+              <div className="mx-auto flex w-full max-w-xl flex-col items-center px-4 py-16 text-center">
+                {displayAvatarUrl ? (
+                  <img
+                    src={displayAvatarUrl}
+                    alt=""
+                    className="ds-avatar-ring mb-4 size-14 rounded-full object-cover"
+                  />
+                ) : null}
+                <p className="text-[15px] font-medium text-[color:var(--ds-ink)]">
+                  与 {currentCharacter.realName} 的线下故事
+                </p>
+                <p className="mt-2 max-w-[260px] text-[13px] leading-relaxed text-[color:var(--ds-muted)]">
+                  输入或点续写，翻开第一页
+                </p>
+              </div>
+            )}
+            </div>
+
+            <div
+              ref={composerRef}
+              className="ds-story-composer shrink-0 px-3 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
+              style={
+                keyboardInsetPx > 0
+                  ? {
+                      paddingBottom: isIOSWebKit()
+                        ? `calc(${keyboardInsetPx}px + max(0.75rem, env(safe-area-inset-bottom, 0px)))`
+                        : keyboardScrollPaddingBottom(keyboardInsetPx, { basePx: 12 }),
+                    }
+                  : undefined
+              }
+            >

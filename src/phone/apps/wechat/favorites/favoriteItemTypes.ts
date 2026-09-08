@@ -1,4 +1,4 @@
-export type FavoriteFilterId = 'all' | 'voice' | 'text' | 'image'
+export type FavoriteFilterId = 'all' | 'voice' | 'text' | 'image' | 'innerOs'
 
 export type FavoriteItem = {
   id: string
@@ -15,6 +15,7 @@ export type FavoriteItem = {
   tags?: string[]
 } & (
   | { type: 'text'; content: string }
+  | { type: 'innerOs'; content: string; spokenText?: string }
   | { type: 'voice'; duration: number; audioUrl?: string; transcript?: string; voiceAudioKvKey?: string }
   | { type: 'image'; imageUrls: string[] }
 )
@@ -25,6 +26,7 @@ export const FAVORITE_FILTER_OPTIONS: ReadonlyArray<{
   en: string
 }> = [
   { id: 'all', label: '全部', en: 'All' },
+  { id: 'innerOs', label: '内心', en: 'OS' },
   { id: 'voice', label: '语音', en: 'Voice' },
   { id: 'text', label: '语录', en: 'Quotes' },
   { id: 'image', label: '影像', en: 'Media' },

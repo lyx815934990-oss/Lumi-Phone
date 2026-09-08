@@ -1,7 +1,15 @@
-import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeftRight, ChevronDown, Dices, Plus, User, X } from 'lucide-react'
-import { useRef, useState } from 'react'
-import { MEET_MBTI_SIXTEEN } from '../../lumiMeet/meetPersonaPrompt'
+﻿import { AnimatePresence, motion } from 'framer-motion'
+import { useRef } from 'react'
+import {
+  ChipField,
+  FieldGroup,
+  FreeTextField,
+  IdentityQuickRow,
+  MbtiBinaryField,
+  RelationshipArcField,
+  SoftLabel,
+  TinySupplement,
+} from './personaAiDossierFieldUi'
 import { PlatinumSwitch } from './PlatinumSwitch'
 import {
   PERSONA_AI_APPEARANCE_DETAIL_PRESETS,
@@ -13,10 +21,12 @@ import {
   PERSONA_AI_HAIR_COLOR_PRESETS,
   PERSONA_AI_HAIR_STYLE_PRESETS,
   PERSONA_AI_HOBBIES_PRESETS,
+  PERSONA_AI_IDENTITY_ARC_PRESETS,
   PERSONA_AI_JEALOUSY_PRESETS,
   PERSONA_AI_LIFE_HABITS_PRESETS,
   PERSONA_AI_LOVE_AFTER_PRESETS,
   PERSONA_AI_LOVE_BEFORE_PRESETS,
+  PERSONA_AI_MEETING_PROCESS_PRESETS,
   PERSONA_AI_NSFW_PRESETS,
   PERSONA_AI_OCCUPATION_PRESETS,
   PERSONA_AI_ORIENTATION_PRESETS,
@@ -25,11 +35,8 @@ import {
   PERSONA_AI_RELATIONSHIP_HISTORY_PRESETS,
   PERSONA_AI_SOCIAL_MASK_PRESETS,
   PERSONA_AI_SPEECH_STYLE_PRESETS,
-  PERSONA_AI_IDENTITY_ARC_PRESETS,
-  PERSONA_AI_MEETING_PROCESS_PRESETS,
   applyPersonaAiIdentityArcPreset,
   applyPersonaAiMeetingProcessPreset,
-  composePersonaAiIdentityArcSeed,
   type PersonaAiGenerateForm,
 } from './personaAiGenerateTypes'
 import type { Gender } from './types'
@@ -47,212 +54,129 @@ export const PERSONA_AI_DOSSIER_TABS = [
 
 export type PersonaAiDossierTabId = (typeof PERSONA_AI_DOSSIER_TABS)[number]['id']
 
+const SOCIAL_FAMILY_PRESETS = [
+  '重男轻女的父母',
+  '独生宠爱',
+  '重组家庭',
+  '家人疏离少联系',
+  '父母期望很高',
+  '手足竞争',
+] as const
+
+const SOCIAL_FRIENDS_PRESETS = [
+  '唯一死党',
+  '两三深交',
+  '酒肉朋友多',
+  '圈子小但稳',
+  '几乎不社交',
+  '线上好友为主',
+] as const
+
+const SOCIAL_WORK_PRESETS = [
+  '客气不深的同事',
+  '有竞争对手',
+  '带教/导师',
+  '下属听话',
+  '办公室政治敏感',
+  '独立作业少协作',
+] as const
+
+/** 关系轨迹两侧常用短选项（完整列表过长，取高频） */
+const ARC_SIDE_PRESETS = [
+  '陌生人',
+  '刚认识',
+  '网友见面',
+  '青梅竹马',
+  '同班同学',
+  '同事',
+  '朋友 · 常聊',
+  '死党',
+  '暧昧 / 试探中',
+  '暗恋对方',
+  '恋人 / 稳定交往',
+  '前任 · 仍有牵扯',
+  '合租室友',
+  '邻居',
+] as const
+
 function presetTokens(value: string): string[] {
   return value
-    .split(/[,，、;/｜|]+/)
+    .split(/[,，、;｜|]+/)
     .map((s) => s.trim())
     .filter(Boolean)
 }
 
-function SoftLabel({ en, zh }: { en: string; zh: string }) {
-  return (
-    <div className="mb-2.5 flex items-baseline gap-2">
-      <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-neutral-400">{en}</span>
-      <span className="text-[13px] font-medium text-neutral-700">{zh}</span>
-    </div>
-  )
+function filled(v: string | undefined): boolean {
+  return Boolean(v?.trim())
 }
 
-function presetSummary(value: string): string | undefined {
-  const t = value.trim()
-  if (!t) return undefined
-  const parts = presetTokens(t)
-  return parts.length > 1 ? `已选 ${parts.length} 项` : t
+/** 各 tab 用于进度点的字段键 */
+export const PERSONA_AI_TAB_PROGRESS_KEYS: Record<
+  PersonaAiDossierTabId,
+  (keyof PersonaAiGenerateForm)[]
+> = {
+  '01': [
+    'referencePersonaHint',
+    'nameHint',
+    'avatarUrl',
+    'ageHint',
+    'occupationHint',
+    'mbtiHint',
+    'orientationHint',
+  ],
+  '02': [
+    'hairColorHint',
+    'hairStyleHint',
+    'bodyShapeHint',
+    'outfitHint',
+    'appearanceHint',
+    'auraHint',
+  ],
+  '03': [
+    'backgroundHint',
+    'relationshipHistoryHint',
+    'hobbiesHint',
+    'lifeHabitsHint',
+    'speechStyleHint',
+    'painPointsHint',
+  ],
+  '04': ['socialFamilyHint', 'socialFriendsHint', 'socialWorkHint', 'socialMaskHint', 'gapMoeHint'],
+  '05': [
+    'relationDetailHint',
+    'historyCharIdentity',
+    'presentCharIdentity',
+    'relationToUser',
+    'loveBeforeHint',
+    'loveAfterHint',
+    'jealousyHint',
+    'conflictHint',
+    'nsfwHint',
+    'extraNotes',
+  ],
 }
 
-/** 分区卡片 + 可折叠预选按钮 */
-function CollapsiblePresetZone({
-  en,
-  zh,
-  summary,
-  defaultOpen = false,
-  presets,
-  footer,
-  hint,
-}: {
-  en: string
-  zh: string
-  /** 折叠时展示的已选摘要 */
-  summary?: string
-  defaultOpen?: boolean
-  presets: React.ReactNode
-  footer?: React.ReactNode
-  hint?: string
-}) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <div className="overflow-hidden rounded-xl border border-neutral-200/80 bg-white">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-neutral-50/80"
-        aria-expanded={open}
-      >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-neutral-400">{en}</span>
-            <span className="text-[14px] font-semibold text-neutral-900">{zh}</span>
-          </div>
-          <p className="mt-1 truncate text-[12px] text-neutral-500">
-            {summary?.trim() ? summary : '未选择 · 点此展开预选'}
-          </p>
-        </div>
-        <span
-          className={`flex size-8 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 transition-transform duration-200 ${
-            open ? 'rotate-180' : ''
-          }`}
-        >
-          <ChevronDown className="size-4" strokeWidth={2} />
-        </span>
-      </button>
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.div
-            key="presets"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.22, ease: TAB_EASE }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-neutral-100 px-4 pb-3.5 pt-3">
-              <p className="mb-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-neutral-400">
-                {hint ?? '预选 · 点选切换'}
-              </p>
-              {presets}
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-      {footer ? <div className="border-t border-neutral-100 px-4 py-3">{footer}</div> : null}
-    </div>
-  )
-}
+export type PersonaAiTabFillState = 'empty' | 'partial' | 'full'
 
-function SoftArea({
-  value,
-  onChange,
-  placeholder,
-  maxLength,
-  rows = 3,
-  accent,
-}: {
-  value: string
-  onChange: (v: string) => void
-  placeholder: string
-  maxLength: number
-  rows?: number
-  accent?: 'rose'
-}) {
-  return (
-    <div className="relative">
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        rows={rows}
-        maxLength={maxLength}
-        className={`w-full resize-none rounded-xl border-0 bg-neutral-50 px-4 py-3.5 text-[14px] leading-relaxed text-neutral-900 outline-none transition-shadow placeholder:text-neutral-300 focus:bg-white focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)] ${
-          accent === 'rose' ? 'border-l-2 border-l-rose-200/80' : ''
-        }`}
-      />
-      <span
-        className="pointer-events-none absolute bottom-3 right-3 font-mono text-[10px] tabular-nums"
-        style={{ color: value.length > maxLength * 0.85 ? '#A66A6A' : '#C4C4CC' }}
-      >
-        {value.length}/{maxLength}
-      </span>
-    </div>
-  )
-}
-
-function Pill({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active?: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`shrink-0 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-all duration-200 active:scale-[0.97] ${
-        active
-          ? 'bg-neutral-900 text-white'
-          : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200/80'
-      }`}
-    >
-      {label}
-    </button>
-  )
-}
-
-function PillRow({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap gap-1.5">{children}</div>
-}
-
-function CustomPillInput({
-  onCommit,
-  placeholder = '自定义',
-}: {
-  onCommit: (v: string) => void
-  placeholder?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const [draft, setDraft] = useState('')
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-neutral-300 bg-transparent px-3 py-1.5 text-[12px] font-medium text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-700"
-      >
-        <Plus className="size-3" strokeWidth={2} />
-        {placeholder}
-      </button>
-    )
+export function personaAiTabFillState(
+  form: PersonaAiGenerateForm,
+  tabId: PersonaAiDossierTabId,
+): PersonaAiTabFillState {
+  if (form.referencePersonaDirectGenerate && tabId !== '01') {
+    return filled(form.referencePersonaHint) ? 'full' : 'empty'
   }
-  return (
-    <input
-      autoFocus
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        const t = draft.trim()
-        if (t) onCommit(t)
-        setDraft('')
-        setOpen(false)
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault()
-          const t = draft.trim()
-          if (t) onCommit(t)
-          setDraft('')
-          setOpen(false)
-        }
-        if (e.key === 'Escape') {
-          setDraft('')
-          setOpen(false)
-        }
-      }}
-      placeholder="输入后回车"
-      className="min-w-[7rem] flex-1 border-0 border-b border-neutral-300 bg-transparent px-1 py-1.5 text-[12px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:border-neutral-900"
-    />
-  )
+  const keys = PERSONA_AI_TAB_PROGRESS_KEYS[tabId]
+  let n = 0
+  for (const k of keys) {
+    if (k === 'nsfwHint' && !form.nsfwEnabled) continue
+    if (filled(String(form[k] ?? ''))) n += 1
+  }
+  const total =
+    tabId === '05' && !form.nsfwEnabled
+      ? keys.filter((k) => k !== 'nsfwHint').length
+      : keys.length
+  if (n <= 0) return 'empty'
+  if (n >= total) return 'full'
+  return 'partial'
 }
 
 function ChapterShell({
@@ -277,7 +201,7 @@ function ChapterShell({
         </p>
         <p className="mt-0.5 text-[16px] font-semibold tracking-tight text-neutral-900">{zh}</p>
       </div>
-      <div className="space-y-6 px-5 py-5">{children}</div>
+      <div className="space-y-5 px-5 py-5">{children}</div>
     </section>
   )
 }
@@ -302,8 +226,6 @@ export function PersonaAiGenerateDossierForm({
   patch: (partial: Partial<PersonaAiGenerateForm>) => void
   activeTab: PersonaAiDossierTabId
 }) {
-  const [xpUnlocked, setXpUnlocked] = useState(false)
-  const [occCustom, setOccCustom] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
 
   const pickAvatarFile = (file: File | null) => {
@@ -330,50 +252,44 @@ export function PersonaAiGenerateDossierForm({
     patch({ [field]: cur === kw ? '' : kw })
   }
 
+  const pastArc = form.historyCharIdentity.trim()
+  const presentArc = form.relationToUser.trim() || form.presentCharIdentity.trim()
+
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.div
         key={activeTab}
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -6 }}
-        transition={{ duration: 0.22, ease: TAB_EASE }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.15, ease: TAB_EASE }}
       >
         {activeTab === '01' ? (
           <ChapterShell code="01" en="IDENTITY" zh="身份锚定">
-            <div>
-              <SoftLabel en="Reference" zh="参考人物" />
-              <SoftArea
-                value={form.referencePersonaHint}
-                onChange={(v) => {
-                  const next = v
-                  patch(
-                    next.trim()
-                      ? { referencePersonaHint: next }
-                      : { referencePersonaHint: next, referencePersonaDirectGenerate: false },
-                  )
-                }}
-                placeholder="填写角色或人物名；可附作品名。多名用顿号或逗号分隔"
-                maxLength={300}
-                rows={2}
-              />
-              <div className="mt-2.5 flex items-center justify-between gap-3 rounded-xl bg-neutral-50 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[12px] font-medium text-neutral-800">直接生成该人物档案</p>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-400">
-                    {form.referencePersonaDirectGenerate
-                      ? '已打开：仅按参考人物生成；下方及其他章节已锁定，无需再填'
-                      : '关闭 = 只借气质，可继续填写下方种子；打开 = 只按参考人物生成，锁定其余选项'}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <span
-                    className={`text-[10px] font-medium tracking-wide ${
-                      form.referencePersonaDirectGenerate ? 'text-neutral-800' : 'text-neutral-400'
-                    }`}
-                  >
-                    {form.referencePersonaDirectGenerate ? '原著' : '借鉴'}
-                  </span>
+            <FreeTextField
+              en="Reference"
+              zh="参考人物"
+              value={form.referencePersonaHint}
+              onChange={(v) => {
+                patch(
+                  v.trim()
+                    ? { referencePersonaHint: v }
+                    : { referencePersonaHint: v, referencePersonaDirectGenerate: false },
+                )
+              }}
+              placeholder="填写角色或人物名；可附作品名。多名用顿号或逗号分隔"
+              maxLength={300}
+              rows={2}
+              footer={
+                <div className="flex items-center justify-between gap-3 py-0.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12px] font-medium text-neutral-800">直接生成该人物档案</p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-400">
+                      {form.referencePersonaDirectGenerate
+                        ? '已打开：仅按参考人物生成；其余章节已锁定'
+                        : '关闭 = 只借气质；打开 = 只按参考人物生成'}
+                    </p>
+                  </div>
                   <PlatinumSwitch
                     checked={form.referencePersonaDirectGenerate}
                     onChange={(next) => patch({ referencePersonaDirectGenerate: next })}
@@ -381,294 +297,88 @@ export function PersonaAiGenerateDossierForm({
                     aria-label="直接生成该人物档案"
                   />
                 </div>
-              </div>
-            </div>
+              }
+            />
 
             <div
-              className={`relative space-y-6 ${
-                form.referencePersonaDirectGenerate ? 'pointer-events-none select-none' : ''
+              className={`relative space-y-5 ${
+                form.referencePersonaDirectGenerate ? 'pointer-events-none select-none opacity-40' : ''
               }`}
               aria-disabled={form.referencePersonaDirectGenerate || undefined}
             >
               {form.referencePersonaDirectGenerate ? (
                 <div className="rounded-xl border border-neutral-200/80 bg-neutral-50 px-4 py-3">
                   <p className="text-[12px] font-medium text-neutral-800">其余选项已锁定</p>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-400">
+                  <p className="mt-0.5 text-[11px] text-neutral-400">
                     关闭「直接生成」后可继续填写姓名、外貌、亲密等种子
                   </p>
                 </div>
               ) : null}
-              <div
-                className={
-                  form.referencePersonaDirectGenerate ? 'opacity-40' : undefined
+
+              <IdentityQuickRow
+                avatarUrl={form.avatarUrl}
+                name={form.nameHint}
+                age={form.ageHint}
+                gender={form.gender}
+                avatarInputRef={avatarInputRef}
+                onAvatarPick={pickAvatarFile}
+                onClearAvatar={() => patch({ avatarUrl: '' })}
+                onNameChange={(v) => patch({ nameHint: v })}
+                onRandomName={() => patch({ nameHint: randomChineseName(form.gender) })}
+                onAgeChange={(v) => patch({ ageHint: v })}
+                onRandomAge={() =>
+                  patch({ ageHint: `${16 + Math.floor(Math.random() * 20)}岁` })
                 }
-              >
-            <div className="flex flex-col items-center">
-              <div className="mb-2.5 flex items-baseline justify-center gap-2">
-                <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-neutral-400">
-                  WeChat Avatar
-                </span>
-                <span className="text-[13px] font-medium text-neutral-700">微信头像</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => avatarInputRef.current?.click()}
-                className="relative flex size-[5.5rem] shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-neutral-50 shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-colors hover:bg-neutral-100/80 active:scale-[0.98]"
-                aria-label="上传微信头像"
-              >
-                {form.avatarUrl.trim() ? (
-                  <img
-                    src={form.avatarUrl}
-                    alt=""
-                    className="size-full rounded-full object-cover"
-                  />
-                ) : (
-                  <User className="size-9 text-neutral-300" strokeWidth={1.25} />
-                )}
-                <span className="absolute -bottom-0.5 -right-0.5 flex size-7 items-center justify-center rounded-full border border-neutral-200 bg-white shadow-sm">
-                  <Plus className="size-3.5 text-neutral-600" strokeWidth={1.75} />
-                </span>
-              </button>
-              <div className="mt-2.5 flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => avatarInputRef.current?.click()}
-                  className="text-[12px] font-medium text-neutral-600 underline-offset-2 hover:underline"
-                >
-                  {form.avatarUrl.trim() ? '更换头像' : '上传头像'}
-                </button>
-                {form.avatarUrl.trim() ? (
-                  <button
-                    type="button"
-                    onClick={() => patch({ avatarUrl: '' })}
-                    className="inline-flex items-center gap-1 text-[12px] text-neutral-400 hover:text-neutral-700"
-                  >
-                    <X className="size-3" strokeWidth={2} />
-                    清除
-                  </button>
-                ) : null}
-              </div>
-              <p className="mt-1.5 text-center text-[11px] text-neutral-400">
-                可选；生成后作为角色微信头像
-              </p>
-              <input
-                ref={avatarInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  pickAvatarFile(e.target.files?.[0] ?? null)
-                  e.target.value = ''
+              />
+
+              <ChipField
+                en="Gender"
+                zh="性别"
+                mode="single"
+                options={(['female', 'male', 'other'] as Gender[]).map(genderLabelZh)}
+                value={genderLabelZh(form.gender)}
+                onToggle={(label) => {
+                  const g = (['female', 'male', 'other'] as Gender[]).find(
+                    (x) => genderLabelZh(x) === label,
+                  )
+                  if (g) patch({ gender: g })
                 }}
               />
-            </div>
 
-            <div>
-              <SoftLabel en="Name" zh="姓名" />
-              <div className="relative">
-                <input
-                  value={form.nameHint}
-                  onChange={(e) => patch({ nameHint: e.target.value })}
-                  placeholder="留空由引擎命名"
-                  maxLength={12}
-                  className="w-full border-0 border-b border-neutral-200 bg-transparent pb-3 pr-12 text-[28px] font-semibold tracking-tight text-neutral-900 outline-none placeholder:text-neutral-300 focus:border-neutral-900"
-                />
-                <button
-                  type="button"
-                  title="随机姓名"
-                  onClick={() => patch({ nameHint: randomChineseName(form.gender) })}
-                  className="absolute bottom-3 right-0 rounded-md border border-neutral-300 p-1.5 text-neutral-500 transition-colors hover:border-neutral-900 hover:text-neutral-900"
-                  aria-label="随机姓名"
-                >
-                  <Dices className="size-4" strokeWidth={1.5} />
-                </button>
-              </div>
-              <p className="mt-2 text-[11px] text-neutral-400">先选性别，再点骰子抽取姓名池</p>
-            </div>
-
-            <div>
-              <SoftLabel en="Age" zh="年龄方向" />
-              <input
-                value={form.ageHint}
-                onChange={(e) => patch({ ageHint: e.target.value })}
-                placeholder="例：25岁、20-28岁"
-                maxLength={48}
-                className="w-full rounded-xl border-0 bg-neutral-50 px-4 py-3 text-[14px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:bg-white focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
-              />
-            </div>
-
-            <div>
-              <SoftLabel en="Gender" zh="性别" />
-              <PillRow>
-                {(['female', 'male', 'other'] as Gender[]).map((g) => (
-                  <Pill
-                    key={g}
-                    label={genderLabelZh(g)}
-                    active={form.gender === g}
-                    onClick={() => patch({ gender: g })}
-                  />
-                ))}
-              </PillRow>
-            </div>
-
-            <div className="space-y-3">
-              <CollapsiblePresetZone
+              <ChipField
                 en="Occupation"
                 zh="职业"
-                summary={form.occupationHint.trim() || undefined}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_OCCUPATION_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={form.occupationHint === kw}
-                        onClick={() => setSingle('occupationHint', kw)}
-                      />
-                    ))}
-                    {!occCustom &&
-                    !PERSONA_AI_OCCUPATION_PRESETS.includes(
-                      form.occupationHint as (typeof PERSONA_AI_OCCUPATION_PRESETS)[number],
-                    ) &&
-                    form.occupationHint.trim() ? (
-                      <Pill
-                        label={form.occupationHint}
-                        active
-                        onClick={() => patch({ occupationHint: '' })}
-                      />
-                    ) : null}
-                    <CustomPillInput
-                      placeholder="自定义"
-                      onCommit={(v) => {
-                        patch({ occupationHint: v })
-                        setOccCustom(false)
-                      }}
-                    />
-                  </PillRow>
-                }
-                footer={
-                  <div className="space-y-2">
-                    <input
-                      value={
-                        PERSONA_AI_OCCUPATION_PRESETS.includes(
-                          form.occupationHint as (typeof PERSONA_AI_OCCUPATION_PRESETS)[number],
-                        )
-                          ? ''
-                          : form.occupationHint
-                      }
-                      onChange={(e) => patch({ occupationHint: e.target.value })}
-                      placeholder="或直接输入职业"
-                      maxLength={64}
-                      className="w-full rounded-xl border-0 bg-neutral-50 px-4 py-3 text-[14px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:bg-white focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
-                    />
-                    <div className="flex items-center justify-between gap-3 rounded-xl bg-neutral-50 px-4 py-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[12px] font-medium text-neutral-800">职业可变</p>
-                        <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-400">
-                          {form.occupationMutable
-                            ? '已打开：写入尾声「职业身份的当前快照」，可随剧情更新'
-                            : '打开 = 可变（进尾声）；关闭 = 固定（写在「名片基础」序言）'}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        <span
-                          className={`text-[10px] font-medium tracking-wide ${
-                            form.occupationMutable ? 'text-neutral-800' : 'text-neutral-400'
-                          }`}
-                        >
-                          {form.occupationMutable ? '可变' : '固定'}
-                        </span>
-                        <PlatinumSwitch
-                          checked={form.occupationMutable}
-                          onChange={(next) => patch({ occupationMutable: next })}
-                          aria-label="职业可变：打开为可变，关闭为固定"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                }
+                mode="single"
+                options={PERSONA_AI_OCCUPATION_PRESETS}
+                value={form.occupationHint}
+                onToggle={(kw) => setSingle('occupationHint', kw)}
+                onCustom={(v) => patch({ occupationHint: v })}
+                mutable={{
+                  checked: form.occupationMutable,
+                  onChange: (next) => patch({ occupationMutable: next }),
+                  label: '允许职业在剧情中变化',
+                }}
               />
 
-              <CollapsiblePresetZone
-                en="MBTI"
-                zh="人格偏向"
-                summary={form.mbtiHint.trim() ? form.mbtiHint.toUpperCase() : '交由引擎'}
-                presets={
-                  <div className="grid grid-cols-4 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => patch({ mbtiHint: '' })}
-                      className={`col-span-4 rounded-lg py-2 text-[11px] font-medium transition-all ${
-                        !form.mbtiHint.trim()
-                          ? 'bg-neutral-900 text-white'
-                          : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200/80'
-                      }`}
-                    >
-                      交由引擎
-                    </button>
-                    {MEET_MBTI_SIXTEEN.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => patch({ mbtiHint: form.mbtiHint.toUpperCase() === m ? '' : m })}
-                        className={`rounded-lg py-2 font-mono text-[11px] font-semibold tracking-wide transition-all active:scale-[0.97] ${
-                          form.mbtiHint.toUpperCase() === m
-                            ? 'bg-neutral-900 text-white'
-                            : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200/80'
-                        }`}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                }
+              <MbtiBinaryField
+                value={form.mbtiHint}
+                onChange={(v) => patch({ mbtiHint: v })}
               />
 
-              <CollapsiblePresetZone
+              <ChipField
                 en="Orientation"
                 zh="性取向"
-                summary={form.orientationHint.trim() || '交由引擎'}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_ORIENTATION_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={form.orientationHint === kw}
-                        onClick={() => setSingle('orientationHint', kw)}
-                      />
-                    ))}
-                  </PillRow>
-                }
-                footer={
-                  <div className="flex items-center justify-between gap-3 rounded-xl bg-neutral-50 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12px] font-medium text-neutral-800">取向可变</p>
-                      <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-400">
-                        {form.orientationMutable
-                          ? '已打开：写入尾声「取向认同的当前快照」，可随剧情更新'
-                          : '打开 = 可变（进尾声）；关闭 = 固定（写在「性格内核」序言）'}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      <span
-                        className={`text-[10px] font-medium tracking-wide ${
-                          form.orientationMutable ? 'text-neutral-800' : 'text-neutral-400'
-                        }`}
-                      >
-                        {form.orientationMutable ? '可变' : '固定'}
-                      </span>
-                      <PlatinumSwitch
-                        checked={form.orientationMutable}
-                        onChange={(next) => patch({ orientationMutable: next })}
-                        aria-label="取向可变：打开为可变，关闭为固定"
-                      />
-                    </div>
-                  </div>
-                }
+                mode="single"
+                options={PERSONA_AI_ORIENTATION_PRESETS}
+                value={form.orientationHint}
+                onToggle={(kw) => setSingle('orientationHint', kw)}
+                onCustom={(v) => patch({ orientationHint: v })}
+                mutable={{
+                  checked: form.orientationMutable,
+                  onChange: (next) => patch({ orientationMutable: next }),
+                  label: '允许性取向在剧情中变化',
+                }}
               />
-            </div>
-              </div>
             </div>
           </ChapterShell>
         ) : null}
@@ -678,184 +388,70 @@ export function PersonaAiGenerateDossierForm({
             {form.referencePersonaDirectGenerate ? (
               <DirectGenerateLockedNotice />
             ) : (
-            <div className="space-y-3">
-              <CollapsiblePresetZone
-                en="Hair Color"
-                zh="发色"
-                summary={form.hairColorHint.trim() || undefined}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_HAIR_COLOR_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={form.hairColorHint === kw}
-                        onClick={() => setSingle('hairColorHint', kw)}
-                      />
-                    ))}
-                    {!PERSONA_AI_HAIR_COLOR_PRESETS.includes(
-                      form.hairColorHint as (typeof PERSONA_AI_HAIR_COLOR_PRESETS)[number],
-                    ) && form.hairColorHint.trim() ? (
-                      <Pill
-                        label={form.hairColorHint}
-                        active
-                        onClick={() => patch({ hairColorHint: '' })}
-                      />
-                    ) : null}
-                    <CustomPillInput
-                      placeholder="自定义"
-                      onCommit={(v) => patch({ hairColorHint: v })}
-                    />
-                  </PillRow>
-                }
-              />
-
-              <CollapsiblePresetZone
-                en="Hairstyle"
-                zh="发型"
-                summary={form.hairStyleHint.trim() || undefined}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_HAIR_STYLE_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={form.hairStyleHint === kw}
-                        onClick={() => setSingle('hairStyleHint', kw)}
-                      />
-                    ))}
-                    {!PERSONA_AI_HAIR_STYLE_PRESETS.includes(
-                      form.hairStyleHint as (typeof PERSONA_AI_HAIR_STYLE_PRESETS)[number],
-                    ) && form.hairStyleHint.trim() ? (
-                      <Pill
-                        label={form.hairStyleHint}
-                        active
-                        onClick={() => patch({ hairStyleHint: '' })}
-                      />
-                    ) : null}
-                    <CustomPillInput
-                      placeholder="自定义"
-                      onCommit={(v) => patch({ hairStyleHint: v })}
-                    />
-                  </PillRow>
-                }
-              />
-
-              <CollapsiblePresetZone
-                en="Body"
-                zh="身材"
-                summary={form.bodyShapeHint.trim() || undefined}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_BODY_SHAPE_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={form.bodyShapeHint === kw}
-                        onClick={() => setSingle('bodyShapeHint', kw)}
-                      />
-                    ))}
-                    {!PERSONA_AI_BODY_SHAPE_PRESETS.includes(
-                      form.bodyShapeHint as (typeof PERSONA_AI_BODY_SHAPE_PRESETS)[number],
-                    ) && form.bodyShapeHint.trim() ? (
-                      <Pill
-                        label={form.bodyShapeHint}
-                        active
-                        onClick={() => patch({ bodyShapeHint: '' })}
-                      />
-                    ) : null}
-                    <CustomPillInput
-                      placeholder="自定义"
-                      onCommit={(v) => patch({ bodyShapeHint: v })}
-                    />
-                  </PillRow>
-                }
-              />
-
-              <CollapsiblePresetZone
-                en="Outfit"
-                zh="穿搭"
-                summary={presetSummary(form.outfitHint)}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_OUTFIT_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={presetTokens(form.outfitHint).includes(kw)}
-                        onClick={() => appendToken('outfitHint', kw)}
-                      />
-                    ))}
-                    <CustomPillInput onCommit={(v) => appendToken('outfitHint', v)} />
-                  </PillRow>
-                }
-                footer={
-                  <SoftArea
-                    value={form.outfitHint}
-                    onChange={(v) => patch({ outfitHint: v })}
-                    placeholder="补充工作 / 私下 / 约会等场合穿搭…"
-                    maxLength={320}
-                    rows={2}
+              <div className="space-y-5">
+                <FieldGroup title="发型五官">
+                  <ChipField
+                    en="Hair Color"
+                    zh="发色"
+                    mode="single"
+                    options={PERSONA_AI_HAIR_COLOR_PRESETS}
+                    value={form.hairColorHint}
+                    onToggle={(kw) => setSingle('hairColorHint', kw)}
+                    onCustom={(v) => patch({ hairColorHint: v })}
                   />
-                }
-              />
-
-              <CollapsiblePresetZone
-                en="Details"
-                zh="眉眼配饰"
-                summary={presetSummary(form.appearanceHint)}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_APPEARANCE_DETAIL_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={presetTokens(form.appearanceHint).includes(kw)}
-                        onClick={() => appendToken('appearanceHint', kw)}
-                      />
-                    ))}
-                    <CustomPillInput onCommit={(v) => appendToken('appearanceHint', v)} />
-                  </PillRow>
-                }
-                footer={
-                  <SoftArea
+                  <ChipField
+                    en="Hairstyle"
+                    zh="发型"
+                    mode="single"
+                    options={PERSONA_AI_HAIR_STYLE_PRESETS}
+                    value={form.hairStyleHint}
+                    onToggle={(kw) => setSingle('hairStyleHint', kw)}
+                    onCustom={(v) => patch({ hairStyleHint: v })}
+                  />
+                  <ChipField
+                    en="Details"
+                    zh="眉眼配饰"
+                    mode="multi"
+                    options={PERSONA_AI_APPEARANCE_DETAIL_PRESETS}
                     value={form.appearanceHint}
-                    onChange={(v) => patch({ appearanceHint: v })}
-                    placeholder="补充眉眼、配饰等细节…"
-                    maxLength={240}
-                    rows={2}
+                    onToggle={(kw) => appendToken('appearanceHint', kw)}
+                    onCustom={(v) => appendToken('appearanceHint', v)}
                   />
-                }
-              />
+                </FieldGroup>
 
-              <CollapsiblePresetZone
-                en="Aura / Vibe"
-                zh="气质气场"
-                summary={form.auraHint.trim() || undefined}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_AURA_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={presetTokens(form.auraHint).includes(kw)}
-                        onClick={() => appendToken('auraHint', kw)}
-                      />
-                    ))}
-                    <CustomPillInput onCommit={(v) => appendToken('auraHint', v)} />
-                  </PillRow>
-                }
-                footer={
-                  <SoftArea
-                    value={form.auraHint}
-                    onChange={(v) => patch({ auraHint: v })}
-                    placeholder="第一印象与气场…"
-                    maxLength={160}
-                    rows={2}
+                <FieldGroup title="身材穿搭">
+                  <ChipField
+                    en="Body"
+                    zh="身材"
+                    mode="multi"
+                    options={PERSONA_AI_BODY_SHAPE_PRESETS}
+                    value={form.bodyShapeHint}
+                    onToggle={(kw) => appendToken('bodyShapeHint', kw)}
+                    onCustom={(v) => appendToken('bodyShapeHint', v)}
                   />
-                }
-              />
-            </div>
+                  <ChipField
+                    en="Outfit"
+                    zh="穿搭"
+                    mode="multi"
+                    options={PERSONA_AI_OUTFIT_PRESETS}
+                    value={form.outfitHint}
+                    onToggle={(kw) => appendToken('outfitHint', kw)}
+                    onCustom={(v) => appendToken('outfitHint', v)}
+                  />
+                </FieldGroup>
+
+                <FieldGroup title="气场">
+                  <ChipField
+                    en="Aura / Vibe"
+                    zh="气质气场"
+                    mode="multi"
+                    options={PERSONA_AI_AURA_PRESETS}
+                    value={form.auraHint}
+                    onToggle={(kw) => appendToken('auraHint', kw)}
+                    onCustom={(v) => appendToken('auraHint', v)}
+                  />
+                </FieldGroup>
+              </div>
             )}
           </ChapterShell>
         ) : null}
@@ -865,182 +461,69 @@ export function PersonaAiGenerateDossierForm({
             {form.referencePersonaDirectGenerate ? (
               <DirectGenerateLockedNotice />
             ) : (
-            <div className="space-y-3">
-              <CollapsiblePresetZone
-                en="Backstory"
-                zh="身世过往"
-                summary={presetSummary(form.backgroundHint)}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_BACKGROUND_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={presetTokens(form.backgroundHint).includes(kw)}
-                        onClick={() => appendToken('backgroundHint', kw)}
-                      />
-                    ))}
-                    <CustomPillInput onCommit={(v) => appendToken('backgroundHint', v)} />
-                  </PillRow>
-                }
-                footer={
-                  <SoftArea
+              <div className="space-y-5">
+                <FieldGroup title="过往叙事">
+                  <FreeTextField
+                    en="Backstory"
+                    zh="身世过往"
                     value={form.backgroundHint}
                     onChange={(v) => patch({ backgroundHint: v })}
                     placeholder="塑造性格成因的关键过往…"
                     maxLength={280}
                     rows={3}
+                    inspiration={PERSONA_AI_BACKGROUND_PRESETS}
                   />
-                }
-              />
-
-              <CollapsiblePresetZone
-                en="Romance History"
-                zh="感情史"
-                summary={form.relationshipHistoryHint.trim() || '生成时必写「过往感情史」条目'}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_RELATIONSHIP_HISTORY_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={form.relationshipHistoryHint === kw}
-                        onClick={() => setSingle('relationshipHistoryHint', kw)}
-                      />
-                    ))}
-                  </PillRow>
-                }
-                footer={
-                  <SoftArea
-                    value={
-                      PERSONA_AI_RELATIONSHIP_HISTORY_PRESETS.includes(
-                        form.relationshipHistoryHint as (typeof PERSONA_AI_RELATIONSHIP_HISTORY_PRESETS)[number],
-                      )
-                        ? ''
-                        : form.relationshipHistoryHint
-                    }
+                  <FreeTextField
+                    en="Romance History"
+                    zh="感情史"
+                    value={form.relationshipHistoryHint}
                     onChange={(v) => patch({ relationshipHistoryHint: v })}
-                    placeholder="可选：写清曾有好感/喜欢/交往过的对象，或母胎单身等；不填也会生成该条目"
+                    placeholder="可选：曾有好感/交往过的对象，或不填也会生成条目"
                     maxLength={240}
                     rows={2}
+                    inspiration={PERSONA_AI_RELATIONSHIP_HISTORY_PRESETS}
                   />
-                }
-              />
+                </FieldGroup>
 
-              <CollapsiblePresetZone
-                en="Hobbies"
-                zh="兴趣爱好"
-                summary={presetSummary(form.hobbiesHint)}
-                hint="可多选 · 点选切换"
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_HOBBIES_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={presetTokens(form.hobbiesHint).includes(kw)}
-                        onClick={() => appendToken('hobbiesHint', kw)}
-                      />
-                    ))}
-                    <CustomPillInput onCommit={(v) => appendToken('hobbiesHint', v)} />
-                  </PillRow>
-                }
-                footer={
-                  <SoftArea
+                <FieldGroup title="日常底色">
+                  <ChipField
+                    en="Hobbies"
+                    zh="兴趣爱好"
+                    mode="multi"
+                    options={PERSONA_AI_HOBBIES_PRESETS}
                     value={form.hobbiesHint}
-                    onChange={(v) => patch({ hobbiesHint: v })}
-                    placeholder="可多选预选，或直接补充爱好…"
-                    maxLength={160}
-                    rows={2}
+                    onToggle={(kw) => appendToken('hobbiesHint', kw)}
+                    onCustom={(v) => appendToken('hobbiesHint', v)}
                   />
-                }
-              />
-
-              <CollapsiblePresetZone
-                en="Quirks"
-                zh="癖好习惯"
-                summary={presetSummary(form.lifeHabitsHint)}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_LIFE_HABITS_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={presetTokens(form.lifeHabitsHint).includes(kw)}
-                        onClick={() => appendToken('lifeHabitsHint', kw)}
-                      />
-                    ))}
-                    <CustomPillInput onCommit={(v) => appendToken('lifeHabitsHint', v)} />
-                  </PillRow>
-                }
-                footer={
-                  <SoftArea
+                  <ChipField
+                    en="Quirks"
+                    zh="癖好习惯"
+                    mode="multi"
+                    options={PERSONA_AI_LIFE_HABITS_PRESETS}
                     value={form.lifeHabitsHint}
-                    onChange={(v) => patch({ lifeHabitsHint: v })}
-                    placeholder="例：紧张时转笔、回消息很慢…"
-                    maxLength={240}
-                    rows={2}
+                    onToggle={(kw) => appendToken('lifeHabitsHint', kw)}
+                    onCustom={(v) => appendToken('lifeHabitsHint', v)}
                   />
-                }
-              />
-
-              <CollapsiblePresetZone
-                en="Speech Habits"
-                zh="口语习惯"
-                summary={presetSummary(form.speechStyleHint)}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_SPEECH_STYLE_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={presetTokens(form.speechStyleHint).includes(kw)}
-                        onClick={() => appendToken('speechStyleHint', kw)}
-                      />
-                    ))}
-                    <CustomPillInput onCommit={(v) => appendToken('speechStyleHint', v)} />
-                  </PillRow>
-                }
-                footer={
-                  <SoftArea
+                  <ChipField
+                    en="Speech Habits"
+                    zh="口语习惯"
+                    mode="multi"
+                    options={PERSONA_AI_SPEECH_STYLE_PRESETS}
                     value={form.speechStyleHint}
-                    onChange={(v) => patch({ speechStyleHint: v })}
-                    placeholder="口头禅或语气特征…"
-                    maxLength={160}
-                    rows={2}
+                    onToggle={(kw) => appendToken('speechStyleHint', kw)}
+                    onCustom={(v) => appendToken('speechStyleHint', v)}
                   />
-                }
-              />
-
-              <CollapsiblePresetZone
-                en="Red Flags"
-                zh="雷点与绝对底线"
-                summary={presetSummary(form.painPointsHint)}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_PAIN_POINTS_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={presetTokens(form.painPointsHint).includes(kw)}
-                        onClick={() => appendToken('painPointsHint', kw)}
-                      />
-                    ))}
-                    <CustomPillInput onCommit={(v) => appendToken('painPointsHint', v)} />
-                  </PillRow>
-                }
-                footer={
-                  <SoftArea
+                  <ChipField
+                    en="Red Flags"
+                    zh="雷点与底线"
+                    mode="multi"
+                    options={PERSONA_AI_PAIN_POINTS_PRESETS}
                     value={form.painPointsHint}
-                    onChange={(v) => patch({ painPointsHint: v })}
-                    placeholder="无法忍受的雷区与底线…"
-                    maxLength={160}
-                    rows={2}
-                    accent="rose"
+                    onToggle={(kw) => appendToken('painPointsHint', kw)}
+                    onCustom={(v) => appendToken('painPointsHint', v)}
                   />
-                }
-              />
-            </div>
+                </FieldGroup>
+              </div>
             )}
           </ChapterShell>
         ) : null}
@@ -1050,88 +533,60 @@ export function PersonaAiGenerateDossierForm({
             {form.referencePersonaDirectGenerate ? (
               <DirectGenerateLockedNotice />
             ) : (
-            <div className="space-y-3">
-              <div>
-                <SoftLabel en="Social Circles" zh="人脉偏向" />
-                <div className="space-y-3">
-                  {(
-                    [
-                      ['家人', 'socialFamilyHint', '例：极度重男轻女的父母'],
-                      ['朋友', 'socialFriendsHint', '例：唯一的死党'],
-                      ['同事/下属', 'socialWorkHint', '例：客气不深的同事圈'],
-                    ] as const
-                  ).map(([label, field, ph]) => (
-                    <div key={field} className="rounded-xl bg-neutral-50 p-3.5">
-                      <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-neutral-400">
-                        {label}
-                      </p>
-                      <input
-                        value={form[field]}
-                        onChange={(e) => patch({ [field]: e.target.value })}
-                        placeholder={ph}
-                        maxLength={120}
-                        className="w-full border-0 bg-transparent text-[14px] text-neutral-900 outline-none placeholder:text-neutral-300"
-                      />
-                    </div>
-                  ))}
+              <div className="space-y-5">
+                <div>
+                  <SoftLabel en="Social Circles" zh="人脉偏向" />
+                  <div className="space-y-4">
+                    <ChipField
+                      en="Family"
+                      zh="家人偏向"
+                      mode="multi"
+                      options={SOCIAL_FAMILY_PRESETS}
+                      value={form.socialFamilyHint}
+                      onToggle={(kw) => appendToken('socialFamilyHint', kw)}
+                      onCustom={(v) => appendToken('socialFamilyHint', v)}
+                    />
+                    <ChipField
+                      en="Friends"
+                      zh="朋友偏向"
+                      mode="multi"
+                      options={SOCIAL_FRIENDS_PRESETS}
+                      value={form.socialFriendsHint}
+                      onToggle={(kw) => appendToken('socialFriendsHint', kw)}
+                      onCustom={(v) => appendToken('socialFriendsHint', v)}
+                    />
+                    <ChipField
+                      en="Work"
+                      zh="同事偏向"
+                      mode="multi"
+                      options={SOCIAL_WORK_PRESETS}
+                      value={form.socialWorkHint}
+                      onToggle={(kw) => appendToken('socialWorkHint', kw)}
+                      onCustom={(v) => appendToken('socialWorkHint', v)}
+                    />
+                  </div>
                 </div>
+
+                <ChipField
+                  en="Social Facades"
+                  zh="多面社交态度"
+                  mode="multi"
+                  options={PERSONA_AI_SOCIAL_MASK_PRESETS}
+                  value={form.socialMaskHint}
+                  onToggle={(kw) => appendToken('socialMaskHint', kw)}
+                  onCustom={(v) => appendToken('socialMaskHint', v)}
+                />
+
+                <ChipField
+                  en="Gap Moe"
+                  zh="反差萌点"
+                  mode="multi"
+                  options={PERSONA_AI_GAP_MOE_PRESETS}
+                  value={form.gapMoeHint}
+                  onToggle={(kw) => appendToken('gapMoeHint', kw)}
+                  onCustom={(v) => appendToken('gapMoeHint', v)}
+                />
               </div>
-
-              <CollapsiblePresetZone
-                en="Social Facades"
-                zh="多面社交态度"
-                summary={form.socialMaskHint.trim() || undefined}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_SOCIAL_MASK_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={form.socialMaskHint === kw}
-                        onClick={() => setSingle('socialMaskHint', kw)}
-                      />
-                    ))}
-                  </PillRow>
-                }
-                footer={
-                  <SoftArea
-                    value={form.socialMaskHint}
-                    onChange={(v) => patch({ socialMaskHint: v })}
-                    placeholder="对不同人的反差，如：对熟人毒舌，对长辈极其礼貌伪装…"
-                    maxLength={200}
-                    rows={2}
-                  />
-                }
-              />
-
-              <CollapsiblePresetZone
-                en="Gap Moe"
-                zh="反差萌点"
-                summary={presetSummary(form.gapMoeHint)}
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_GAP_MOE_PRESETS.map((kw) => (
-                      <Pill
-                        key={kw}
-                        label={kw}
-                        active={presetTokens(form.gapMoeHint).includes(kw)}
-                        onClick={() => appendToken('gapMoeHint', kw)}
-                      />
-                    ))}
-                    <CustomPillInput onCommit={(v) => appendToken('gapMoeHint', v)} />
-                  </PillRow>
-                }
-                footer={
-                  <SoftArea
-                    value={form.gapMoeHint}
-                    onChange={(v) => patch({ gapMoeHint: v })}
-                    placeholder="高冷外表下隐藏的笨拙瞬间…"
-                    maxLength={160}
-                    rows={2}
-                  />
-                }
-              />
-            </div>
             )}
           </ChapterShell>
         ) : null}
@@ -1141,462 +596,191 @@ export function PersonaAiGenerateDossierForm({
             {form.referencePersonaDirectGenerate ? (
               <DirectGenerateLockedNotice />
             ) : (
-            <div className="space-y-3">
-              <CollapsiblePresetZone
-                en="Opening Process"
-                zh="初始过程"
-                summary={
-                  form.relationDetailHint.trim()
-                    ? form.relationDetailHint.trim()
-                    : form.relationToUser.trim() || undefined
-                }
-                hint="预设一键填入相识过程，也可自定义"
-                presets={
-                  <PillRow>
-                    {PERSONA_AI_MEETING_PROCESS_PRESETS.map((p) => {
-                      const active = form.meetingProcessPresetId === p.id
-                      return (
-                        <Pill
-                          key={p.id}
-                          label={p.label}
-                          active={active}
-                          onClick={() => {
-                            if (active) {
-                              patch({
-                                meetingProcessPresetId: '',
-                                relationDetailHint: '',
-                                relationToUser: '',
-                              })
-                            } else {
-                              patch(applyPersonaAiMeetingProcessPreset(p))
-                            }
-                          }}
-                        />
-                      )
-                    })}
-                    <CustomPillInput
-                      placeholder="自定义关系标签"
-                      onCommit={(v) =>
-                        patch({
-                          relationToUser: v,
-                          meetingProcessPresetId: '',
-                        })
-                      }
-                    />
-                  </PillRow>
-                }
-                footer={
-                  <div className="space-y-2">
-                    <p className="text-[11px] text-neutral-400">
-                      相识过程（写入世界书「相遇羁绊」）
-                      {form.relationToUser.trim()
-                        ? ` · 关系标签：${form.relationToUser.trim()}`
-                        : ''}
-                    </p>
-                    <SoftArea
-                      value={form.relationDetailHint}
-                      onChange={(v) =>
-                        patch({
-                          relationDetailHint: v,
-                          meetingProcessPresetId: '',
-                        })
-                      }
-                      placeholder="如何认识、早期互动、过程节点…（勿写当前关系/态度，那些留给「对你现在」）"
-                      maxLength={240}
-                      rows={3}
-                    />
-                  </div>
-                }
-              />
+              <div className="space-y-5">
+                <FreeTextField
+                  en="Meeting"
+                  zh="和 user 的相识过程"
+                  value={form.relationDetailHint}
+                  onChange={(v) =>
+                    patch({
+                      relationDetailHint: v,
+                      meetingProcessPresetId: '',
+                    })
+                  }
+                  placeholder="如何认识、早期互动、过程节点…"
+                  maxLength={240}
+                  rows={3}
+                  inspiration={PERSONA_AI_MEETING_PROCESS_PRESETS.map((p) => p.label)}
+                  onInspiration={(label) => {
+                    const p = PERSONA_AI_MEETING_PROCESS_PRESETS.find((x) => x.label === label)
+                    if (p) patch(applyPersonaAiMeetingProcessPreset(p))
+                  }}
+                />
 
-              <CollapsiblePresetZone
-                en="Identity Arc"
-                zh="历史 / 现在身份"
-                defaultOpen={Boolean(composePersonaAiIdentityArcSeed(form))}
-                summary={
-                  composePersonaAiIdentityArcSeed(form)
-                    ? composePersonaAiIdentityArcSeed(form)
-                    : undefined
-                }
-                hint="可点预设一键填满四格，也可分别手改"
-                presets={
-                  <div className="space-y-2">
-                    <p className="text-[11px] text-neutral-400">抓马开局预设 · 点选填入四格身份</p>
-                    <PillRow>
-                      {PERSONA_AI_IDENTITY_ARC_PRESETS.map((p) => {
-                        const active = form.identityArcPresetId === p.id
-                        return (
-                          <Pill
+                <RelationshipArcField
+                  pastOptions={ARC_SIDE_PRESETS}
+                  presentOptions={ARC_SIDE_PRESETS}
+                  pastValue={pastArc}
+                  presentValue={presentArc}
+                  onPast={(v) =>
+                    patch({
+                      historyCharIdentity: v,
+                      historyUserIdentity: v,
+                      identityArcPresetId: '',
+                    })
+                  }
+                  onPresent={(v) =>
+                    patch({
+                      presentCharIdentity: v,
+                      presentUserIdentity: v,
+                      relationToUser: v,
+                      identityArcPresetId: '',
+                    })
+                  }
+                  onPastCustom={(v) =>
+                    patch({
+                      historyCharIdentity: v,
+                      historyUserIdentity: v,
+                      identityArcPresetId: '',
+                    })
+                  }
+                  onPresentCustom={(v) =>
+                    patch({
+                      presentCharIdentity: v,
+                      presentUserIdentity: v,
+                      relationToUser: v,
+                      identityArcPresetId: '',
+                    })
+                  }
+                  presets={
+                    <div>
+                      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-neutral-400">
+                        抓马开局 · 一键填入
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {PERSONA_AI_IDENTITY_ARC_PRESETS.map((p) => (
+                          <button
                             key={p.id}
-                            label={p.label}
-                            active={active}
+                            type="button"
                             onClick={() => {
-                              if (active) {
+                              if (form.identityArcPresetId === p.id) {
                                 patch({
                                   historyCharIdentity: '',
                                   historyUserIdentity: '',
                                   presentCharIdentity: '',
                                   presentUserIdentity: '',
+                                  relationToUser: '',
                                   identityArcPresetId: '',
                                 })
                               } else {
-                                patch(applyPersonaAiIdentityArcPreset(p))
+                                patch({
+                                  ...applyPersonaAiIdentityArcPreset(p),
+                                  relationToUser: p.presentChar,
+                                })
                               }
                             }}
-                          />
-                        )
-                      })}
-                    </PillRow>
-                  </div>
-                }
-                footer={
-                  <div className="space-y-4">
-                    <button
-                      type="button"
-                      disabled={!composePersonaAiIdentityArcSeed(form)}
-                      onClick={() => {
-                        patch({
-                          historyCharIdentity: form.historyUserIdentity,
-                          historyUserIdentity: form.historyCharIdentity,
-                          presentCharIdentity: form.presentUserIdentity,
-                          presentUserIdentity: form.presentCharIdentity,
-                          identityArcPresetId: '',
-                        })
-                      }}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-[13px] font-medium text-neutral-800 transition-colors hover:bg-neutral-50 active:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <ArrowLeftRight className="size-3.5 shrink-0 text-neutral-500" strokeWidth={2} />
-                      对换角色 / 用户身份
-                    </button>
-                    <div className="rounded-xl bg-neutral-50 px-3 py-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-neutral-400">
-                            Then · 历史身份
-                          </p>
-                          <p className="mt-0.5 text-[12px] text-neutral-500">相识 / 过往阶段时双方是谁</p>
-                        </div>
-                        <button
-                          type="button"
-                          title="对换本行角色与用户"
-                          disabled={!form.historyCharIdentity.trim() && !form.historyUserIdentity.trim()}
-                          onClick={() => {
-                            patch({
-                              historyCharIdentity: form.historyUserIdentity,
-                              historyUserIdentity: form.historyCharIdentity,
-                              identityArcPresetId: '',
-                            })
-                          }}
-                          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-neutral-500 shadow-sm transition-colors hover:text-neutral-800 disabled:opacity-30"
-                        >
-                          <ArrowLeftRight className="size-3.5" strokeWidth={2} />
-                        </button>
-                      </div>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        <div>
-                          <p className="mb-1.5 text-[11px] text-neutral-500">角色 · {'{{char}}'}</p>
-                          <input
-                            value={form.historyCharIdentity}
-                            onChange={(e) =>
-                              patch({
-                                historyCharIdentity: e.target.value,
-                                identityArcPresetId: '',
-                              })
-                            }
-                            placeholder="例：恋人、青梅、匿名网友"
-                            maxLength={64}
-                            className="w-full rounded-xl border-0 bg-white px-3 py-2.5 text-[13px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
-                          />
-                        </div>
-                        <div>
-                          <p className="mb-1.5 text-[11px] text-neutral-500">用户 · {'{{user}}'}</p>
-                          <input
-                            value={form.historyUserIdentity}
-                            onChange={(e) =>
-                              patch({
-                                historyUserIdentity: e.target.value,
-                                identityArcPresetId: '',
-                              })
-                            }
-                            placeholder="例：恋人、被救下的人"
-                            maxLength={64}
-                            className="w-full rounded-xl border-0 bg-white px-3 py-2.5 text-[13px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rounded-xl bg-neutral-50 px-3 py-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-neutral-400">
-                            Now · 现在身份
-                          </p>
-                          <p className="mt-0.5 text-[12px] text-neutral-500">开局当下双方的社会身份</p>
-                        </div>
-                        <button
-                          type="button"
-                          title="对换本行角色与用户"
-                          disabled={!form.presentCharIdentity.trim() && !form.presentUserIdentity.trim()}
-                          onClick={() => {
-                            patch({
-                              presentCharIdentity: form.presentUserIdentity,
-                              presentUserIdentity: form.presentCharIdentity,
-                              identityArcPresetId: '',
-                            })
-                          }}
-                          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-neutral-500 shadow-sm transition-colors hover:text-neutral-800 disabled:opacity-30"
-                        >
-                          <ArrowLeftRight className="size-3.5" strokeWidth={2} />
-                        </button>
-                      </div>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        <div>
-                          <p className="mb-1.5 text-[11px] text-neutral-500">角色 · {'{{char}}'}</p>
-                          <input
-                            value={form.presentCharIdentity}
-                            onChange={(e) =>
-                              patch({
-                                presentCharIdentity: e.target.value,
-                                identityArcPresetId: '',
-                              })
-                            }
-                            placeholder="例：直属上司、合租室友"
-                            maxLength={64}
-                            className="w-full rounded-xl border-0 bg-white px-3 py-2.5 text-[13px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
-                          />
-                        </div>
-                        <div>
-                          <p className="mb-1.5 text-[11px] text-neutral-500">用户 · {'{{user}}'}</p>
-                          <input
-                            value={form.presentUserIdentity}
-                            onChange={(e) =>
-                              patch({
-                                presentUserIdentity: e.target.value,
-                                identityArcPresetId: '',
-                              })
-                            }
-                            placeholder="例：下属员工、租客"
-                            maxLength={64}
-                            className="w-full rounded-xl border-0 bg-white px-3 py-2.5 text-[13px] text-neutral-900 outline-none placeholder:text-neutral-300 focus:shadow-[0_0_0_1px_rgba(23,23,23,0.08)]"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                }
-              />
-
-              <div className="space-y-3">
-                <p className="px-0.5 text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">
-                  Before vs After · 恋爱镜面对比
-                </p>
-                <CollapsiblePresetZone
-                  en="Before"
-                  zh="沦陷前"
-                  summary={presetSummary(form.loveBeforeHint)}
-                  hint="可多选 · 点选切换"
-                  presets={
-                    <PillRow>
-                      {PERSONA_AI_LOVE_BEFORE_PRESETS.map((kw) => (
-                        <Pill
-                          key={kw}
-                          label={kw}
-                          active={presetTokens(form.loveBeforeHint).includes(kw)}
-                          onClick={() => appendToken('loveBeforeHint', kw)}
-                        />
-                      ))}
-                      <CustomPillInput onCommit={(v) => appendToken('loveBeforeHint', v)} />
-                    </PillRow>
-                  }
-                  footer={
-                    <SoftArea
-                      value={form.loveBeforeHint}
-                      onChange={(v) => patch({ loveBeforeHint: v })}
-                      placeholder="恋爱前的界限感、距离、态度…"
-                      maxLength={160}
-                      rows={2}
-                    />
-                  }
-                />
-                <CollapsiblePresetZone
-                  en="After"
-                  zh="沦陷后"
-                  summary={presetSummary(form.loveAfterHint)}
-                  hint="可多选 · 点选切换"
-                  presets={
-                    <PillRow>
-                      {PERSONA_AI_LOVE_AFTER_PRESETS.map((kw) => (
-                        <Pill
-                          key={kw}
-                          label={kw}
-                          active={presetTokens(form.loveAfterHint).includes(kw)}
-                          onClick={() => appendToken('loveAfterHint', kw)}
-                        />
-                      ))}
-                      <CustomPillInput onCommit={(v) => appendToken('loveAfterHint', v)} />
-                    </PillRow>
-                  }
-                  footer={
-                    <SoftArea
-                      value={form.loveAfterHint}
-                      onChange={(v) => patch({ loveAfterHint: v })}
-                      placeholder="恋爱后的黏人程度、软化、表达…"
-                      maxLength={160}
-                      rows={2}
-                    />
-                  }
-                />
-              </div>
-
-              <div className="space-y-3">
-                <p className="px-0.5 text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">
-                  Conflict Patterns · 修罗场反应
-                </p>
-                <CollapsiblePresetZone
-                  en="Jealousy"
-                  zh="吃醋的样子"
-                  summary={presetSummary(form.jealousyHint)}
-                  presets={
-                    <PillRow>
-                      {PERSONA_AI_JEALOUSY_PRESETS.map((kw) => (
-                        <Pill
-                          key={kw}
-                          label={kw}
-                          active={presetTokens(form.jealousyHint).includes(kw)}
-                          onClick={() => appendToken('jealousyHint', kw)}
-                        />
-                      ))}
-                      <CustomPillInput onCommit={(v) => appendToken('jealousyHint', v)} />
-                    </PillRow>
-                  }
-                  footer={
-                    <SoftArea
-                      value={form.jealousyHint}
-                      onChange={(v) => patch({ jealousyHint: v })}
-                      placeholder="吃醋时的言行…"
-                      maxLength={160}
-                      rows={2}
-                    />
-                  }
-                />
-                <CollapsiblePresetZone
-                  en="Conflict"
-                  zh="起冲突的样子"
-                  summary={presetSummary(form.conflictHint)}
-                  presets={
-                    <PillRow>
-                      {PERSONA_AI_CONFLICT_PRESETS.map((kw) => (
-                        <Pill
-                          key={kw}
-                          label={kw}
-                          active={presetTokens(form.conflictHint).includes(kw)}
-                          onClick={() => appendToken('conflictHint', kw)}
-                        />
-                      ))}
-                      <CustomPillInput onCommit={(v) => appendToken('conflictHint', v)} />
-                    </PillRow>
-                  }
-                  footer={
-                    <SoftArea
-                      value={form.conflictHint}
-                      onChange={(v) => patch({ conflictHint: v })}
-                      placeholder="与恋人冲突时的反应…"
-                      maxLength={160}
-                      rows={2}
-                    />
-                  }
-                />
-              </div>
-
-              <div>
-                <SoftLabel en="Kinks & Desires" zh="XP 与情欲偏好" />
-                <div className="relative overflow-hidden rounded-xl">
-                  {!form.nsfwEnabled || !xpUnlocked ? (
-                    <div className="relative">
-                      <div className="pointer-events-none select-none blur-[6px]">
-                        <SoftArea
-                          value=""
-                          onChange={() => {}}
-                          placeholder="亲密接触时的偏好、主被动倾向…"
-                          maxLength={100}
-                          rows={3}
-                        />
-                      </div>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/55 backdrop-blur-[2px]">
-                        {!form.nsfwEnabled ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              patch({ nsfwEnabled: true })
-                              setXpUnlocked(true)
-                            }}
-                            className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-[12px] font-medium text-neutral-800 shadow-sm transition-colors hover:border-neutral-900"
+                            className={`rounded-full border px-3 py-1.5 text-[11px] font-medium leading-none transition-colors ${
+                              form.identityArcPresetId === p.id
+                                ? 'border-neutral-800 bg-neutral-800 text-white shadow-[0_2px_8px_rgba(0,0,0,0.08)]'
+                                : 'border-neutral-200/80 bg-neutral-50 text-neutral-600 hover:border-neutral-300 hover:bg-white'
+                            }`}
                           >
-                            解锁视线并开启 XP
+                            {p.label}
                           </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setXpUnlocked(true)}
-                            className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-[12px] font-medium text-neutral-800 shadow-sm transition-colors hover:border-neutral-900"
-                          >
-                            解锁视线
-                          </button>
-                        )}
-                        <p className="px-6 text-center text-[11px] text-neutral-400">
-                          需确认后才可填写亲密偏好
-                        </p>
+                        ))}
                       </div>
                     </div>
-                  ) : (
-                    <CollapsiblePresetZone
-                      en="XP"
-                      zh="情欲偏好"
-                      summary={presetSummary(form.nsfwHint)}
-                      defaultOpen
-                      presets={
-                        <div className="space-y-2">
-                          <div className="flex items-start justify-between gap-2">
-                            <PillRow>
-                              {PERSONA_AI_NSFW_PRESETS.map((kw) => (
-                                <Pill
-                                  key={kw}
-                                  label={kw}
-                                  active={presetTokens(form.nsfwHint).includes(kw)}
-                                  onClick={() => appendToken('nsfwHint', kw)}
-                                />
-                              ))}
-                            </PillRow>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                patch({ nsfwEnabled: false, nsfwHint: '' })
-                                setXpUnlocked(false)
-                              }}
-                              className="shrink-0 text-[11px] text-neutral-400 hover:text-neutral-700"
-                            >
-                              关闭
-                            </button>
-                          </div>
-                        </div>
-                      }
-                      footer={
-                        <SoftArea
-                          value={form.nsfwHint}
-                          onChange={(v) => patch({ nsfwHint: v })}
-                          placeholder="亲密接触时的偏好、节奏、主被动倾向…"
-                          maxLength={500}
-                          rows={4}
-                        />
-                      }
-                    />
-                  )}
+                  }
+                />
+
+                <FieldGroup title="恋爱镜面">
+                  <ChipField
+                    en="Before"
+                    zh="恋爱前的样子"
+                    mode="multi"
+                    options={PERSONA_AI_LOVE_BEFORE_PRESETS}
+                    value={form.loveBeforeHint}
+                    onToggle={(kw) => appendToken('loveBeforeHint', kw)}
+                    onCustom={(v) => appendToken('loveBeforeHint', v)}
+                    supplement={
+                      <TinySupplement
+                        onCommit={(v) => appendToken('loveBeforeHint', v)}
+                        placeholder="可选：补一句具体表现…"
+                      />
+                    }
+                  />
+                  <ChipField
+                    en="After"
+                    zh="恋爱后的样子"
+                    mode="multi"
+                    options={PERSONA_AI_LOVE_AFTER_PRESETS}
+                    value={form.loveAfterHint}
+                    onToggle={(kw) => appendToken('loveAfterHint', kw)}
+                    onCustom={(v) => appendToken('loveAfterHint', v)}
+                    supplement={
+                      <TinySupplement
+                        onCommit={(v) => appendToken('loveAfterHint', v)}
+                        placeholder="可选：补一句具体表现…"
+                      />
+                    }
+                  />
+                </FieldGroup>
+
+                <FieldGroup title="修罗场反应">
+                  <ChipField
+                    en="Jealousy"
+                    zh="吃醋的样子"
+                    mode="multi"
+                    options={PERSONA_AI_JEALOUSY_PRESETS}
+                    value={form.jealousyHint}
+                    onToggle={(kw) => appendToken('jealousyHint', kw)}
+                    onCustom={(v) => appendToken('jealousyHint', v)}
+                  />
+                  <ChipField
+                    en="Conflict"
+                    zh="起冲突的样子"
+                    mode="multi"
+                    options={PERSONA_AI_CONFLICT_PRESETS}
+                    value={form.conflictHint}
+                    onToggle={(kw) => appendToken('conflictHint', kw)}
+                    onCustom={(v) => appendToken('conflictHint', v)}
+                  />
+                </FieldGroup>
+
+                <div className="pt-2">
+                  <ChipField
+                    en="Kinks & Desires"
+                    zh="XP 点与亲密偏好"
+                    mode="multi"
+                    options={PERSONA_AI_NSFW_PRESETS}
+                    value={form.nsfwHint}
+                    onToggle={(kw) => {
+                      const parts = presetTokens(form.nsfwHint)
+                      const next = parts.includes(kw)
+                        ? parts.filter((p) => p !== kw)
+                        : [...parts, kw]
+                      const hint = next.join('、')
+                      patch({ nsfwHint: hint, nsfwEnabled: hint.trim().length > 0 })
+                    }}
+                    onCustom={(v) => {
+                      const t = v.trim()
+                      if (!t) return
+                      const parts = presetTokens(form.nsfwHint)
+                      if (parts.includes(t)) return
+                      const hint = parts.length ? `${parts.join('、')}、${t}` : t
+                      patch({ nsfwHint: hint, nsfwEnabled: true })
+                    }}
+                    supplement={
+                      <p className="text-[11px] leading-relaxed text-neutral-400">
+                        点选后会额外生成一条成人向世界书「亲密身体与性爱偏好」；不选则不写露骨床戏条目。
+                      </p>
+                    }
+                  />
                 </div>
-              </div>
 
-              <div>
-                <SoftLabel en="Notes" zh="补充说明" />
-                <SoftArea
+                <FreeTextField
+                  en="Notes"
+                  zh="补充说明"
                   value={form.extraNotes}
                   onChange={(v) => patch({ extraNotes: v })}
                   placeholder="题材、禁忌、其他补充…"
@@ -1604,7 +788,6 @@ export function PersonaAiGenerateDossierForm({
                   rows={3}
                 />
               </div>
-            </div>
             )}
           </ChapterShell>
         ) : null}

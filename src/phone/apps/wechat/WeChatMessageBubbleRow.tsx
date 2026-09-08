@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type ReactNode, type RefObject, type SyntheticEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
 import type { WeChatBubbleTheme } from '../../types'
@@ -13,7 +13,7 @@ import {
 } from './wechatBubbleTelegramUi'
 import { ImessageBubbleTail, imessageBubbleCornerRadius } from './wechatBubbleImessageUi'
 import { twitterBubbleCornerRadius } from './wechatBubbleTwitterUi'
-import { WechatBubbleTail } from './wechatBubbleWechatUi'
+import { WechatBubbleTail, WECHAT_CLASSIC_AVATAR_SIZE_PX } from './wechatBubbleWechatUi'
 import { TalkmakerInlineReplyBlock, TelegramInlineReplyBlock } from './wechatMessengerSpecialBubbles'
 import {
   formatTalkmakerExternalTime,
@@ -198,7 +198,7 @@ export type WeChatMessageBubbleRowProps = {
   onTranslationToggle?: () => void
   /** X / 聚拢簇：影响非对称圆角 */
   bubbleCluster?: 'single' | 'first' | 'middle' | 'last'
-  /** 头像边长；缺省 40；X 风格对方 28 */
+  /** 头像边长；缺省 40（微信 App 主题 42）；X 风格对方 28 */
   avatarSizePx?: number
   /** X 风格文字气泡排版 */
   twitterStyle?: boolean
@@ -356,12 +356,15 @@ export function WeChatMessageBubbleRow({
   const showBubbleBadge = Boolean(bubbleBadge?.enabled && bubbleBadge.text.trim())
   const contentRef = useRef<HTMLDivElement>(null)
   const singleLine = useMessageBubbleSingleLine(contentRef, messageText)
-  /** 聊天默认 40px；X 风格对方 28 */
-  const avatarPx = avatarSizePx ?? (variant === 'chat' ? 40 : 40)
+  /** 聊天默认 40px；微信 App 主题 42；X 风格对方由外层传 28 */
+  const avatarPx =
+    avatarSizePx ??
+    (bubble.bubbleTailStyle === 'wechat' ? WECHAT_CLASSIC_AVATAR_SIZE_PX : 40)
   /** css 引擎：清空微信/iMessage/Telegram/Talkmaker 主题尾巴与排版差异，只留原始壳给 scopedCss */
   const cssSkin = useChatSkinEngine() === 'css'
   const liquidGlassCssTail = cssSkin && Boolean(showBubbleTail)
   const tailStyle = cssSkin ? undefined : bubble.bubbleTailStyle
+  /** Messenger 主题尾巴：用原机系统字体；分侧自定义字体同样强制套变量 */
   const templateFont = Boolean(tailStyle)
   const sideHasCustomFont = bubbleSideHasCustomFont(bubble, isSelf ? 'self' : 'other')
   const useFullStackFont = templateFont || sideHasCustomFont
@@ -430,12 +433,14 @@ export function WeChatMessageBubbleRow({
     : twitterStyle
       ? 'text-[15px]'
       : isWechatTail
-        ? 'text-[15.5px]'
+        ? 'text-[16px]'
         : isAltMessengerTail || variant === 'chat'
           ? isTalkmakerTail
             ? 'text-[15px]'
             : 'text-[16px]'
           : 'text-[14px]'
+  /** 微信主题气泡行距略紧，贴近真机多行正文 */
+  const leadingCls = isWechatTail ? 'leading-[1.25]' : 'leading-[1.4]'
   const bubblePadCls = cssSkin
     ? 'p-0'
     : twitterStyle
@@ -513,6 +518,21 @@ export function WeChatMessageBubbleRow({
     onLongPress: () => onLongPress(),
     onTap: onBubbleTap,
   })
+  // framer-motion 占用 onDragStart / onAnimationStart 等；只传指针事件，原生防护用 DOM 监听
+  const { onDragStart: preventNativeDragStart, onSelectStart, ...pressBind } = bind
+
+  useLayoutEffect(() => {
+    const el = contentRef.current
+    if (!el || variant !== 'chat') return
+    const onSel = (e: Event) => onSelectStart(e as unknown as SyntheticEvent)
+    const onDrag = (e: Event) => preventNativeDragStart(e as unknown as ReactDragEvent<Element>)
+    el.addEventListener('selectstart', onSel)
+    el.addEventListener('dragstart', onDrag)
+    return () => {
+      el.removeEventListener('selectstart', onSel)
+      el.removeEventListener('dragstart', onDrag)
+    }
+  }, [variant, onSelectStart, preventNativeDragStart])
 
   const translationTrimmed = translationText?.trim() || ''
   const translationFirstChar = translationTrimmed.charAt(0)
@@ -692,7 +712,7 @@ export function WeChatMessageBubbleRow({
                 <motion.div
                   ref={contentRef}
                   data-wx-bubble-content
-                  className={`relative z-[1] inline-block max-w-full overflow-visible ${bubblePadCls} leading-[1.4] select-none ${textCls} ${bubbleContentClassName}`}
+                  className={`relative z-[1] inline-block max-w-full overflow-visible ${bubblePadCls} ${leadingCls} select-none ${textCls} ${bubbleContentClassName}`}
                   style={{
                     ...bubbleSurfaceStyle,
                     ...chatBubbleTransformOrigin(isSelf, tailStyle),
@@ -701,7 +721,7 @@ export function WeChatMessageBubbleRow({
                   animate={bubbleEnterAnimate}
                   transition={bubbleEnterSpring}
                   whileTap={onBubbleLongPress ? { scale: 0.97, opacity: 0.92 } : undefined}
-                  {...bind}
+                  {...pressBind}
                 >
                   {/* 图层：气泡底(face) < 边框 < 贴纸 < 文字 */}
                   {bubbleFaceStyle ? <BubbleFaceLayer style={bubbleFaceStyle} /> : null}
@@ -728,7 +748,7 @@ export function WeChatMessageBubbleRow({
                 <div
                   ref={contentRef}
                   data-wx-bubble-content
-                  className={`relative z-[1] inline-block max-w-full overflow-visible ${bubblePadCls} leading-[1.4] select-none transition-[transform,opacity,background-color] duration-150 ease-out ${textCls} ${bubbleContentClassName}`}
+                  className={`relative z-[1] inline-block max-w-full overflow-visible ${bubblePadCls} ${leadingCls} select-none transition-[transform,opacity,background-color] duration-150 ease-out ${textCls} ${bubbleContentClassName}`}
                   style={bubbleSurfaceStyle}
                 >
                   {bubbleFaceStyle ? <BubbleFaceLayer style={bubbleFaceStyle} /> : null}

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { BookOpen, ChevronDown, ChevronLeft, History, Lock, RefreshCw } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronLeft, History, Lock, Pencil, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import type { AnonymousQaWechatContext } from '../../../../components/anonymousQa/buildAnonymousQaPersonaContext'
@@ -22,9 +22,12 @@ import {
   findPendingDiff,
   isPathPending,
   markObservationNotesSeen,
+  saveObservationNotes,
 } from './store'
 import {
   BASIC_FIELD_META,
+  clampPct,
+  resolveAffectionStageDisplay,
   type ObservationField,
   type ObservationFieldDiff,
   type ObservationNotesDoc,
@@ -328,23 +331,24 @@ function DiffableRow({
   )
 }
 
-function IntimateReveal({ children }: { children: ReactNode }) {
+function IntimateReveal({ children, forceReveal }: { children: ReactNode; forceReveal?: boolean }) {
   const [revealed, setRevealed] = useState(false)
+  const open = forceReveal || revealed
 
   return (
     <div className="relative min-h-[88px]">
       <div
         style={{
-          filter: revealed ? 'blur(0px)' : 'blur(8px)',
+          filter: open ? 'blur(0px)' : 'blur(8px)',
           transition: 'filter 300ms ease',
-          pointerEvents: revealed ? 'auto' : 'none',
-          userSelect: revealed ? 'auto' : 'none',
+          pointerEvents: open ? 'auto' : 'none',
+          userSelect: open ? 'auto' : 'none',
         }}
       >
         {children}
       </div>
       <AnimatePresence>
-        {!revealed ? (
+        {!open ? (
           <motion.button
             type="button"
             initial={{ opacity: 1 }}
@@ -364,6 +368,125 @@ function IntimateReveal({ children }: { children: ReactNode }) {
           </motion.button>
         ) : null}
       </AnimatePresence>
+    </div>
+  )
+}
+
+function cloneObsDoc(doc: ObservationNotesDoc): ObservationNotesDoc {
+  return JSON.parse(JSON.stringify(doc)) as ObservationNotesDoc
+}
+
+function radarAxesSummary(block: ObservationNotesDoc['personalityRadar']): string {
+  return block.axes.map((a) => `${a.label}${a.value}`).join(' · ')
+}
+
+function collectManualEditDiffs(before: ObservationNotesDoc, after: ObservationNotesDoc): ObservationFieldDiff[] {
+  const diffs: ObservationFieldDiff[] = []
+  const push = (path: string, label: string, previousText: string, currentText: string) => {
+    if ((previousText || '').trim() === (currentText || '').trim()) return
+    diffs.push({ path, label, previousText, currentText })
+  }
+  for (const meta of BASIC_FIELD_META) {
+    push(`basic.${meta.key}`, meta.label, before.basic[meta.key].text, after.basic[meta.key].text)
+  }
+  for (const row of after.intimate) {
+    const prev = before.intimate.find((r) => r.key === row.key)?.field.text ?? ''
+    push(`intimate.${row.key}`, row.label, prev, row.field.text)
+  }
+  push('strengths', '优点', before.strengths.join('\n'), after.strengths.join('\n'))
+  push('weaknesses', '缺点', before.weaknesses.join('\n'), after.weaknesses.join('\n'))
+  push('remarkNickname', '线上备注', before.remarkNickname, after.remarkNickname)
+  push('preferredAddress', '喜欢的称呼', before.preferredAddress, after.preferredAddress)
+  push('overallEvaluation', '总体评价', before.overallEvaluation, after.overallEvaluation)
+  push('affection', '好感', String(before.affection), String(after.affection))
+  push('relationshipLabel', '关系标签', before.relationshipLabel, after.relationshipLabel)
+  push('personalityRadar', '人格倾向', radarAxesSummary(before.personalityRadar), radarAxesSummary(after.personalityRadar))
+  push(
+    'personalityRadar.note',
+    '人格评语',
+    before.personalityRadar.note?.trim() || '',
+    after.personalityRadar.note?.trim() || '',
+  )
+  push('abilityRadar', '内在能力', radarAxesSummary(before.abilityRadar), radarAxesSummary(after.abilityRadar))
+  push(
+    'abilityRadar.note',
+    '能力评语',
+    before.abilityRadar.note?.trim() || '',
+    after.abilityRadar.note?.trim() || '',
+  )
+  return diffs
+}
+
+function ObsEditTextarea({
+  value,
+  onChange,
+  placeholder,
+  rows = 2,
+  larger,
+}: {
+  value: string
+  onChange: (next: string) => void
+  placeholder?: string
+  rows?: number
+  larger?: boolean
+}) {
+  return (
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={rows}
+      className="w-full resize-y rounded-[8px] px-2.5 py-2 outline-none"
+      style={{
+        color: OBS_NOTES.ink,
+        fontFamily: OBS_NOTES_FONT,
+        fontSize: larger ? 14 : 13,
+        lineHeight: 1.55,
+        background: 'rgba(255,255,255,0.85)',
+        border: `1px solid ${OBS_NOTES.coolLine}`,
+        minHeight: rows * 22,
+      }}
+    />
+  )
+}
+
+function ObsEditNumberRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: number
+  onChange: (n: number) => void
+}) {
+  return (
+    <div className="flex items-center gap-2 py-1.5">
+      <span className="w-[72px] shrink-0 text-[12px]" style={{ color: OBS_NOTES.inkSoft }}>
+        {label}
+      </span>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={value}
+        onChange={(e) => onChange(clampPct(Number(e.target.value)))}
+        className="min-w-0 flex-1"
+        aria-label={label}
+      />
+      <input
+        type="number"
+        min={0}
+        max={100}
+        value={value}
+        onChange={(e) => onChange(clampPct(Number(e.target.value)))}
+        className="w-12 shrink-0 rounded-[6px] px-1 py-1 text-center text-[12px] outline-none tabular-nums"
+        style={{
+          color: OBS_NOTES.ink,
+          border: `1px solid ${OBS_NOTES.coolLine}`,
+          background: 'rgba(255,255,255,0.85)',
+          fontFamily: OBS_NOTES_FONT,
+        }}
+      />
     </div>
   )
 }
@@ -612,6 +735,9 @@ export function ObservationNotesScreen({
   const [manualBusy, setManualBusy] = useState(false)
   const [manualFeedback, setManualFeedback] = useState<string | null>(null)
   const [manualConfirmOpen, setManualConfirmOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<ObservationNotesDoc | null>(null)
+  const [editSaving, setEditSaving] = useState(false)
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [coachOpen, setCoachOpen] = useState(false)
   const [coachStepIndex, setCoachStepIndex] = useState(0)
@@ -624,6 +750,7 @@ export function ObservationNotesScreen({
   })
   const hand = useMemo(() => obsMarginaliaStyle(handStack), [handStack])
   const remarkStyle = useMemo(() => obsRemarkStyle(handStack), [handStack])
+  const viewDoc = editing && draft ? draft : doc
 
   const startLiveCoach = useCallback(() => {
     setCoachStepIndex(0)
@@ -654,6 +781,9 @@ export function ObservationNotesScreen({
       setManualBusy(false)
       setManualFeedback(null)
       setManualConfirmOpen(false)
+      setEditing(false)
+      setDraft(null)
+      setEditSaving(false)
       setTutorialOpen(false)
       setCoachOpen(false)
       setCoachStepIndex(0)
@@ -665,17 +795,17 @@ export function ObservationNotesScreen({
   }, [open, doc?.updatedAt])
 
   useEffect(() => {
-    if (!open || !doc || markedRef.current) return
+    if (!open || !doc || markedRef.current || editing) return
     markedRef.current = true
     void markObservationNotesSeen(doc).then(onDocChange)
-  }, [open, doc, onDocChange])
+  }, [open, doc, onDocChange, editing])
 
   const onConsumed = useCallback((_path: string) => {}, [])
 
   const showUpdateBanner = useMemo(() => {
-    if (!doc) return false
+    if (!doc || editing) return false
     return doc.pendingDiffs.length > 0
-  }, [doc])
+  }, [doc, editing])
 
   const jumpToFirstDiff = useCallback(() => {
     if (!doc?.pendingDiffs[0]) return
@@ -684,8 +814,83 @@ export function ObservationNotesScreen({
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [doc])
 
+  const startManualEdit = useCallback(() => {
+    if (!doc || manualBusy || editSaving) return
+    setManualConfirmOpen(false)
+    setHistoryOpen(false)
+    setDraft(cloneObsDoc(doc))
+    setEditing(true)
+    setManualFeedback(null)
+  }, [doc, manualBusy, editSaving])
+
+  const cancelManualEdit = useCallback(() => {
+    if (editSaving) return
+    setEditing(false)
+    setDraft(null)
+  }, [editSaving])
+
+  const saveManualEdit = useCallback(async () => {
+    if (!doc || !draft || editSaving) return
+    setEditSaving(true)
+    try {
+      const affection = clampPct(draft.affection)
+      const prepared: ObservationNotesDoc = {
+        ...draft,
+        affection,
+        affectionStageLabel: resolveAffectionStageDisplay(draft.relationshipLabel),
+        personalityRadar: {
+          ...draft.personalityRadar,
+          axes: draft.personalityRadar.axes.map((a) => ({ ...a, value: clampPct(a.value) })),
+          judged: true,
+        },
+        abilityRadar: {
+          ...draft.abilityRadar,
+          axes: draft.abilityRadar.axes.map((a) => ({ ...a, value: clampPct(a.value) })),
+          judged: true,
+        },
+        strengths: draft.strengths.map((s) => s.trim()).filter(Boolean),
+        weaknesses: draft.weaknesses.map((s) => s.trim()).filter(Boolean),
+      }
+      const diffs = collectManualEditDiffs(doc, prepared)
+      const now = Date.now()
+      const next: ObservationNotesDoc = {
+        ...prepared,
+        updatedAt: now,
+        pendingDiffs: diffs,
+        changeHistory:
+          diffs.length > 0
+            ? [
+                {
+                  id: `manual-${now}`,
+                  at: now,
+                  summary: `手动编辑 · ${diffs.length} 处`,
+                  diffs,
+                },
+                ...doc.changeHistory,
+              ].slice(0, 40)
+            : doc.changeHistory,
+        lastSeenAt: now,
+      }
+      await saveObservationNotes(next)
+      markedRef.current = true
+      onDocChange(next)
+      setEditing(false)
+      setDraft(null)
+      setManualFeedback(diffs.length > 0 ? `已保存 · ${diffs.length} 处有变化` : '已保存（无变化）')
+    } catch (e) {
+      const msg = e instanceof Error && e.message.trim() ? e.message.trim() : '保存失败'
+      setManualFeedback(msg)
+    } finally {
+      setEditSaving(false)
+    }
+  }, [doc, draft, editSaving, onDocChange])
+
+  const patchDraft = useCallback((updater: (prev: ObservationNotesDoc) => ObservationNotesDoc) => {
+    setDraft((prev) => (prev ? updater(prev) : prev))
+  }, [])
+
   const runManualUpdate = useCallback(async () => {
-    if (!doc || manualBusy) return
+    if (!doc || manualBusy || editing) return
     if (!wechatCtx?.apiConfig?.apiUrl?.trim()) {
       setManualFeedback('未配置 AI，无法手动更新')
       return
@@ -720,16 +925,16 @@ export function ObservationNotesScreen({
     } finally {
       setManualBusy(false)
     }
-  }, [doc, manualBusy, onDocChange, wechatCtx])
+  }, [doc, manualBusy, editing, onDocChange, wechatCtx])
 
   const requestManualUpdate = useCallback(() => {
-    if (!doc || manualBusy) return
+    if (!doc || manualBusy || editing) return
     if (!wechatCtx?.apiConfig?.apiUrl?.trim()) {
       setManualFeedback('未配置 AI，无法手动更新')
       return
     }
     setManualConfirmOpen(true)
-  }, [doc, manualBusy, wechatCtx])
+  }, [doc, manualBusy, editing, wechatCtx])
 
   return (
     <>
@@ -760,7 +965,13 @@ export function ObservationNotesScreen({
                 type="button"
                 aria-label="返回"
                 className="relative z-[1] flex size-10 shrink-0 items-center justify-center"
-                onClick={onClose}
+                onClick={() => {
+                  if (editing) {
+                    cancelManualEdit()
+                    return
+                  }
+                  onClose()
+                }}
               >
                 <ChevronLeft className="size-5" style={{ color: OBS_NOTES.ink }} />
               </Pressable>
@@ -770,16 +981,16 @@ export function ObservationNotesScreen({
                   className="truncate text-[16px] font-semibold tracking-[0.12em]"
                   style={{ color: OBS_NOTES.ink }}
                 >
-                  {OBS_NOTES_HEADER.zh}
+                  {editing ? '编辑侧写' : OBS_NOTES_HEADER.zh}
                 </p>
                 <p
                   className="mt-0.5 flex items-center justify-center gap-1.5 truncate"
                   style={{ color: OBS_NOTES.mist }}
                 >
                   <span style={{ ...OBS_NOTES_EN_STYLE, fontSize: 8, letterSpacing: '0.18em' }}>
-                    {OBS_NOTES_HEADER.en}
+                    {editing ? 'MANUAL EDIT' : OBS_NOTES_HEADER.en}
                   </span>
-                  {doc ? (
+                  {doc && !editing ? (
                     <>
                       <span aria-hidden style={{ opacity: 0.45 }}>
                         ·
@@ -796,61 +1007,112 @@ export function ObservationNotesScreen({
             </div>
 
             <div
-              className={`grid gap-2 px-3 pb-2.5 ${doc ? 'grid-cols-3' : 'grid-cols-1'}`}
+              className={`grid gap-2 px-3 pb-2.5 ${doc ? (editing ? 'grid-cols-2' : 'grid-cols-2') : 'grid-cols-1'}`}
             >
-              <button
-                type="button"
-                onClick={() => setTutorialOpen(true)}
-                className="flex h-8 w-full items-center justify-center gap-1 rounded-full px-2 transition-colors active:opacity-80"
-                style={{
-                  background: OBS_NOTES.garnetSoftBg,
-                  color: OBS_NOTES.garnet,
-                  border: `1px solid rgba(139,26,26,0.22)`,
-                }}
-                aria-label="私藏侧写教程"
-                {...{ [OBS_NOTES_COACH_TARGET_ATTR]: 'obs-detail-tutorial' }}
-              >
-                <BookOpen className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden />
-                <span className="text-[11px] font-medium tracking-wide">教程</span>
-              </button>
-              {doc ? (
+              {editing ? (
                 <>
                   <Pressable
                     type="button"
-                    aria-label="手动更新侧写"
-                    disabled={manualBusy}
-                    onClick={() => requestManualUpdate()}
+                    aria-label="取消编辑"
+                    disabled={editSaving}
+                    onClick={cancelManualEdit}
                     className="flex h-8 w-full items-center justify-center gap-1 rounded-full px-2 active:opacity-80 disabled:opacity-55"
                     style={{
-                      color: OBS_NOTES.garnet,
-                      background: OBS_NOTES.garnetSoftBg,
+                      color: OBS_NOTES.inkSoft,
+                      background: OBS_NOTES.paperSoft,
+                      border: `1px solid ${OBS_NOTES.hairline}`,
                     }}
-                    {...{ [OBS_NOTES_COACH_TARGET_ATTR]: 'obs-detail-manual' }}
                   >
-                    <RefreshCw
-                      className={`size-3.5 shrink-0 ${manualBusy ? 'animate-spin' : ''}`}
-                      strokeWidth={1.7}
-                    />
-                    <span className="text-[11px] font-semibold tracking-wide">
-                      {manualBusy ? '整理中' : '手动更新'}
-                    </span>
+                    <span className="text-[11px] font-semibold tracking-wide">取消</span>
                   </Pressable>
                   <Pressable
                     type="button"
-                    aria-label="查看更新历史"
-                    onClick={() => setHistoryOpen(true)}
-                    className="flex h-8 w-full items-center justify-center gap-1 rounded-full px-2 active:opacity-80"
+                    aria-label="保存编辑"
+                    disabled={editSaving || !draft}
+                    onClick={() => void saveManualEdit()}
+                    className="flex h-8 w-full items-center justify-center gap-1 rounded-full px-2 active:opacity-80 disabled:opacity-55"
                     style={{
-                      color: OBS_NOTES.garnet,
-                      background: OBS_NOTES.garnetSoftBg,
+                      color: '#fff',
+                      background: OBS_NOTES.garnet,
                     }}
-                    {...{ [OBS_NOTES_COACH_TARGET_ATTR]: 'obs-detail-history' }}
                   >
-                    <History className="size-3.5 shrink-0" strokeWidth={1.7} />
-                    <span className="text-[11px] font-semibold tracking-wide">历史</span>
+                    <span className="text-[11px] font-semibold tracking-wide">
+                      {editSaving ? '保存中' : '保存'}
+                    </span>
                   </Pressable>
                 </>
-              ) : null}
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setTutorialOpen(true)}
+                    className="flex h-8 w-full items-center justify-center gap-1 rounded-full px-2 transition-colors active:opacity-80"
+                    style={{
+                      background: OBS_NOTES.garnetSoftBg,
+                      color: OBS_NOTES.garnet,
+                      border: `1px solid rgba(139,26,26,0.22)`,
+                    }}
+                    aria-label="私藏侧写教程"
+                    {...{ [OBS_NOTES_COACH_TARGET_ATTR]: 'obs-detail-tutorial' }}
+                  >
+                    <BookOpen className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden />
+                    <span className="text-[11px] font-medium tracking-wide">教程</span>
+                  </button>
+                  {doc ? (
+                    <>
+                      <Pressable
+                        type="button"
+                        aria-label="手动编辑侧写内容"
+                        disabled={manualBusy}
+                        onClick={startManualEdit}
+                        className="flex h-8 w-full items-center justify-center gap-1 rounded-full px-2 active:opacity-80 disabled:opacity-55"
+                        style={{
+                          color: OBS_NOTES.garnet,
+                          background: OBS_NOTES.garnetSoftBg,
+                        }}
+                        {...{ [OBS_NOTES_COACH_TARGET_ATTR]: 'obs-detail-edit' }}
+                      >
+                        <Pencil className="size-3.5 shrink-0" strokeWidth={1.7} />
+                        <span className="text-[11px] font-semibold tracking-wide">编辑</span>
+                      </Pressable>
+                      <Pressable
+                        type="button"
+                        aria-label="手动更新侧写"
+                        disabled={manualBusy}
+                        onClick={() => requestManualUpdate()}
+                        className="flex h-8 w-full items-center justify-center gap-1 rounded-full px-2 active:opacity-80 disabled:opacity-55"
+                        style={{
+                          color: OBS_NOTES.garnet,
+                          background: OBS_NOTES.garnetSoftBg,
+                        }}
+                        {...{ [OBS_NOTES_COACH_TARGET_ATTR]: 'obs-detail-manual' }}
+                      >
+                        <RefreshCw
+                          className={`size-3.5 shrink-0 ${manualBusy ? 'animate-spin' : ''}`}
+                          strokeWidth={1.7}
+                        />
+                        <span className="text-[11px] font-semibold tracking-wide">
+                          {manualBusy ? '整理中' : '手动更新'}
+                        </span>
+                      </Pressable>
+                      <Pressable
+                        type="button"
+                        aria-label="查看更新历史"
+                        onClick={() => setHistoryOpen(true)}
+                        className="flex h-8 w-full items-center justify-center gap-1 rounded-full px-2 active:opacity-80"
+                        style={{
+                          color: OBS_NOTES.garnet,
+                          background: OBS_NOTES.garnetSoftBg,
+                        }}
+                        {...{ [OBS_NOTES_COACH_TARGET_ATTR]: 'obs-detail-history' }}
+                      >
+                        <History className="size-3.5 shrink-0" strokeWidth={1.7} />
+                        <span className="text-[11px] font-semibold tracking-wide">历史</span>
+                      </Pressable>
+                    </>
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
 
@@ -867,15 +1129,29 @@ export function ObservationNotesScreen({
             </div>
           ) : null}
 
-          {!doc ? (
+          {!viewDoc ? (
             <div className="flex flex-1 items-center justify-center px-6">
               <p className="text-[13px]" style={{ color: OBS_NOTES.mist }}>
                 还没有整理出关于你的笔记。
               </p>
             </div>
           ) : (
-            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(28px,env(safe-area-inset-bottom))]">
-              {showUpdateBanner ? (
+            <div
+              ref={scrollRef}
+              className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(28px,env(safe-area-inset-bottom))]"
+            >
+              {editing ? (
+                <div
+                  className="mb-3 mt-3 rounded-[10px] px-3 py-2 text-[12px] leading-snug"
+                  style={{
+                    color: OBS_NOTES.garnet,
+                    background: OBS_NOTES.garnetSoftBg,
+                    border: `1px solid rgba(92,63,78,0.22)`,
+                  }}
+                >
+                  正在手动编辑 · 改完点上方「保存」；不影响「手动更新」的 AI 整份重写
+                </div>
+              ) : showUpdateBanner ? (
                 <Pressable
                   type="button"
                   onClick={jumpToFirstDiff}
@@ -886,7 +1162,7 @@ export function ObservationNotesScreen({
                     border: `1px solid rgba(92,63,78,0.22)`,
                   }}
                 >
-                  较上次更新，有 {doc.pendingDiffs.length} 项内容发生了变化 · 点击跳转
+                  较上次更新，有 {doc!.pendingDiffs.length} 项内容发生了变化 · 点击跳转
                 </Pressable>
               ) : (
                 <div className="h-3" aria-hidden />
@@ -896,16 +1172,48 @@ export function ObservationNotesScreen({
                 <FolderSection title="基础认知" index="01" defaultOpen>
                   {BASIC_FIELD_META.map((meta) => {
                     const path = `basic.${meta.key}`
-                    const field = doc.basic[meta.key]
+                    const field = viewDoc.basic[meta.key]
                     return (
                       <div key={meta.key} id={`obs-path-${path.replace(/\./g, '-')}`}>
-                        <DiffableRow path={path} label={meta.label} en={meta.en} doc={doc} onConsumed={onConsumed}>
-                          <FieldValueText
-                            field={field}
-                            handStack={handStack}
-                            forceHand={meta.key === 'gender'}
-                          />
-                        </DiffableRow>
+                        {editing ? (
+                          <div className="flex items-start gap-3 py-2.5">
+                            <div className="w-[72px] shrink-0 pt-1.5">
+                              <p style={OBS_NOTES_LABEL_STYLE}>{meta.en}</p>
+                              <p className="mt-0.5 text-[11px]" style={{ color: OBS_NOTES.mist }}>
+                                {meta.label}
+                              </p>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <ObsEditTextarea
+                                value={field.text}
+                                onChange={(text) =>
+                                  patchDraft((d) => ({
+                                    ...d,
+                                    basic: {
+                                      ...d.basic,
+                                      [meta.key]: { ...d.basic[meta.key], text },
+                                    },
+                                  }))
+                                }
+                                placeholder="尚不清楚"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <DiffableRow
+                            path={path}
+                            label={meta.label}
+                            en={meta.en}
+                            doc={viewDoc}
+                            onConsumed={onConsumed}
+                          >
+                            <FieldValueText
+                              field={field}
+                              handStack={handStack}
+                              forceHand={meta.key === 'gender'}
+                            />
+                          </DiffableRow>
+                        )}
                         <div style={{ height: 1, background: OBS_NOTES.hairline, opacity: 0.7 }} />
                       </div>
                     )
@@ -916,7 +1224,7 @@ export function ObservationNotesScreen({
                   title="亲密偏好认知"
                   index="02"
                   en="SEXUAL INTIMACY"
-                  defaultOpen={false}
+                  defaultOpen={editing}
                   titleRight={
                     <Lock className="size-3.5" strokeWidth={1.6} style={{ color: OBS_NOTES.mist }} aria-hidden />
                   }
@@ -924,15 +1232,37 @@ export function ObservationNotesScreen({
                   <p className="mb-2 px-1 text-[11px] leading-relaxed" style={{ color: OBS_NOTES.mist }}>
                     性向身体亲密：节奏偏好 · 部位 XP · 敏感处 · 具体方式（非感情节奏）
                   </p>
-                  <IntimateReveal>
-                    {doc.intimate.map((row, idx) => {
+                  <IntimateReveal forceReveal={editing}>
+                    {viewDoc.intimate.map((row, idx) => {
                       const path = `intimate.${row.key}`
                       return (
                         <div key={row.key} id={`obs-path-${path.replace(/\./g, '-')}`}>
-                          <DiffableRow path={path} label={row.label} doc={doc} onConsumed={onConsumed}>
-                            <FieldValueText field={row.field} larger handStack={handStack} />
-                          </DiffableRow>
-                          {idx < doc.intimate.length - 1 ? (
+                          {editing ? (
+                            <div className="py-2.5">
+                              <p className="mb-1.5 text-[12px] font-medium" style={{ color: OBS_NOTES.inkSoft }}>
+                                {row.label}
+                              </p>
+                              <ObsEditTextarea
+                                value={row.field.text}
+                                larger
+                                rows={3}
+                                onChange={(text) =>
+                                  patchDraft((d) => ({
+                                    ...d,
+                                    intimate: d.intimate.map((r) =>
+                                      r.key === row.key ? { ...r, field: { ...r.field, text } } : r,
+                                    ),
+                                  }))
+                                }
+                                placeholder="尚不清楚"
+                              />
+                            </div>
+                          ) : (
+                            <DiffableRow path={path} label={row.label} doc={viewDoc} onConsumed={onConsumed}>
+                              <FieldValueText field={row.field} larger handStack={handStack} />
+                            </DiffableRow>
+                          )}
+                          {idx < viewDoc.intimate.length - 1 ? (
                             <div style={{ height: 1, background: OBS_NOTES.hairline, opacity: 0.7 }} />
                           ) : null}
                         </div>
@@ -941,66 +1271,137 @@ export function ObservationNotesScreen({
                   </IntimateReveal>
                 </FolderSection>
 
-                <FolderSection title="优点与缺点" index="03" defaultOpen={false}>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p style={{ ...OBS_NOTES_EN_STYLE, marginBottom: 4 }}>VIRTUES</p>
-                      <p className="mb-2.5 text-[12px] font-medium" style={{ color: OBS_NOTES.inkSoft }}>
-                        优点
-                      </p>
-                      <ul className="space-y-2.5">
-                        {doc.strengths.map((s, i) => (
-                          <li key={`s-${i}`} className="flex gap-2">
-                            <span
-                              className="mt-[7px] size-[4px] shrink-0 rounded-full"
-                              style={{ background: OBS_NOTES.garnet }}
-                            />
-                            <p className="text-[13px] leading-relaxed" style={hand}>
-                              {s}
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
+                <FolderSection title="优点与缺点" index="03" defaultOpen={editing || false}>
+                  {editing ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p style={{ ...OBS_NOTES_EN_STYLE, marginBottom: 4 }}>VIRTUES</p>
+                        <p className="mb-2 text-[12px] font-medium" style={{ color: OBS_NOTES.inkSoft }}>
+                          优点（一行一条）
+                        </p>
+                        <ObsEditTextarea
+                          value={viewDoc.strengths.join('\n')}
+                          rows={5}
+                          onChange={(text) =>
+                            patchDraft((d) => ({
+                              ...d,
+                              strengths: text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean),
+                            }))
+                          }
+                          placeholder="优点…"
+                        />
+                      </div>
+                      <div>
+                        <p style={{ ...OBS_NOTES_EN_STYLE, marginBottom: 4 }}>FLAWS</p>
+                        <p className="mb-2 text-[12px] font-medium" style={{ color: OBS_NOTES.inkSoft }}>
+                          缺点（一行一条）
+                        </p>
+                        <ObsEditTextarea
+                          value={viewDoc.weaknesses.join('\n')}
+                          rows={5}
+                          onChange={(text) =>
+                            patchDraft((d) => ({
+                              ...d,
+                              weaknesses: text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean),
+                            }))
+                          }
+                          placeholder="缺点…"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <p style={{ ...OBS_NOTES_EN_STYLE, marginBottom: 4 }}>FLAWS</p>
-                      <p className="mb-2.5 text-[12px] font-medium" style={{ color: OBS_NOTES.inkSoft }}>
-                        缺点
-                      </p>
-                      <ul className="space-y-2.5">
-                        {doc.weaknesses.map((s, i) => (
-                          <li key={`w-${i}`} className="flex gap-2">
-                            <span
-                              className="mt-[7px] size-[4px] shrink-0 rounded-full"
-                              style={{ background: OBS_NOTES.garnet }}
-                            />
-                            <p className="text-[13px] leading-relaxed" style={hand}>
-                              {s}
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p style={{ ...OBS_NOTES_EN_STYLE, marginBottom: 4 }}>VIRTUES</p>
+                        <p className="mb-2.5 text-[12px] font-medium" style={{ color: OBS_NOTES.inkSoft }}>
+                          优点
+                        </p>
+                        <ul className="space-y-2.5">
+                          {viewDoc.strengths.map((s, i) => (
+                            <li key={`s-${i}`} className="flex gap-2">
+                              <span
+                                className="mt-[7px] size-[4px] shrink-0 rounded-full"
+                                style={{ background: OBS_NOTES.garnet }}
+                              />
+                              <p className="text-[13px] leading-relaxed" style={hand}>
+                                {s}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <p style={{ ...OBS_NOTES_EN_STYLE, marginBottom: 4 }}>FLAWS</p>
+                        <p className="mb-2.5 text-[12px] font-medium" style={{ color: OBS_NOTES.inkSoft }}>
+                          缺点
+                        </p>
+                        <ul className="space-y-2.5">
+                          {viewDoc.weaknesses.map((s, i) => (
+                            <li key={`w-${i}`} className="flex gap-2">
+                              <span
+                                className="mt-[7px] size-[4px] shrink-0 rounded-full"
+                                style={{ background: OBS_NOTES.garnet }}
+                              />
+                              <p className="text-[13px] leading-relaxed" style={hand}>
+                                {s}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </FolderSection>
 
                 <div id="obs-path-remarkNickname">
-                  <FolderSection title="给你的线上备注" index="04" defaultOpen={false}>
-                    <DiffableRow path="remarkNickname" label="备注" en="ALIAS" doc={doc} onConsumed={onConsumed}>
-                      <p className="text-[18px] leading-snug" style={{ ...remarkStyle, fontSize: 18 }}>
-                        {doc.remarkNickname.trim() || '尚未起备注（深爱可宝宝/宝贝；勿用XX狗/猫）'}
-                      </p>
-                    </DiffableRow>
+                  <FolderSection title="给你的线上备注" index="04" defaultOpen={editing || false}>
+                    {editing ? (
+                      <ObsEditTextarea
+                        value={viewDoc.remarkNickname}
+                        rows={2}
+                        larger
+                        onChange={(text) => patchDraft((d) => ({ ...d, remarkNickname: text }))}
+                        placeholder="通讯录备注…"
+                      />
+                    ) : (
+                      <DiffableRow
+                        path="remarkNickname"
+                        label="备注"
+                        en="ALIAS"
+                        doc={viewDoc}
+                        onConsumed={onConsumed}
+                      >
+                        <p className="text-[18px] leading-snug" style={{ ...remarkStyle, fontSize: 18 }}>
+                          {viewDoc.remarkNickname.trim() || '尚未起备注（深爱可宝宝/宝贝；勿用XX狗/猫）'}
+                        </p>
+                      </DiffableRow>
+                    )}
                   </FolderSection>
                 </div>
 
                 <div id="obs-path-preferredAddress">
-                  <FolderSection title="你喜欢的称呼" index="05" defaultOpen={false}>
-                    <DiffableRow path="preferredAddress" label="称呼" en="ADDRESS" doc={doc} onConsumed={onConsumed}>
-                      <p className="text-[16px] leading-relaxed" style={{ ...hand, fontSize: 16 }}>
-                        {doc.preferredAddress.trim() || '还没想好怎么叫你。'}
-                      </p>
-                    </DiffableRow>
+                  <FolderSection title="你喜欢的称呼" index="05" defaultOpen={editing || false}>
+                    {editing ? (
+                      <ObsEditTextarea
+                        value={viewDoc.preferredAddress}
+                        rows={2}
+                        larger
+                        onChange={(text) => patchDraft((d) => ({ ...d, preferredAddress: text }))}
+                        placeholder="平时怎么叫你…"
+                      />
+                    ) : (
+                      <DiffableRow
+                        path="preferredAddress"
+                        label="称呼"
+                        en="ADDRESS"
+                        doc={viewDoc}
+                        onConsumed={onConsumed}
+                      >
+                        <p className="text-[16px] leading-relaxed" style={{ ...hand, fontSize: 16 }}>
+                          {viewDoc.preferredAddress.trim() || '还没想好怎么叫你。'}
+                        </p>
+                      </DiffableRow>
+                    )}
                   </FolderSection>
                 </div>
 
@@ -1009,71 +1410,203 @@ export function ObservationNotesScreen({
                   index="06"
                   clip={false}
                   defaultOpen={
-                    !doc.personalityRadar.judged ||
-                    !doc.abilityRadar.judged ||
-                    !doc.personalityRadar.note?.trim() ||
-                    !doc.abilityRadar.note?.trim() ||
-                    isPathPending(doc, 'personalityRadar') ||
-                    isPathPending(doc, 'abilityRadar')
+                    editing ||
+                    !viewDoc.personalityRadar.judged ||
+                    !viewDoc.abilityRadar.judged ||
+                    !viewDoc.personalityRadar.note?.trim() ||
+                    !viewDoc.abilityRadar.note?.trim() ||
+                    isPathPending(viewDoc, 'personalityRadar') ||
+                    isPathPending(viewDoc, 'abilityRadar')
                   }
                 >
-                  <div id="obs-path-personalityRadar" className="flex flex-col gap-8 overflow-visible px-1 py-1">
-                    <ObservationNotesRadar
-                      title="人格倾向判定 · MBTI"
-                      block={doc.personalityRadar}
-                      playEntrance={playEntrance}
-                      handStack={handStack}
-                    />
-                    <div style={{ height: 1, background: OBS_NOTES.hairline }} />
-                    <div id="obs-path-abilityRadar">
+                  {editing ? (
+                    <div className="flex flex-col gap-6 px-1 py-1">
+                      <div>
+                        <p className="mb-2 text-[13px] font-semibold" style={{ color: OBS_NOTES.ink }}>
+                          人格倾向判定 · MBTI
+                        </p>
+                        {viewDoc.personalityRadar.axes.map((axis, i) => (
+                          <ObsEditNumberRow
+                            key={`p-${axis.label}`}
+                            label={axis.label}
+                            value={axis.value}
+                            onChange={(value) =>
+                              patchDraft((d) => {
+                                const axes = d.personalityRadar.axes.map((a, idx) =>
+                                  idx === i ? { ...a, value } : a,
+                                )
+                                return {
+                                  ...d,
+                                  personalityRadar: { ...d.personalityRadar, axes, judged: true },
+                                }
+                              })
+                            }
+                          />
+                        ))}
+                        <p className="mb-1 mt-2 text-[11px]" style={{ color: OBS_NOTES.mist }}>
+                          人格评语
+                        </p>
+                        <ObsEditTextarea
+                          value={viewDoc.personalityRadar.note || ''}
+                          rows={2}
+                          onChange={(note) =>
+                            patchDraft((d) => ({
+                              ...d,
+                              personalityRadar: { ...d.personalityRadar, note, judged: true },
+                            }))
+                          }
+                          placeholder="手记小结…"
+                        />
+                      </div>
+                      <div style={{ height: 1, background: OBS_NOTES.hairline }} />
+                      <div>
+                        <p className="mb-2 text-[13px] font-semibold" style={{ color: OBS_NOTES.ink }}>
+                          内在能力判断
+                        </p>
+                        {viewDoc.abilityRadar.axes.map((axis, i) => (
+                          <ObsEditNumberRow
+                            key={`a-${axis.label}`}
+                            label={axis.label}
+                            value={axis.value}
+                            onChange={(value) =>
+                              patchDraft((d) => {
+                                const axes = d.abilityRadar.axes.map((a, idx) =>
+                                  idx === i ? { ...a, value } : a,
+                                )
+                                return {
+                                  ...d,
+                                  abilityRadar: { ...d.abilityRadar, axes, judged: true },
+                                }
+                              })
+                            }
+                          />
+                        ))}
+                        <p className="mb-1 mt-2 text-[11px]" style={{ color: OBS_NOTES.mist }}>
+                          能力评语
+                        </p>
+                        <ObsEditTextarea
+                          value={viewDoc.abilityRadar.note || ''}
+                          rows={2}
+                          onChange={(note) =>
+                            patchDraft((d) => ({
+                              ...d,
+                              abilityRadar: { ...d.abilityRadar, note, judged: true },
+                            }))
+                          }
+                          placeholder="手记小结…"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div id="obs-path-personalityRadar" className="flex flex-col gap-8 overflow-visible px-1 py-1">
                       <ObservationNotesRadar
-                        title="内在能力判断"
-                        block={doc.abilityRadar}
+                        title="人格倾向判定 · MBTI"
+                        block={viewDoc.personalityRadar}
                         playEntrance={playEntrance}
                         handStack={handStack}
                       />
+                      <div style={{ height: 1, background: OBS_NOTES.hairline }} />
+                      <div id="obs-path-abilityRadar">
+                        <ObservationNotesRadar
+                          title="内在能力判断"
+                          block={viewDoc.abilityRadar}
+                          playEntrance={playEntrance}
+                          handStack={handStack}
+                        />
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </FolderSection>
 
-                <FolderSection title="总体评价" index="07" en="CLOSING LETTER">
-                  <p className="text-[16px] leading-[1.8]" style={{ ...hand, fontSize: 16, lineHeight: 1.8 }}>
-                    {doc.overallEvaluation.trim() || '……还在想怎么写。'}
-                  </p>
-                  <p
-                    className="mt-5 text-right text-[15px] font-medium not-italic"
-                    style={{ color: OBS_NOTES.ink, fontStyle: 'normal', fontFamily: OBS_NOTES_FONT }}
-                  >
-                    ——{doc.charDisplayName}
-                  </p>
+                <FolderSection title="总体评价" index="07" en="CLOSING LETTER" defaultOpen>
+                  {editing ? (
+                    <div className="space-y-4">
+                      <ObsEditTextarea
+                        value={viewDoc.overallEvaluation}
+                        rows={5}
+                        larger
+                        onChange={(text) => patchDraft((d) => ({ ...d, overallEvaluation: text }))}
+                        placeholder="总体评价…"
+                      />
+                      <div>
+                        <p className="mb-1 text-[11px]" style={{ color: OBS_NOTES.mist }}>
+                          好感 {viewDoc.affection}
+                          {(() => {
+                            const stage = resolveAffectionStageDisplay(viewDoc.relationshipLabel)
+                            return stage ? ` · ${stage}` : ''
+                          })()}
+                        </p>
+                        <ObsEditNumberRow
+                          label="好感"
+                          value={viewDoc.affection}
+                          onChange={(affection) =>
+                            patchDraft((d) => ({
+                              ...d,
+                              affection,
+                              affectionStageLabel: resolveAffectionStageDisplay(d.relationshipLabel),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-1 text-[11px]" style={{ color: OBS_NOTES.mist }}>
+                          关系标签
+                        </p>
+                        <ObsEditTextarea
+                          value={viewDoc.relationshipLabel}
+                          rows={1}
+                          onChange={(text) =>
+                            patchDraft((d) => ({
+                              ...d,
+                              relationshipLabel: text,
+                              affectionStageLabel: resolveAffectionStageDisplay(text),
+                            }))
+                          }
+                          placeholder="关系未明"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-[16px] leading-[1.8]" style={{ ...hand, fontSize: 16, lineHeight: 1.8 }}>
+                        {viewDoc.overallEvaluation.trim() || '……还在想怎么写。'}
+                      </p>
+                      <p
+                        className="mt-5 text-right text-[15px] font-medium not-italic"
+                        style={{ color: OBS_NOTES.ink, fontStyle: 'normal', fontFamily: OBS_NOTES_FONT }}
+                      >
+                        ——{viewDoc.charDisplayName}
+                      </p>
 
-                  <div className="mt-8">
-                    <ObservationAffectionBar
-                      value={doc.affection}
-                      stageLabel={doc.affectionStageLabel}
-                      playEntrance={playEntrance}
-                    />
-                  </div>
+                      <div className="mt-8">
+                        <ObservationAffectionBar
+                          value={viewDoc.affection}
+                          stageLabel={resolveAffectionStageDisplay(viewDoc.relationshipLabel)}
+                          playEntrance={playEntrance}
+                        />
+                      </div>
 
-                  <div className="mt-6 flex justify-center">
-                    <span
-                      className="rounded-full px-4 py-1.5 text-[13px] font-medium tracking-wide"
-                      style={{
-                        color: OBS_NOTES.garnet,
-                        border: `1px solid ${OBS_NOTES.garnet}`,
-                      }}
-                    >
-                      {doc.relationshipLabel}
-                    </span>
-                  </div>
+                      <div className="mt-6 flex justify-center">
+                        <span
+                          className="rounded-full px-4 py-1.5 text-[13px] font-medium tracking-wide"
+                          style={{
+                            color: OBS_NOTES.garnet,
+                            border: `1px solid ${OBS_NOTES.garnet}`,
+                          }}
+                        >
+                          {viewDoc.relationshipLabel}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </FolderSection>
               </div>
             </div>
           )}
 
-          {doc ? <HistorySheet open={historyOpen} onClose={() => setHistoryOpen(false)} doc={doc} /> : null}
+          {doc && !editing ? <HistorySheet open={historyOpen} onClose={() => setHistoryOpen(false)} doc={doc} /> : null}
 
-          {manualConfirmOpen ? (
+          {manualConfirmOpen && !editing ? (
             <div
               className="absolute inset-0 z-[80] flex items-center justify-center px-6"
               style={{ background: 'rgba(18, 20, 26, 0.42)' }}
@@ -1141,7 +1674,7 @@ export function ObservationNotesScreen({
         open={tutorialOpen && open}
         onClose={() => setTutorialOpen(false)}
         title="私藏侧写 · 档案说明"
-        subtitle="手动更新 · 历史 · 剧情回滚"
+        subtitle="编辑 · 手动更新 · 历史 · 剧情回滚"
         sections={OBS_NOTES_DETAIL_TUTORIAL_SECTIONS}
         onStartLiveCoach={() => {
           setTutorialOpen(false)

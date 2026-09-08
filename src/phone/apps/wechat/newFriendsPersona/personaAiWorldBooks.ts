@@ -7,8 +7,8 @@ export const PERSONA_AI_COMPACT_BOOK_TITLE = '角色人设档案'
 export const PERSONA_AI_COMPACT_BOOK_KEY = 'main'
 
 /**
- * 单本世界书固定 9 条（顺序即 item01–…），另恒含「过往感情史」序言（插在「亲密与恋爱观」后）。
- * 前 8 条默认序言介入；「对你现在」为尾声延展（可随剧情更新）。
+ * 单本世界书固定 11 条（顺序即 item01–…），另恒含「过往感情史」序言（插在「亲密与恋爱观」后）。
+ * 前 9 条默认序言介入；「对你的看法和态度」「对你的称呼」为尾声延展（可随剧情更新）。
  * 取向「可变」时另增「取向认同的当前快照」为尾声延展（插在「性格内核」后）。
  * 职业「可变」时另增「职业身份的当前快照」为尾声延展（插在「名片基础」后）。
  */
@@ -17,17 +17,25 @@ export const PERSONA_AI_COMPACT_ENTRY_NAMES = [
   '形象与气质',
   '性格内核',
   '能力与日常',
+  '口语习惯',
   '亲密与恋爱观',
   '人际与秘密',
   '周边NPC',
   '相遇羁绊',
-  '对你现在',
+  '对你的看法和态度',
+  '对你的称呼',
 ] as const
 
 export type PersonaAiCompactEntryName = (typeof PERSONA_AI_COMPACT_ENTRY_NAMES)[number]
 
-/** 尾声延展条目（对用户当下关系） */
-export const PERSONA_AI_TOWARD_USER_ENTRY_NAME: PersonaAiCompactEntryName = '对你现在'
+/** 尾声延展：对用户当下看法与态度（不含口语示例） */
+export const PERSONA_AI_TOWARD_USER_ENTRY_NAME: PersonaAiCompactEntryName = '对你的看法和态度'
+
+/** 尾声延展：只写对 {{user}} 怎么称呼（不含说话场景示例） */
+export const PERSONA_AI_USER_SPEECH_ENTRY_NAME: PersonaAiCompactEntryName = '对你的称呼'
+
+/** 序言：角色说话风格 + 中文场景引语（与「对你的称呼」完全分开） */
+export const PERSONA_AI_SPEECH_HABIT_ENTRY_NAME: PersonaAiCompactEntryName = '口语习惯'
 
 /** {{char}} 与 {{user}} 如何相识、及形成当下看法的成因（序言） */
 export const PERSONA_AI_MEETING_BOND_ENTRY_NAME: PersonaAiCompactEntryName = '相遇羁绊'
@@ -41,7 +49,7 @@ export const PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME = '过往感情史'
 export type PersonaAiEpilogueEntry = { name: string; content: string }
 
 /**
- * @deprecated 旧版 vol10 五条；新生成合并为「对你现在」。
+ * @deprecated 旧版 vol10 五条；新生成合并为「对你的看法和态度」等尾声。
  * 仍导出供旧档识别 / 尾声同步兼容。
  */
 export const PERSONA_AI_EPILOGUE_ENTRY_NAMES = [
@@ -52,7 +60,7 @@ export const PERSONA_AI_EPILOGUE_ENTRY_NAMES = [
   '如何赢得 {{char}} 的好感',
 ] as const
 
-/** 攻略向：现与「对你现在」同条 */
+/** 攻略向：现与「对你的看法和态度」同条 */
 export const PERSONA_AI_AFFECTION_GUIDE_EPILOGUE_NAME = PERSONA_AI_TOWARD_USER_ENTRY_NAME
 
 /**
@@ -87,8 +95,14 @@ export const PERSONA_AI_ORIENTATION_WORLD_BOOK_ITEM_NAME = PERSONA_AI_ORIENTATIO
 /** @deprecated */
 export const PERSONA_AI_INTIMATE_SPEECH_ITEM_NAME = '亲密口语习惯'
 
-/** @deprecated */
-export const PERSONA_AI_NSFW_WORLD_BOOK_ITEM_NAME = '亲密尺度与偏好（成人向）'
+/**
+ * NSFW 开启时单独写入的成人向条目（不并入「亲密与恋爱观」）。
+ * 写敏感点、亲密偏好、接吻/抚摸/前戏/性爱时的动作场景与口语；可荤。
+ */
+export const PERSONA_AI_NSFW_ENTRY_NAME = '亲密身体与性爱偏好'
+
+/** @deprecated 旧标题；识别时归并到 PERSONA_AI_NSFW_ENTRY_NAME */
+export const PERSONA_AI_NSFW_WORLD_BOOK_ITEM_NAME = PERSONA_AI_NSFW_ENTRY_NAME
 
 export function isPersonaAiOrientationEpilogueName(raw: string): boolean {
   const name = String(raw ?? '').trim()
@@ -111,7 +125,15 @@ export function isPersonaAiRelationshipHistoryEntryName(raw: string): boolean {
   return /过往感情|感情史|恋爱史|情史/.test(name) && !/亲密与恋爱观/.test(name)
 }
 
-/** 尾声模板：恒有「对你现在」；取向/职业可变时另含对应快照 */
+export function isPersonaAiNsfwEntryName(raw: string): boolean {
+  const name = String(raw ?? '').trim()
+  if (!name) return false
+  if (name === PERSONA_AI_NSFW_ENTRY_NAME) return true
+  if (name === '亲密尺度与偏好（成人向）') return true
+  return /亲密身体|性爱偏好|亲密尺度|成人向|NSFW|敏感点/.test(name) && !/亲密与恋爱观/.test(name)
+}
+
+/** 尾声模板：恒有看法态度 + 用语风格；取向/职业可变时另含对应快照 */
 export function getPersonaAiEpilogueEntryTemplates(
   orientationMutable?: boolean,
   occupationMutable?: boolean,
@@ -120,6 +142,7 @@ export function getPersonaAiEpilogueEntryTemplates(
   if (occupationMutable) list.push(PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME)
   if (orientationMutable) list.push(PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME)
   list.push(PERSONA_AI_TOWARD_USER_ENTRY_NAME)
+  list.push(PERSONA_AI_USER_SPEECH_ENTRY_NAME)
   return list
 }
 
@@ -174,42 +197,107 @@ function buildTowardUserDefault(relationToUser: string): string {
   const rel = relationToUser.trim() || '普通熟人'
   const crushLike = /暗恋|单相思|单方面/.test(rel)
   const crushRule = crushLike
-    ? `关系原文含暗恋/单相思时：「对你现在」须写清**心里喜欢** + **可见破绽**（在意、暗戳戳吃醋、别扭多留意等）；口头可说破也可嘴硬不说——跟人设走，但禁止写成「完全不在意的路人腔」。禁止越级写成已确认恋人的官宣口吻。`
+    ? `关系原文含暗恋/单相思时：须写清**心里喜欢** + **可见破绽**（在意、暗戳戳吃醋、别扭多留意等）；口头可否说破跟人设走，但禁止写成「完全不在意的路人腔」。禁止越级写成已确认恋人的官宣口吻。`
     : `禁止默认往好感、暗恋、嘴硬心软或「其实有点在意」抬。`
-  return `{{char}}对{{user}}的**当前**态度：称呼、回消息节奏、相处边界与内心真实分量，须严格按开局关系「${rel}」的投入程度来写：原文偏淡就写不咋在意/低投入，原文已是暧昧或恋爱再写对应亲近。${crushRule}也禁止写成与原文矛盾的陌生人话术。相识过程见「相遇羁绊」，本条勿整段复述相识故事；**当前关系与态度只写在本条**。`
+  return `<toward_user>
+当前看法与关系定位：须严格按开局关系「${rel}」的投入程度来写：原文偏淡就写不咋在意/低投入，原文已是暧昧或恋爱再写对应亲近。${crushRule}也禁止写成与原文矛盾的陌生人话术。
+相处边界与可接受的亲近程度。
+内心真实分量；相识过程见「相遇羁绊」，对 {{user}} 怎么叫见「${PERSONA_AI_USER_SPEECH_ENTRY_NAME}」，说话场景引语见「${PERSONA_AI_SPEECH_HABIT_ENTRY_NAME}」，本条勿堆口语引语。
+</toward_user>`
+}
+
+function buildUserSpeechDefault(_relationToUser: string): string {
+  return `<user_speech>
+{{char}}对{{user}}怎么称呼（可随关系变化写清常用叫法；可附一两句何时换称呼）。
+本条**只写称呼**，禁止写日常/生气等说话场景引语——那些只写在「${PERSONA_AI_SPEECH_HABIT_ENTRY_NAME}」。
+</user_speech>`
+}
+
+function buildSpeechHabitDefault(_relationToUser: string): string {
+  return `<speech_habit>
+语气与口头禅概要。
+日常：「……」「……」
+生气：「……」
+委屈：「……」
+难过：「……」
+撒娇：「……」
+害羞：「……」
+开心：「……」
+亲密时：「……」
+（本条写说话风格与中文场景引语；对{{user}}怎么叫见「${PERSONA_AI_USER_SPEECH_ENTRY_NAME}」，勿在本条写称呼分析；引语须平等活人感，禁止「听话」「别闹了」等爹味/油腻句）
+</speech_habit>`
 }
 
 function buildMeetingBondDefault(_relationToUser: string): string {
-  return `写清{{char}}与{{user}}如何相识（场合、契机、早期互动与过程节点）。本条是**序言固定层**：只写相识过程与经历，**禁止**写当前关系标签、当前态度、称呼分寸、心里分量或「如今是…/开局关系为…」类总结——那些只属于尾声「对你现在」，禁止与尾声冲突或抢写。`
+  return `<meeting>
+如何相识：写清{{char}}与{{user}}相识的场合与契机。
+早期互动与过程节点。本条是**序言固定层**：只写相识过程与经历，**禁止**写当前关系标签、当前态度、称呼分寸、心里分量或「如今是…/开局关系为…」类总结——那些只属于尾声「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」与「${PERSONA_AI_USER_SPEECH_ENTRY_NAME}」，禁止与尾声冲突或抢写。
+</meeting>`
 }
 
 const SECTION_DEFAULTS: Record<PersonaAiCompactEntryName, (rel: string) => string> = {
   名片基础: () =>
-    '{{char}}的基础名片侧写：姓名气质一句话、大致年龄层、职业身份、对外标签与雷点摘要。勿写对{{user}}的态度。',
+    `<profile_card>
+身份一句话摘要
+大致年龄层
+职业身份（固定时详写；可变时写「详见职业快照」）
+对外标签
+雷点摘要
+</profile_card>`,
   形象与气质: () =>
-    '{{char}}的外貌：发色发型、身形体态、日常/通勤/正式或约会等场合穿搭偏好，以及气质气场与第一印象；具体可想象，勿堆砌空标签。',
+    `<appearance>
+发色发型
+身形体态
+日常/通勤/正式或约会穿搭
+气质气场与第一印象
+</appearance>`,
   性格内核: () =>
-    '{{char}}的对外面具与私下底色、三观与优缺点、身世成因与情绪模式、反差萌点；性取向若未单独开尾声条，可在此写当下稳定自我认同。勿写对{{user}}的专属态度。',
+    `<personality>
+对外面具与私下底色
+三观与优缺点
+身世成因与情绪模式
+反差萌点
+性取向稳定认同（可变时写「详见取向快照」）
+</personality>`,
   能力与日常: () =>
-    '{{char}}的技能爱好、社交态度、口语口头禅（含引语示例）、生活癖好与小习惯。通用日常，非对{{user}}专属。',
+    `<lifestyle>
+技能爱好
+社交态度
+生活癖好与小习惯
+（口语口头禅见「${PERSONA_AI_SPEECH_HABIT_ENTRY_NAME}」）
+</lifestyle>`,
+  口语习惯: (rel) => buildSpeechHabitDefault(rel),
   亲密与恋爱观: () =>
-    '{{char}}对亲密关系的一般观念与边界（指恋人写「对方」）；须覆盖恋爱前样子、恋爱后样子、吃醋样子、与恋人冲突时的样子；可含亲密偏好（清水档案禁止露骨）。',
+    `<romance>
+一般亲密观与边界（指恋人写「对方」）
+恋爱前样子
+恋爱后样子
+吃醋样子
+与恋人冲突时的样子
+</romance>`,
   人际与秘密: () =>
-    '{{char}}对不同关系（家人/友人/同事/对立面）的态度差异；自身秘密、软肋与反差萌。点到关系即可，具名人物细则见「周边NPC」。禁止写与{{user}}相关的秘密。',
+    `<social_secret>
+对不同关系（家人/友人/同事/对立面）的态度差异
+自身秘密、软肋与反差萌（禁止与{{user}}相关）
+</social_secret>`,
   周边NPC: () =>
-    '围绕{{char}}的具名配角简要档案：每人写姓名、与{{char}}关系、一两句性格与近况。原创都市档约 3–5 人；原著/参考人物直接生成时不设人数上限，开篇与日常圈具名配角尽量写全；名单内配角彼此若有原著关系（室友/好感/死党等）须双方互相写清。禁止把配角写成{{user}}本人。若绑定身份为同作相关角色，每人还须写对{{user}}的关系与看法。禁止整段照搬「人际与秘密」。',
+    `<npc_roster>
+姓名：与{{char}}关系；性格与近况；（必要时）对{{user}}
+</npc_roster>`,
   相遇羁绊: (rel) => buildMeetingBondDefault(rel),
-  对你现在: (rel) => buildTowardUserDefault(rel),
+  对你的看法和态度: (rel) => buildTowardUserDefault(rel),
+  对你的称呼: (rel) => buildUserSpeechDefault(rel),
 }
 
-/** 将模型/旧档条目标题归并为标准条目之一；旧 vol10 五条 →「对你现在」 */
+/** 将模型/旧档条目标题归并为标准条目之一；旧 vol10 五条 /「对你现在」→「对你的看法和态度」 */
 export function canonicalizePersonaAiCompactEntryName(raw: string): PersonaAiCompactEntryName | null {
   const name = String(raw ?? '').trim()
   if (!name) return null
-  // 独立附加条：勿并入九条模板
+  // 独立附加条：勿并入九/十条模板
   if (isPersonaAiOrientationEpilogueName(name)) return null
   if (isPersonaAiOccupationEpilogueName(name)) return null
   if (isPersonaAiRelationshipHistoryEntryName(name)) return null
+  if (isPersonaAiNsfwEntryName(name)) return null
   if ((PERSONA_AI_COMPACT_ENTRY_NAMES as readonly string[]).includes(name)) {
     return name as PersonaAiCompactEntryName
   }
@@ -219,18 +307,36 @@ export function canonicalizePersonaAiCompactEntryName(raw: string): PersonaAiCom
   }
   if (/名片|基础资料|身份名片/.test(name)) return '名片基础'
   if (/形象|气质|外貌|体态/.test(name)) return '形象与气质'
-  // 「取向」单独条目已在上方拦截；此处不再因含「取向」并入性格内核
   if (/性格|内核|伪装|底色|心理|身世/.test(name)) return '性格内核'
-  if (/能力|日常|口语|习惯|爱好|技能/.test(name)) return '能力与日常'
-  if (/亲密|恋爱|欲念|fetish|contrast|反差/.test(name) && !/反差萌/.test(name)) return '亲密与恋爱观'
+  if (
+    name === PERSONA_AI_SPEECH_HABIT_ENTRY_NAME ||
+    (/口语习惯|口头禅|说话习惯|说话风格|用语习惯/.test(name) &&
+      !/对你的称呼|对你.*口语/.test(name))
+  ) {
+    return PERSONA_AI_SPEECH_HABIT_ENTRY_NAME
+  }
+  if (/能力|日常|爱好|技能|生活习惯|癖好/.test(name) && !/对你的称呼|口语习惯|日常用语/.test(name)) {
+    return '能力与日常'
+  }
+  if (/亲密|恋爱|欲念|fetish|contrast|反差/.test(name) && !/反差萌|亲密身体|性爱偏好|亲密尺度|成人向/.test(name)) {
+    return '亲密与恋爱观'
+  }
   if (/周边NPC|NPC简|关联人物|身边的人|周边人物|配角档案|人物简档/.test(name)) return '周边NPC'
   if (/相遇|相识过程|相识背景|如何相识|羁绊由来|初遇|结识/.test(name)) return '相遇羁绊'
   if (/人际|家庭|友人|秘密|软肋|反差萌|圈子/.test(name)) return '人际与秘密'
   if (
-    name === PERSONA_AI_TOWARD_USER_ENTRY_NAME ||
-    /对你现在|当前态度|称呼|聊天分寸|相处边界|真实分量|如何赢得|攻略|加好感/.test(name)
+    name === PERSONA_AI_USER_SPEECH_ENTRY_NAME ||
+    name === '对你的称呼以及日常用语和风格' ||
+    /对你的称呼|日常用语和风格|用语和风格|聊天用语|对你.*叫/.test(name)
   ) {
-    return '对你现在'
+    return PERSONA_AI_USER_SPEECH_ENTRY_NAME
+  }
+  if (
+    name === PERSONA_AI_TOWARD_USER_ENTRY_NAME ||
+    name === '对你现在' ||
+    /对你的看法|对你现在|当前态度|相处边界|真实分量|如何赢得|攻略|加好感|聊天分寸/.test(name)
+  ) {
+    return PERSONA_AI_TOWARD_USER_ENTRY_NAME
   }
   return null
 }
@@ -261,6 +367,7 @@ export function normalizePersonaAiCompactSections(
     if (isPersonaAiOrientationEpilogueName(rawName)) continue
     if (isPersonaAiOccupationEpilogueName(rawName)) continue
     if (isPersonaAiRelationshipHistoryEntryName(rawName)) continue
+    if (isPersonaAiNsfwEntryName(rawName)) continue
     const canonical = canonicalizePersonaAiCompactEntryName(rawName)
     if (!canonical) continue
     const prev = byName.get(canonical)
@@ -314,6 +421,38 @@ export function pickPersonaAiRelationshipHistoryContent(
   return best
 }
 
+/** 从条目列表取出 NSFW 成人向正文（最长者胜；不做尾声中性词清洗） */
+export function pickPersonaAiNsfwContent(
+  entries: PersonaAiEpilogueEntry[] | null | undefined,
+): string {
+  let best = ''
+  for (const e of entries ?? []) {
+    const name = String(e?.name ?? '')
+    if (!isPersonaAiNsfwEntryName(name)) continue
+    const content = String(e?.content ?? '').trim()
+    if (content.length > best.length) best = content
+  }
+  return best
+}
+
+function buildNsfwIntimateDefault(hint?: string): string {
+  const seed = String(hint ?? '').trim()
+  const seedLine = seed
+    ? `用户 XP 种子「${seed}」须落实到敏感点与各场景偏好里，可写得更直白。`
+    : '按人设自洽补全敏感点与性爱偏好，须直白带荤。'
+  return `<intimate_nsfw>
+${seedLine}
+身体敏感点：……（写清哪里一碰就软/喘/发抖，可写胸口、腰侧、大腿内侧、耳后、性器等）
+亲密偏好：……（主动/被压、节奏快慢、dirty talk、留痕等）
+接吻：动作与反应…… 口语：「……」
+被抚摸：…… 口语：「……」
+抚摸对方：…… 口语：「……」
+前戏：…… 口语：「……」
+发生关系时：体位/节奏/失控反应…… 口语：「……」「……」
+（整体偏荤、可写器官与动作；偶可夹一两句纯情；指恋人写「对方」；双方自愿）
+</intimate_nsfw>`
+}
+
 /**
  * 若模型仍把取向写进「性格内核」，尽量剥出独立段，避免与尾声条重复。
  * 匹配以「性取向 / 取向认同 / 自我认同」等起头的段落。
@@ -347,9 +486,15 @@ export function peelOrientationParagraphFromCore(coreRaw: string): {
 function buildOrientationEpilogueDefault(orientationLabel?: string): string {
   const label = String(orientationLabel ?? '').trim()
   if (label) {
-    return `{{char}}当前对自我性取向的认同可概括为「${label}」。正文只写当下稳定自我认同与由来，不因与{{user}}的互动写成取向动摇；本条为尾声延展快照，可随剧情更新表述，但不等于开局即写「取向不确定」。`
+    return `<orientation_snapshot>
+{{char}}当前对自我性取向的认同可概括为「${label}」。只写当下稳定自我认同与由来，不因与{{user}}的互动写成取向动摇。
+本条为尾声延展快照，可随剧情更新表述，但不等于开局即写「取向不确定」。
+</orientation_snapshot>`
   }
-  return `{{char}}对自我性取向有清晰、当下稳定的认同表述（含由来与边界感）。禁止因勾选「可变」或欣赏{{user}}外貌写成取向动摇；本条为尾声延展快照，可随剧情更新。`
+  return `<orientation_snapshot>
+{{char}}对自我性取向有清晰、当下稳定的认同表述（含由来）。禁止因勾选「可变」或欣赏{{user}}外貌写成取向动摇。
+本条为尾声延展快照，可随剧情更新。
+</orientation_snapshot>`
 }
 
 /**
@@ -387,22 +532,32 @@ export function peelOccupationParagraphFromCard(cardRaw: string): {
 function buildOccupationEpilogueDefault(occupationLabel?: string): string {
   const label = String(occupationLabel ?? '').trim()
   if (label) {
-    return `{{char}}当前职业/社会身份可概括为「${label}」。正文只写当下稳定的工作内容、对外身份与日常节奏；本条为尾声延展快照，可随剧情更新表述，但不等于开局即写「职业悬空/待定」。`
+    return `<occupation_snapshot>
+{{char}}当前职业/社会身份可概括为「${label}」。只写当下稳定的工作内容与对外身份。
+日常节奏；本条为尾声延展快照，可随剧情更新表述，但不等于开局即写「职业悬空/待定」。
+</occupation_snapshot>`
   }
-  return `{{char}}有清晰、当下稳定的职业/社会身份表述（含工作内容与对外标签）。禁止因勾选「可变」写成开局职业悬空；本条为尾声延展快照，可随剧情更新。`
+  return `<occupation_snapshot>
+{{char}}有清晰、当下稳定的职业/社会身份表述（含工作内容与对外标签）。禁止因勾选「可变」写成开局职业悬空。
+日常节奏；本条为尾声延展快照，可随剧情更新。
+</occupation_snapshot>`
 }
 
 function buildRelationshipHistoryDefault(hint?: string): string {
   const seed = String(hint ?? '').trim()
   if (seed) {
-    return `围绕用户种子「${seed}」扩写{{char}}的过往感情史：须写清曾有好感、喜欢过、或在一起过的对象（可化名/简述关系与结局），以及分手余波、模式与雷区；若种子指向单身/无恋爱，则明确写母胎单身或从未认真喜欢过人。只写过去与第三人，禁止写成与{{user}}的当前关系；也禁止把{{user}}写成前任。`
+    return `<love_history>
+围绕用户种子「${seed}」扩写{{char}}的过往感情史：须写清曾有好感、喜欢过、或在一起过的对象（可化名/简述关系与结局），以及分手余波、模式与雷区。只写过去与第三人，禁止写成与{{user}}的当前关系；也禁止把{{user}}写成前任。若种子指向单身/无恋爱：写明母胎单身或从未认真喜欢过人。
+</love_history>`
   }
-  return `{{char}}的过往感情史：须写清曾有好感、喜欢过、或在一起过的对象（可化名/简述关系与结局）及留下的模式影响；若从未心动也未恋爱，则明确写「母胎单身/未认真喜欢过人」类设定。只写过去，禁止写成与{{user}}的当前关系。`
+  return `<love_history>
+{{char}}的过往感情史：须写清曾有好感、喜欢过、或在一起过的对象（可化名/简述关系与结局）及留下的模式影响。只写过去，禁止写成与{{user}}的当前关系。若从未心动也未恋爱：明确写「母胎单身/未认真喜欢过人」。
+</love_history>`
 }
 
 /**
  * 将 AI 人设写成**一本**世界书、固定条目。
- * 「对你现在」恒为尾声延展；「相遇羁绊」为序言；「过往感情史」恒为序言；取向/职业「可变」时另增对应快照尾声。
+ * 「对你的看法和态度」「对你的称呼」恒为尾声延展；「口语习惯」为序言；「相遇羁绊」为序言；「过往感情史」恒为序言；取向/职业「可变」时另增对应快照尾声。
  */
 export function buildPersonaAiWorldBooks(
   characterId: string,
@@ -423,11 +578,15 @@ export function buildPersonaAiWorldBooks(
     /** 恒为 true：始终写入「过往感情史」序言条（保留参数兼容旧调用） */
     includeRelationshipHistory?: boolean
     relationshipHistoryHint?: string
+    /** true = 写入「亲密身体与性爱偏好」成人向条目 */
+    nsfwEnabled?: boolean
+    nsfwHint?: string
   },
 ): WorldBook[] {
   const orientationMutable = opts?.orientationMutable ?? false
   const occupationMutable = opts?.occupationMutable ?? false
   const includeHistory = opts?.includeRelationshipHistory !== false
+  const nsfwEnabled = opts?.nsfwEnabled ?? false
   const relationToUser = String(opts?.relationToUser ?? '').trim()
   const sections = normalizePersonaAiCompactSections(sectionsOrEpilogue, { relationToUser })
   // 旧调用曾把九维对象塞进第 3 参；仅接受非空字符串作为真实姓名
@@ -472,12 +631,20 @@ export function buildPersonaAiWorldBooks(
       buildRelationshipHistoryDefault(opts?.relationshipHistoryHint)
   }
 
+  let nsfwExtra: string | null = null
+  if (nsfwEnabled) {
+    nsfwExtra =
+      pickPersonaAiNsfwContent(sectionsOrEpilogue).trim() ||
+      buildNsfwIntimateDefault(opts?.nsfwHint)
+  }
+
   const items: WorldBookItem[] = []
   let itemIndex = 0
   for (const e of sections) {
     const name = e.name as PersonaAiCompactEntryName
-    const isTowardUser = name === '对你现在'
-    const priority: WorldBookPriority = isTowardUser ? 'after' : 'before'
+    const isAfterEpilogue =
+      name === PERSONA_AI_TOWARD_USER_ENTRY_NAME || name === PERSONA_AI_USER_SPEECH_ENTRY_NAME
+    const priority: WorldBookPriority = isAfterEpilogue ? 'after' : 'before'
     itemIndex += 1
     items.push(
       mkItem(characterId, itemIndex, name, e.content, nickname, rn, now, {
@@ -517,21 +684,38 @@ export function buildPersonaAiWorldBooks(
         ),
       )
     }
-    // 插在「亲密与恋爱观」后：过往感情史（序言）
-    if (includeHistory && name === '亲密与恋爱观' && historyExtra) {
-      itemIndex += 1
-      items.push(
-        mkItem(
-          characterId,
-          itemIndex,
-          PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
-          historyExtra,
-          nickname,
-          rn,
-          now,
-          { ...itemOpts, priority: 'before' },
-        ),
-      )
+    // 插在「亲密与恋爱观」后：过往感情史（序言）+ NSFW 成人向（若开启）
+    if (name === '亲密与恋爱观') {
+      if (includeHistory && historyExtra) {
+        itemIndex += 1
+        items.push(
+          mkItem(
+            characterId,
+            itemIndex,
+            PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
+            historyExtra,
+            nickname,
+            rn,
+            now,
+            { ...itemOpts, priority: 'before' },
+          ),
+        )
+      }
+      if (nsfwEnabled && nsfwExtra) {
+        itemIndex += 1
+        items.push(
+          mkItem(
+            characterId,
+            itemIndex,
+            PERSONA_AI_NSFW_ENTRY_NAME,
+            nsfwExtra,
+            nickname,
+            rn,
+            now,
+            { ...itemOpts, priority: 'before' },
+          ),
+        )
+      }
     }
   }
 
@@ -573,7 +757,7 @@ export function parsePersonaAiCompactSectionsFromParsed(
     }
   }
 
-  // 兼容旧 epilogueEntries：并入「对你现在」
+  // 兼容旧 epilogueEntries：并入「对你的看法和态度」
   const epi = parsed.epilogueEntries
   if (Array.isArray(epi) && epi.length) {
     const chunks: string[] = []

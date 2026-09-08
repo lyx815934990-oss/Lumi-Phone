@@ -14,6 +14,7 @@ import type {
   LifeResolvedSnapshot,
   LifeStorySpan,
 } from './types'
+import { normalizeLifeChangeHistory } from './lifeChangeHistory'
 
 export function emptyLifeMutableSheet(): LifeMutableSheet {
   return {
@@ -35,6 +36,7 @@ export function emptyLifeMutableSheet(): LifeMutableSheet {
     extraNote: '',
     storyStartDay: '',
     ageAtStart: null,
+    changeHistory: [],
   }
 }
 
@@ -639,6 +641,7 @@ export function formatLifePromptBlock(params: {
           h.area,
           h.layout,
           h.floor ? `${h.floor}层` : '',
+          h.valueWan.trim() ? `价值约${h.valueWan.trim()}万元` : '',
           pay,
           h.note,
         ]
@@ -653,7 +656,7 @@ export function formatLifePromptBlock(params: {
     for (const v of sheet.vehicles) {
       const pay = payLabel(v.payKind, v.loanRemaining, v.monthlyPayment)
       lines.push(
-        `- ${[v.boughtAt && `购于${v.boughtAt}`, v.model, pay, v.note]
+        `- ${[v.boughtAt && `购于${v.boughtAt}`, v.model, v.valueWan.trim() && `价值约${v.valueWan.trim()}万元`, pay, v.note]
           .map((x) => String(x).trim())
           .filter(Boolean)
           .join(' · ') || '（未填）'}`,
@@ -814,6 +817,7 @@ export function normalizeLifeMutableSheet(raw: unknown): LifeMutableSheet {
               area: asStr(h.area, 40),
               layout: asStr(h.layout, 40),
               floor: asStr(h.floor, 24),
+              valueWan: asStr(h.valueWan ?? h['价值'] ?? h['估值'] ?? h.value, 24),
               payKind,
               loanRemaining: asStr(h.loanRemaining, 40),
               monthlyPayment: asStr(h.monthlyPayment, 40),
@@ -833,7 +837,8 @@ export function normalizeLifeMutableSheet(raw: unknown): LifeMutableSheet {
             return {
               id: asStr(v.id, 64) || `car-${i}`,
               boughtAt: asStr(v.boughtAt, 40),
-              model: asStr(v.model, 80),
+              model: asStr(v.model ?? v['车型'], 80),
+              valueWan: asStr(v.valueWan ?? v['价值'] ?? v['估值'] ?? v.value, 24),
               payKind,
               loanRemaining: asStr(v.loanRemaining, 40),
               monthlyPayment: asStr(v.monthlyPayment, 40),
@@ -851,7 +856,7 @@ export function normalizeLifeMutableSheet(raw: unknown): LifeMutableSheet {
             const age = asStr(f.age, 16)
             const ageAtStart = asStr(f.ageAtStart ?? f['开篇年龄'] ?? f['开篇岁数'], 16) || age
             const split = splitFamilyKinshipName(
-              asStr(f.name, 40),
+              asStr(f.name ?? f['姓名'], 40),
               asStr(f.relation ?? f.relationship ?? f['关系'] ?? f['称谓'], 24),
             )
             return {
@@ -904,8 +909,8 @@ export function normalizeLifeMutableSheet(raw: unknown): LifeMutableSheet {
           }
           return {
             id: asStr(c.id, 64) || `soc-${i}`,
-            name: asStr(c.name, 40),
-            gender: asStr(c.gender, 16),
+            name: asStr(c.name ?? c['姓名'], 40),
+            gender: asStr(c.gender ?? c['性别'], 16),
             age,
             ageAtStart,
             birthdayMD: asStr(c.birthdayMD ?? c.birthday ?? c['生日'], 24),
@@ -914,7 +919,7 @@ export function normalizeLifeMutableSheet(raw: unknown): LifeMutableSheet {
               c.occupationOrSchool ?? c.occupation ?? c['职业'] ?? c['学业'],
               80,
             ),
-            residence: asStr(c.residence, 160),
+            residence: asStr(c.residence ?? c['住址'] ?? c['住所'], 160),
             attitude,
             note,
           }
@@ -943,6 +948,7 @@ export function normalizeLifeMutableSheet(raw: unknown): LifeMutableSheet {
     storyStartDay: asStr(o.storyStartDay, 40),
     ageAtStart:
       typeof ageAtStart === 'number' && Number.isFinite(ageAtStart) ? Math.round(ageAtStart) : null,
+    changeHistory: normalizeLifeChangeHistory(o.changeHistory),
   }
 }
 

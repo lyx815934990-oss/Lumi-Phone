@@ -23,6 +23,7 @@ import type { DatingPlotPaceUnit } from './datingPlotPace'
 /** 续写面板 · 时间推进 */
 export type ContinueDraftTimeAdvance =
   | 'none'
+  | 'auto'
   | 'hours'
   | 'day'
   | 'fewDays'
@@ -36,6 +37,7 @@ export const CONTINUE_DRAFT_TIME_ADVANCE_OPTIONS: Array<{
   hint: string
 }> = [
   { id: 'none', label: '不推进', hint: '同场下一拍' },
+  { id: 'auto', label: '自动', hint: '由模型按剧情把握' },
   { id: 'hours', label: '数小时', hint: '当日内短跨' },
   { id: 'day', label: '约一天', hint: '到次日前后' },
   { id: 'fewDays', label: '数天', hint: '数日内' },
@@ -169,17 +171,27 @@ function unitLabel(unit: DatingPlotPaceUnit): string {
   return '天'
 }
 
-function resolveTimeAdvanceSpan(
+export function resolveTimeAdvanceSpan(
   advance: ContinueDraftTimeAdvance | undefined,
   custom?: ContinueDraftTimeAdvanceCustom | null,
-): { enabled: boolean; phrase: string; detail: string } {
+): { enabled: boolean; auto: boolean; phrase: string; detail: string } {
   const a = advance ?? 'none'
   if (a === 'none') {
-    return { enabled: false, phrase: '不推进', detail: '' }
+    return { enabled: false, auto: false, phrase: '不推进', detail: '' }
+  }
+  if (a === 'auto') {
+    return {
+      enabled: true,
+      auto: true,
+      phrase: '自动',
+      detail:
+        '由模型根据当前剧情节奏、关系阶段与上文氛围，自行把握时间推进幅度；可同场续写，也可适度跳时，但须带过间隔、禁止硬切空壳。',
+    }
   }
   if (a === 'hours') {
     return {
       enabled: true,
+      auto: false,
       phrase: '数小时内',
       detail: '跨度约数小时（如午后→傍晚、晚饭后→深夜），仍在同一日或紧邻时段。',
     }
@@ -187,6 +199,7 @@ function resolveTimeAdvanceSpan(
   if (a === 'day') {
     return {
       enabled: true,
+      auto: false,
       phrase: '约一天',
       detail: '跨度约一天（可到次日白天/傍晚），须交代间隔内发生了什么。',
     }
@@ -194,6 +207,7 @@ function resolveTimeAdvanceSpan(
   if (a === 'fewDays') {
     return {
       enabled: true,
+      auto: false,
       phrase: '数天',
       detail: '跨度约数天（约 2～5 天），须简要带过这几天里发生的事。',
     }
@@ -201,6 +215,7 @@ function resolveTimeAdvanceSpan(
   if (a === 'week') {
     return {
       enabled: true,
+      auto: false,
       phrase: '约一周',
       detail: '跨度约一周，须带过这一周里关键节点或相处变化。',
     }
@@ -208,6 +223,7 @@ function resolveTimeAdvanceSpan(
   if (a === 'month') {
     return {
       enabled: true,
+      auto: false,
       phrase: '约一个月',
       detail: '跨度约一个月，须带过这期间生活/关系里可感知的变化痕迹。',
     }
@@ -217,6 +233,7 @@ function resolveTimeAdvanceSpan(
   const phrase = `约 ${amount}${unitLabel(unit)}`
   return {
     enabled: true,
+    auto: false,
     phrase,
     detail: `跨度约为 ${phrase}（可略弹性，数量级须贴近），须带过这段间隔里发生的事。`,
   }
@@ -260,6 +277,7 @@ export async function requestDatingDirectorContinueDrafts(params: {
   const actionFocus = params.actionFocus === 'char' || params.actionFocus === 'user' ? params.actionFocus : 'both'
   const timeSpan = resolveTimeAdvanceSpan(params.timeAdvance, params.timeAdvanceCustom)
   const allowTimeJump =
+    timeSpan.auto ||
     timeSpan.enabled ||
     /次日|第二天|隔天|天亮|傍晚|入夜|几天后|一周后|跳到|时间跳|换场|换场景|离开这里|去别处|去公司|去外面/.test(
       bias,
@@ -299,7 +317,13 @@ export async function requestDatingDirectorContinueDrafts(params: {
 - 示例：「时间过去了三个月，这三个月来，{{char}}和{{user}}的关系也发生了一点点小改变。4月时……，过后的几天里……，5月时……。（主事件→）这天，{{char}}约了{{user}}出来单独见面……」然后把见面当场写开。
 - 带过要像导演场记，不要整章流水账；但读者必须感到「中间不是空白」。`
 
-  const continuityBlock = timeSpan.enabled
+  const continuityBlock = timeSpan.auto
+    ? `【接笔铁律｜界面已选：时间推进·自动】
+- ${timeSpan.detail}
+- 可紧接锚点同场下一拍，也可按剧情需要适度跳时/换场；幅度须符合关系阶段、戏剧张力与上文氛围，禁止为跳时而跳。
+${bridgeRule}
+- 落点后的第一拍仍要具体可演；${n} 条之间可换不同推进幅度或落点，但每条都须自洽。`
+    : timeSpan.enabled
     ? `【接笔铁律｜界面已选时间推进：${timeSpan.phrase}】
 - ${timeSpan.detail}
 - 从接笔锚点出发，故事时间须推进到该跨度落点；人物关系与情绪因果须自洽，且不突破档案室亲密/关系闸门。
@@ -318,7 +342,13 @@ ${bridgeRule}
 - ${n} 条之间只允许「同一接笔点上的不同反应/不同小冲突」，禁止一条贴着结尾、另一条直接跳到傍晚。
 - 不合格示例：上文还在推门 → 续写「到了傍晚…」→ 必须作废重写。`
 
-  const system = `${cuDirective}你是线下约会剧情的「导演续写」助手。{{char}}≈「${charName}」，{{user}}≈「${userName}」。任务：根据接笔锚点，写出 ${n} 条**尚未发生**的导演式续写指导${timeSpan.enabled ? `（须推进约「${timeSpan.phrase}」，并带过间隔内事件）` : '（且**紧接锚点结尾**）'}。
+  const system = `${cuDirective}你是线下约会剧情的「导演续写」助手。{{char}}≈「${charName}」，{{user}}≈「${userName}」。任务：根据接笔锚点，写出 ${n} 条**尚未发生**的导演式续写指导${
+    timeSpan.auto
+      ? '（时间推进由你按剧情自行把握，可同场也可适度跳时）'
+      : timeSpan.enabled
+        ? `（须推进约「${timeSpan.phrase}」，并带过间隔内事件）`
+        : '（且**紧接锚点结尾**）'
+  }。
 
 ${archiveBlock ? `${archiveBlock}\n\n` : ''}${worldbookDuty}
 ${romanceBuiltinBlock ? `\n\n${romanceBuiltinBlock}` : ''}
@@ -334,10 +364,22 @@ ${continuityBlock}
 ${actionFocusBlock}
 
 【续写指导写法（硬｜对标导演模式）】
-- ${timeSpan.enabled ? '每条结构：①一两句带过间隔内发生的事 → ②落到推进后可立刻开演的具体一拍（谁看见什么、做什么、说什么）。' : '每条是「锚点结束后立刻发生」的下一拍：谁看见什么、做什么、说什么、对方如何反应。'}
+- ${
+    timeSpan.auto
+      ? '每条结构：按你判断的时间幅度，必要时用一两句带过间隔 → 落到推进后可立刻开演的具体一拍（谁看见什么、做什么、说什么）。'
+      : timeSpan.enabled
+        ? '每条结构：①一两句带过间隔内发生的事 → ②落到推进后可立刻开演的具体一拍（谁看见什么、做什么、说什么）。'
+        : '每条是「锚点结束后立刻发生」的下一拍：谁看见什么、做什么、说什么、对方如何反应。'
+  }
 - **必须有效推动剧情**：新动作、新对白、关系张力；禁止「气氛变得微妙」「心里一紧」「继续对视」等空转。
 - 禁止把锚点里已发生的事再复述一遍当开场；直接写接下来要演的过程。
-- 禁止工业糖精空壳告白；推进幅度可以大，但${timeSpan.enabled ? '跨度与带过须符合界面所选时间推进' : '**时空必须贴着锚点**（除非偏向允许跳转）'}，且亲密/关系分寸服从档案室。
+- 禁止工业糖精空壳告白；推进幅度可以大，但${
+    timeSpan.auto
+      ? '时间推进须符合剧情需要与档案室闸门'
+      : timeSpan.enabled
+        ? '跨度与带过须符合界面所选时间推进'
+        : '**时空必须贴着锚点**（除非偏向允许跳转）'
+  }，且亲密/关系分寸服从档案室。
 
 【文风示例（学结构）】
 - 紧接型："{{char}}见没动静轻轻推开一点门缝见{{user}}正面对着窗户抽烟，看着很心烦，然后进来问{{user}}怎么回事，{{user}}很自责地说自己不应该这样粗暴对待自己喜欢的人"
@@ -350,13 +392,17 @@ ${perspectiveNote}`
 ${anchor}
 
 【自检】生成前先用一句话心里确认：锚点最后一拍是什么动作/状态？${
-        timeSpan.enabled
+        timeSpan.auto
+          ? '你的每条是否按剧情需要把握了合理的时间推进，且必要时带过了间隔（禁止只写「过了几天」空壳）？'
+          : timeSpan.enabled
           ? `你的每条是否都推进了约「${timeSpan.phrase}」，且用一两句带过了间隔里发生的事（禁止只写「过了几天」空壳）？`
           : '你的每条续写是否都发生在它的下一秒？若已跳到傍晚/次日/别的地方且偏向未要求 → 重写。'
       }若违背档案室纯爱/爱情观/自定义世界书 → 重写。`
     : ''
 
-  const timeAdvanceUserLine = timeSpan.enabled
+  const timeAdvanceUserLine = timeSpan.auto
+    ? `【时间推进｜界面已选】自动\n${timeSpan.detail}\n由你按剧情自行把握推进幅度；若跳时须带过间隔后再落到可演的下一拍。\n`
+    : timeSpan.enabled
     ? `【时间推进｜界面已选】${timeSpan.phrase}\n${timeSpan.detail}\n须带过间隔内事件后再落到可演的下一拍。\n`
     : '【时间推进｜界面已选】不推进（同场下一拍）；禁止跳时跳场（除非续写偏向明文要求）。\n'
 

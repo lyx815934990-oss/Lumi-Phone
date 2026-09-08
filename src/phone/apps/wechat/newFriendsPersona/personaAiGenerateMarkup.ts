@@ -3,12 +3,18 @@ import {
   PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME,
   PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME,
   PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
+  PERSONA_AI_NSFW_ENTRY_NAME,
   canonicalizePersonaAiCompactEntryName,
   isPersonaAiOrientationEpilogueName,
   isPersonaAiOccupationEpilogueName,
   isPersonaAiRelationshipHistoryEntryName,
+  isPersonaAiNsfwEntryName,
   type PersonaAiEpilogueEntry,
 } from './personaAiWorldBooks'
+import {
+  buildPersonaAiEntryTagRulesBlock,
+  personaAiEntryTagSkeletonLine,
+} from './personaAiEntryTagSpec'
 
 /** 与 prompt 中 PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS 保持一致 */
 const ENTRY_TARGET_CHARS = 500
@@ -68,7 +74,7 @@ function matchTopField(keyRaw: string): string | null {
 
 function splitList(raw: string): string[] {
   return String(raw ?? '')
-    .split(/[,，、;/｜|]+/)
+    .split(/[,，、;｜|]+/)
     .map((x) => x.trim())
     .filter(Boolean)
 }
@@ -86,6 +92,9 @@ function resolveBlockTitle(
   }
   if (isPersonaAiRelationshipHistoryEntryName(t)) {
     return { kind: 'wb', name: PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME }
+  }
+  if (isPersonaAiNsfwEntryName(t)) {
+    return { kind: 'wb', name: PERSONA_AI_NSFW_ENTRY_NAME }
   }
   const compact = canonicalizePersonaAiCompactEntryName(t)
   if (compact) return { kind: 'wb', name: compact }
@@ -108,10 +117,12 @@ export function buildPersonaAiMarkupFormatSpec(opts?: {
   orientationMutable?: boolean
   occupationMutable?: boolean
   includeRelationshipHistory?: boolean
+  nsfwEnabled?: boolean
 }): string {
   const orientationMutable = opts?.orientationMutable ?? false
   const occupationMutable = opts?.occupationMutable ?? false
   const includeHistory = opts?.includeRelationshipHistory !== false
+  const nsfwEnabled = opts?.nsfwEnabled ?? false
   const wbNames: string[] = []
   for (const n of PERSONA_AI_COMPACT_ENTRY_NAMES) {
     wbNames.push(n)
@@ -124,35 +135,44 @@ export function buildPersonaAiMarkupFormatSpec(opts?: {
     if (includeHistory && n === '亲密与恋爱观') {
       wbNames.push(PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME)
     }
+    if (nsfwEnabled && n === '亲密与恋爱观') {
+      wbNames.push(PERSONA_AI_NSFW_ENTRY_NAME)
+    }
   }
   const extraNote = [
     occupationMutable ? '职业可变尾声 1 条' : '',
     orientationMutable ? '取向可变尾声 1 条' : '',
     includeHistory ? '过往感情史 1 条' : '',
+    nsfwEnabled ? 'NSFW 成人向 1 条' : '',
   ]
     .filter(Boolean)
     .join(' + ')
   const wbBlocks = wbNames
     .map((n) => {
+      const tagLine = personaAiEntryTagSkeletonLine(n)
+      const tagSuffix = tagLine ? `\n${tagLine}` : ''
       if (n === PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME) {
-        return `【${n}】\n（职业「可变」专用尾声：约 ${Math.floor(ENTRY_TARGET_CHARS * 0.55)}–${ENTRY_TARGET_CHARS} 字；只写当下稳定职业/社会身份，禁止长段写进「名片基础」）`
+        return `【${n}】\n（职业「可变」专用尾声：约 ${Math.floor(ENTRY_TARGET_CHARS * 0.55)}–${ENTRY_TARGET_CHARS} 字；只写当下稳定职业/社会身份，禁止长段写进「名片基础」）${tagSuffix}`
       }
       if (n === PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME) {
-        return `【${n}】\n（取向「可变」专用尾声：约 ${Math.floor(ENTRY_TARGET_CHARS * 0.55)}–${ENTRY_TARGET_CHARS} 字；只写当下稳定自我认同，禁止写进「性格内核」）`
+        return `【${n}】\n（取向「可变」专用尾声：约 ${Math.floor(ENTRY_TARGET_CHARS * 0.55)}–${ENTRY_TARGET_CHARS} 字；只写当下稳定自我认同，禁止写进「性格内核」）${tagSuffix}`
       }
       if (n === PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME) {
-        return `【${n}】\n（约 ${Math.floor(ENTRY_TARGET_CHARS * 0.7)}–${ENTRY_TARGET_CHARS} 字；须写曾有好感/喜欢/交往过的对象，或明确母胎单身/从未喜欢过人；禁止写成与 {{user}} 的当前关系；勿并入「亲密与恋爱观」）`
+        return `【${n}】\n（约 ${Math.floor(ENTRY_TARGET_CHARS * 0.7)}–${ENTRY_TARGET_CHARS} 字；须写曾有好感/喜欢/交往过的对象，或明确母胎单身/从未喜欢过人；禁止写成与 {{user}} 的当前关系；勿并入「亲密与恋爱观」）${tagSuffix}`
+      }
+      if (n === PERSONA_AI_NSFW_ENTRY_NAME) {
+        return `【${n}】\n（约 ${ENTRY_TARGET_CHARS}–${Math.floor(ENTRY_TARGET_CHARS * 1.4)} 字；成人向：身体敏感点、亲密偏好、接吻/被抚摸/抚摸对方/前戏/发生关系时的动作场景与口语示例；须偏荤直白，可写器官与反应；偶可夹一两句纯情；指恋人写「对方」；勿并入「亲密与恋爱观」）${tagSuffix}`
       }
       if (n === '名片基础' && occupationMutable) {
-        return `【${n}】\n（约 ${ENTRY_TARGET_CHARS} 字；姓名气质摘要/年龄层/标签与雷点；**职业详述只写「${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}」**）`
+        return `【${n}】\n（约 ${ENTRY_TARGET_CHARS} 字；姓名气质摘要/年龄层/标签与雷点；**职业详述只写「${PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME}」**）${tagSuffix}`
       }
       if (n === '性格内核' && orientationMutable) {
-        return `【${n}】\n（约 ${ENTRY_TARGET_CHARS} 字；面具/三观/身世/反差萌；**勿写性取向**，取向只写在「${PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME}」）`
+        return `【${n}】\n（约 ${ENTRY_TARGET_CHARS} 字；面具/三观/身世/反差萌；**勿写性取向**，取向只写在「${PERSONA_AI_ORIENTATION_MUTABLE_EPILOGUE_NAME}」）${tagSuffix}`
       }
-      if (n === '亲密与恋爱观' && includeHistory) {
-        return `【${n}】\n（约 ${ENTRY_TARGET_CHARS} 字；一般恋爱观与四态；**过往感情史另写「${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}」**，此处勿展开长情史）`
+      if (n === '亲密与恋爱观') {
+        return `【${n}】\n（约 ${ENTRY_TARGET_CHARS} 字；一般恋爱观与四态；${includeHistory ? `**过往感情史另写「${PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME}」**；` : ''}${nsfwEnabled ? `**露骨性爱另写「${PERSONA_AI_NSFW_ENTRY_NAME}」**，本条勿展开床戏；` : ''}指恋人写「对方」）${tagSuffix}`
       }
-      return `【${n}】\n（约 ${ENTRY_TARGET_CHARS} 字正文）`
+      return `【${n}】\n（约 ${ENTRY_TARGET_CHARS} 字正文）${tagSuffix}`
     })
     .join('\n\n')
 
@@ -181,8 +201,10 @@ MBTI：
 【简介】
 （80–220 字，第三人称，至少 2 次 {{char}}，禁止出现 {{user}}；只写稳定气质/性格/身份印象，禁止写当前和谁怎么样、禁止写可变关系现状）
 
-三、世界书条目（标题必须与下列**完全一致**，共 ${wbNames.length} 条${extraNote ? `；含 ${extraNote}` : ''}）：
+三、世界书条目（标题必须与下列**完全一致**，共 ${wbNames.length} 条${extraNote ? `；含 ${extraNote}` : ''}；**每条正文只用唯一根标签包裹，禁止嵌套小标签**，见下）：
 ${wbBlocks}
+
+${buildPersonaAiEntryTagRulesBlock()}
 
 截断容错：即使后文被截断，已写出的「键：值」与已写出的【标题】段仍可被解析；请尽量先写完顶层与简介，再写世界书各条。
 **禁止输出【开场白】**（开场白由用户日后在人设编辑页自行填写或生成）。
@@ -273,6 +295,14 @@ export function parsePersonaAiMarkup(
     const history = wbByName.get(PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME)
     if (history) {
       entries.push({ name: PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME, content: history })
+    }
+    const nsfw = wbByName.get(PERSONA_AI_NSFW_ENTRY_NAME)
+    if (nsfw) {
+      entries.push({ name: PERSONA_AI_NSFW_ENTRY_NAME, content: nsfw })
+    }
+    const occ = wbByName.get(PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME)
+    if (occ && !entries.some((e) => e.name === PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME)) {
+      entries.push({ name: PERSONA_AI_OCCUPATION_MUTABLE_EPILOGUE_NAME, content: occ })
     }
     for (const [name, content] of wbByName) {
       if (!entries.some((e) => e.name === name)) entries.push({ name, content })

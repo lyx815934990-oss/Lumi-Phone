@@ -78,6 +78,20 @@ export type NarrativeGenOptions = {
    * 关闭则直出剧情正文（更快、更省 token）。默认开启。
    */
   thinkingChainEnabled?: boolean
+  /**
+   * 读者评论模式：同轮在正文后输出【读者评论】块（不另发请求）。
+   * 缺省 true。
+   */
+  commentModeEnabled?: boolean
+  /**
+   * 小剧场：同轮在正文后输出 HTML 可视化块（预设库）。
+   * 缺省 true。
+   */
+  plotArtifactVisualEnabled?: boolean
+  /**
+   * 小剧场类型：`random`（默认随机）或预设 id（如 `14`）。
+   */
+  plotArtifactVisualPresetId?: string
 }
 
 export type PlotItemType = 'player' | 'ai'
@@ -227,6 +241,23 @@ export type PlotItem = {
   parallelEvent?: PlotDimensionArtifact
   /** IF 线：从锚点分歧的假设分支（不影响主线 canon） */
   ifLine?: PlotDimensionArtifact
+  /**
+   * 读者评论（与剧情同轮生成；当前展示版）。
+   * 正文可含多处「【读者讨论位】」；评论按 slot 穿插在对应锚点，只点评锚点前刚发生的情节。
+   */
+  readerComments?: import('./datingReaderComments').PlotReaderComment[]
+  /** 与 `versions` 等长：各版读者评论 */
+  versionReaderComments?: (import('./datingReaderComments').PlotReaderComment[] | undefined)[]
+  /**
+   * 剧情 HTML 可视化（车票/清单/手机屏等；与正文同轮生成）。
+   */
+  plotHtmlVisual?: import('./datingPlotHtmlVisual').PlotHtmlVisual
+  /** 与 `versions` 等长：各版 HTML 可视化 */
+  versionPlotHtmlVisuals?: (import('./datingPlotHtmlVisual').PlotHtmlVisual | undefined)[]
+  /**
+   * 仅玩家条：发送时生效、且会注入/改写提示词的场控标签（顶行展示）。
+   */
+  activeControlTags?: import('./datingPlayerControlTags').DatingPlayerControlTag[]
 }
 
 /** 剧情卡片「平行事件 / IF 线」生成结果 */
@@ -297,6 +328,12 @@ export type CharacterArchive = {
    * 关闭则模型直出正文。默认 true；普通模式与 VN 共用。
    */
   thinkingChainEnabled?: boolean
+  /** 读者评论模式（小说随笔式折叠条，同轮生成） */
+  commentModeEnabled?: boolean
+  /** 小剧场：剧情相关 HTML 可视化（同轮生成） */
+  plotArtifactVisualEnabled?: boolean
+  /** 小剧场类型：`random` 或预设 id；缺省 random */
+  plotArtifactVisualPresetId?: string
   /** 发送剧情时同轮一并生成平行事件（写入卡片 + 时间轴摘要） */
   generateParallelOnSend?: boolean
   /** 发送剧情时同轮一并生成 IF 线（仅卡片阅读，不进 prompt） */
@@ -330,6 +367,8 @@ export type CharacterArchive = {
    * 字体文件 dataUrl 存侧 KV，不塞进存档大 JSON。
    */
   plotFonts?: import('./datingPlotFontSettings').DatingPlotFontSettings
+  /** 剧情页色卡 + 昼夜（随角色存档） */
+  storyAppearance?: import('./datingStoryAppearance').DatingStoryAppearance
 }
 
 export type ArchivesStore = Record<string, CharacterArchive>

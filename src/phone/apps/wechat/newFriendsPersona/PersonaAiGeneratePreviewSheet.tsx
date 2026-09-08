@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+﻿import { motion } from 'framer-motion'
 import { Check, RefreshCw, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
@@ -259,7 +259,7 @@ export function PersonaAiGeneratePreviewSheet({
               value={guidance}
               onChange={(e) => setGuidance(e.target.value)}
               rows={3}
-              placeholder="例如：性格内核更冷淡克制；对你现在不要写成暗恋；亲密条目语气更日常…"
+              placeholder="例如：性格内核更冷淡克制；对你的看法和态度不要写成暗恋；亲密条目语气更日常…"
               className="mt-1.5 w-full resize-none rounded-2xl border border-neutral-200 bg-white px-3.5 py-2.5 text-[13px] leading-relaxed text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-neutral-400 disabled:opacity-50"
             />
           </div>

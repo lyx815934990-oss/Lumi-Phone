@@ -16,8 +16,8 @@ export type WeChatChatSkinExportInput = {
 }
 
 function appLevelCssVars(t: WeChatTheme, globalFontFamily: string): string[] {
-  const resolvedFont = t.fontFamily?.trim() ? t.fontFamily : globalFontFamily
-  const resolvedNumFont = t.numberFontFamily?.trim() ? t.numberFontFamily : 'var(--wx-num-font)'
+  const resolvedFont = t.fontFamily?.trim() ? t.fontFamily : globalFontFamily || 'var(--phone-font)'
+  const resolvedNumFont = t.numberFontFamily?.trim() ? t.numberFontFamily : 'var(--phone-num-font)'
   return [
     '/* ===== 1. 微信 App 级变量（文字气泡 / 全局字体 / Tab 等） ===== */',
     '[data-app-id="wechat"] {',

@@ -1,9 +1,26 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, Eye, EyeOff, ImageIcon, Loader2, RefreshCw, Search, Wand2 } from 'lucide-react'
+import {
+  Check,
+  Download,
+  Eye,
+  EyeOff,
+  ImageIcon,
+  ImagePlus,
+  Loader2,
+  Maximize2,
+  RefreshCw,
+  Search,
+  Wand2,
+  X,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { InlineDropdown } from '../../phone/apps/wechat/newFriendsPersona/InlineDropdown'
 import { MemoryModelIdText } from '../../phone/apps/wechat/memory/MemoryModelIdText'
+import {
+  compressAvatarDataUrl,
+  MAX_AVATAR_DATA_URL_LEN,
+} from '../../phone/apps/wechat/avatarCompress'
 import {
   fetchMomentsImageModelCatalog,
   findMomentsImageModel,
@@ -36,8 +53,10 @@ import {
 import type { MomentsImageGenSettings } from './useMomentsSettingsStore'
 import { ImageGenPromptSettingsSection } from './ImageGenPromptSettingsSection'
 import { ImageGenSizeSettingsSection } from './ImageGenSizeSettingsSection'
-import { modelSupportsReferenceImageUploadFromSettings } from './imageGenModelCapabilities'
+import { modelSupportsReferenceImageUploadFromSettings, describeReferenceImageSupportForModel } from './imageGenModelCapabilities'
+import { MomentImageViewer } from './MomentImageViewer'
 import { resolveImageGenDimensions } from './resolveImageGenDimensions'
+import { saveMomentImageToAlbum } from './saveMomentImageToAlbum'
 import {
   buildFetchCatalogOptions,
   getImageGenApiKey,
@@ -47,6 +66,7 @@ import {
 } from './momentsImageProviderRegistry'
 
 const DEFAULT_PREVIEW_PROMPT = '夕阳下的湖边小路，宁静治愈'
+const PREVIEW_REF_IMAGES_MAX = 3
 
 type ImageGenTab = 'model' | 'prefix' | 'prompt' | 'preview'
 
@@ -273,6 +293,15 @@ export function MomentsImageGenSettingsPanel({
   const [previewBusy, setPreviewBusy] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewSizeId, setPreviewSizeId] = useState('')
+  const [previewLightboxOpen, setPreviewLightboxOpen] = useState(false)
+  const [previewSaving, setPreviewSaving] = useState(false)
+  const [previewSaveHint, setPreviewSaveHint] = useState<string | null>(null)
+  const [previewRefImages, setPreviewRefImages] = useState<string[]>([])
+  const [previewRefNote, setPreviewRefNote] = useState('')
+  const [previewRefLockFace, setPreviewRefLockFace] = useState(true)
+  const [previewRefSkipStyle, setPreviewRefSkipStyle] = useState(false)
+  const [previewRefUploadError, setPreviewRefUploadError] = useState<string | null>(null)
+  const previewRefFileRef = useRef<HTMLInputElement>(null)
 
   const provider = imageGen.provider
 
@@ -333,6 +362,11 @@ export function MomentsImageGenSettingsPanel({
     () => modelSupportsReferenceImageUploadFromSettings(imageGen),
     [imageGen],
   )
+  const refSupportNote = useMemo(() => {
+    if (!selected?.modelName) return ''
+    const { provider: modelProvider } = parseMomentsImageModelId(imageGen.modelId)
+    return describeReferenceImageSupportForModel(modelProvider, selected.modelName)
+  }, [imageGen.modelId, selected?.modelName])
   const previewEffectiveNegative = useMemo(
     () => resolveEffectiveNegativePrompt(imageGen, provider, selected?.modelName),
     [imageGen, provider, selected?.modelName],
@@ -368,9 +402,15 @@ export function MomentsImageGenSettingsPanel({
       setPreviewError('请先输入预览提示词')
       return
     }
+    if (previewRefImages.length && !refUploadSupported) {
+      setPreviewError('当前模型不支持传参考图，请换 GPT Image 或 Gemini 原生图模后再试')
+      return
+    }
 
     setPreviewBusy(true)
     setPreviewError(null)
+    setPreviewSaveHint(null)
+    setPreviewLightboxOpen(false)
     try {
       const dims = previewSize
         ? {
@@ -379,12 +419,17 @@ export function MomentsImageGenSettingsPanel({
             imageSize: previewSize.apiSize,
           }
         : resolveImageGenDimensions(imageGen)
+      const hasPreviewRef = previewRefImages.length > 0
       const dataUrl = await generateMomentsImage({
         prompt,
         settings: imageGen,
         width: dims.width,
         height: dims.height,
         imageSize: dims.imageSize,
+        referenceImageUrls: hasPreviewRef ? previewRefImages : undefined,
+        characterAppearanceRefNote: previewRefNote.trim() || undefined,
+        referenceLockIdentity: hasPreviewRef ? previewRefLockFace : undefined,
+        referenceLockStyle: hasPreviewRef ? !previewRefSkipStyle : undefined,
       })
       setPreviewImage(dataUrl)
     } catch (e) {
@@ -393,7 +438,73 @@ export function MomentsImageGenSettingsPanel({
     } finally {
       setPreviewBusy(false)
     }
-  }, [imageGen, previewPrompt, previewSize])
+  }, [
+    imageGen,
+    previewPrompt,
+    previewRefImages,
+    previewRefNote,
+    previewRefLockFace,
+    previewRefSkipStyle,
+    previewSize,
+    refUploadSupported,
+  ])
+
+  const onPickPreviewRefFile = useCallback(async (file: File | null) => {
+    if (!file) return
+    setPreviewRefUploadError(null)
+    if (!file.type.startsWith('image/')) {
+      setPreviewRefUploadError('请选择图片文件')
+      return
+    }
+    if (previewRefImages.length >= PREVIEW_REF_IMAGES_MAX) {
+      setPreviewRefUploadError(`最多上传 ${PREVIEW_REF_IMAGES_MAX} 张参考图`)
+      return
+    }
+    try {
+      const raw = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () =>
+          resolve(typeof reader.result === 'string' ? reader.result : '')
+        reader.onerror = () => reject(new Error('图片读取失败'))
+        reader.readAsDataURL(file)
+      })
+      if (!raw) throw new Error('图片读取失败')
+      const compressed = await compressAvatarDataUrl(raw, MAX_AVATAR_DATA_URL_LEN)
+      if (compressed.length > MAX_AVATAR_DATA_URL_LEN) {
+        throw new Error('图片过大，请换一张更小的图片')
+      }
+      setPreviewRefImages((prev) => [...prev, compressed])
+    } catch (e) {
+      setPreviewRefUploadError(e instanceof Error ? e.message : '上传失败')
+    }
+  }, [previewRefImages.length])
+
+  const removePreviewRefImage = useCallback((index: number) => {
+    setPreviewRefImages((prev) => prev.filter((_, i) => i !== index))
+    setPreviewRefUploadError(null)
+  }, [])
+
+  const clearPreviewRefImages = useCallback(() => {
+    setPreviewRefImages([])
+    setPreviewRefNote('')
+    setPreviewRefLockFace(true)
+    setPreviewRefSkipStyle(false)
+    setPreviewRefUploadError(null)
+  }, [])
+
+  const savePreviewImage = useCallback(async () => {
+    if (!previewImage || previewSaving) return
+    setPreviewSaving(true)
+    setPreviewSaveHint(null)
+    try {
+      const result = await saveMomentImageToAlbum(previewImage, 'image-gen-preview')
+      setPreviewSaveHint(result.message ?? (result.ok ? '已保存' : '保存失败'))
+    } catch (e) {
+      setPreviewSaveHint(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setPreviewSaving(false)
+    }
+  }, [previewImage, previewSaving])
 
   const switchProvider = useCallback(
     (next: MomentsImageProvider) => {
@@ -914,6 +1025,118 @@ export function MomentsImageGenSettingsPanel({
                 />
               </label>
 
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium text-[#6B7280]">参考图（可选）</span>
+                  {previewRefImages.length ? (
+                    <button
+                      type="button"
+                      onClick={clearPreviewRefImages}
+                      className="text-[10px] text-[#9CA3AF] underline-offset-2 hover:text-[#6B7280] hover:underline"
+                    >
+                      清空
+                    </button>
+                  ) : null}
+                </div>
+                <p className="mt-0.5 text-[10px] leading-relaxed text-[#9CA3AF]">
+                  {refSupportNote ||
+                    '上传后可测试参考图锁脸/锁画风；仅保存在本页预览，不会写入预设。'}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {previewRefImages.map((src, index) => (
+                    <div
+                      key={`${src.slice(0, 48)}-${index}`}
+                      className="relative size-[72px] overflow-hidden rounded-xl border border-[#E5E7EB] bg-white"
+                    >
+                      <img src={src} alt="" className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        aria-label="移除参考图"
+                        onClick={() => removePreviewRefImage(index)}
+                        className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-black/55 text-white"
+                      >
+                        <X className="size-3" strokeWidth={2} />
+                      </button>
+                    </div>
+                  ))}
+                  {previewRefImages.length < PREVIEW_REF_IMAGES_MAX ? (
+                    <button
+                      type="button"
+                      onClick={() => previewRefFileRef.current?.click()}
+                      className="flex size-[72px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-[#D1D5DB] bg-white text-[#9CA3AF] transition-colors hover:border-[#9CA3AF] hover:text-[#6B7280]"
+                    >
+                      <ImagePlus className="size-5" strokeWidth={1.5} />
+                      <span className="text-[9px]">上传</span>
+                    </button>
+                  ) : null}
+                </div>
+                {previewRefImages.length && refUploadSupported ? (
+                  <div className="mt-2 space-y-2 rounded-xl border border-[#F3F4F6] bg-white px-3 py-2.5">
+                    <label className="flex items-start gap-2 text-[12px] text-[#374151]">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={previewRefLockFace}
+                        onChange={(e) => setPreviewRefLockFace(e.target.checked)}
+                      />
+                      <span>
+                        锁定参考图形象五官
+                        <span className="mt-0.5 block text-[10px] leading-relaxed text-[#9CA3AF]">
+                          勾选后尽量保持参考图中的脸型、发型与五官一致
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 text-[12px] text-[#374151]">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={previewRefSkipStyle}
+                        onChange={(e) => setPreviewRefSkipStyle(e.target.checked)}
+                      />
+                      <span>
+                        绘图风格不参考参考图
+                        <span className="mt-0.5 block text-[10px] leading-relaxed text-[#9CA3AF]">
+                          勾选后只按上方「风格」Tab 与提示词决定画风，不复制参考图的线条/上色方式
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                ) : null}
+                {previewRefImages.length && refUploadSupported ? (
+                  <label className="mt-2 block">
+                    <span className="text-[10px] font-medium text-[#9CA3AF]">
+                      参考图特征补充（可选）
+                    </span>
+                    <textarea
+                      value={previewRefNote}
+                      onChange={(e) => setPreviewRefNote(e.target.value)}
+                      placeholder="例：银白色长发、琥珀色眼瞳、二次元画风"
+                      rows={2}
+                      maxLength={500}
+                      className="mt-1 w-full resize-none rounded-xl border border-white bg-white px-3 py-2 text-[12px] text-[#111827] outline-none transition-colors focus:ring-2 focus:ring-[#111827]/10"
+                    />
+                  </label>
+                ) : null}
+                {previewRefImages.length && !refUploadSupported ? (
+                  <p className="mt-2 text-[11px] text-[#EF4444]">
+                    已上传参考图，但当前模型不支持传图；请换 GPT Image 或 Gemini 原生图模后再生成预览。
+                  </p>
+                ) : null}
+                {previewRefUploadError ? (
+                  <p className="mt-2 text-[11px] text-[#EF4444]">{previewRefUploadError}</p>
+                ) : null}
+                <input
+                  ref={previewRefFileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    void onPickPreviewRefFile(e.target.files?.[0] ?? null)
+                    e.currentTarget.value = ''
+                  }}
+                />
+              </div>
+
               {selected ? (
                 <div>
                   <span className="text-[11px] font-medium text-[#6B7280]">生图尺寸</span>
@@ -961,7 +1184,12 @@ export function MomentsImageGenSettingsPanel({
               <button
                 type="button"
                 onClick={() => void runPreview()}
-                disabled={previewBusy || !previewPrompt.trim() || !previewSize}
+                disabled={
+                  previewBusy ||
+                  !previewPrompt.trim() ||
+                  !previewSize ||
+                  (previewRefImages.length > 0 && !refUploadSupported)
+                }
                 className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#111827] bg-white px-4 py-3 text-[13px] font-medium text-[#111827] transition-opacity disabled:opacity-50"
               >
                 {previewBusy ? (
@@ -996,7 +1224,18 @@ export function MomentsImageGenSettingsPanel({
                       <span className="text-[12px]">正在生成预览…</span>
                     </div>
                   ) : previewImage ? (
-                    <img src={previewImage} alt="生图预览" className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewLightboxOpen(true)}
+                      className="absolute inset-0 block h-full w-full"
+                      aria-label="查看大图"
+                    >
+                      <img
+                        src={previewImage}
+                        alt="生图预览"
+                        className="h-full w-full object-cover"
+                      />
+                    </button>
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-[#9CA3AF]">
                       <ImageIcon className="size-8" strokeWidth={1.25} />
@@ -1013,7 +1252,50 @@ export function MomentsImageGenSettingsPanel({
                     {previewSize ? ` · ${previewSize.label}` : ''}
                   </div>
                 ) : null}
+                {previewImage && !previewBusy ? (
+                  <div className="flex gap-2 border-t border-[#F3F4F6] px-3 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => void savePreviewImage()}
+                      disabled={previewSaving}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5 text-[12px] font-medium text-[#111827] transition-opacity disabled:opacity-50"
+                    >
+                      {previewSaving ? (
+                        <Loader2 className="size-3.5 animate-spin" strokeWidth={2} />
+                      ) : (
+                        <Download className="size-3.5" strokeWidth={1.75} />
+                      )}
+                      {previewSaving ? '保存中…' : '保存图片'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewLightboxOpen(true)}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#111827] bg-white px-3 py-2.5 text-[12px] font-medium text-[#111827]"
+                    >
+                      <Maximize2 className="size-3.5" strokeWidth={1.75} />
+                      查看大图
+                    </button>
+                  </div>
+                ) : null}
+                {previewSaveHint ? (
+                  <p
+                    className={`border-t border-[#F3F4F6] px-3 py-2 text-center text-[11px] ${
+                      previewSaveHint.includes('失败') || previewSaveHint.includes('取消')
+                        ? 'text-[#EF4444]'
+                        : 'text-[#6B7280]'
+                    }`}
+                  >
+                    {previewSaveHint}
+                  </p>
+                ) : null}
               </div>
+
+              <MomentImageViewer
+                open={previewLightboxOpen && Boolean(previewImage)}
+                images={previewImage ? [previewImage] : []}
+                allowSave
+                onClose={() => setPreviewLightboxOpen(false)}
+              />
             </motion.div>
           ) : null}
         </AnimatePresence>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#41 清理清单 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:radial-gradient(ellipse at 30% 20%,#3a2438,#140e18 70%);color:#f3e6f0;}
+.stage{max-width:800px;margin:0 auto;padding:0 12px 32px}
+.shell{border-radius:16px;overflow:hidden;border:1px solid rgba(232,160,191,.25);box-shadow:0 20px 50px rgba(0,0,0,.45);background:linear-gradient(180deg,#1c1520,#120e18);color:#f0e6f2}
+.title-custom{margin:0;padding:14px 16px;font-size:17px;color:#f0c0d4;border-bottom:1px solid rgba(255,255,255,.08)}
+.stats{display:flex;flex-wrap:wrap;gap:10px;padding:8px 14px;font-size:11px;opacity:.85}
+.row{margin:6px 12px;padding:10px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);font-size:12px;line-height:1.55}
+.btn{margin:8px 12px;padding:9px 14px;border:0;border-radius:10px;background:#e8a0bf;color:#1a1018;font-weight:700;cursor:pointer}
+.btn.dis{opacity:.4;pointer-events:none}
+.av{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#2a2030;margin-right:6px}
+.npc{margin:10px 12px;padding:10px;background:rgba(232,160,191,.08);border-radius:10px;font-size:12px;display:flex;gap:8px}
+.foot{padding:10px 14px 16px;font-size:10px;opacity:.5}
+.hero{width:100%;height:110px;object-fit:cover;display:block;opacity:.9}
+.check{display:flex;gap:8px;align-items:flex-start}
+.todo{display:flex;gap:8px;align-items:flex-start}.todo.done span{opacity:.45;text-decoration:line-through}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./40.html">上一张</a><b>#41 清理清单</b><a href="./42.html">下一张</a></div>
+<p class="fore">事后清单还差一项：把那句实话说完。</p>
+<div class="stage"><div class="shell"><p class="title-custom">事后清理清单</p><div class="stats"><span>完成 4/7</span><span>温柔模式</span></div>
+<div class="row todo" data-t="1"><input type="checkbox" checked><span>换床单 · 雨气还在</span></div>
+<div class="row todo" data-t="2"><input type="checkbox" checked><span>水杯续热 · 像关东煮</span></div>
+<div class="row todo" data-t="3"><input type="checkbox" checked><span>窗外伞收回</span></div>
+<div class="row todo" data-t="4"><input type="checkbox" checked><span>灯调暗 · 别让灯坏了扫兴</span></div>
+<div class="row todo" data-t="5"><input type="checkbox"><span>把「没事」从快捷回复删掉</span></div>
+<div class="row todo" data-t="6"><input type="checkbox"><span>发送草稿：别先走</span></div>
+<div class="row todo" data-t="7"><input type="checkbox"><span>拥抱确认 · 靠过来一点</span></div>
+<button class="btn" type="button" id="sync">同步完成度</button>
+<div class="npc"><span class="av">🧴</span><div id="prog"><b>清单</b>：勾选会更新。</div></div>
+<div class="foot">意象化 · 非教学</div></div></div>
+<script>
+(function(){function sync(){var boxes=document.querySelectorAll(".todo input");var n=0;for(var i=0;i<boxes.length;i++){if(boxes[i].checked){n++;boxes[i].parentElement.classList.add("done")}else boxes[i].parentElement.classList.remove("done")}document.getElementById("prog").textContent="完成 "+n+"/"+boxes.length}var boxes=document.querySelectorAll(".todo input");for(var i=0;i<boxes.length;i++)boxes[i].addEventListener("change",sync);document.getElementById("sync").addEventListener("click",sync);sync()})();
+</script>
+</body>
+</html>

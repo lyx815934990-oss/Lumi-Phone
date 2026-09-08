@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#16 聚会签到 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 0 28px}
+.hero{width:100%;height:128px;object-fit:cover;display:block;filter:saturate(1.05) contrast(1.04)}
+.shell{max-width:800px;margin:0 auto;border-radius:0 0 18px 18px;overflow:hidden;box-shadow:0 18px 48px rgba(20,16,12,.18)}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750;letter-spacing:.04em}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px;opacity:.82}
+.stats b{font-weight:750}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;flex-shrink:0;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.npc b{font-weight:700}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.list{padding:4px 12px 8px}
+.row{padding:9px 10px;margin-bottom:7px;border-radius:10px;font-size:12.5px;line-height:1.55}
+.row .m{font-size:10px;opacity:.6}
+.tabbar{display:flex;gap:0}
+.tabbar button{flex:1;border:0;padding:11px 8px;font-size:12px;cursor:pointer;background:transparent;font-weight:650}
+.tabbar button.on{font-weight:800}
+.panel{display:none}.panel.on{display:block}
+.pulse{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.55}}
+@keyframes blink{50%{opacity:.45}}
+@keyframes flip{0%{transform:rotateX(0)}40%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+.flip{animation:flip .45s ease}
+body{background:linear-gradient(180deg,#f3ebe0,#e4d8c8);color:#2a2420}
+.shell{background:#f7f2ea;border:1px solid #e0d4c0}
+.title-custom{background:linear-gradient(180deg,#fffaf2,#f3eadc);border-bottom:1px solid #e6dbc8}
+.stats{background:#ebe2d4}
+.seats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px}
+.seat{aspect-ratio:1;border:1px solid #e0d4c0;border-radius:10px;background:#fff;font-size:13px;cursor:pointer;font-weight:650;color:#4a4036;box-shadow:0 4px 10px rgba(60,40,20,.05)}
+.seat.me{background:#c9a24b;color:#fff;border-color:#b8923f}
+.seat.plus{background:#fff8e8;outline:1px dashed #c9a24b}
+.seat.on{box-shadow:0 0 0 3px #c9a24b55}
+.detail{margin:0 12px 8px;padding:10px;border-radius:10px;background:#fff;border:1px solid #ebe2d4;font-size:12px;line-height:1.6}
+.scroll{margin:8px 12px;padding:8px 10px;border-radius:8px;background:#1a2430;color:#f5e3a8;font-size:11px;overflow:hidden;white-space:nowrap}
+.scroll span{display:inline-block;padding-left:100%;animation:marquee 14s linear infinite}
+@keyframes marquee{to{transform:translateX(-100%)}}
+.row{background:#fff;border:1px solid #ebe2d4}
+.tip{background:#fff6e0;border:1px dashed #e0c98a;color:#7a5a20}
+.npc{background:#eef2ff}
+.btn{background:#8a6b28;color:#fff;margin:0 12px 10px}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./15.html">上一张</a><b>#16 聚会签到</b><a href="./17.html">下一张</a></div>
+<p class="fore">席位图上「带谁来」被点开的那一秒，比致辞更安静。</p>
+<div class="stage">
+<div class="shell">
+<img class="hero" alt="聚会签到墙" src="https://image.pollinations.ai/prompt/reunion%20banquet%20seating%20chart%20warm%20banquet%20hall%20paper%20tickets%20no%20people">
+<p class="title-custom">十年同学会 · 签到墙 · 桌号动态</p>
+<div class="stats"><span>到场 <b>86/120</b></span><span>+1 席 <b>12</b></span><span>雨天改室内</span><span>桌号 · 动态</span></div>
+<div class="seats"><button type="button" class="seat" data-seat="1">1</button><button type="button" class="seat" data-seat="2">2</button><button type="button" class="seat" data-seat="3">3</button><button type="button" class="seat" data-seat="4">4</button><button type="button" class="seat me on" data-seat="5">你</button><button type="button" class="seat plus" data-seat="6">+1</button><button type="button" class="seat" data-seat="7">7</button><button type="button" class="seat" data-seat="8">8</button><button type="button" class="seat" data-seat="9">9</button><button type="button" class="seat" data-seat="10">10</button><button type="button" class="seat" data-seat="11">11</button><button type="button" class="seat" data-seat="12">12</button></div>
+<div class="detail" data-seat-panel="1" hidden><b>席位 01</b><div style="margin-top:4px">班长已签 · 带娃 · 求靠窗远离坏灯。</div></div><div class="detail" data-seat-panel="2" hidden><b>席位 02</b><div style="margin-top:4px">学委迟到 · 堵在雨里 · 伞借给了别人。</div></div><div class="detail" data-seat-panel="3" hidden><b>席位 03</b><div style="margin-top:4px">体委已签 · 点了关东煮拼盘 · 正在劝酒。</div></div><div class="detail" data-seat-panel="4" hidden><b>席位 04</b><div style="margin-top:4px">空 · 改签未到 · 桌卡还写着旧名字。</div></div><div class="detail" data-seat-panel="5"><b>席位 05 · 你</b><div style="margin-top:4px">携带人：祁洵（雨夜来的那位）。餐叙意愿：靠过来一点坐。忌口：无。灯坏了的角落请勿安排拍照。</div></div><div class="detail" data-seat-panel="6" hidden><b>席位 06</b><div style="margin-top:4px">+1 位 · 伞架已满 · 请把折叠伞靠墙。</div></div><div class="detail" data-seat-panel="7" hidden><b>席位 07</b><div style="margin-top:4px">情侣档 A · 共伞入场 · 座位已并。</div></div><div class="detail" data-seat-panel="8" hidden><b>席位 08</b><div style="margin-top:4px">情侣档 B · 同上 · 拒绝分开拍。</div></div><div class="detail" data-seat-panel="9" hidden><b>席位 09</b><div style="margin-top:4px">匿名签到 · 只写「别先走」· 司仪已沉默。</div></div><div class="detail" data-seat-panel="10" hidden><b>席位 10</b><div style="margin-top:4px">空 · 等待候补。</div></div><div class="detail" data-seat-panel="11" hidden><b>席位 11</b><div style="margin-top:4px">校友会赞助 · 已签 · 发了便利店券。</div></div><div class="detail" data-seat-panel="12" hidden><b>席位 12</b><div style="margin-top:4px">老师旁听席 · 已签 · 提醒勿加班聊感情。</div></div>
+<div class="scroll"><span>签到动态：席位03已签 · 体委点了关东煮拼盘 · 席位09匿名只写「别先走」 · 伞架已满 · 便利店外还有人在躲雨 · </span></div>
+<div class="list">
+<div class="row"><span class="av">1️⃣</span><b>席位 01</b> <span class="m">班长 · 已签 · 带娃</span></div>
+<div class="row"><span class="av">2️⃣</span><b>席位 02</b> <span class="m">学委 · 迟到 · 堵在雨里</span></div>
+<div class="row"><span class="av">3️⃣</span><b>席位 03</b> <span class="m">体委 · 已签 · 关东煮拼盘</span></div>
+<div class="row"><span class="av">4️⃣</span><b>席位 04</b> <span class="m">空 · 改签未到</span></div>
+<div class="row"><span class="av">5️⃣</span><b>席位 05 · 你</b> <span class="m">携带人：祁洵</span></div>
+<div class="row"><span class="av">6️⃣</span><b>席位 06</b> <span class="m">+1 · 伞架已满</span></div>
+<div class="row"><span class="av">7️⃣</span><b>席位 07–08</b> <span class="m">情侣档 · 共伞入场</span></div>
+<div class="row"><span class="av">9️⃣</span><b>席位 09</b> <span class="m">匿名 · 「别先走」</span></div>
+</div>
+<button class="btn" type="button" id="fine">迟到罚款戏仿 · ¥20 咖啡</button>
+<div class="tip">签到截止 20:00 · 过时改桌需找司仪 · 便利店外候场不算签到</div>
+<div class="npc"><span class="av">📸</span><div><b>旁观 NPC</b>：最刺激的不是到场率，是席位备注里那行「携带人：祁洵」。</div></div>
+<div class="foot">同学会戏仿签到 · 雨夜特情桌 · 禁止外传真名</div>
+</div>
+</div>
+<script>
+(function(){
+var panels=document.querySelectorAll("[data-seat-panel]");
+var seats=document.querySelectorAll(".seat");
+function show(n){
+for(var i=0;i<panels.length;i++){
+panels[i].hidden=panels[i].getAttribute("data-seat-panel")!==String(n);
+}
+}
+for(var i=0;i<seats.length;i++){
+seats[i].addEventListener("click",function(){
+for(var j=0;j<seats.length;j++)seats[j].classList.remove("on");
+this.classList.add("on");
+show(this.getAttribute("data-seat")||"5");
+});
+}
+var fine=document.getElementById("fine");
+if(fine)fine.addEventListener("click",function(){
+this.textContent="已记罚款 · 可折算两份关东煮";
+});
+show("5");
+})();
+</script>
+</body>
+</html>

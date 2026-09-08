@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#11 会议室看板 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 12px 32px}
+.hero{width:100%;max-width:800px;margin:0 auto;height:132px;object-fit:cover;display:block;border-radius:0 0 4px 4px}
+.shell{max-width:800px;margin:0 auto;border-radius:18px;overflow:hidden;box-shadow:0 20px 50px rgba(20,16,12,.2);margin-top:-8px;position:relative}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px}
+.stats b{font-weight:750}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);flex-shrink:0}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.btn.dis{opacity:.4;pointer-events:none}
+.row{padding:10px 12px;margin:0 12px 8px;border-radius:12px;font-size:13px;line-height:1.55;cursor:pointer}
+.m{font-size:11px;opacity:.62}
+body{background:#e8eef4;color:#1a2430}.shell{background:#fff;border:1px solid #d0d8e0}.cal{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:12px}.slot{padding:10px;border-radius:10px;background:#f4f7fa;border:1px solid #e0e6ec;font-size:12px;cursor:pointer}.slot.hit{background:#fff3e0;border-color:#e0a060;box-shadow:0 0 0 2px #e0a06033}.btn{background:#3a6ea5;color:#fff;margin:8px 12px}.npc{background:#f4f7fa}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./10.html">上一张</a><b>#11 会议室看板</b><a href="./12.html">下一张</a></div>
+<p class="fore">日历又重叠——同一时段，同一个他。</p>
+<div class="stage"><img class="hero" alt="会议室" src="https://image.pollinations.ai/prompt/office%20calendar%20board%20soft%20daylight%20glass%20meeting%20room%20empty%20no%20people"><div class="shell"><p class="title-custom">会议室预约 · 本周</p><div class="stats"><span>冲突 2</span><span>企微同步</span><span>私人日历开</span></div><div class="cal"><div class="slot" data-t="A101 10:00 你·周会">A101 · 10:00<br>你 · 周会</div><div class="slot hit" data-t="B07 12:30 你与祁洵同时预约">B07 · 12:30<br><b>冲突</b> 你 / 祁洵</div><div class="slot" data-t="茶水间 15:00">茶水间 · 15:00<br>空</div><div class="slot hit" data-t="雨夜复盘 23:00 私人">私人 · 23:00<br>雨夜复盘 · 重叠</div></div><div class="tip" id="tip" style="background:#eef2ff">点选时段查看详情</div><button class="btn" type="button" id="anon">生成 HR 匿名墙草稿</button><div class="npc"><span class="av">👔</span><div><b>同事乙</b>：连续三周同一时段……墙见样卡 14。</div></div><div class="foot">冲突未自动拒绝</div></div></div>
+<script>
+(function(){var tip=document.getElementById("tip");var slots=document.querySelectorAll(".slot");for(var i=0;i<slots.length;i++){slots[i].addEventListener("click",function(){if(tip)tip.textContent=this.getAttribute("data-t")||""})}var a=document.getElementById("anon");if(a)a.addEventListener("click",function(){a.textContent="已复制到剪贴板（演示）"})})();
+</script>
+</body>
+</html>

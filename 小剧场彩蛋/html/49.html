@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#49 敏感热力图 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:radial-gradient(ellipse at 30% 20%,#3a2438,#140e18 70%);color:#f3e6f0;}
+.stage{max-width:800px;margin:0 auto;padding:0 12px 32px}
+.shell{border-radius:16px;overflow:hidden;border:1px solid rgba(232,160,191,.25);box-shadow:0 20px 50px rgba(0,0,0,.45);background:linear-gradient(180deg,#1c1520,#120e18);color:#f0e6f2}
+.title-custom{margin:0;padding:14px 16px;font-size:17px;color:#f0c0d4;border-bottom:1px solid rgba(255,255,255,.08)}
+.stats{display:flex;flex-wrap:wrap;gap:10px;padding:8px 14px;font-size:11px;opacity:.85}
+.row{margin:6px 12px;padding:10px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);font-size:12px;line-height:1.55}
+.btn{margin:8px 12px;padding:9px 14px;border:0;border-radius:10px;background:#e8a0bf;color:#1a1018;font-weight:700;cursor:pointer}
+.btn.dis{opacity:.4;pointer-events:none}
+.av{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#2a2030;margin-right:6px}
+.npc{margin:10px 12px;padding:10px;background:rgba(232,160,191,.08);border-radius:10px;font-size:12px;display:flex;gap:8px}
+.foot{padding:10px 14px 16px;font-size:10px;opacity:.5}
+.hero{width:100%;height:110px;object-fit:cover;display:block;opacity:.9}
+.check{display:flex;gap:8px;align-items:flex-start}
+.heat{position:relative;height:180px;margin:12px;border-radius:12px;background:radial-gradient(circle at 50% 40%,#e85d2c55,#2a2030 70%)}.hz{position:absolute;font-size:10px;padding:4px 8px;border-radius:99px;background:#2a2030;border:1px solid #e8a0bf55;cursor:pointer}.hz.hot{background:#e85d2c;color:#fff;font-weight:700}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./48.html">上一张</a><b>#49 敏感热力图</b><a href="./50.html">下一张</a></div>
+<p class="fore">热区集中在——被叫停的那句别先走。</p>
+<div class="stage"><div class="shell"><p class="title-custom">敏感点 · 热力图</p><div class="stats"><span>采样 26 分</span><span>峰值：语音</span></div><div class="heat"><div class="hz" style="left:20%;top:30%" data-t="呼吸">A</div><div class="hz hot" style="left:48%;top:36%" data-t="别先走">B</div><div class="hz" style="left:70%;top:50%" data-t="共伞">C</div></div><div class="row" id="info">点热区查看</div><button class="btn" type="button" id="peak">只看峰值</button><div class="npc"><span class="av">🌡️</span><div><b>图例</b>：意象热区，无写实。</div></div><div class="foot">玩法向</div></div></div>
+<script>
+(function(){var hz=document.querySelectorAll(".hz");for(var i=0;i<hz.length;i++){hz[i].addEventListener("click",function(){document.getElementById("info").textContent="热区："+this.getAttribute("data-t")})}document.getElementById("peak").addEventListener("click",function(){for(var j=0;j<hz.length;j++){if(!hz[j].classList.contains("hot"))hz[j].style.opacity=".25"}})})();
+</script>
+</body>
+</html>

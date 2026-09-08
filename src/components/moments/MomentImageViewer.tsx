@@ -173,6 +173,26 @@ export function MomentImageViewer({
     }
   }, [open])
 
+  /** React onWheel 默认为 passive，无法 preventDefault；改用原生监听以拦截页面滚动 */
+  useEffect(() => {
+    if (!open) return
+    const el = viewportRef.current
+    if (!el) return
+
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault()
+      const delta = e.deltaY > 0 ? -0.15 : 0.15
+      setScale((s) => {
+        const next = clampScale(s + delta)
+        if (next <= 1) setOffset({ x: 0, y: 0 })
+        return next
+      })
+    }
+
+    el.addEventListener('wheel', onWheelNative, { passive: false })
+    return () => el.removeEventListener('wheel', onWheelNative)
+  }, [open])
+
   const animateSlideTo = useCallback(
     (nextIndex: number, targetOffsetX: number) => {
       if (!slideWidth) {
@@ -304,16 +324,6 @@ export function MomentImageViewer({
     } finally {
       setLocalBusy(false)
     }
-  }
-
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault()
-    const delta = e.deltaY > 0 ? -0.15 : 0.15
-    setScale((s) => {
-      const next = clampScale(s + delta)
-      if (next <= 1) setOffset({ x: 0, y: 0 })
-      return next
-    })
   }
 
   const onDoubleClick = () => {
@@ -514,7 +524,6 @@ export function MomentImageViewer({
               ref={viewportRef}
               className="h-full w-full max-w-full touch-none select-none overflow-hidden"
               style={{ touchAction: 'none' }}
-              onWheel={onWheel}
               onDoubleClick={onDoubleClick}
               onTouchStart={onTouchStart}
               onTouchMove={onTouchMove}

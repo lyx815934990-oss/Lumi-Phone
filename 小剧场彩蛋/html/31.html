@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#31 好感度 Bug · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:#0b0f14;color:#9dffc2;font-family:ui-monospace,Consolas,"PingFang SC",monospace;}
+.stage{max-width:800px;margin:0 auto;padding:0 12px 32px}
+.shell{border-radius:14px;overflow:hidden;border:1px solid #2a4a3a;box-shadow:0 0 40px #1a3a2844;background:#10161c}
+.title-custom{margin:0;padding:14px 16px;font-size:16px;color:#7dffb0;border-bottom:1px solid #243028;letter-spacing:.08em}
+.stats{display:flex;flex-wrap:wrap;gap:10px;padding:8px 14px;font-size:11px;opacity:.85}
+.row{margin:6px 12px;padding:10px;border-radius:8px;background:#1a2420;border:1px solid #243028;font-size:12px;line-height:1.55}
+.btn{margin:8px 12px;padding:9px 14px;border:1px solid #3dff9a55;background:#1a2820;color:#7dffb0;border-radius:8px;cursor:pointer;font-weight:700}
+.btn.dis{opacity:.4;pointer-events:none}
+.av{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#243028;margin-right:6px}
+.npc{margin:10px 12px;padding:10px;background:#1a2420;border-radius:10px;font-size:12px;display:flex;gap:8px}
+.foot{padding:10px 14px 16px;font-size:10px;opacity:.5}
+.bar{height:10px;background:#1a2820;border-radius:99px;overflow:hidden;margin:8px 12px}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,#3dff9a,#c9a24b);transition:width .4s}
+.hero{width:100%;height:110px;object-fit:cover;display:block}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./30.html">上一张</a><b>#31 好感度 Bug</b><a href="./32.html">下一张</a></div>
+<p class="fore">显示 42%，真实 91%——雨夜后不同步。</p>
+<div class="stage"><img class="hero" alt="好感bug" src="https://image.pollinations.ai/prompt/retro%20game%20affection%20meter%20glitch%20green%20terminal%20no%20people"><div class="shell"><p class="title-custom">好感度 Bug 报告</p><div class="stats"><span>目标 祁洵</span><span>版本 2.3.1</span><span>雨夜补丁失败</span></div><div class="row">显示值 <b id="shown">42%</b> · 真实值 <b id="real">91%</b></div><div class="bar"><i id="bar" style="width:42%"></i></div><div class="row">异常：便利店停留后数值卡住 · 关键词「别先走」</div><div class="row">堆栈：HeartSync.delay / UmbrellaRadius.skew / LampBroken.flag</div><button class="btn" type="button" id="fix">强制刷新</button><button class="btn" type="button" id="fake">伪装正常</button><div class="npc"><span class="av">🐛</span><div><b>系统</b>：检测到「靠过来一点」后好感条抖动。</div></div><div class="foot">玩家可见 / 内部真实值仅 debug</div></div></div>
+<script>
+(function(){var mode="bug";var shown=document.getElementById("shown");var real=document.getElementById("real");var bar=document.getElementById("bar");function paint(){if(mode==="bug"){shown.textContent="42%";real.textContent="91%";bar.style.width="42%"}else if(mode==="fix"){shown.textContent="91%";real.textContent="91%";bar.style.width="91%"}else{shown.textContent="50%";real.textContent="91%";bar.style.width="50%"}}document.getElementById("fix").addEventListener("click",function(){mode="fix";paint()});document.getElementById("fake").addEventListener("click",function(){mode="fake";paint()});paint()})();
+</script>
+</body>
+</html>

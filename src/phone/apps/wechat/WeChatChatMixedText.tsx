@@ -3,10 +3,11 @@ import type { CSSProperties } from 'react'
 import { getWechatClassicEmojiUrlByName } from './stickers/wechatClassicStickerPack'
 
 /**
- * 聊天室英文/数字：跟随微信主题字体（--wx-font / 系统 UI），不再拆成 Corbel Light。
+ * 聊天室英文/数字：跟随微信主题字体（--wx-font → 全局 --phone-font）。
  * 保留导出名以免外部引用断裂。
  */
-export const WECHAT_CHAT_LATIN_NUM_FONT_FAMILY = 'var(--wx-chat-font, var(--wx-font))'
+export const WECHAT_CHAT_LATIN_NUM_FONT_FAMILY =
+  'var(--wx-chat-font, var(--wx-font, var(--phone-font)))'
 
 export const WECHAT_CHAT_LATIN_NUM_STYLE: CSSProperties = {
   fontFamily: WECHAT_CHAT_LATIN_NUM_FONT_FAMILY,
@@ -83,9 +84,9 @@ function renderTextWithClassicEmojis(text: string, keyPrefix: string) {
   })
 }
 
-/** 原生输入框：跟随气泡/微信主题字体（系统 UI） */
+/** 原生输入框：跟随气泡 / 微信主题 / 全局字体 */
 export const wechatChatComposerFontStyle: CSSProperties = {
-  fontFamily: 'var(--wx-chat-font, var(--wx-font))',
+  fontFamily: 'var(--wx-chat-font, var(--wx-font, var(--phone-font)))',
 }
 
 /** 混排文案：中英数与表情同字体；仅拆 URL / 经典表情 */
@@ -98,14 +99,21 @@ export function WeChatChatMixedText({
   text: string
   className?: string
   style?: CSSProperties
-  /** true：显式使用当前气泡模版字体栈 */
+  /**
+   * true：显式套一层聊天气泡字体变量（仍回退 --wx-font / --phone-font）。
+   * 勿写成仅 `--wx-chat-font`：未注入时浏览器会回落到系统默认字体。
+   */
   templateFont?: boolean
 }) {
   const segments = splitTextAndUrls(String(text ?? ''))
   return (
     <span
       className={className}
-      style={templateFont ? { fontFamily: 'var(--wx-chat-font)', ...style } : style}
+      style={
+        templateFont
+          ? { fontFamily: 'var(--wx-chat-font, var(--wx-font, var(--phone-font)))', ...style }
+          : style
+      }
     >
       {segments.map((seg, index) => {
         if (seg.kind === 'url') {

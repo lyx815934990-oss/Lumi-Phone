@@ -14,6 +14,7 @@ import {
 import {
   buildManualStoryTimelinePlotRow,
   computeStoryTimelineRowTextHash,
+  extractStoryTimelineCurrentAnchorCalendarLabel,
   hasStructuredStoryTimelineState,
   resolveStoryTimelineRowTitle,
   stripStoryTimelineTitleLine,
@@ -21,7 +22,7 @@ import {
   upsertStoryTimelineCalendarAnchorInRowText,
   extractStoryTimelineEditableCalendarLabel,
   normalizeStoryTimelineRowTitle,
-  parseStoryCalendarDayStartMs,
+  parseStoryCalendarDayAndClockFromLabel,
   STORY_TIMELINE_ROW_TITLE_MAX,
   type StoryTimelineEventScope,
   type StoryTimelinePlotRow,
@@ -33,6 +34,8 @@ import {
   type DualNarrativeStoryFields,
 } from './dualNarrativeTime'
 import { MemoryStoryTimeFieldsEditor } from './MemoryStoryTimeFieldsEditor'
+import { syncStoryTimelineStateNowFromLatestPlotRows } from './storyTimelineCalendarContext'
+import { storyDayTimeToMs, syncNetworkStoryNowFromPrimary } from './storyTimelineNetworkNowSync'
 
 export type StoryTimelineEditorTarget =
   | { kind: 'row-create'; characterId: string; defaultScope?: StoryTimelineEventScope }
@@ -189,6 +192,7 @@ export function StoryTimelineEditorSheet({
           return
         }
         await personaDb.appendStoryTimelinePlotRow(row)
+        await syncStoryTimelineStateNowFromLatestPlotRows(target.characterId)
       } else if (target.kind === 'row-edit') {
         const prev = target.row
         const textChanged = mergedRowText !== prev.rowText.trim()
@@ -209,45 +213,21 @@ export function StoryTimelineEditorSheet({
             : {}),
         }
         if (!textChanged && !titleChanged) {
-          setError('内容未变化')
+          // 摘要正文未改时仍可按行锚点重算「当前状态」（修回拨不同步）
+          const { synced } = await syncStoryTimelineStateNowFromLatestPlotRows(
+            resolveEditorCharacterId(target),
+          )
+          if (!synced) {
+            setError('内容未变化')
+            return
+          }
+          onSaved()
+          onClose()
           return
         }
         await personaDb.upsertStoryTimelinePlotRow(next)
-        // 手改公历：抬升剧情轴「现在」，避免下一轮生成仍按错误 plot 年份落库
-        if (calendarLabel) {
-          const dayPart = calendarLabel.match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1]
-          const timePart = calendarLabel.match(/(\d{1,2}):(\d{2})/)?.[1]
-          if (dayPart) {
-            const cid = resolveEditorCharacterId(target)
-            const st =
-              (await personaDb.getStoryTimelineState(cid)) ??
-              ({
-                characterId: cid,
-                updatedAt: Date.now(),
-                costumes: [],
-                items: [],
-                foreshadows: [],
-                todos: [],
-                recentEvents: [],
-              } satisfies StoryTimelineState)
-            const nextDayMs = parseStoryCalendarDayStartMs(dayPart)
-            const curDayMs = st.currentStoryDay?.trim()
-              ? parseStoryCalendarDayStartMs(st.currentStoryDay.trim())
-              : null
-            if (nextDayMs != null && (curDayMs == null || nextDayMs >= curDayMs)) {
-              await personaDb.putStoryTimelineState({
-                ...st,
-                characterId: cid,
-                updatedAt: Date.now(),
-                currentStoryDay: dayPart,
-                currentStoryTime: timePart
-                  ? `${timePart.split(':')[0]!.padStart(2, '0')}:${timePart.split(':')[1]}`
-                  : st.currentStoryTime,
-                todos: [],
-              })
-            }
-          }
-        }
+        // 手改公历：按全部摘要行最晚锚点重算「现在」（允许回拨纠错）
+        await syncStoryTimelineStateNowFromLatestPlotRows(resolveEditorCharacterId(target))
       } else if (target.kind === 'state-edit') {
         const cid = target.characterId.trim()
         if (!cid) return
@@ -273,12 +253,30 @@ export function StoryTimelineEditorSheet({
             await personaDb.deleteStoryTimelineState(cid)
           }
         } else {
+          const fromManual = extractStoryTimelineCurrentAnchorCalendarLabel(bodyForStorage)
+          const parsed = parseStoryCalendarDayAndClockFromLabel(fromManual)
           await personaDb.putStoryTimelineState({
             ...base,
             characterId: cid,
             updatedAt: Date.now(),
             manualAnchorBlock: bodyForStorage.slice(0, 8000),
+            ...(parsed
+              ? {
+                  currentStoryDay: parsed.day,
+                  currentStoryTime: parsed.clock ?? base.currentStoryTime,
+                }
+              : {}),
           })
+          if (parsed) {
+            await syncNetworkStoryNowFromPrimary({
+              sourceCharacterId: cid,
+              storyDay: parsed.day,
+              storyTime: parsed.clock,
+              storyNowMs: storyDayTimeToMs(parsed.day, parsed.clock),
+              syncOnlineClock: true,
+              forceAlign: true,
+            })
+          }
         }
       }
       onSaved()

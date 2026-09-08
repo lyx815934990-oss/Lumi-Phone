@@ -5,6 +5,7 @@ import {
   CreditCard,
   Fingerprint,
   Images,
+  Palette,
   Settings,
   Smile,
   User,
@@ -58,10 +59,21 @@ export type WeChatMeInstagramProfileProps = {
   onOpenMemoryTrace?: () => void
   /** 列表项点击 */
   onMenuItemClick?: (id: MenuRowId) => void
+  /** 首次引导：指向「外观与主题」 */
+  showAppearanceGuide?: boolean
+  onDismissAppearanceGuide?: () => void
   className?: string
 }
 
-export type MenuRowId = 'favorites' | 'album' | 'memory' | 'identity' | 'card' | 'emoji' | 'settings'
+export type MenuRowId =
+  | 'favorites'
+  | 'album'
+  | 'memory'
+  | 'identity'
+  | 'card'
+  | 'emoji'
+  | 'appearance'
+  | 'settings'
   | 'persona'
 
 type MenuRow = {
@@ -79,6 +91,7 @@ const MENU_ROWS: MenuRow[] = [
   { id: 'persona', label: '角色人设', en: 'Persona', icon: Fingerprint },
   { id: 'card', label: '卡包', en: 'Cards', icon: CreditCard },
   { id: 'emoji', label: '表情', en: 'Stickers', icon: Smile },
+  { id: 'appearance', label: '外观与主题', en: 'Appearance', icon: Palette },
   { id: 'settings', label: '设置', en: 'Settings', icon: Settings },
 ]
 
@@ -99,6 +112,8 @@ export function WeChatMeInstagramProfile({
   onOpenProfileCard,
   onOpenMemoryTrace,
   onMenuItemClick,
+  showAppearanceGuide = false,
+  onDismissAppearanceGuide,
   className = '',
 }: WeChatMeInstagramProfileProps) {
   const avatarSrc = resolveProfileAvatarPreviewUrl(avatarUrl)
@@ -231,16 +246,24 @@ export function WeChatMeInstagramProfile({
               {MENU_ROWS.map((row, idx) => {
                 const Icon = row.icon
                 const isLast = idx === MENU_ROWS.length - 1
+                const guideHere = showAppearanceGuide && row.id === 'appearance'
                 return (
-                  <li key={row.id}>
+                  <li key={row.id} className={guideHere ? 'relative z-[2]' : undefined}>
                     <button
                       type="button"
                       onClick={() => onMenuItemClick?.(row.id)}
-                      className="group flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors"
+                      className="group relative flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors"
                       style={{
                         borderBottom: isLast ? undefined : `1px solid ${LUMI_SHELL.hairline}`,
                       }}
                     >
+                      {guideHere ? (
+                        <div
+                          className="pointer-events-none absolute inset-1 rounded-[10px] border-2 border-[#111827]"
+                          style={{ boxShadow: '0 0 0 4px rgba(17,24,39,0.12)' }}
+                          aria-hidden
+                        />
+                      ) : null}
                       <span
                         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
                         style={{ background: 'rgba(16,16,18,0.04)' }}
@@ -267,6 +290,20 @@ export function WeChatMeInstagramProfile({
                         aria-hidden
                       />
                     </button>
+                    {guideHere ? (
+                      <div className="absolute left-3 right-3 top-full z-[3] mt-2 rounded-[12px] border bg-white/95 p-2.5 shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
+                        <p className="text-[12px] leading-snug text-[#1C1C1E]">
+                          点这里可以调整微信外观，比如聊天气泡和头像显示。
+                        </p>
+                        <button
+                          type="button"
+                          onClick={onDismissAppearanceGuide}
+                          className="mt-2 w-full rounded-[8px] bg-black py-1.5 text-center text-[11px] text-white"
+                        >
+                          知道了
+                        </button>
+                      </div>
+                    ) : null}
                   </li>
                 )
               })}

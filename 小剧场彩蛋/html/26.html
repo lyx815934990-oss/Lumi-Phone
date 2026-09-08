@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#26 冷静期倒计时 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:radial-gradient(ellipse at 50% 0%,#2a2030,#120e16 70%);color:#f0e6f2}
+.stage{max-width:420px;margin:12px auto 28px;padding:0 12px 24px}
+.hero{width:100%;height:110px;object-fit:cover;border-radius:12px;display:block;opacity:.9}
+.title-custom{padding:12px 4px;font-size:19px;color:#f5e3a8}
+.panel{padding:18px;border-radius:16px;background:linear-gradient(165deg,#1e1624,#141018);border:1px solid #3a2a40;box-shadow:0 16px 40px rgba(0,0,0,.4)}
+.stats{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;opacity:.75;margin-bottom:14px}
+.ring-wrap{display:flex;flex-direction:column;align-items:center;padding:8px 0 16px}
+.lab{font-size:11px;opacity:.65;letter-spacing:.16em}
+.time{font-size:40px;font-family:ui-monospace,Consolas,monospace;font-weight:700;margin:8px 0;letter-spacing:.04em}
+.ring{width:120px;height:120px;border-radius:50%;background:conic-gradient(#c9a24b var(--p,35%),#2a2030 0);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 6px #1a1420,inset 0 0 20px rgba(0,0,0,.4)}
+.ring>i{width:88px;height:88px;border-radius:50%;background:#141018;display:flex;align-items:center;justify-content:center;font-size:13px;color:#c9a24b;font-style:normal}
+.li{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px dashed rgba(255,255,255,.08);font-size:12px}
+.clause{margin-top:12px;padding:10px;border-radius:8px;background:rgba(255,255,255,.04);font-size:12px;line-height:1.65;opacity:.85}
+.btn{width:100%;margin-top:12px;padding:12px;border:0;border-radius:10px;background:linear-gradient(180deg,#e8a0bf,#c45c8a);color:#2a1520;font-weight:800;cursor:pointer;transition:opacity .4s,filter .4s}
+.btn.dying{opacity:.55;filter:grayscale(.4)}
+.btn.dead{opacity:.35;filter:grayscale(1);text-decoration:line-through;cursor:default;pointer-events:none}
+.foot{margin-top:10px;font-size:10px;opacity:.45;text-align:center}
+.npc-block{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.npc-row{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid rgba(232,160,191,.15);font-size:12px;line-height:1.5}
+.av{flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(145deg,#3a2a40,#1a1420);display:inline-flex;align-items:center;justify-content:center;font-size:15px}
+.dense{margin-top:16px;padding:14px;border-radius:14px;background:#1a1420;border:1px solid #2a2030;font-size:12px}
+.dx-h{font-weight:700;font-size:14px}.dx-sub{margin:4px 0 10px;font-size:11px;opacity:.75}
+.dx-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;font-size:11px}
+.dx-list{border-radius:8px;overflow:hidden;background:rgba(255,255,255,.04)}
+.dx-row{display:flex;gap:8px;padding:8px 10px;border-bottom:1px dashed rgba(255,255,255,.08);line-height:1.45}
+.dx-t{font-family:ui-monospace,Consolas,monospace;opacity:.55;min-width:22px}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./25.html">上一张</a><b>#26 冷静期倒计时</b><a href="./27.html">下一张</a></div>
+<p class="fore">电子签协议 · 倒计时走字 · 撤回按钮逐渐灰死</p>
+<div class="stage">
+<img class="hero" alt="countdown ring" src="https://image.pollinations.ai/prompt/dark%20countdown%20timer%20ring%20violet%20night%20rain%20window%20no%20people">
+<p class="title-custom">⏳ 分手冷静期 · 电子签</p>
+<div class="panel">
+<div class="stats"><span>协议 CL-8821</span><span>条款 12</span><span>双方已签</span><span>勿教唆自伤</span></div>
+<div class="ring-wrap">
+<div class="lab">剩余撤回窗口</div>
+<div class="time" id="cd">72:00:00</div>
+<div class="ring" id="ring" style="--p:100%"><i id="pct">100%</i></div>
+<div class="lab" style="margin-top:10px">起算：雨夜便利店外 · 灯坏了那一刻</div>
+</div>
+<div class="li"><b>甲方</b><span>你 · 已签</span></div>
+<div class="li"><b>乙方</b><span>祁洵 · 已签</span></div>
+<div class="li"><b>标的</b><span>「没事」与「别先走」之争议</span></div>
+<div class="li"><b>履行地</b><span>共伞半径内</span></div>
+<div class="li"><b>违约</b><span>单方面先走 · 需请关东煮×2</span></div>
+<div class="li"><b>例外</b><span>「靠过来一点」可中断倒计时 10 分</span></div>
+<div class="clause">条款摘要：倒计时结束前可撤回；结束后按钮将永久灰死。冷静期内禁止删除共享相册雨夜分组。本协议为剧情戏仿。</div>
+<button type="button" class="btn" id="revoke">撤回冷静期申请</button>
+<div class="foot">存证哈希已脱敏 · 演示加速：约 72 秒走完 72 小时</div>
+</div>
+<div class="npc-block"><div class="npc-row"><span class="av">⚖️</span><span>法务旁白：这是戏仿协议，别当真去律师楼。</span></div><div class="npc-row"><span class="av">💬</span><span>祁洵：按钮灰之前，你要不要先说一句真的。</span></div><div class="npc-row"><span class="av">🧑</span><span>路人：雨里两个人盯着手机，像在等什么判决。</span></div><div class="npc-row"><span class="av">🏪</span><span>店员：关东煮还热着，要不要先吃再冷静。</span></div><div class="npc-row"><span class="av">📝</span><span>你（自言）：其实不是没事。草稿还在。</span></div><div class="npc-row"><span class="av">🌧️</span><span>雨声：靠过来一点——打完又怕太近。</span></div><div class="npc-row"><span class="av">🕯️</span><span>温虐党：撤回键一点点灰死，比分手台词狠。</span></div><div class="npc-row"><span class="av">📦</span><span>系统：本区为「冷静期」番外旁观串。</span></div></div>
+<div class="dense">
+<div class="dx-h">关联碎片 · 冷静期 · #26</div>
+<div class="dx-sub">倒计时走字；撤回按钮逐渐灰死</div>
+<div class="dx-stats"><span>线索 <b>12</b></span><span>旁观 <b>8</b></span><span>结构 <b>9</b></span><span>仪式 <b>开</b></span></div>
+<div class="dx-list"><div class="dx-row"><span class="dx-t">01</span><span>协议标题戏仿 · CL-8821</span></div><div class="dx-row"><span class="dx-t">02</span><span>剩余时分秒 + 进度环</span></div><div class="dx-row"><span class="dx-t">03</span><span>撤回按钮态：可用 → dying → dead</span></div><div class="dx-row"><span class="dx-t">04</span><span>起算：雨夜便利店外 · 灯坏了</span></div><div class="dx-row"><span class="dx-t">05</span><span>例外：「靠过来一点」可中断 10 分</span></div><div class="dx-row"><span class="dx-t">06</span><span>违约：单方面先走 · 关东煮×2</span></div><div class="dx-row"><span class="dx-t">07</span><span>禁止删除共享相册雨夜分组</span></div><div class="dx-row"><span class="dx-t">08</span><span>系统注记：样卡 #26 · C类 · 标签 BE·互动·游戏UI</span></div></div>
+</div>
+</div>
+<script>
+(function(){
+var total=72*3600,left=total,demoFactor=3600;
+var cd=document.getElementById("cd");
+var ring=document.getElementById("ring");
+var pct=document.getElementById("pct");
+var btn=document.getElementById("revoke");
+var dead=false,paused=false;
+function pad(n){n=Math.floor(n);return n<10?"0"+n:String(n)}
+function paint(){
+var h=Math.floor(left/3600),m=Math.floor((left%3600)/60),s=Math.floor(left%60);
+if(cd)cd.textContent=pad(h)+":"+pad(m)+":"+pad(s);
+var p=Math.max(0,Math.min(100,(left/total)*100));
+if(ring)ring.style.setProperty("--p",p+"%");
+if(pct)pct.textContent=Math.round(p)+"%";
+if(!btn||dead)return;
+if(p<35){btn.classList.add("dying");btn.textContent="撤回窗口将关闭…"}
+else{btn.classList.remove("dying");btn.textContent="撤回冷静期申请"}
+}
+if(btn)btn.addEventListener("click",function(){
+if(dead)return;
+paused=true;
+btn.textContent="已撤回 · 倒计时中断";
+btn.classList.add("dead");
+dead=true;
+if(cd)cd.textContent="—:—:—";
+if(pct)pct.textContent="撤回";
+});
+setInterval(function(){
+if(paused||dead)return;
+left=Math.max(0,left-demoFactor);
+paint();
+if(left<=0){
+dead=true;
+if(btn){btn.classList.add("dead");btn.textContent="撤回（已过窗口）"}
+if(pct)pct.textContent="0%";
+}
+},1000);
+paint();
+})();
+</script>
+</body>
+</html>

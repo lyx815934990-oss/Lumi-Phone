@@ -10,6 +10,7 @@ import { CUISINE_RECIPE_WORLD_BOOK_APPENDIX } from './cuisineRecipeWorldBookAppe
 import { DIRECT_ANSWER_NO_PROBE_APPENDIX } from './directAnswerNoProbeAppendix'
 import { PASSIONATE_DIRECT_BALL_APPENDIX } from './passionateDirectBallAppendix'
 import { REALISTIC_CONFLICT_APPENDIX } from './realisticConflictAppendix'
+import { REALISTIC_AUTONOMY_APPENDIX } from './realisticAutonomyAppendix'
 import { GENTLE_OLDER_BROTHER_APPENDIX } from './gentleOlderBrotherAppendix'
 import { AUTONOMOUS_SOCIAL_LIFE_APPENDIX } from './autonomousSocialLifeAppendix'
 import { SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX } from './schoolCampusCommonKnowledgeAppendix'
@@ -26,6 +27,7 @@ export type LoreArchiveBuiltinPresetId =
   | 'directAnswerNoProbe'
   | 'passionateDirectBall'
   | 'realisticConflict'
+  | 'realisticAutonomy'
   | 'gentleOlderBrother'
   | 'autonomousSocialLife'
   | 'schoolCampusCommonKnowledge'
@@ -100,6 +102,12 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
       '系统内置：允许正常吵架与僵持，禁止 char 莫名其妙自我说服、一轮秒和好。适合想正经吵的场景；可能下头、冷战，请谨慎开启。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
   },
   {
+    id: 'realisticAutonomy',
+    title: '现实一点',
+    description:
+      '系统内置：互相独立的健康关系——想好好在一起，但非「非你不可」；可为现实取舍；回答按利害；可不时刻当情绪客服；可拒绝/表达疲惫/必要时吵架或提分开。拒绝须认真沟通（说清理由与下一步），禁止敷衍甩锅、逃避责任。贴人设、非故意挑事。可能下头，请谨慎开启。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+  },
+  {
     id: 'gentleOlderBrother',
     title: '能不能温柔一点',
     description:
@@ -134,6 +142,7 @@ export function resolveLoreArchiveBuiltinPresetToggles(
     directAnswerNoProbe: raw?.directAnswerNoProbe === true,
     passionateDirectBall: raw?.passionateDirectBall === true,
     realisticConflict: raw?.realisticConflict === true,
+    realisticAutonomy: raw?.realisticAutonomy === true,
     gentleOlderBrother: raw?.gentleOlderBrother === true,
     autonomousSocialLife: raw?.autonomousSocialLife === true,
     schoolCampusCommonKnowledge: raw?.schoolCampusCommonKnowledge === true,
@@ -157,6 +166,7 @@ export function buildWechatReplyRomanceSections(
   if (resolved.directAnswerNoProbe) parts.push(DIRECT_ANSWER_NO_PROBE_APPENDIX)
   if (resolved.passionateDirectBall) parts.push(PASSIONATE_DIRECT_BALL_APPENDIX)
   if (resolved.realisticConflict) parts.push(REALISTIC_CONFLICT_APPENDIX)
+  if (resolved.realisticAutonomy) parts.push(REALISTIC_AUTONOMY_APPENDIX)
   if (resolved.gentleOlderBrother) parts.push(GENTLE_OLDER_BROTHER_APPENDIX)
   if (resolved.autonomousSocialLife) parts.push(AUTONOMOUS_SOCIAL_LIFE_APPENDIX)
   if (resolved.schoolCampusCommonKnowledge) parts.push(SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX)
@@ -211,21 +221,27 @@ export function buildWechatThinkingChainRomanceSteps(
     )
     stepNo += 1
   }
+  if (resolved.realisticAutonomy) {
+    steps.push(
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四'][stepNo - 5] ?? String(stepNo)}步：内化「现实一点」（想好好在一起的互相独立；自爱；拒绝须认真沟通禁敷衍；可拒绝/疲惫/必要时吵架或提分开；贴人设非逃责；条文在输出协议；禁复述）`,
+    )
+    stepNo += 1
+  }
   if (resolved.gentleOlderBrother) {
     steps.push(
-      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四'][stepNo - 5] ?? String(stepNo)}步：内化「能不能温柔一点」（稳核年上照顾；又说又做；动作轻柔；时刻考虑感受；禁油腻用力过猛；条文在输出协议；禁复述）`,
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五'][stepNo - 5] ?? String(stepNo)}步：内化「能不能温柔一点」（稳核年上照顾；又说又做；动作轻柔；时刻考虑感受；禁油腻用力过猛；条文在输出协议；禁复述）`,
     )
     stepNo += 1
   }
   if (resolved.autonomousSocialLife) {
     steps.push(
-      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五'][stepNo - 5] ?? String(stepNo)}步：内化「我也有自己的生活」（自主日常+群像；线上主动报备碎片；禁没朋友/无所事事真空；条文在输出协议；禁复述）`,
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六'][stepNo - 5] ?? String(stepNo)}步：内化「我也有自己的生活」（自主日常+群像；线上主动报备碎片；禁没朋友/无所事事真空；条文在输出协议；禁复述）`,
     )
     stepNo += 1
   }
   if (resolved.schoolCampusCommonKnowledge) {
     steps.push(
-      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六'][stepNo - 5] ?? String(stepNo)}步：若本轮涉校园/艺考/高考/大学：内化「校园与升学常识」（纪律处分、艺考集训与招录、查分志愿时间线、课表与实习；条文在输出协议；禁复述）`,
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七'][stepNo - 5] ?? String(stepNo)}步：若本轮涉校园/艺考/高考/大学：内化「校园与升学常识」（纪律处分、艺考集训与招录、查分志愿时间线、课表与实习；条文在输出协议；禁复述）`,
     )
     stepNo += 1
   }
@@ -287,6 +303,11 @@ ${PASSIONATE_DIRECT_BALL_APPENDIX}`)
 矛盾戏硬约束：允许正常吵架与僵持；禁止 {{char}} 莫名自我说服、一轮秒和好；和好须有台阶：
 ${REALISTIC_CONFLICT_APPENDIX}`)
   }
+  if (resolved.realisticAutonomy) {
+    parts.push(`【现实一点】
+自主与健康关系硬约束：想好好在一起的互相独立；非「非你不可」；可为现实取舍；答按利害；拒绝须认真沟通禁敷衍逃责；可表达疲惫/必要时吵架或提分开；贴人设、非故意挑事：
+${REALISTIC_AUTONOMY_APPENDIX}`)
+  }
   if (resolved.gentleOlderBrother) {
     parts.push(`【能不能温柔一点】
 相处气质硬约束：情绪稳定、内核强大的年上照顾；主动、又说又做、动作轻柔、时刻考虑 {{user}} 感受；禁油腻与用力过猛：
@@ -314,6 +335,7 @@ const BUILTIN_PRESETS_ONLINE: LoreArchiveBuiltinPresetId[] = [
   'directAnswerNoProbe',
   'passionateDirectBall',
   'realisticConflict',
+  'realisticAutonomy',
   'gentleOlderBrother',
   'autonomousSocialLife',
   'schoolCampusCommonKnowledge',

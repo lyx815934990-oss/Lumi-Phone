@@ -289,15 +289,15 @@ export async function preloadAllNonJubenshaBootResources(
     })
   }
 
-  const wechatOk = await preloadWeChatUntilReady((p) => mapProgress(p, 0), mobile ? 45_000 : 55_000)
+  const wechatOk = await preloadWeChatUntilReady((p) => mapProgress(p, 0), mobile ? 28_000 : 40_000)
   finished = wechatOk ? 1 : 0
 
   if (rest.length) {
     await runPreloadQueue(rest, (p) => mapProgress(p, finished), {
       concurrency: mobile ? 2 : 3,
-      overallTimeoutMs: wechatOk ? 90_000 : 50_000,
+      overallTimeoutMs: wechatOk ? 50_000 : 35_000,
       // 七夕 woff2 ~7MB，手机要更长时间
-      perTaskTimeoutMs: mobile ? 55_000 : 40_000,
+      perTaskTimeoutMs: mobile ? 35_000 : 30_000,
       strict: true,
     })
   }

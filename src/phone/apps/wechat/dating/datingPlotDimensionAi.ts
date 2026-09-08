@@ -40,6 +40,70 @@ import {
   type PlotDialogueTranslation,
   type PlotDimensionKind,
 } from './types'
+import { personaDb } from '../newFriendsPersona/idb'
+import type { Character, PlayerIdentity } from '../newFriendsPersona/types'
+import { loadPairLifePromptContext } from '../lifeMutable/load'
+import { buildCharacterCard } from '../wechatChatAi'
+
+export type DatingPlotDimensionLifeContext = {
+  characterLifeBlock: string
+  playerLifeBlock: string
+  characterProfileBlock: string
+}
+
+/** 平行 / IF 线：与主线约会相同，注入可变人生账本（当前年龄等），避免仍读建档卡初始设定。 */
+export async function loadDatingPlotDimensionLifeContext(params: {
+  character: CharacterInfo
+  playerIdentity: PlayerIdentity | null
+}): Promise<DatingPlotDimensionLifeContext> {
+  const mainCharRow = await personaDb.getCharacter(params.character.id).catch(() => null)
+  const lifeCharForClock: Character =
+    mainCharRow ??
+    ({
+      id: params.character.id,
+      createdAt: 0,
+      updatedAt: 0,
+      name: params.character.realName,
+      gender: 'other',
+      age: params.character.age,
+      birthdayMD: params.character.birthdayMD,
+      zodiac: params.character.zodiac,
+      identity: params.character.identityTags.join('、'),
+      worldBooks: [],
+    } satisfies Character)
+
+  const lifePair = await loadPairLifePromptContext({
+    character: lifeCharForClock,
+    playerIdentity: params.playerIdentity,
+  }).catch(() => ({
+    characterOverlay: null,
+    playerOverlay: null,
+    characterBlock: '',
+    playerBlock: '',
+  }))
+
+  const characterProfileBlock = mainCharRow
+    ? buildCharacterCard(mainCharRow, {
+        bioMaxChars: 900,
+        lifeOverlay: lifePair.characterOverlay,
+      })
+    : [
+        `姓名/常用称呼：${lifePair.characterOverlay?.name?.trim() || params.character.realName}`,
+        typeof lifePair.characterOverlay?.age === 'number'
+          ? `年龄：${lifePair.characterOverlay.age}`
+          : `年龄：${params.character.age}`,
+        `标签：${params.character.identityTags.join('、') || '无'}`,
+        `设定摘要：${params.character.prompt.slice(0, 900)}`,
+      ]
+        .filter(Boolean)
+        .join('\n')
+
+  return {
+    characterLifeBlock: lifePair.characterBlock,
+    playerLifeBlock: lifePair.playerBlock,
+    characterProfileBlock,
+  }
+}
 
 export const PLOT_DIMENSION_LABELS: Record<PlotDimensionKind, string> = {
   parallel: '平行事件',
@@ -102,6 +166,7 @@ function buildDimensionSystemPrompt(
     languageSettings?: DimensionLanguageSettings | null
     /** 与主线约会同一套文风（用户设定或默认汪曾祺白描） */
     styleGenOptions?: Pick<NarrativeGenOptions, 'stylePrompt' | 'referenceSnippet'> | null
+    lifeContext?: DatingPlotDimensionLifeContext | null
   },
 ): string {
   const charName = character.realName.trim() || '对方'
@@ -197,12 +262,21 @@ function buildDimensionSystemPrompt(
       : undefined,
   )
 
+  const lifeCtx = opts.lifeContext
+  const lifeBlocks = [lifeCtx?.characterLifeBlock, lifeCtx?.playerLifeBlock]
+    .map((b) => String(b ?? '').trim())
+    .filter(Boolean)
+  const lifeDuty =
+    lifeBlocks.length > 0
+      ? `【可变人生账本·同等效力】下方「角色/玩家可变人生」记录本线**当前**姓名、年龄、职业、资产等事实，与角色档案、人设世界书、全局档案室**同级**；冲突时当前生理/资产/学历以账本为准，**禁止**再写建档卡或开篇固定人设里的旧年龄/旧身份。\n`
+      : ''
+
   const metaBan = `【禁止元叙事出戏】正文中禁止出现：IF线、假设线、平行宇宙、主线、正史、OOC、CP、设定、人设卡、以及英文 meta 词（如 canon / AU / OC / IC）。禁止用「细碎的电流」「化掉的雪」「唯一的锚点」等网文滥抒情收束。`
 
   const raw = `${cuDirective}${MBTI_OUTPUT_BAN_RULE}
 
 ${archiveBlock ? `${archiveBlock}\n\n` : ''}${worldbookDuty}
-${romanceBuiltinBlock ? `\n\n${romanceBuiltinBlock}` : ''}
+${lifeDuty}${lifeBlocks.length ? `${lifeBlocks.join('\n\n')}\n\n` : ''}${romanceBuiltinBlock ? `\n\n${romanceBuiltinBlock}` : ''}
 ${richOsBlock ? `\n\n${richOsBlock}` : ''}
 ${fashionBlock ? `\n\n${fashionBlock}` : ''}
 ${intimacyPoseBlock ? `\n\n${intimacyPoseBlock}` : ''}
@@ -347,6 +421,7 @@ export async function generateDatingPlotDimensionAi(params: {
   /** 与主线约会相同的文风设定；缺省则用默认汪曾祺白描 */
   stylePrompt?: string | null
   referenceSnippet?: string | null
+  lifeContext?: DatingPlotDimensionLifeContext | null
 }): Promise<string> {
   const {
     kind,
@@ -365,6 +440,7 @@ export async function generateDatingPlotDimensionAi(params: {
     languageSettings,
     stylePrompt,
     referenceSnippet,
+    lifeContext,
   } = params
   const target = Math.max(1, Math.round(Number(lengthTargetChars) || 500))
   const minChars = Math.max(1, Math.round(target * 0.85))
@@ -394,7 +470,12 @@ export async function generateDatingPlotDimensionAi(params: {
     isVnMode: isVnMode === true,
     languageSettings,
     styleGenOptions: Object.keys(styleGenOptions).length ? styleGenOptions : null,
+    lifeContext,
   })
+
+  const profileBlock =
+    lifeContext?.characterProfileBlock?.trim() ||
+    `角色：${character.realName}\n标签：${character.identityTags.join('、') || '无'}\n人设摘要：${character.prompt.slice(0, 900)}`
 
   const parallelUserBlock =
     kind === 'parallel'
@@ -441,7 +522,7 @@ export async function generateDatingPlotDimensionAi(params: {
       ? `【输出语言】旁白 / 对白 / 内心 OS 一律用 **${langLabel}（${langNative}）**。\n`
       : `【输出语言】旁白 **${langLabel}（${langNative}）**；对白 **${weChatChatLanguageLabel(dialogueCode)}（${weChatChatLanguageNativeName(dialogueCode)}）**；内心 OS **${weChatChatLanguageLabel(osCode)}（${weChatChatLanguageNativeName(osCode)}）**。\n`
   const userRaw =
-    `角色：${character.realName}\n标签：${character.identityTags.join('、') || '无'}\n人设摘要：${character.prompt.slice(0, 900)}\n\n` +
+    `【约会对象·档案与可变人生（年龄/身份以账本为准，勿用建档卡旧设定）】\n${profileBlock}\n\n` +
     `【近端剧情摘录（仅供承接语气与文风，勿整段复述）】\n${tailContext.slice(0, 2400)}\n\n` +
     `【锚点剧情正文（本${PLOT_DIMENSION_LABELS[kind]}的参照节点；句式与对白口吻须对齐）】\n${anchorPlotBody.slice(0, 4200)}\n\n` +
     parallelUserBlock +

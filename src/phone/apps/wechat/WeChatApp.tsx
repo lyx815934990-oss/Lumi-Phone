@@ -179,8 +179,6 @@ import {
   resolveWechatClassicThemePatch,
 } from './wechatBubblePresets'
 import {
-  TWITTER_X_FONT_STACK,
-  TWITTER_X_NUM_FONT_STACK,
   twitterXSpecialSkinOverrides,
 } from './wechatBubbleTwitterUi'
 import { wechatClassicSpecialSkinOverrides } from './wechatBubbleWechatUi'
@@ -723,7 +721,7 @@ function Header({
   /** 聊天室：昵称/备注块右侧的静音等装饰；不参与标题居中参考 */
   titleTrailing,
   titleTrailingInteractive = false,
-  /** 聊天室：右上角为「当前聊天设置」（三点）；其它页为外观主题（太阳图标） */
+  /** 聊天室：右上角为「当前聊天设置」（三点）；非聊天页若无 customRight 则占位（外观入口已迁至「我」） */
   rightMode = 'appearance',
   /** 若提供则替换右上角按钮（例如消息 Tab 的「+」） */
   customRight,
@@ -1189,8 +1187,8 @@ function ThemePanel({
             selfBubbleText: resolved.selfBubbleText,
             otherBubbleText: resolved.otherBubbleText,
             ...themePatch,
-            fontFamily: TWITTER_X_FONT_STACK,
-            numberFontFamily: TWITTER_X_NUM_FONT_STACK,
+            fontFamily: '',
+            numberFontFamily: '',
             chatSkinOverrides: marks,
             chatSkinScopedCss: '',
             chatSkinEngine: 'structured',
@@ -1202,8 +1200,8 @@ function ThemePanel({
           selfBubbleText: resolved.selfBubbleText,
           otherBubbleText: resolved.otherBubbleText,
           ...themePatch,
-          fontFamily: TWITTER_X_FONT_STACK,
-          numberFontFamily: TWITTER_X_NUM_FONT_STACK,
+          fontFamily: '',
+          numberFontFamily: '',
           chatSkinOverrides: marks,
           chatSkinScopedCss: '',
           chatSkinEngine: 'structured',
@@ -1232,6 +1230,8 @@ function ThemePanel({
             selfBubbleText: resolved.selfBubbleText,
             otherBubbleText: resolved.otherBubbleText,
             ...themePatch,
+            fontFamily: '',
+            numberFontFamily: '',
             chatSkinOverrides: marks,
             chatSkinScopedCss: '',
             chatSkinEngine: 'structured',
@@ -1243,6 +1243,8 @@ function ThemePanel({
           selfBubbleText: resolved.selfBubbleText,
           otherBubbleText: resolved.otherBubbleText,
           ...themePatch,
+          fontFamily: '',
+          numberFontFamily: '',
           chatSkinOverrides: marks,
           chatSkinScopedCss: '',
           chatSkinEngine: 'structured',
@@ -1277,6 +1279,8 @@ function ThemePanel({
           selfBubbleText: preset.selfBubbleText,
           otherBubbleText: preset.otherBubbleText,
           ...themePatchSansRoom,
+          fontFamily: '',
+          numberFontFamily: '',
           chatSkinOverrides: {},
           chatSkinScopedCss: '',
           chatSkinEngine: 'structured',
@@ -1287,6 +1291,8 @@ function ThemePanel({
         bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: nextBubble },
         selfBubbleText: preset.selfBubbleText,
         otherBubbleText: preset.otherBubbleText,
+        fontFamily: '',
+        numberFontFamily: '',
         chatSkinOverrides: {},
         chatSkinScopedCss: '',
         chatSkinEngine: 'structured',
@@ -1325,8 +1331,8 @@ function ThemePanel({
           selfBubbleText: resolved.selfBubbleText,
           otherBubbleText: resolved.otherBubbleText,
           ...themePatch,
-          fontFamily: TWITTER_X_FONT_STACK,
-          numberFontFamily: TWITTER_X_NUM_FONT_STACK,
+          fontFamily: '',
+          numberFontFamily: '',
           chatSkinOverrides: marks,
           chatSkinScopedCss: '',
           chatSkinEngine: 'structured',
@@ -1338,8 +1344,8 @@ function ThemePanel({
         selfBubbleText: resolved.selfBubbleText,
         otherBubbleText: resolved.otherBubbleText,
         ...themePatch,
-        fontFamily: TWITTER_X_FONT_STACK,
-        numberFontFamily: TWITTER_X_NUM_FONT_STACK,
+        fontFamily: '',
+        numberFontFamily: '',
         chatSkinOverrides: marks,
         chatSkinScopedCss: '',
         chatSkinEngine: 'structured',
@@ -1378,6 +1384,8 @@ function ThemePanel({
           selfBubbleText: resolved.selfBubbleText,
           otherBubbleText: resolved.otherBubbleText,
           ...themePatch,
+          fontFamily: '',
+          numberFontFamily: '',
           chatSkinOverrides: marks,
           chatSkinScopedCss: '',
           chatSkinEngine: 'structured',
@@ -1389,6 +1397,8 @@ function ThemePanel({
         selfBubbleText: resolved.selfBubbleText,
         otherBubbleText: resolved.otherBubbleText,
         ...themePatch,
+        fontFamily: '',
+        numberFontFamily: '',
         chatSkinOverrides: marks,
         chatSkinScopedCss: '',
         chatSkinEngine: 'structured',
@@ -1445,8 +1455,8 @@ function ThemePanel({
 
   const cssExport = useMemo(() => {
     const t = wechatTheme
-    const resolvedFont = t.fontFamily?.trim() ? t.fontFamily : theme.fontFamily
-    const resolvedNumFont = t.numberFontFamily?.trim() ? t.numberFontFamily : 'var(--wx-num-font)'
+  const resolvedFont = t.fontFamily?.trim() ? t.fontFamily : 'var(--phone-font)'
+  const resolvedNumFont = t.numberFontFamily?.trim() ? t.numberFontFamily : 'var(--phone-num-font)'
     return [
       '/* WeChat Theme (CSS Variables) */',
       '[data-app-id="wechat"] {',
@@ -1608,12 +1618,12 @@ function ThemePanel({
     if (vars['self-bubble-bg']) bubblePatch.selfBubbleBg = vars['self-bubble-bg']
     if (vars['self-bubble-radius']) {
       const n = pxToNum(vars['self-bubble-radius'])
-      if (n != null) bubblePatch.selfBubbleRadiusPx = clamp(Math.round(n), 10, 28)
+      if (n != null) bubblePatch.selfBubbleRadiusPx = clamp(Math.round(n), 4, 28)
     }
     if (vars['other-bubble-bg']) bubblePatch.otherBubbleBg = vars['other-bubble-bg']
     if (vars['other-bubble-radius']) {
       const n = pxToNum(vars['other-bubble-radius'])
-      if (n != null) bubblePatch.otherBubbleRadiusPx = clamp(Math.round(n), 10, 28)
+      if (n != null) bubblePatch.otherBubbleRadiusPx = clamp(Math.round(n), 4, 28)
     }
     if (vars['avatar-radius']) {
       const n = pxToNum(vars['avatar-radius'])
@@ -2830,7 +2840,7 @@ function ThemePanel({
                   <div className="grid grid-cols-2 gap-3">
                     <WeChatBubbleSideFontField
                       label="角色侧字体"
-                      hint="对方气泡正文；不设则跟随模版/全局字体。"
+                      hint="对方气泡正文；不设则跟随主题气泡原机字 / 全局字体。"
                       value={activeBubble.otherFont}
                       onChange={(otherFont) => {
                         const next = { ...activeBubble, otherFont }
@@ -2843,7 +2853,7 @@ function ThemePanel({
                     />
                     <WeChatBubbleSideFontField
                       label="用户侧字体"
-                      hint="自己气泡正文；不设则跟随模版/全局字体。"
+                      hint="自己气泡正文；不设则跟随主题气泡原机字 / 全局字体。"
                       value={activeBubble.selfFont}
                       onChange={(selfFont) => {
                         const next = { ...activeBubble, selfFont }
@@ -2920,7 +2930,7 @@ function ThemePanel({
                       </p>
                       <input
                         type="range"
-                        min={10}
+                        min={4}
                         max={28}
                         step={1}
                         value={activeBubble.selfBubbleRadiusPx}
@@ -2936,7 +2946,7 @@ function ThemePanel({
                       </p>
                       <input
                         type="range"
-                        min={10}
+                        min={4}
                         max={28}
                         step={1}
                         value={activeBubble.otherBubbleRadiusPx}
@@ -6200,7 +6210,9 @@ function WeChatAppInner({ onBack }: Props) {
           }}
           onHome={onBack}
           rightMode={route.name === 'chat' ? 'chat-room-settings' : 'appearance'}
-          showRight={route.name === 'tabs' || route.name === 'chat'}
+          showRight={
+            route.name === 'chat' || (route.name === 'tabs' && route.tab === 'messages')
+          }
           onOpenTheme={route.name === 'chat' ? () => setChatSettingsOpen(true) : openWeChatAppearance}
           customRight={
             route.name === 'chat' && chatMultiSelectActive ? (
@@ -6282,7 +6294,7 @@ function WeChatAppInner({ onBack }: Props) {
               </div>
             ) : undefined
           }
-          showAppearanceGuide={showAppearanceGuide && route.name === 'tabs' && route.tab !== 'messages'}
+          showAppearanceGuide={false}
           onDismissAppearanceGuide={dismissAppearanceGuide}
           titleUnreadCount={
             route.name === 'tabs' && route.tab === 'messages' ? messagesTabUnreadTotal : undefined
@@ -6592,7 +6604,10 @@ function WeChatAppInner({ onBack }: Props) {
                     }
                     onOpenProfileCard={() => setProfileEditOpen(true)}
                     onOpenMemoryTrace={() => setMemoryTraceOpen(true)}
+                    showAppearanceGuide={showAppearanceGuide}
+                    onDismissAppearanceGuide={dismissAppearanceGuide}
                     onMenuItemClick={(id) => {
+                      if (id === 'appearance') openWeChatAppearance()
                       if (id === 'settings') setWxGlobalNav({ screen: 'root' })
                       if (id === 'identity') setRoute({ name: 'player-identities' })
                       if (id === 'card') setRoute({ name: 'wallet-cards' })

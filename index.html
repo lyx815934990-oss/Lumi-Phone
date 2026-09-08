@@ -173,6 +173,8 @@
         }
 
         function estimateFromResources() {
+          // React 已接管后禁止再改文案/进度，否则会盖成「正在加载资源…」并看起来像卡死在 82%
+          if (reactAlive || progress >= 74) return
           try {
             var entries = performance.getEntriesByType('resource') || []
             var loaded = 0
@@ -213,7 +215,7 @@
         setProgress(4, '正在连接…')
         estimateFromResources()
         creepTimer = window.setInterval(function () {
-          if (hidden || progress >= 70) return
+          if (hidden || reactAlive || progress >= 70) return
           setProgress(progress + 0.7, '正在加载资源…')
           estimateFromResources()
         }, 280)
@@ -267,10 +269,11 @@
             showRetry('加载过慢或失败，请点下方重试')
             return
           }
-          // React 已接管：尽量等 BootResourceGate 收尾；极端卡住再强制进桌面
+          // React 已接管：尽量等 BootResourceGate 收尾；卡住则提前强制进桌面（原 120s 过久）
           window.setTimeout(function () {
             if (hidden) return
             try {
+              if (labelEl) labelEl.textContent = '加载较慢，正在进入桌面…'
               window.__lumiBoot &&
                 window.__lumiBoot.done(function () {
                   try {
@@ -278,7 +281,7 @@
                   } catch (_) {}
                 })
             } catch (_) {}
-          }, 120000)
+          }, 45000)
         }, 16000)
       })()
     </script>

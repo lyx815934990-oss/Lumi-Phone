@@ -793,6 +793,8 @@ function normalizeCharacter(input: unknown): Stored {
     zodiac: typeof c.zodiac === 'string' ? c.zodiac : '',
     identity: typeof c.identity === 'string' ? c.identity : '学生',
     mbti: typeof raw.mbti === 'string' ? (raw.mbti as string) : '',
+    animalArchetype:
+      typeof raw.animalArchetype === 'string' ? (raw.animalArchetype as string).trim().toLowerCase() : '',
     bio: typeof raw.bio === 'string' ? (raw.bio as string) : '',
     motto: typeof raw.motto === 'string' ? (raw.motto as string) : '',
     openingLines: typeof raw.openingLines === 'string' ? (raw.openingLines as string) : '',
@@ -1738,6 +1740,9 @@ function normalizeFavorite(input: unknown): Favorite | null {
   const content = typeof r.content === 'string' ? r.content : ''
   const timestamp = typeof r.timestamp === 'number' && Number.isFinite(r.timestamp) ? r.timestamp : now
   const createdAt = typeof r.createdAt === 'number' && Number.isFinite(r.createdAt) ? r.createdAt : now
+  const kind: Favorite['kind'] = r.kind === 'innerOs' ? 'innerOs' : r.kind === 'message' ? 'message' : undefined
+  const spokenRaw = typeof r.spokenText === 'string' ? r.spokenText.trim().slice(0, 4000) : ''
+  const spokenText = spokenRaw || undefined
   const voiceDurationRaw = typeof r.voiceDurationSec === 'number' ? r.voiceDurationSec : Number.NaN
   const voiceDurationSec = Number.isFinite(voiceDurationRaw) ? Math.max(1, Math.floor(voiceDurationRaw)) : undefined
   const voiceTranscript =
@@ -1756,6 +1761,8 @@ function normalizeFavorite(input: unknown): Favorite | null {
     content,
     timestamp,
     createdAt,
+    ...(kind ? { kind } : {}),
+    ...(spokenText ? { spokenText } : {}),
     ...(voiceDurationSec ? { voiceDurationSec } : {}),
     ...(voiceTranscript ? { voiceTranscript } : {}),
     ...(voiceAudioUrl ? { voiceAudioUrl } : {}),
@@ -5954,6 +5961,65 @@ export class PersonaDb {
     db.close()
     emitWeChatStorageChanged()
     return normalized
+  }
+
+  /** 按消息查找已收藏的内心 OS（同 messageId + kind=innerOs） */
+  async findInnerOsFavoriteByMessageId(messageId: string): Promise<Favorite | null> {
+    const mid = messageId.trim()
+    if (!mid) return null
+    const favs = await this.listFavorites()
+    return favs.find((f) => f.kind === 'innerOs' && f.messageId.trim() === mid) ?? null
+  }
+
+  /**
+   * 收藏气泡内心 OS。同消息已收藏则返回已有项（created=false）。
+   */
+  async addFavoriteFromInnerOs(params: {
+    messageId: string
+    characterId: string
+    innerOs: string
+    spokenText?: string
+    timestamp?: number
+  }): Promise<{ favorite: Favorite; created: boolean } | null> {
+    const messageId = String(params.messageId || '').trim()
+    const characterId = String(params.characterId || '').trim()
+    const innerOs = String(params.innerOs || '').trim()
+    if (!messageId || !characterId || !innerOs) return null
+
+    const existing = await this.findInnerOsFavoriteByMessageId(messageId)
+    if (existing) return { favorite: existing, created: false }
+
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(FAVORITES_STORE)) {
+      db.close()
+      return null
+    }
+    const now = Date.now()
+    const spokenText = String(params.spokenText || '').trim().slice(0, 4000)
+    const fav: Favorite = {
+      id: `fav-os-${now}-${Math.random().toString(36).slice(2, 8)}`,
+      messageId,
+      characterId,
+      content: innerOs.slice(0, 8000),
+      timestamp:
+        typeof params.timestamp === 'number' && Number.isFinite(params.timestamp)
+          ? params.timestamp
+          : now,
+      createdAt: now,
+      kind: 'innerOs',
+      ...(spokenText ? { spokenText } : {}),
+    }
+    const normalized = normalizeFavorite(fav)
+    if (!normalized) {
+      db.close()
+      return null
+    }
+    const tx = db.transaction(FAVORITES_STORE, 'readwrite')
+    tx.objectStore(FAVORITES_STORE).put(normalized)
+    await txDone(tx)
+    db.close()
+    emitWeChatStorageChanged()
+    return { favorite: normalized, created: true }
   }
 
   /** 聊天语音合成完成后，同步到对应收藏（避免收藏页/转发重复合成）。 */

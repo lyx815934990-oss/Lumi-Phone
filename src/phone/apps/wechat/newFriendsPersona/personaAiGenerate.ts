@@ -18,6 +18,7 @@ import {
   parsePersonaAiCompactSectionsFromParsed,
 } from './personaAiWorldBooks'
 import { parsePersonaAiModelOutput } from './personaAiGenerateMarkup'
+import { formatPersonaAiEntryTagBlock } from './personaAiEntryTagSpec'
 import { rewriteMeetWorldbookNamesToPlaceholders } from '../../lumiMeet/meetWorldbookPlaceholders'
 import { DEFAULT_WORLD_BACKGROUND_ID } from './worldBackgroundConstants'
 import {
@@ -152,6 +153,8 @@ function assemblePersonaCharacter(parsed: Record<string, unknown>, params: Assem
       occupationLabel: pickStr(parsed.occupation, 48) || params.form.occupationHint.trim() || undefined,
       includeRelationshipHistory: true,
       relationshipHistoryHint: historyHint || undefined,
+      nsfwEnabled: params.form.nsfwEnabled,
+      nsfwHint: params.form.nsfwHint.trim() || undefined,
     },
   )
 
@@ -531,7 +534,7 @@ export async function regeneratePersonaAiSelectedParts(params: {
   const system = `你是中文都市向角色档案改写助手。用户对部分条目不满意，请**只重写白名单内的键值行与【段落】**，禁止 JSON，禁止输出未勾选项，**禁止输出【开场白】**。
 改写须贴合用户改写要求；仍用 {{char}}/{{user}}；第三人称档案体；中性朴实，禁止超雄 caricature。
 若重写【简介】：只写稳定气质/性格/身份印象，禁止写当前和谁怎么样、禁止写可变关系现状。
-世界书【标题】须与用户指定标题完全一致。`.trim()
+世界书【标题】须与用户指定标题完全一致；世界书正文必须带对应 <> 分区标签（禁止无标签散文块）。`.trim()
 
   const user = [
     '【改写要求（最高优先级）】',
@@ -540,11 +543,21 @@ export async function regeneratePersonaAiSelectedParts(params: {
     '【白名单 · 仅可输出这些】',
     topKeys.size ? `- 顶层：${[...topKeys].join('、')}` : '',
     wbNames.size ? `- 世界书：${[...wbNames].join('、')}` : '',
+    wbNames.size
+      ? [
+          '',
+          '【世界书 <> 标签骨架】',
+          ...[...wbNames].map((n) => {
+            const block = formatPersonaAiEntryTagBlock(n)
+            return block ? `—— ${n} ——\n${block}` : `—— ${n} ——（无标准标签，按标题写正文）`
+          }),
+        ].join('\n')
+      : '',
     '',
     '【待改写原文】',
     snapshotLines.join('\n'),
     '',
-    '只输出改写后的键值行与【段落】，不要解释。',
+    '只输出改写后的键值行与【段落】，不要解释。世界书段须含 <> 分区标签。',
   ]
     .filter(Boolean)
     .join('\n')

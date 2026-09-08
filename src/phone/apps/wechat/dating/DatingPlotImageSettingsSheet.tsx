@@ -1,8 +1,10 @@
 import { ImageIcon, Settings2, User, UserRound, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AppearanceRefSettingsPanel } from '../appearanceRef/AppearanceRefSettingsPanel'
 import { SharedImageGenStyleSection } from '../appearanceRef/SharedImageGenStyleSection'
 import { useAppearanceReferenceStatus } from '../appearanceRef/useAppearanceReferenceStatus'
+import { useImageGenSettings } from '../../api/useImageGenSettings'
 import { DatingCapsuleSwitch } from './DatingCapsuleSwitch'
 import {
   DATING_PLOT_IMAGE_COUNT_MAX,
@@ -77,6 +79,7 @@ export function DatingPlotImageSettingsSheet({
   plotImageCountMax,
   onPatch,
 }: Props) {
+  const { configured: imageGenConfigured } = useImageGenSettings()
   const [refTab, setRefTab] = useState<RefTab>('character')
   const persistedRange = useMemo(
     () => parseDatingPlotImageCountRange(plotImageCountMin, plotImageCountMax),
@@ -126,11 +129,11 @@ export function DatingPlotImageSettingsSheet({
     playerIdentityId,
   })
 
-  if (!open) return null
+  if (!open || typeof document === 'undefined') return null
 
   const showUserTab = !!playerIdentityId?.trim()
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[360] flex flex-col justify-end bg-black/30 backdrop-blur-[1px]">
       <button type="button" className="min-h-0 flex-1" aria-label="关闭" onClick={handleClose} />
       <div className="max-h-[88vh] overflow-y-auto rounded-t-2xl border-t border-stone-200/80 bg-[#fafafa] px-4 pb-8 pt-4 shadow-[0_-8px_32px_rgba(0,0,0,0.06)]">
@@ -147,6 +150,12 @@ export function DatingPlotImageSettingsSheet({
             <X className="size-5" />
           </button>
         </div>
+
+        {!imageGenConfigured ? (
+          <p className="mb-3 rounded-2xl border border-amber-200/90 bg-amber-50/95 px-3.5 py-2.5 text-[12px] leading-relaxed text-amber-950">
+            请先在「API 设置」中启用生图引擎并填写密钥；配置完成后返回此处开启剧情配图。
+          </p>
+        ) : null}
 
         <div className="flex items-center justify-between rounded-2xl border border-stone-200/90 bg-white px-3.5 py-3">
           <div className="min-w-0 flex-1 pr-3">
@@ -259,6 +268,7 @@ export function DatingPlotImageSettingsSheet({
           />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

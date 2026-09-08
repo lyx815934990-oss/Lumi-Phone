@@ -29,6 +29,7 @@ import {
 import {
   PERSONA_AI_DOSSIER_TABS,
   PersonaAiGenerateDossierForm,
+  personaAiTabFillState,
   type PersonaAiDossierTabId,
 } from './PersonaAiGenerateDossierForm'
 import { PersonaAiGeneratePreviewSheet } from './PersonaAiGeneratePreviewSheet'
@@ -224,6 +225,22 @@ export function PersonaAiGeneratePage({
   const directOnly = Boolean(form.referencePersonaDirectGenerate && form.referencePersonaHint.trim())
   const hintSlotTotal = directOnly ? 1 : TOTAL_HINT_SLOTS
   const progressPct = Math.min(100, Math.round((filledCount / hintSlotTotal) * 100))
+  const dossierReady = directOnly || progressPct >= 100
+  const [ctaShimmer, setCtaShimmer] = useState(false)
+  const ctaShimmerArmedRef = useRef(false)
+  useEffect(() => {
+    if (!dossierReady || ctaShimmerArmedRef.current) return
+    ctaShimmerArmedRef.current = true
+    setCtaShimmer(true)
+  }, [dossierReady])
+
+  const tabFillStates = useMemo(() => {
+    const map = {} as Record<PersonaAiDossierTabId, ReturnType<typeof personaAiTabFillState>>
+    for (const tab of PERSONA_AI_DOSSIER_TABS) {
+      map[tab.id] = personaAiTabFillState(form, tab.id)
+    }
+    return map
+  }, [form])
 
   useEffect(() => {
     if (directOnly && openChapter !== '01') setOpenChapter('01')
@@ -495,7 +512,7 @@ export function PersonaAiGeneratePage({
               type="button"
               onClick={onBack}
               disabled={generating}
-              className="rounded-xl p-2.5 text-neutral-800 transition-colors hover:bg-neutral-200/40 disabled:opacity-40"
+              className="rounded-full p-2.5 text-neutral-800 transition-colors hover:bg-neutral-200/40 disabled:opacity-40"
               aria-label="返回"
             >
               <ArrowLeft className="size-5" />
@@ -513,7 +530,7 @@ export function PersonaAiGeneratePage({
                 type="button"
                 onClick={() => void runSaveDraft()}
                 disabled={generating || saveBusy}
-                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-[11px] font-medium text-neutral-700 transition-colors hover:bg-neutral-200/40 disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-[11px] font-medium text-neutral-700 transition-colors hover:bg-neutral-200/40 disabled:opacity-40"
                 title="封存草稿"
               >
                 <Save className="size-3.5" strokeWidth={1.75} />
@@ -523,7 +540,7 @@ export function PersonaAiGeneratePage({
                 type="button"
                 onClick={() => presetImportRef.current?.click()}
                 disabled={generating || presetExportBusy}
-                className="rounded-xl p-2.5 text-neutral-600 transition-colors hover:bg-neutral-200/40 disabled:opacity-40"
+                className="rounded-full p-2.5 text-neutral-600 transition-colors hover:bg-neutral-200/40 disabled:opacity-40"
                 aria-label="导入预设"
                 title="导入预设"
               >
@@ -533,7 +550,7 @@ export function PersonaAiGeneratePage({
                 type="button"
                 onClick={() => void runExportPreset()}
                 disabled={generating || presetExportBusy || saveBusy}
-                className="rounded-xl p-2.5 text-neutral-600 transition-colors hover:bg-neutral-200/40 disabled:opacity-40"
+                className="rounded-full p-2.5 text-neutral-600 transition-colors hover:bg-neutral-200/40 disabled:opacity-40"
                 aria-label="导出预设"
                 title="导出预设"
               >
@@ -573,6 +590,7 @@ export function PersonaAiGeneratePage({
             {PERSONA_AI_DOSSIER_TABS.map((tab) => {
               const active = openChapter === tab.id
               const locked = directOnly && tab.id !== '01'
+              const fill = tabFillStates[tab.id]
               return (
                 <button
                   key={tab.id}
@@ -585,18 +603,33 @@ export function PersonaAiGeneratePage({
                     if (locked) return
                     setOpenChapter(tab.id)
                   }}
-                  className={`relative shrink-0 rounded-xl px-3 py-2 text-center transition-colors ${
+                  className={`relative shrink-0 rounded-2xl px-3.5 py-2.5 text-center transition-colors ${
                     locked
                       ? 'cursor-not-allowed text-neutral-300'
                       : active
-                        ? 'text-neutral-900'
-                        : 'text-neutral-400 hover:text-neutral-600'
+                        ? 'bg-neutral-100/80 text-neutral-900'
+                        : 'text-neutral-400 hover:bg-neutral-50 hover:text-neutral-600'
                   }`}
                 >
                   <span className="block font-mono text-[9px] tracking-[0.12em] opacity-70">{tab.en}</span>
                   <span className="mt-0.5 block text-[13px] font-semibold tracking-tight">{tab.zh}</span>
+                  <span className="mt-1.5 flex justify-center" aria-hidden>
+                    <motion.span
+                      key={`${tab.id}-${fill}`}
+                      initial={fill === 'full' ? { scale: 0.6 } : false}
+                      animate={{ scale: 1 }}
+                      transition={{ duration: 0.2 }}
+                      className={`block size-1.5 rounded-full border ${
+                        fill === 'full'
+                          ? 'border-neutral-900 bg-neutral-900'
+                          : fill === 'partial'
+                            ? 'border-neutral-900 bg-neutral-900/40'
+                            : 'border-neutral-400 bg-transparent'
+                      }`}
+                    />
+                  </span>
                   {active ? (
-                    <span className="absolute bottom-1 left-1/2 h-0.5 w-7 -translate-x-1/2 rounded-full bg-neutral-900" />
+                    <span className="absolute bottom-0.5 left-1/2 h-0.5 w-7 -translate-x-1/2 rounded-full bg-neutral-900" />
                   ) : null}
                 </button>
               )
@@ -625,17 +658,29 @@ export function PersonaAiGeneratePage({
               type="button"
               disabled={generating}
               onClick={() => void runGenerate()}
-              className="flex w-full items-center justify-center rounded-2xl px-4 py-4 text-[15px] font-semibold tracking-wide text-white transition-all duration-200 active:scale-[0.99] disabled:opacity-50"
+              className="relative flex w-full items-center justify-center overflow-hidden rounded-full px-4 py-4 text-[15px] font-semibold tracking-wide text-white transition-all duration-200 active:scale-[0.985] disabled:opacity-50"
               style={{
-                background: '#171717',
-                boxShadow: '0 10px 28px rgba(23,23,23,0.16)',
+                background: '#262626',
+                boxShadow: '0 8px 24px rgba(23,23,23,0.12)',
               }}
             >
-              {generating
-                ? '正在注入法则…'
-                : directOnly
-                  ? '按参考人物直接生成'
-                  : '注入法则并生成灵魂'}
+              {ctaShimmer && !generating ? (
+                <motion.span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-white/25 to-transparent"
+                  initial={{ left: '-40%', opacity: 0 }}
+                  animate={{ left: '120%', opacity: [0, 1, 0] }}
+                  transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+                  onAnimationComplete={() => setCtaShimmer(false)}
+                />
+              ) : null}
+              <span className="relative z-[1]">
+                {generating
+                  ? '正在注入法则…'
+                  : directOnly
+                    ? '按参考人物直接生成'
+                    : '注入法则并生成灵魂'}
+              </span>
             </button>
             <p className="mt-2 px-0.5 text-center text-[11px] text-neutral-400">
               {directOnly
@@ -764,7 +809,7 @@ export function PersonaAiGeneratePage({
                 type="button"
                 disabled={!!recoveryBusy || completeIssues.length === 0}
                 onClick={() => void runRepair('complete')}
-                className="flex w-full flex-col items-center justify-center rounded-xl bg-neutral-900 px-4 py-3 text-white disabled:opacity-40"
+                className="flex w-full flex-col items-center justify-center rounded-full bg-neutral-800 px-4 py-3.5 text-white shadow-[0_4px_16px_rgba(0,0,0,0.1)] disabled:opacity-40"
               >
                 <span className="text-[14px] font-semibold">
                   {recoveryBusy === 'complete' ? '正在补全…' : '继续补全剩余条目'}
@@ -779,7 +824,7 @@ export function PersonaAiGeneratePage({
                 type="button"
                 disabled={!!recoveryBusy || fixIssues.length === 0}
                 onClick={() => void runRepair('fix')}
-                className="flex w-full flex-col items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 py-3 text-neutral-900 disabled:opacity-40"
+                className="flex w-full flex-col items-center justify-center rounded-full border border-neutral-200/80 bg-white px-4 py-3.5 text-neutral-900 disabled:opacity-40"
               >
                 <span className="text-[14px] font-semibold">
                   {recoveryBusy === 'fix' ? '正在纠正…' : '纠正出错内容'}

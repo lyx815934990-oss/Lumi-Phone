@@ -215,13 +215,64 @@ export type WeChatChatRoomBg =
       fallbackColor?: string
     }
 
-/** 微信聊天室默认壁纸（仓库根 `image/`，开发期由 Vite 中间件提供） */
+/** 旧版默认聊天壁纸路径（仅用于迁移识别 / 外观页可选底图，不再注入聊天室） */
 export const DEFAULT_WECHAT_CHAT_WALLPAPER_PATH = '/image/聊天壁纸默认1.jpg'
 
+/**
+ * Lumi 纸墨柔光（仅聊天室气泡主题）
+ * 与微信壳 Paper #F7F6F4 / Ink #101012 / Muted #8B8B8F 同系，避免跳色。
+ */
+export const LUMI_PAPER_CHAT_PALETTE = {
+  paper: '#F7F6F4',
+  paperDeep: '#EFEDEA',
+  stone: '#DDD9D3',
+  sheet: '#FFFFFF',
+  ink: '#101012',
+  muted: '#8B8B8F',
+  border: '#E6E4E0',
+  roomMist: '#FAF9F7',
+} as const
+
+/** @deprecated 旧默认色卡 */
+export const RETRO_GRADIENT_PALETTE = {
+  porcelain: '#FFFBFF',
+  sand: '#F1DABF',
+  taupe: '#92817A',
+  coffee: '#362417',
+  ink: '#000500',
+  roomMist: '#FFFBFF',
+  softSheet: '#FFFBFF',
+} as const
+
+/** @deprecated 旧默认 */
+export const CARAMEL_PUFF_PALETTE = {
+  cream: '#ece1c6',
+  butter: '#fdf6c9',
+  sand: '#fbe19e',
+  caramel: '#9e5129',
+  roomMist: '#fff9e6',
+  softSheet: '#fdf6c9',
+} as const
+
+/** @deprecated 旧默认色卡名 */
+export const SHENGJING_SNOW_PALETTE = {
+  inkCloud: '#828A93',
+  coldGrey: '#B5BDC6',
+  snowShadow: '#D3DBE2',
+  coldSmoke: '#C5CCD3',
+  inkReadable: '#5A626B',
+  roomMist: '#E4EAF0',
+  softSheet: '#F0F3F6',
+} as const
+
+/** 聊天室默认背景：与壳同系的纸感薄雾 */
 export const DEFAULT_WECHAT_CHAT_ROOM_BG: WeChatChatRoomBg = {
-  mode: 'image',
-  imageUrl: DEFAULT_WECHAT_CHAT_WALLPAPER_PATH,
-  fallbackColor: '#EDEDED',
+  mode: 'gradient',
+  gradientType: 'linear',
+  angle: 180,
+  colorStart: LUMI_PAPER_CHAT_PALETTE.roomMist,
+  colorEnd: LUMI_PAPER_CHAT_PALETTE.paperDeep,
+  fallbackColor: LUMI_PAPER_CHAT_PALETTE.paper,
 }
 
 export type WeChatBubbleTheme = {
@@ -922,6 +973,35 @@ export const DEFAULT_WECHAT_TAB_PAGE_BG: WxFillStyle = {
   blurPx: 0,
 }
 
+/**
+ * 纸墨柔光 · 仅聊天页顶栏/输入栏 CSS 覆写（不进 Tab 壳色）
+ * 与壳 Paper / Ink / Border 同系，进出聊天不跳色。
+ */
+export const LUMI_PAPER_CHAT_SKIN_OVERRIDES: Record<string, string> = {
+  '--wx-chat-header-bg': 'rgba(247, 246, 244, 0.88)',
+  '--wx-chat-header-text': '#101012',
+  '--wx-chat-header-muted': 'rgba(139, 139, 143, 0.9)',
+  '--wx-chat-header-border': 'rgba(230, 228, 224, 0.7)',
+  '--wx-chat-header-btn': '#8B8B8F',
+  '--wx-chat-input-bar-bg': 'rgba(247, 246, 244, 0.55)',
+  '--wx-chat-input-bar-border': 'transparent',
+  '--wx-chat-input-shell-bg': 'rgba(255, 255, 255, 0.92)',
+  '--wx-chat-input-shell-border': 'rgba(230, 228, 224, 0.85)',
+  '--wx-chat-input-shell-radius': '20px',
+  '--wx-chat-input-btn-color': '#8B8B8F',
+  '--wx-chat-input-text-color': '#101012',
+  '--wx-chat-input-placeholder': 'rgba(139, 139, 143, 0.55)',
+}
+
+/** @deprecated 请用 LUMI_PAPER_CHAT_SKIN_OVERRIDES */
+export const RETRO_GRADIENT_CHAT_SKIN_OVERRIDES = LUMI_PAPER_CHAT_SKIN_OVERRIDES
+
+/** @deprecated 请用 LUMI_PAPER_CHAT_SKIN_OVERRIDES */
+export const CARAMEL_PUFF_CHAT_SKIN_OVERRIDES = LUMI_PAPER_CHAT_SKIN_OVERRIDES
+
+/** @deprecated 请用 LUMI_PAPER_CHAT_SKIN_OVERRIDES */
+export const SHENGJING_SNOW_CHAT_SKIN_OVERRIDES = LUMI_PAPER_CHAT_SKIN_OVERRIDES
+
 export const DEFAULT_APP_PAGE_STYLE: AppPageStyle = {
   headerBg: '#ffffff',
   headerBgImageUrl: '',
@@ -1098,7 +1178,7 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
     blur: 12,
   },
   wechatTheme: {
-    // Lumi 机 Paper / Ink：安静承载入口，无品牌强调色
+    // Lumi 机 Paper / Ink：Tab 壳色；聊天室气泡用同系「纸墨柔光」
     primary: '#101012',
     background: '#F7F6F4',
     surface: '#FFFFFF',
@@ -1139,26 +1219,28 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
       { id: 'profile', label: '我', en: 'Me', iconUrl: '', labelActiveColor: '', labelInactiveColor: '' },
     ],
 
-    chatInputBg: 'rgba(255, 255, 255, 0.92)',
-    chatInputBorder: 'rgba(0, 0, 0, 0.06)',
+    /** 聊天输入栏底（仅聊天页） */
+    chatInputBg: 'rgba(247, 246, 244, 0.55)',
+    chatInputBorder: 'transparent',
     chatRoomDefaultBg: { ...DEFAULT_WECHAT_CHAT_ROOM_BG },
-    selfBubbleText: '#1B1B1F',
-    otherBubbleText: '#1B1B1F',
+    selfBubbleText: LUMI_PAPER_CHAT_PALETTE.ink,
+    otherBubbleText: LUMI_PAPER_CHAT_PALETTE.ink,
     bubbleGlobal: {
-      selfBubbleBg: 'rgba(123, 138, 166, 0.22)',
-      /** 不透明实色，避免角色侧气泡叠在聊天底上发灰透底 */
-      otherBubbleBg: '#EEEFF2',
-      selfBubbleRadiusPx: 18,
-      otherBubbleRadiusPx: 18,
+      /** 暖石灰：己方，贴合纸感 */
+      selfBubbleBg: LUMI_PAPER_CHAT_PALETTE.stone,
+      /** 纯白：对方 */
+      otherBubbleBg: LUMI_PAPER_CHAT_PALETTE.sheet,
+      selfBubbleRadiusPx: 20,
+      otherBubbleRadiusPx: 20,
       showAvatar: true,
-      avatarRadiusPx: 10,
+      avatarRadiusPx: 12,
       showBubbleTail: false,
       mergeConsecutiveAvatarGroup: true,
     },
     /** 与 bubbleGlobal 相同的角色不要写死在此，否则聊天页会优先读快照导致改全局颜色不生效 */
     bubbleByRole: {},
     timestampStyle: 'subtle',
-    timestampText: 'rgba(27, 27, 31, 0.38)',
+    timestampText: 'rgba(139, 139, 143, 0.55)',
 
     /** 全局页背景：各 Tab 无单页覆盖时均用此（通讯录 / 约会 / 发现 / 我等与信息一致） */
     pageBgGlobal: { ...DEFAULT_WECHAT_TAB_PAGE_BG },
@@ -1177,7 +1259,7 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
       glassOpacity: 0,
       blurPx: 0,
     },
-    chatSkinOverrides: {},
+    chatSkinOverrides: { ...LUMI_PAPER_CHAT_SKIN_OVERRIDES },
     chatSkinScopedCss: '',
     chatSkinEngine: 'structured',
     avatarChrome: {

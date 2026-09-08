@@ -122,16 +122,17 @@ export function DatingNetworkMentionControls({
             type="button"
             disabled={disabled}
             onClick={() => setPickerOpen(true)}
-            className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[13px] text-[#262626] transition-all duration-200 hover:border-stone-400 disabled:opacity-50"
+            className="ds-chip"
             title="植入人脉角色"
           >
-            <Users className="size-4" strokeWidth={1.75} />
+            <Users className="size-3.5" strokeWidth={1.75} />
             人脉
           </button>
           {selectedOptions.map((peer) => (
             <span
               key={peer.id}
-              className="inline-flex max-w-[180px] items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50/80 py-1 pl-1 pr-1.5 text-[12px] text-indigo-900"
+              className="ds-chip inline-flex max-w-[180px] items-center gap-1.5 !py-1"
+              data-on="true"
               title={peer.displayName}
             >
               <PeerAvatar peer={peer} size="sm" />
@@ -140,7 +141,7 @@ export function DatingNetworkMentionControls({
                 type="button"
                 disabled={disabled}
                 onClick={() => removePeer(peer.id)}
-                className="shrink-0 rounded p-0.5 text-indigo-500 hover:bg-indigo-100/80 hover:text-indigo-800"
+                className="shrink-0 rounded p-0.5 opacity-80 hover:opacity-100"
                 aria-label={`移除 ${peer.displayName}`}
               >
                 <X className="size-3" />

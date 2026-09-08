@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#19 占座屏 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 0 28px}
+.hero{width:100%;height:128px;object-fit:cover;display:block;filter:saturate(1.05) contrast(1.04)}
+.shell{max-width:800px;margin:0 auto;border-radius:0 0 18px 18px;overflow:hidden;box-shadow:0 18px 48px rgba(20,16,12,.18)}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750;letter-spacing:.04em}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px;opacity:.82}
+.stats b{font-weight:750}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;flex-shrink:0;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.npc b{font-weight:700}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.list{padding:4px 12px 8px}
+.row{padding:9px 10px;margin-bottom:7px;border-radius:10px;font-size:12.5px;line-height:1.55}
+.row .m{font-size:10px;opacity:.6}
+.tabbar{display:flex;gap:0}
+.tabbar button{flex:1;border:0;padding:11px 8px;font-size:12px;cursor:pointer;background:transparent;font-weight:650}
+.tabbar button.on{font-weight:800}
+.panel{display:none}.panel.on{display:block}
+.pulse{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.55}}
+@keyframes blink{50%{opacity:.45}}
+@keyframes flip{0%{transform:rotateX(0)}40%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+.flip{animation:flip .45s ease}
+body{background:linear-gradient(180deg,#e8eef4,#d4dde8);color:#1a2430}
+.shell{background:#f4f6f8;border:1px solid #cfd8e3}
+.title-custom{background:#fff;border-bottom:1px solid #dde3ea}
+.stats{background:#e8eef4;font-variant-numeric:tabular-nums}
+.lib-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:12px}
+.lib{aspect-ratio:1.15;border:1px solid #dde3ea;border-radius:8px;background:#fff;font-size:11px;cursor:pointer;font-weight:700;color:#3a4a5c}
+.lib.busy{background:#e8edf2;opacity:.55}
+.lib.on,.lib.me{background:#c9a24b;color:#fff;border-color:#b8923f}
+.lib.note{outline:2px dashed #c9a24b}
+.lib.sel{box-shadow:0 0 0 3px #2d5a9a44}
+.slip{margin:0 12px 8px;padding:10px;background:#fff8e8;border-radius:8px;font-size:12px;transform:rotate(-1deg);line-height:1.6;border:1px solid #f0e0b0;display:none}
+.slip.on{display:block;animation:slipIn .35s ease}
+@keyframes slipIn{from{opacity:0;transform:rotate(-1deg) translateY(-6px)}to{opacity:1;transform:rotate(-1deg)}}
+.row{background:#fff;border:1px solid #dde3ea}
+.tip{background:#e8f0fa;color:#2a5080}
+.npc{background:#eef2ff}
+.btn{background:#2d5a9a;color:#fff;margin:0 12px 10px}
+.cd{font-family:ui-monospace,Consolas,monospace;font-weight:800;color:#2d5a9a}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./18.html">上一张</a><b>#19 占座屏</b><a href="./20.html">下一张</a></div>
+<p class="fore">邻座记录里夹着的纸条，比预约成功提示更烫手。</p>
+<div class="stage">
+<div class="shell">
+<img class="hero" alt="图书馆占座屏" src="https://image.pollinations.ai/prompt/library%20study%20carrels%20quiet%20night%20desk%20lamp%20rain%20window%20no%20people">
+<p class="title-custom">图书馆 · 3F 静音区 · 预约占座屏</p>
+<div class="stats"><span>余位 <b>4</b></span><span>闭馆 <b class="cd" id="cd">01:12:40</b></span><span>雨声外放关</span></div>
+<div class="tabbar" style="background:#e4ebf2">
+<button type="button" class="on" data-floor="3">3F 静音</button>
+<button type="button" data-floor="2">2F 研讨</button>
+</div>
+<div class="lib-grid" id="grid3"><button type="button" class="lib" data-lib="1">01</button><button type="button" class="lib" data-lib="2">02</button><button type="button" class="lib busy" data-lib="3">03</button><button type="button" class="lib" data-lib="4">04</button><button type="button" class="lib" data-lib="5">05</button><button type="button" class="lib on me" data-lib="6">06</button><button type="button" class="lib note" data-lib="7">07</button><button type="button" class="lib" data-lib="8">08</button><button type="button" class="lib" data-lib="9">09</button><button type="button" class="lib" data-lib="10">10</button><button type="button" class="lib busy" data-lib="11">11</button><button type="button" class="lib" data-lib="12">12</button><button type="button" class="lib" data-lib="13">13</button><button type="button" class="lib" data-lib="14">14</button><button type="button" class="lib" data-lib="15">15</button><button type="button" class="lib" data-lib="16">16</button></div>
+<div class="lib-grid" id="grid2" hidden>
+<button type="button" class="lib busy">A1</button><button type="button" class="lib">A2</button><button type="button" class="lib">A3</button><button type="button" class="lib busy">A4</button>
+<button type="button" class="lib">B1</button><button type="button" class="lib">B2</button><button type="button" class="lib busy">B3</button><button type="button" class="lib">B4</button>
+</div>
+<div class="slip on" id="slip">邻座纸条：闭馆前十分钟，便利店见。伞我带着。关东煮你点。靠过来一点写作业也行。——祁洵</div>
+<div class="list">
+<div class="row"><span class="av">📗</span><b>B05</b> <span class="m">空 · 充电器占用中</span></div>
+<div class="row"><span class="av">📘</span><b>B06 · 你</b> <span class="m">已签到 · 倒计时同步</span></div>
+<div class="row"><span class="av">📙</span><b>B07</b> <span class="m">邻座 · 留条中 · 灯管闪</span></div>
+<div class="row"><span class="av">📕</span><b>B08</b> <span class="m">已预约 · 未到</span></div>
+<div class="row"><span class="av">📓</span><b>C01–C04</b> <span class="m">考研区 · 勿打扰</span></div>
+<div class="row"><span class="av">☂️</span><b>服务台</b> <span class="m">失物：折叠伞一把待领</span></div>
+</div>
+<button class="btn" type="button" id="toggleSlip">展开/收起邻座纸条</button>
+<div class="tip">静音区禁止通话；「别先走」请用纸条传递 · 灯坏了请勿自行修理 · 报修码 3F-12</div>
+<div class="npc"><span class="av">🤫</span><div><b>旁观 NPC</b>：图书馆最吵的东西，往往是一张被点开的纸条。</div></div>
+<div class="foot">馆方提示 · 超时座位释放 · 戏仿预约系统</div>
+</div>
+</div>
+<script>
+(function(){
+var slip=document.getElementById("slip");
+var btn=document.getElementById("toggleSlip");
+var libs=document.querySelectorAll("#grid3 .lib");
+var tabs=document.querySelectorAll(".tabbar button");
+var g3=document.getElementById("grid3");
+var g2=document.getElementById("grid2");
+var cd=document.getElementById("cd");
+var left=1*3600+12*60+40;
+if(btn&&slip)btn.addEventListener("click",function(){
+slip.classList.toggle("on");
+});
+for(var i=0;i<libs.length;i++){
+libs[i].addEventListener("click",function(){
+for(var j=0;j<libs.length;j++)libs[j].classList.remove("sel");
+this.classList.add("sel");
+if(this.classList.contains("note")&&slip){
+slip.classList.add("on");
+}
+});
+}
+for(var t=0;t<tabs.length;t++){
+tabs[t].addEventListener("click",function(){
+for(var j=0;j<tabs.length;j++)tabs[j].classList.remove("on");
+this.classList.add("on");
+var f=this.getAttribute("data-floor");
+if(g3)g3.hidden=f!=="3";
+if(g2)g2.hidden=f!=="2";
+});
+}
+setInterval(function(){
+if(left<=0)return;
+left--;
+var h=Math.floor(left/3600),m=Math.floor((left%3600)/60),s=left%60;
+function z(n){return (n<10?"0":"")+n}
+if(cd)cd.textContent=z(h)+":"+z(m)+":"+z(s);
+},1000);
+})();
+</script>
+</body>
+</html>

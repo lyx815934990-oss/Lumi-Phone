@@ -1,0 +1,1712 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>糯叽机 · 气泡制作器</title>
+<style>
+  /* ========== 糯叽机「草莓牛奶」软萌粉色主题 ========== */
+  :root {
+    --cream:    #fff0f3;   /* 浅草莓粉底 */
+    --cream-2:  #ffe5ec;   /* 次级浅粉 */
+    --milk:     #fffdfd;   /* 卡片白 */
+    --caramel:  #ff7096;   /* 草莓粉红（主） */
+    --caramel-d:#c93b60;   /* 深草莓红（文字与高对比度重点） */
+    --honey:    #ffb3c6;   /* 蜜桃粉 */
+    --blush:    #ffa5ab;   /* 腮红粉 */
+    --blush-bg: #ffe5ec;   /* 腮红底 */
+    --mint:     #a7e8db;   /* 薄荷绿 */
+    --cocoa:    #4a312c;   /* 深可可（文字，保证极佳对比度） */
+    --cocoa-soft:#8c736e;  /* 软可可（次要文字） */
+    --line:     #ffccd5;   /* 粉色线 */
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: "Comic Sans MS", "PingFang SC", "Microsoft YaHei", "Yuanti SC", "ChalkboardSE", system-ui, sans-serif;
+    color: var(--cocoa);
+    display: flex; min-height: 100vh;
+    background:
+      radial-gradient(circle at 12% 8%, #ffe3e8 0, transparent 42%),
+      radial-gradient(circle at 88% 92%, #ffd6e0 0, transparent 40%),
+      radial-gradient(circle at 50% 50%, #fff0f3 0, #ffe5ec 100%);
+  }
+  /* 飘浮的小粉糯点点背景纹理 */
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+    background-image:
+      radial-gradient(circle, rgba(255,112,150,.15) 2px, transparent 2.5px),
+      radial-gradient(circle, rgba(255,179,198,.12) 2px, transparent 2.5px);
+    background-size: 46px 46px, 70px 70px;
+    background-position: 0 0, 23px 23px;
+  }
+
+  /* ===== 左侧控制面板 ===== */
+  .panel {
+    position: relative; z-index: 2;
+    width: 420px; flex-shrink: 0;
+    background: linear-gradient(180deg, rgba(255,253,253,.96), rgba(255,240,243,.96));
+    padding: 20px 18px 48px; overflow-y: auto; height: 100vh;
+    box-shadow: 6px 0 30px rgba(255,112,150,.08);
+    border-right: 3px dashed var(--line);
+    scrollbar-width: thin; scrollbar-color: var(--honey) transparent;
+  }
+  .panel::-webkit-scrollbar { width: 8px; }
+  .panel::-webkit-scrollbar-thumb { background: var(--honey); border-radius: 8px; }
+
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+  .brand .logo-img {
+    width: 46px; height: 46px; border-radius: 50% 50% 48% 48%; flex-shrink: 0;
+    border: 2.5px solid var(--line);
+    object-fit: cover;
+    box-shadow: 0 6px 14px rgba(255,112,150,.35);
+    animation: bob 3.2s ease-in-out infinite;
+  }
+  @keyframes bob { 0%,100%{transform:translateY(0) rotate(-3deg)} 50%{transform:translateY(-4px) rotate(3deg)} }
+  .panel h2 { margin: 0; font-size: 22px; font-weight: 800; color: var(--caramel-d); letter-spacing: 1px; text-shadow: 0 2px 0 #fff; }
+  .panel .hint { font-size: 12.5px; color: var(--cocoa-soft); margin: 6px 0 18px; line-height: 1.7; }
+  .panel .hint b { color: var(--caramel-d); }
+
+  /* 编辑哪一方 —— 不再 sticky，避免穿透预览 */
+  .seg {
+    display: flex; gap: 6px; margin-bottom: 18px;
+    background: var(--cream-2); padding: 6px; border-radius: 20px;
+    border: 2.5px solid var(--line);
+    box-shadow: inset 0 2px 5px rgba(201,59,96,.06);
+  }
+  .seg button {
+    flex: 1; padding: 11px 8px; border: none; background: transparent; color: var(--cocoa-soft);
+    border-radius: 15px; cursor: pointer; font-size: 13.5px; font-weight: 800; transition: .2s;
+    font-family: inherit;
+  }
+  .seg button.active {
+    background: linear-gradient(160deg, #fff, #fff0f3); color: var(--caramel-d);
+    box-shadow: 0 4px 10px rgba(201,59,96,.15), inset 0 0 0 2px var(--honey);
+    transform: translateY(-1px);
+  }
+
+  /* 折叠分组 —— 圆滚滚卡片 */
+  .accordion {
+    border: 2.5px solid var(--line); border-radius: 22px; margin-bottom: 14px;
+    overflow: hidden; background: var(--milk);
+    box-shadow: 0 5px 16px rgba(201,59,96,.04);
+  }
+  .accordion > .acc-head {
+    padding: 14px 18px; background: linear-gradient(180deg, #fff, var(--cream));
+    cursor: pointer; font-weight: 800; font-size: 14.5px; color: var(--caramel-d);
+    display: flex; justify-content: space-between; align-items: center; user-select: none;
+    transition: background .18s;
+  }
+  .accordion > .acc-head:hover { background: var(--cream-2); }
+  .accordion > .acc-head .arrow {
+    transition: transform .25s; color: var(--caramel); font-size: 13px;
+    width: 24px; height: 24px; line-height: 24px; text-align: center;
+    background: var(--cream-2); border-radius: 50%;
+  }
+  .accordion.open > .acc-head .arrow { transform: rotate(90deg); background: var(--honey); color: #fff; }
+  .accordion > .acc-body { padding: 16px 18px; display: none; }
+  .accordion.open > .acc-body { display: block; }
+
+  .field { margin-bottom: 14px; }
+  .field > label {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; font-weight: 800; margin-bottom: 7px; color: var(--cocoa);
+  }
+  /* 圆润大滑块 */
+  input[type=range] {
+    width: 100%; height: 26px; cursor: pointer; -webkit-appearance: none; background: transparent;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 8px; border-radius: 8px;
+    background: linear-gradient(90deg, var(--honey), var(--cream-2));
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; margin-top: -7px;
+    background: radial-gradient(circle at 35% 30%, #fff, var(--caramel));
+    border: 2.5px solid #fff; box-shadow: 0 2px 6px rgba(201,59,96,.3); cursor: grab;
+    transition: transform 0.1s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+  }
+  input[type=range]::-moz-range-track { height: 8px; border-radius: 8px; background: var(--honey); }
+  input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--caramel); border: 2.5px solid #fff; transition: transform 0.1s; }
+  input[type=range]::-moz-range-thumb:hover { transform: scale(1.15); }
+
+  .numbox {
+    width: 74px; padding: 5px 8px; border: 2px solid var(--line); border-radius: 12px;
+    font-size: 12.5px; color: var(--caramel-d); font-weight: 800; text-align: right;
+    font-variant-numeric: tabular-nums; background: #fffdfb; font-family: inherit;
+  }
+  /* 获得焦点时，不需要任何额外的荧光边框、光晕或默认样式 */
+  .numbox:focus, input[type=text]:focus, select:focus { outline: none; border-color: var(--caramel); box-shadow: none; }
+  .field input[type=text] {
+    width: 100%; padding: 9px 12px; border: 2px solid var(--line); border-radius: 14px;
+    font-size: 12px; font-family: ui-monospace, monospace; background: #fffdfb; color: var(--cocoa);
+  }
+  input[type=color] {
+    width: 48px; height: 34px; border: 2.5px solid var(--line); border-radius: 12px;
+    padding: 3px; cursor: pointer; vertical-align: middle; background: #fff;
+  }
+  select {
+    padding: 9px 12px; border: 2px solid var(--line); border-radius: 14px;
+    font-size: 12.5px; background: #fffdfb; color: var(--cocoa); cursor: pointer; font-family: inherit;
+  }
+  .row2 { display: flex; gap: 12px; }
+  .row2 > .field { flex: 1; }
+  .colorline { display: flex; align-items: center; gap: 9px; }
+  .colorline input[type=text] { flex: 1; }
+  .toggle-row { display: flex; align-items: center; gap: 18px; font-size: 13.5px; font-weight: 800; margin-bottom: 10px; flex-wrap: wrap; }
+  .toggle-row label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+  input[type=radio], input[type=checkbox] { accent-color: var(--caramel); width: 17px; height: 17px; cursor: pointer; }
+  .subhead {
+    font-size: 12px; font-weight: 800; color: #fff; margin: 14px 0 9px;
+    background: linear-gradient(90deg, var(--honey), var(--caramel)); padding: 5px 12px;
+    border-radius: 999px; display: inline-block; box-shadow: 0 3px 7px rgba(201,59,96,.2);
+  }
+
+  /* 贴纸卡片 */
+  .sticker-card {
+    border: 2.5px dashed var(--line); border-radius: 18px; padding: 14px; margin-bottom: 13px;
+    background: linear-gradient(180deg, #fff, var(--cream));
+  }
+  .sticker-card .sc-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .sticker-card .sc-head b { font-size: 13.5px; color: var(--caramel-d); font-weight: 800; }
+  .sticker-card .sc-del { border:none; background:var(--blush-bg); color:var(--caramel-d); border-radius:12px; cursor:pointer; font-size:12px; padding:6px 13px; font-weight:800; font-family:inherit; transition: background 0.15s; }
+  .sticker-card .sc-del:hover { background: #ffd6e0; }
+  .sticker-card .sc-del:active { transform: scale(.93); }
+  .sticker-card label.mini { font-size:11.5px; font-weight:800; display:block; margin:9px 0 4px; color:var(--cocoa); }
+  .sticker-card input[type=text]{ width:100%; padding:7px 10px; border:2px solid var(--line); border-radius:12px; font-size:11px; font-family:ui-monospace,monospace; background:#fffdfb; }
+  .sticker-card select { width:100%; }
+  .sticker-card .mini-range { display:flex; align-items:center; gap:9px; }
+  .sticker-card .mini-range input[type=range]{ flex:1; }
+  .sticker-card .mini-range .nb { width:54px; padding:5px 6px; border:2px solid var(--line); border-radius:10px; font-size:11.5px; text-align:right; color:var(--caramel-d); background:#fffdfb; font-family:inherit; font-weight:700; }
+
+  pre.css-out {
+    background: linear-gradient(160deg, #4a312c, #3a221d); color: #ffe5ec; padding: 16px; border-radius: 16px;
+    font-size: 11px; line-height: 1.55; overflow-x: auto; white-space: pre; max-height: 300px;
+    border: 2.5px solid #5a3d37; box-shadow: inset 0 2px 8px rgba(0,0,0,.25);
+  }
+  .btn {
+    width: 100%; padding: 15px; margin-top: 10px; border: none; border-radius: 18px;
+    background: linear-gradient(160deg, #ff9ebb, var(--caramel)); color: #fff; font-size: 15px;
+    font-weight: 800; cursor: pointer; transition: .16s; font-family: inherit;
+    box-shadow: 0 6px 16px rgba(255,112,150,.35), inset 0 -3px 0 rgba(201,59,96,.3);
+  }
+  .btn:hover { filter: brightness(1.04); }
+  .btn:active { transform: translateY(2px) scale(0.98); box-shadow: 0 2px 8px rgba(255,112,150,.2); }
+  .btn.ghost { background: var(--cream-2); color: var(--caramel-d); box-shadow: inset 0 0 0 2.5px var(--line); }
+
+  /* ===== 右侧预览 ===== */
+  .preview { position: relative; z-index: 1; flex: 1; padding: 28px; overflow-y: auto; height: 100vh; min-width: 0; }
+  .preview-controls {
+    margin-bottom: 20px; display:flex; gap:18px; align-items:center; flex-wrap:wrap; font-size:13px;
+    background: rgba(255,255,255,.78); padding: 13px 18px; border-radius: 18px; font-weight: 700;
+    border: 2.5px solid var(--line); box-shadow: 0 4px 14px rgba(255,112,150,.06); backdrop-filter: blur(8px);
+  }
+  .preview-controls label { display: flex; align-items: center; gap: 7px; }
+  .chat-area {
+    border-radius: 26px; padding: 28px; min-height: 74vh;
+    box-shadow: inset 0 3px 20px rgba(255,112,150,.08), 0 8px 30px rgba(255,112,150,.08);
+    border: 3px solid rgba(255,255,255,.6);
+  }
+  .msg-row { display: flex; margin-bottom: 2px; }
+  .msg-row.me { justify-content: flex-end; }
+  .bubble { position: relative; word-break: break-word; }
+
+  .grid-legend { font-size: 12px; color: #888; display: none; }
+  .show-legend .grid-legend { display: inline; }
+  .grid-legend b.h { color: crimson; } .grid-legend b.v { color: #1565ff; } .grid-legend b.c { color:#c79100; }
+
+  /* 移动端浮动按钮 */
+  .mobile-toggle {
+    display: none; position: fixed; right: 18px; bottom: 18px; z-index: 100;
+    width: 60px; height: 60px; border-radius: 50%; border: 3px solid #fff;
+    background: linear-gradient(160deg, #ff9ebb, var(--caramel)); color: #fff; font-size: 26px;
+    box-shadow: 0 8px 22px rgba(255,112,150,.45); cursor: pointer;
+  }
+  .mobile-toggle:active { transform: scale(.92); }
+
+  /* ===== 响应式：手机/窄屏 ===== */
+  @media (max-width: 820px) {
+    /* 预览固定钉在顶部、面板在下方独立滚动 —— 用 fixed 而非 sticky，
+       避免 flex 纵向布局下 sticky 不生效导致「气泡跟着一起滑走」 */
+    body { flex-direction: column; --mpv: 46vh; }
+    .preview {
+      order: 1; position: fixed; top: 0; left: 0; right: 0;
+      height: var(--mpv); max-height: var(--mpv); min-height: 0;
+      padding: 16px; z-index: 30; overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      background:
+        radial-gradient(circle at 50% 0%, #ffe3e8 0, transparent 60%),
+        #ffe5ec;
+      border-bottom: 3px dashed var(--line);
+      box-shadow: 0 6px 16px rgba(255,112,150,.1);
+    }
+    .chat-area { min-height: 0; padding: 18px; }
+    .panel {
+      order: 2; width: 100%; height: auto; border-right: none;
+      border-top: none; box-shadow: none; padding: 18px 14px 90px; z-index: 1;
+      margin-top: var(--mpv);   /* 让出被固定预览遮住的高度 */
+    }
+    .preview-controls { padding: 9px 12px; gap: 12px; font-size: 12px; margin-bottom: 12px; }
+    body.panel-collapsed { --mpv: 100vh; }
+    body.panel-collapsed .panel { display: none; }
+    .mobile-toggle { display: grid; place-items: center; }
+    .seg button { padding: 13px; font-size: 14.5px; }
+    input[type=range] { height: 34px; }
+    .numbox, .sticker-card .mini-range .nb { font-size: 15px; padding: 7px 9px; }
+    .field input[type=text], select { font-size: 15px; }
+    .accordion > .acc-head { padding: 17px; font-size: 16px; }
+  }
+  @media (max-width: 430px) {
+    body { --mpv: 42vh; }
+    .row2 { flex-direction: column; gap: 0; }
+  }
+
+  /* 九宫格切线覆盖层 */
+  .grid-overlay {
+    position: absolute;
+    top: calc(-1 * var(--bt,0)); bottom: calc(-1 * var(--bb,0));
+    left: calc(-1 * var(--bl,0)); right: calc(-1 * var(--br,0));
+    pointer-events: none; z-index: 5; display: none;
+  }
+  .show-grid .grid-overlay { display: block; }
+  .grid-overlay .line-h { position:absolute; left:0; right:0; height:0; border-top:2px dashed crimson; }
+  .grid-overlay .line-h.top { top: var(--bt,0); } .grid-overlay .line-h.bottom { bottom: var(--bb,0); }
+  .grid-overlay .line-v { position:absolute; top:0; bottom:0; width:0; border-left:2px dashed #1565ff; }
+  .grid-overlay .line-v.left { left: var(--bl,0); } .grid-overlay .line-v.right { right: var(--br,0); }
+  .grid-overlay .corner { position:absolute; background: rgba(255,180,0,.28); }
+  .grid-overlay .corner.tl{top:0;left:0;width:var(--bl,0);height:var(--bt,0);}
+  .grid-overlay .corner.tr{top:0;right:0;width:var(--br,0);height:var(--bt,0);}
+  .grid-overlay .corner.bl{bottom:0;left:0;width:var(--bl,0);height:var(--bb,0);}
+  .grid-overlay .corner.br{bottom:0;right:0;width:var(--br,0);height:var(--bb,0);}
+  .grid-overlay .stretch-zone { position:absolute; top:var(--bt,0);bottom:var(--bb,0);left:var(--bl,0);right:var(--br,0); background: rgba(0,150,255,.14); }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <div class="brand">
+      <img class="logo-img" src="nuojiji.png" alt="糯叽机">
+      <h2>气泡制作器</h2>
+    </div>
+    <p class="hint">拖滑块、选颜色，右边实时预览。做好点「复制 CSS」，贴进糯叽机的<b>气泡美化</b>框即可。不用懂代码。</p>
+
+    <div class="seg">
+      <button data-side="them" class="active">🐱 对方气泡</button>
+      <button data-side="me">💬 我方气泡</button>
+    </div>
+    <button class="btn ghost" id="mirrorBtn" style="margin-top:-8px;margin-bottom:18px;font-size:13.5px;padding:12px">🪞 把<span id="mirrorFrom">对方</span>样式镜像同步到<span id="mirrorTo">我方</span></button>
+
+    <!-- 全局：气泡样式 & 间距（两方共用） -->
+    <div class="accordion open">
+      <div class="acc-head">⓪ 气泡样式 · 消息间距（全局） <span class="arrow">▶</span></div>
+      <div class="acc-body">
+        <div class="field">
+          <label>气泡样式（预览用，对应 APP 设置里的「訊息樣式」）</label>
+          <select id="sel_themeStyle">
+            <option value="plain">素淨 Plain（CSS 完全接管，最自由）</option>
+            <option value="instagram">Instagram（连发圈角）</option>
+            <option value="qq">QQ（不分组）</option>
+            <option value="whatsapp">WhatsApp（尖尾气泡）</option>
+          </select>
+        </div>
+        <p class="hint" style="margin-top:-4px">这只改预览长相。真正切换样式要在 APP「聊天设置→外观→訊息樣式」选。<b>素淨</b>样式下间距/圆角才完全归 CSS 管。</p>
+        <div class="subhead">特殊消息去气泡 🫧</div>
+        <label class="toggle-row"><input type="checkbox" id="chk_stripMedia" checked> 图片 / 表情包 / 转账 等不套气泡外壳</label>
+        <p class="hint" style="margin-top:-4px">开启后，<b>图片、表情包、位置、转账、礼物、转发卡片</b>等特殊消息<b>不会</b>被你的气泡背景/描边/圆角包住，只有<b>纯文字</b>气泡才用上面的样式。建议保持开启。</p>
+        <div class="subhead">消息间距（所有样式通用）</div>
+        <div class="row2">
+          <div class="field"><label>气泡间距 <input class="numbox" type="number" id="v_msgGap"></label><input type="range" id="r_msgGap" min="0" max="30"></div>
+          <div class="field"><label>消息区内边距上下 <input class="numbox" type="number" id="v_msgPadV"></label><input type="range" id="r_msgPadV" min="0" max="40"></div>
+        </div>
+        <div class="field"><label>消息区内边距左右 <input class="numbox" type="number" id="v_msgPadH"></label><input type="range" id="r_msgPadH" min="0" max="40"></div>
+        <div class="subhead">连发气泡间隙</div>
+        <div class="row2">
+          <div class="field"><label>同人连发间距 <input class="numbox" type="number" id="v_plainWithin"></label><input type="range" id="r_plainWithin" min="0" max="30"></div>
+          <div class="field"><label>不同人间距 <input class="numbox" type="number" id="v_plainBetween"></label><input type="range" id="r_plainBetween" min="0" max="60"></div>
+        </div>
+        <p class="hint" style="margin-top:-4px">同人连发间距让气泡不贴死；不同人间距分隔对话。素淨样式下完全生效。</p>
+
+        <div class="subhead">头像</div>
+        <label class="toggle-row"><input type="checkbox" id="chk_avatarShow"> 显示头像</label>
+        <div id="avatarFields">
+          <label class="toggle-row"><input type="checkbox" id="chk_avatarFirstOnly"> 连发只在第一条显示头像</label>
+          <div class="row2">
+            <div class="field"><label>头像大小 <input class="numbox" type="number" id="v_avatarSize"></label><input type="range" id="r_avatarSize" min="20" max="60"></div>
+            <div class="field"><label>头像圆角% <input class="numbox" type="number" id="v_avatarRadius"></label><input type="range" id="r_avatarRadius" min="0" max="50"></div>
+          </div>
+          <label class="toggle-row"><input type="checkbox" id="chk_avatarBorderOn"> 头像描边</label>
+          <div id="avatarBorderFields" style="display:none">
+            <div class="row2">
+              <div class="field"><label>描边颜色</label><div class="colorline"><input type="color" id="c_avatarBorderColor"><input type="text" id="t_avatarBorderColor"></div></div>
+              <div class="field"><label>描边粗细 <input class="numbox" type="number" id="v_avatarBorderW"></label><input type="range" id="r_avatarBorderW" min="0" max="8"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="subhead">已读状态（IG / QQ 样式）</div>
+        <div class="row2">
+          <div class="field"><label>状态文字色</label><div class="colorline"><input type="color" id="c_statusColor"><input type="text" id="t_statusColor"></div></div>
+          <div class="field"><label>状态字号 <input class="numbox" type="number" id="v_statusSize"></label><input type="range" id="r_statusSize" min="8" max="16"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>已读色</label><div class="colorline"><input type="color" id="c_statusReadColor"><input type="text" id="t_statusReadColor"></div></div>
+          <div class="field"><label>已送达色</label><div class="colorline"><input type="color" id="c_statusSentColor"><input type="text" id="t_statusSentColor"></div></div>
+        </div>
+
+        <div class="subhead">WhatsApp 时间 + 勾勾</div>
+        <div class="row2">
+          <div class="field"><label>时间文字色</label><div class="colorline"><input type="color" id="c_waMetaColor"><input type="text" id="t_waMetaColor"></div></div>
+          <div class="field"><label>已读勾勾(蓝)</label><div class="colorline"><input type="color" id="c_waCheckRead"><input type="text" id="t_waCheckRead"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 气泡类型 -->
+    <div class="accordion open">
+      <div class="acc-head">① 气泡类型 <span class="arrow">▶</span></div>
+      <div class="acc-body">
+        <div class="toggle-row">
+          <label><input type="radio" name="btype" value="solid" checked> 纯色/描边气泡</label>
+          <label><input type="radio" name="btype" value="image"> 图片九宫格气泡</label>
+        </div>
+        <p class="hint" style="margin:0">纯色：用颜色+圆角+描边做气泡。图片：用一张图当气泡皮（如长条猫面包）。</p>
+      </div>
+    </div>
+
+    <!-- 纯色/描边 -->
+    <div class="accordion open" data-show="solid">
+      <div class="acc-head">② 颜色 · 描边 · 圆角 · 阴影 <span class="arrow">▶</span></div>
+      <div class="acc-body">
+        <div class="field">
+          <label>背景色</label>
+          <div class="colorline">
+            <input type="color" id="c_bg"><input type="text" id="t_bg" placeholder="#ffe9c7 或 transparent">
+          </div>
+        </div>
+        <div class="field">
+          <label>文字颜色</label>
+          <div class="colorline">
+            <input type="color" id="c_fg"><input type="text" id="t_fg">
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label>圆角 <input class="numbox" type="number" id="v_radius"></label>
+            <input type="range" id="r_radius" min="0" max="40">
+          </div>
+          <div class="field">
+            <label>描边粗细 <input class="numbox" type="number" id="v_bw"></label>
+            <input type="range" id="r_bw" min="0" max="10">
+          </div>
+        </div>
+        <div class="field">
+          <label>描边颜色</label>
+          <div class="colorline"><input type="color" id="c_bc"><input type="text" id="t_bc"></div>
+        </div>
+        <div class="field">
+          <label>阴影 <input class="numbox" type="number" id="v_shadow"></label>
+          <input type="range" id="r_shadow" min="0" max="30">
+        </div>
+
+        <div class="subhead">渐变背景</div>
+        <label class="toggle-row"><input type="checkbox" id="chk_gradOn"> 用渐变代替纯色背景</label>
+        <div id="gradFields" style="display:none">
+          <div class="field"><label>渐变起色</label><div class="colorline"><input type="color" id="c_gradFrom"><input type="text" id="t_gradFrom"></div></div>
+          <div class="field"><label>渐变终色</label><div class="colorline"><input type="color" id="c_gradTo"><input type="text" id="t_gradTo"></div></div>
+          <div class="field"><label>渐变角度 <input class="numbox" type="number" id="v_gradAngle"></label><input type="range" id="r_gradAngle" min="0" max="360"></div>
+        </div>
+
+        <div class="subhead">进阶效果</div>
+        <label class="toggle-row"><input type="checkbox" id="chk_txtShadowOn"> 文字阴影/发光</label>
+        <div id="txtShadowFields" style="display:none">
+          <div class="row2">
+            <div class="field"><label>阴影颜色</label><div class="colorline"><input type="color" id="c_txtShadowColor"><input type="text" id="t_txtShadowColor"></div></div>
+            <div class="field"><label>模糊 <input class="numbox" type="number" id="v_txtShadowBlur"></label><input type="range" id="r_txtShadowBlur" min="0" max="20"></div>
+          </div>
+        </div>
+        <label class="toggle-row"><input type="checkbox" id="chk_glassOn"> 毛玻璃</label>
+        <div id="glassFields" style="display:none">
+          <p class="hint" style="margin-top:0">毛玻璃＝透过半透明气泡看到背后<b>模糊</b>的背景。需先在右上传背景图，并把下面「背景透明度」调低，才看得到效果。</p>
+          <div class="row2">
+            <div class="field"><label>玻璃模糊 <input class="numbox" type="number" id="v_glassBlur"></label><input type="range" id="r_glassBlur" min="0" max="40"></div>
+            <div class="field"><label>背景透明度% <input class="numbox" type="number" id="v_bgAlpha"></label><input type="range" id="r_bgAlpha" min="0" max="100"></div>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>透明度% <input class="numbox" type="number" id="v_opacity"></label><input type="range" id="r_opacity" min="20" max="100"></div>
+          <div class="field"><label>字距 <input class="numbox" type="number" id="v_letter"></label><input type="range" id="r_letter" min="0" max="6"></div>
+        </div>
+        <div class="field"><label>气泡微倾斜° <input class="numbox" type="number" id="v_rotate"></label><input type="range" id="r_rotate" min="-5" max="5"></div>
+
+        <div class="subhead">连发气泡圆角（IG 连接效果）</div>
+        <label class="toggle-row"><input type="checkbox" id="chk_radiusMode"> 开启四段分化圆角</label>
+        <div id="radiusFields" style="display:none">
+          <p class="hint" style="margin-top:0">四个数字＝左上 右上 右下 左下（单位 px），空格隔开。让连发气泡像 IG 那样首尾圆、相接处方。</p>
+          <div class="field"><label>单条 single</label><input type="text" id="t_rSingle"></div>
+          <div class="field"><label>第一条 first</label><input type="text" id="t_rFirst"></div>
+          <div class="field"><label>中间 mid</label><input type="text" id="t_rMid"></div>
+          <div class="field"><label>最后 last</label><input type="text" id="t_rLast"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 图片九宫格 -->
+    <div class="accordion" data-show="image">
+      <div class="acc-head">② 图片九宫格切片 <span class="arrow">▶</span></div>
+      <div class="acc-body">
+        <div class="field">
+          <label>图片 URL</label>
+          <input type="text" id="t_url" placeholder="粘贴图床直链 https://...">
+        </div>
+        <p class="hint" style="margin-top:-4px">勾右上「显示切线」边调边看：黄角=固定不变形，蓝区=随文字拉伸。把帽子/装饰物都调进黄角。</p>
+        <div class="subhead">切片（裁原图像素）</div>
+        <div class="row2">
+          <div class="field"><label>上 <input class="numbox" type="number" id="v_st"></label><input type="range" id="r_st" min="0" max="2000"></div>
+          <div class="field"><label>下 <input class="numbox" type="number" id="v_sb"></label><input type="range" id="r_sb" min="0" max="2000"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>左 <input class="numbox" type="number" id="v_sl"></label><input type="range" id="r_sl" min="0" max="2000"></div>
+          <div class="field"><label>右 <input class="numbox" type="number" id="v_sr"></label><input type="range" id="r_sr" min="0" max="2000"></div>
+        </div>
+        <div class="subhead">边框宽度（显示大小，控制气泡尺寸＋切线位置）</div>
+        <div class="row2">
+          <div class="field"><label>上 <input class="numbox" type="number" id="v_bt"></label><input type="range" id="r_bt" min="0" max="300"></div>
+          <div class="field"><label>下 <input class="numbox" type="number" id="v_bb"></label><input type="range" id="r_bb" min="0" max="300"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>左 <input class="numbox" type="number" id="v_bl"></label><input type="range" id="r_bl" min="0" max="300"></div>
+          <div class="field"><label>右 <input class="numbox" type="number" id="v_br"></label><input type="range" id="r_br" min="0" max="300"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 文字样式 -->
+    <div class="accordion">
+      <div class="acc-head">③ 文字样式 <span class="arrow">▶</span></div>
+      <div class="acc-body">
+        <div class="row2">
+          <div class="field"><label>字号 <input class="numbox" type="number" id="v_fsize"></label><input type="range" id="r_fsize" min="10" max="30"></div>
+          <div class="field"><label>行距(×100) <input class="numbox" type="number" id="v_lh"></label><input type="range" id="r_lh" min="100" max="250"></div>
+        </div>
+        <div class="field">
+          <label>字重</label>
+          <select id="sel_fw">
+            <option value="400">常规 400</option>
+            <option value="500" selected>中等 500</option>
+            <option value="600">半粗 600</option>
+            <option value="700">粗体 700</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 间距布局 -->
+    <div class="accordion">
+      <div class="acc-head">④ 间距 · 布局 <span class="arrow">▶</span></div>
+      <div class="acc-body">
+        <div class="subhead">文字区位置（调中段）</div>
+        <p class="hint" style="margin-top:0">加大「上」文字往下挪、「下」往上挪；「左」往右挪、「右」往左挪。图片气泡用它把文字对准白框、避开帽子区。</p>
+        <div class="row2">
+          <div class="field"><label>上内边距 <input class="numbox" type="number" id="v_padT"></label><input type="range" id="r_padT" min="0" max="200"></div>
+          <div class="field"><label>下内边距 <input class="numbox" type="number" id="v_padB"></label><input type="range" id="r_padB" min="0" max="200"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>左内边距 <input class="numbox" type="number" id="v_padL"></label><input type="range" id="r_padL" min="0" max="200"></div>
+          <div class="field"><label>右内边距 <input class="numbox" type="number" id="v_padR"></label><input type="range" id="r_padR" min="0" max="200"></div>
+        </div>
+        <div class="subhead">文字整体偏移（可越过中段，进帽子/底座区）</div>
+        <p class="hint" style="margin-top:0">内边距只能在中段内挪；这个用负位移把文字整块顶出中段。负=上/左，正=下/右。</p>
+        <div class="row2">
+          <div class="field"><label>上下偏移 <input class="numbox" type="number" id="v_shiftY"></label><input type="range" id="r_shiftY" min="-200" max="200"></div>
+          <div class="field"><label>左右偏移 <input class="numbox" type="number" id="v_shiftX"></label><input type="range" id="r_shiftX" min="-200" max="200"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>最小宽度 <input class="numbox" type="number" id="v_min"></label><input type="range" id="r_min" min="0" max="400"></div>
+          <div class="field"><label>最大宽度 <input class="numbox" type="number" id="v_max"></label><input type="range" id="r_max" min="100" max="600"></div>
+        </div>
+        <div class="field"><label>气泡间距(上下连发) <input class="numbox" type="number" id="v_gap"></label><input type="range" id="r_gap" min="-20" max="20"></div>
+      </div>
+    </div>
+
+    <!-- 装饰贴纸 -->
+    <div class="accordion">
+      <div class="acc-head">⑤ 装饰贴纸 🌸 <span class="arrow">▶</span></div>
+      <div class="acc-body">
+        <p class="hint" style="margin-top:0">在气泡四周贴小图（猫、花、星星…）。纯色和图片气泡都能用。</p>
+        <div id="stickerList"></div>
+        <button class="btn ghost" id="addStickerBtn" style="margin-top:4px">＋ 添加一个贴纸</button>
+      </div>
+    </div>
+
+    <!-- 输出 -->
+    <div class="accordion open">
+      <div class="acc-head">⑥ 生成的 CSS <span class="arrow">▶</span></div>
+      <div class="acc-body">
+        <pre class="css-out" id="cssOut"></pre>
+        <button class="btn" id="copyBtn">📋 复制 CSS</button>
+        <button class="btn" id="downloadBtn">💾 导出 CSS 文件</button>
+        <button class="btn ghost" id="resetBtn">↺ 恢复默认</button>
+
+        <div class="subhead">把代码放进去再调节 🍓</div>
+        <p class="hint" style="margin-top:0">把<b>存档</b>（本工具导出的 .json，100% 还原）或<b>气泡 CSS</b>（已贴进糯叽机的那段）贴进下面框里，点「导入」就能把滑块/颜色全调回去继续改。</p>
+        <textarea id="importBox" placeholder="在这里粘贴 存档JSON 或 气泡CSS …" style="width:100%;min-height:120px;padding:12px;border:2.5px solid var(--line);border-radius:16px;font-size:11px;font-family:ui-monospace,monospace;background:#fffdfb;color:var(--cocoa);resize:vertical;box-sizing:border-box"></textarea>
+        <div class="row2" style="margin-top:8px">
+          <button class="btn" id="importBtn" style="margin-top:0">⬇️ 导入（自动识别）</button>
+          <button class="btn ghost" id="exportArchiveBtn" style="margin-top:0">📦 导出存档</button>
+        </div>
+        <p class="hint" id="importMsg" style="margin-top:8px;min-height:18px"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="preview">
+    <div class="preview-controls">
+      <label><input type="checkbox" id="gridChk"> 显示切线（图片气泡专用）</label>
+      <span class="grid-legend"><b class="h">红=上下</b> <b class="v">蓝=左右</b> · <b class="c">黄角=固定</b>，蓝区=拉伸</span>
+      <label>聊天底色 <input type="color" id="c_chatbg" value="#fff0f3"></label>
+      <label>背景图 <input type="file" id="file_chatbg" accept="image/*" style="display:none"><button class="btn ghost" id="btn_uploadBg" style="width:auto;margin:0;padding:6px 12px;font-size:12px;border-radius:10px">📷 上传</button></label>
+      <input type="text" id="t_chatbg" placeholder="或粘贴图片URL" style="width:160px;padding:6px 10px;border:2px solid var(--line);border-radius:10px;font-size:11px;font-family:monospace;background:#fffdfb">
+      <button class="btn ghost" id="btn_clearBg" style="width:auto;margin:0;padding:6px 12px;font-size:12px;border-radius:10px">清除背景图</button>
+    </div>
+    <div class="chat-area" id="chatArea"></div>
+  </div>
+
+  <!-- 手机端：收起/展开设置面板 -->
+  <button class="mobile-toggle" id="mobileToggle" title="展开/收起设置">⚙️</button>
+
+<script>
+// 默认不内置任何气泡图片，用户自己做自己的气泡（留空=纯色起步）
+const DEFAULT_THEM_IMG = "";
+const DEFAULT_ME_IMG   = "";
+
+function freshState(img) {
+  return {
+    type: 'solid',
+    // solid
+    bg: '#ffccd5', fg: '#4a312c', radius: 16, bw: 0, bc: '#ff9ebb', shadow: 0,
+    // 渐变背景（开启后覆盖纯色 bg）
+    gradOn: false, gradFrom: '#ff9ebb', gradTo: '#ff7096', gradAngle: 135,
+    // image（默认空——用户自己贴图床链接；切片/边框给中性起步值）
+    url: img || '', st: 40, sb: 40, sl: 40, sr: 40, bt: 24, bb: 24, bl: 24, br: 24,
+    // text
+    fsize: 15, lh: 150, fw: 500, letter: 0,
+    // 进阶效果
+    txtShadowOn: false, txtShadowColor: '#000000', txtShadowBlur: 2,
+    glassOn: false, glassBlur: 16, bgAlpha: 40,  // 毛玻璃 + 背景透明度%（glass 时背景转半透明才能透出模糊）
+    opacity: 100,                        // 整体透明度 %（含文字）
+    rotate: 0,                           // 变形旋转（°，可 0.5 微倾）
+    // 连发圆角（IG 连接气泡）—— 四段，每段 4 个角(TL TR BR BL)
+    radiusMode: false,                   // 关=统一圆角(用 radius)；开=四段分化
+    rSingle:'20 20 20 20', rFirst:'20 20 4 20', rMid:'20 4 4 20', rLast:'20 4 20 20',
+    // layout（pv/ph 保留兼容旧存档；padT/padB/padL/padR 拆开控制文字四向位置）
+    pv: 8, ph: 12, padT: 8, padB: 8, padL: 12, padR: 12, min: 40, max: 280, gap: -2,
+    // 文字整体偏移（负 margin，可越过中段进入帽子/底座区）
+    shiftY: 0, shiftX: 0,
+    // 装饰贴纸数组
+    stickers: [],
+  };
+}
+
+// 全局（两方共用）：气泡样式 + 消息区间距 + 头像/状态
+const globalState = {
+  themeStyle: 'instagram',  // plain / instagram / qq / whatsapp
+  msgGap: 2,                // --chat-messages-gap
+  msgPadV: 12, msgPadH: 16, // --chat-messages-padding
+  plainWithin: 4,           // --plain-gap-within-group（同人连发）
+  plainBetween: 22,         // --plain-gap-between-groups（不同人）
+  // 头像
+  avatarShow: true, avatarSize: 36, avatarRadius: 50, avatarBorderOn: false, avatarBorderColor: '#ffffff', avatarBorderW: 2,
+  avatarFirstOnly: true,    // 连发只第一条显示头像
+  // IG/QQ 已读状态
+  statusColor: '#9a8674', statusSize: 11, statusReadColor: '#ff7096', statusSentColor: '#c8b6a8',
+  // WhatsApp 时间+勾勾
+  waMetaColor: '#8a8a8a', waCheckRead: '#53bdeb',
+  // 特殊消息（图片/表情/转账等）去气泡外壳
+  stripMedia: true,
+};
+
+// 贴纸位置预设：[属性, 值]
+const STICKER_POS = {
+  'top-left':     { v:['top','-16px'], h:['left','3px'] },
+  'top-right':    { v:['top','-14px'], h:['right','6px'] },
+  'bottom-left':  { v:['bottom','-4px'], h:['left','-2px'] },
+  'bottom-right': { v:['bottom','-4px'], h:['right','-3px'] },
+  'mid-left':     { v:['top','50%'], h:['left','-20px'], mid:true },
+  'mid-right':    { v:['top','50%'], h:['right','-20px'], mid:true },
+};
+const POS_LABEL = { 'top-left':'左上','top-right':'右上','bottom-left':'左下','bottom-right':'右下','mid-left':'左中','mid-right':'右中' };
+
+function freshSticker() {
+  return { url:'', pos:'top-left', size:24, rot:0, dx:0, dy:0 };
+}
+const state = { them: freshState(DEFAULT_THEM_IMG), me: freshState(DEFAULT_ME_IMG) };
+let side = 'them';
+let chatBgImage = '';   // 聊天背景图（data URL 或 url("...")），空=无图
+const $ = id => document.getElementById(id);
+
+// 降级复制：file:// 下 navigator.clipboard 不可用时用老 API
+function legacyCopy(text, onOk) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try { document.execCommand('copy'); onOk && onOk(); }
+  catch(e) { alert('复制失败，请用「💾 导出 CSS 文件」按钮'); }
+  document.body.removeChild(ta);
+}
+
+// 应用聊天背景（底色 + 可选背景图）到预览
+// 用分属性而非 background 简写，避免长 data URL 解析失败
+function applyChatBg() {
+  const area = $('chatArea');
+  area.style.backgroundColor = $('c_chatbg').value;
+  if (chatBgImage) {
+    area.style.backgroundImage = chatBgImage;   // 已是 url("...")
+    area.style.backgroundSize = 'cover';
+    area.style.backgroundPosition = 'center';
+    area.style.backgroundRepeat = 'no-repeat';
+  } else {
+    area.style.backgroundImage = 'none';
+  }
+}
+
+const STORAGE_KEY = "nuojiji_bubble_tuner_state_v2";
+
+function saveState() {
+  try {
+    const data = {
+      state: state,
+      globalState: globalState,
+      side: side,
+      chatBg: $('c_chatbg').value,
+      chatBgImage: chatBgImage
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error("写入 localStorage 失败:", e);
+  }
+}
+
+function loadState() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const data = JSON.parse(saved);
+      if (data.state) {
+        if (data.state.them) Object.assign(state.them, data.state.them);
+        if (data.state.me) Object.assign(state.me, data.state.me);
+        // 兼容旧存档：把 pv/ph 拆成 padT/padB/padL/padR
+        ['them','me'].forEach(k => {
+          const st = state[k];
+          if (st.padT == null) st.padT = st.pv != null ? st.pv : 8;
+          if (st.padB == null) st.padB = st.pv != null ? st.pv : 8;
+          if (st.padL == null) st.padL = st.ph != null ? st.ph : 12;
+          if (st.padR == null) st.padR = st.ph != null ? st.ph : 12;
+        });
+      }
+      if (data.globalState) Object.assign(globalState, data.globalState);
+      if (data.side) side = data.side;
+      if (data.chatBg) $('c_chatbg').value = data.chatBg;
+      if (data.chatBgImage) {
+        chatBgImage = data.chatBgImage;
+        // URL 形式回填输入框（data URL 太长不回填）
+        const mu = /^url\("?(.*?)"?\)$/.exec(chatBgImage);
+        if (mu && !mu[1].startsWith('data:')) $('t_chatbg').value = mu[1];
+      }
+    }
+  } catch (e) {
+    console.error("读取 localStorage 失败:", e);
+  }
+}
+
+// 控件清单：滑块+数字框 成对（每方独立）
+const RANGE_KEYS = ['radius','bw','shadow','st','sb','sl','sr','bt','bb','bl','br','fsize','lh','padT','padB','padL','padR','shiftY','shiftX','min','max','gap',
+  'gradAngle','txtShadowBlur','glassBlur','bgAlpha','opacity','letter','rotate'];
+const COLOR_KEYS = [['c_bg','t_bg','bg'],['c_fg','t_fg','fg'],['c_bc','t_bc','bc'],
+  ['c_gradFrom','t_gradFrom','gradFrom'],['c_gradTo','t_gradTo','gradTo'],['c_txtShadowColor','t_txtShadowColor','txtShadowColor']];
+const CHECK_KEYS = [['chk_gradOn','gradOn','gradFields'],['chk_txtShadowOn','txtShadowOn','txtShadowFields'],
+  ['chk_glassOn','glassOn','glassFields'],['chk_radiusMode','radiusMode','radiusFields']];
+const RTEXT_KEYS = [['t_rSingle','rSingle'],['t_rFirst','rFirst'],['t_rMid','rMid'],['t_rLast','rLast']];
+// 全局控件（不分方）
+const GLOBAL_RANGE = ['msgGap','msgPadV','msgPadH','plainWithin','plainBetween',
+  'avatarSize','avatarRadius','avatarBorderW','statusSize'];
+const GLOBAL_COLOR = [['c_avatarBorderColor','t_avatarBorderColor','avatarBorderColor'],
+  ['c_statusColor','t_statusColor','statusColor'],['c_statusReadColor','t_statusReadColor','statusReadColor'],
+  ['c_statusSentColor','t_statusSentColor','statusSentColor'],['c_waMetaColor','t_waMetaColor','waMetaColor'],
+  ['c_waCheckRead','t_waCheckRead','waCheckRead']];
+const GLOBAL_CHECK = [['chk_avatarShow','avatarShow','avatarFields'],['chk_avatarFirstOnly','avatarFirstOnly',null],
+  ['chk_avatarBorderOn','avatarBorderOn','avatarBorderFields'],['chk_stripMedia','stripMedia',null]];
+
+function loadControls() {
+  const s = state[side];
+  RANGE_KEYS.forEach(k => {
+    const r = $('r_'+k), v = $('v_'+k);
+    if (!r) return;
+    if (s[k] > +r.max) r.max = s[k];
+    if (s[k] < +r.min) r.min = s[k];
+    r.value = s[k]; v.value = s[k];
+  });
+  COLOR_KEYS.forEach(([cId,tId,key]) => {
+    $(tId).value = s[key];
+    const m = /^#([0-9a-f]{6})$/i.exec(s[key]);
+    $(cId).value = m ? s[key] : '#ffffff';
+  });
+  $('sel_fw').value = s.fw;
+  document.querySelectorAll('input[name=btype]').forEach(r => r.checked = (r.value === s.type));
+  // 复选框 + 其折叠区
+  CHECK_KEYS.forEach(([cId,key,fieldId]) => {
+    $(cId).checked = !!s[key];
+    $(fieldId).style.display = s[key] ? 'block' : 'none';
+  });
+  // 连发圆角文本
+  RTEXT_KEYS.forEach(([id,key]) => { $(id).value = s[key]; });
+  // 全局控件
+  GLOBAL_RANGE.forEach(k => {
+    const r=$('r_'+k), v=$('v_'+k); if(!r) return;
+    if (globalState[k] > +r.max) r.max = globalState[k];
+    r.value = globalState[k]; v.value = globalState[k];
+  });
+  GLOBAL_COLOR.forEach(([cId,tId,key]) => {
+    $(tId).value = globalState[key];
+    const m=/^#([0-9a-f]{6})$/i.exec(globalState[key]); $(cId).value = m?globalState[key]:'#ffffff';
+  });
+  GLOBAL_CHECK.forEach(([cId,key,fieldId]) => {
+    $(cId).checked = !!globalState[key];
+    if (fieldId) $(fieldId).style.display = globalState[key] ? 'block' : 'none';
+  });
+  $('sel_themeStyle').value = globalState.themeStyle;
+
+  // 同步编辑方按钮激活状态
+  document.querySelectorAll('.seg button').forEach(b => {
+    b.classList.toggle('active', b.dataset.side === side);
+  });
+
+  applyTypeVisibility();
+  renderStickerCards();
+}
+
+// 渲染贴纸编辑卡片
+function renderStickerCards() {
+  const wrap = $('stickerList'); wrap.innerHTML = '';
+  const list = state[side].stickers;
+  list.forEach((st, i) => {
+    const card = document.createElement('div'); card.className = 'sticker-card';
+    const posOpts = Object.keys(POS_LABEL).map(k =>
+      `<option value="${k}" ${st.pos===k?'selected':''}>${POS_LABEL[k]}</option>`).join('');
+    card.innerHTML = `
+      <div class="sc-head"><b>贴纸 ${i+1}</b><button class="sc-del" data-i="${i}">删除</button></div>
+      <label class="mini">图片 URL（透明 PNG 最佳）</label>
+      <input type="text" data-i="${i}" data-k="url" value="${st.url||''}" placeholder="https://...">
+      <label class="mini">位置</label>
+      <select data-i="${i}" data-k="pos">${posOpts}</select>
+      <label class="mini" data-lbl="${i}-size">大小 ${st.size}px</label>
+      <div class="mini-range"><input type="range" min="8" max="80" value="${st.size}" data-i="${i}" data-k="size"><input class="nb" type="number" value="${st.size}" data-i="${i}" data-k="size"></div>
+      <label class="mini" data-lbl="${i}-rot">旋转 ${st.rot}°</label>
+      <div class="mini-range"><input type="range" min="-180" max="180" value="${st.rot}" data-i="${i}" data-k="rot"><input class="nb" type="number" value="${st.rot}" data-i="${i}" data-k="rot"></div>
+      <label class="mini">微调位置（横向 / 纵向）</label>
+      <div class="mini-range" style="margin-bottom:7px">横<input type="range" min="-40" max="40" value="${st.dx}" data-i="${i}" data-k="dx"><input class="nb" type="number" value="${st.dx}" data-i="${i}" data-k="dx"></div>
+      <div class="mini-range">纵<input type="range" min="-40" max="40" value="${st.dy}" data-i="${i}" data-k="dy"><input class="nb" type="number" value="${st.dy}" data-i="${i}" data-k="dy"></div>
+    `;
+    wrap.appendChild(card);
+  });
+  // 绑定本批卡片事件
+  wrap.querySelectorAll('.sc-del').forEach(b => b.addEventListener('click', e => {
+    state[side].stickers.splice(+e.target.dataset.i, 1); renderStickerCards(); render();
+  }));
+  wrap.querySelectorAll('[data-k]').forEach(el => el.addEventListener('input', e => {
+    const i = +e.target.dataset.i, k = e.target.dataset.k;
+    const isNum = ['size','rot','dx','dy'].includes(k);
+    let val = e.target.value;
+    if (isNum) val = parseInt(val,10)||0;
+    state[side].stickers[i][k] = val;
+    // 就地同步同组的滑块↔数字框（不整卡重建，避免拖动卡顿 / 焦点丢失）
+    if (isNum) {
+      wrap.querySelectorAll(`[data-i="${i}"][data-k="${k}"]`).forEach(inp => {
+        if (inp !== e.target) inp.value = val;
+      });
+      // 标签文字就地刷新（大小 / 旋转）
+      const lbl = wrap.querySelector(`[data-lbl="${i}-${k}"]`);
+      if (lbl) lbl.textContent = k==='size' ? `大小 ${val}px` : `旋转 ${val}°`;
+    }
+    render();
+  }));
+}
+
+function applyTypeVisibility() {
+  const s = state[side];
+  document.querySelectorAll('.accordion[data-show]').forEach(acc => {
+    acc.style.display = (acc.dataset.show === s.type) ? '' : 'none';
+  });
+}
+
+function bindControls() {
+  RANGE_KEYS.forEach(k => {
+    const r = $('r_'+k), v = $('v_'+k);
+    if (!r) return;
+    r.addEventListener('input', e => { state[side][k] = +e.target.value; v.value = e.target.value; render(); });
+    v.addEventListener('input', e => {
+      let val = parseInt(e.target.value,10); if (isNaN(val)) return;
+      state[side][k] = val;
+      if (val > +r.max) r.max = val; if (val < +r.min) r.min = val;
+      r.value = val; render();
+    });
+  });
+  COLOR_KEYS.forEach(([cId,tId,key]) => {
+    $(cId).addEventListener('input', e => { state[side][key] = e.target.value; $(tId).value = e.target.value; render(); });
+    $(tId).addEventListener('input', e => {
+      state[side][key] = e.target.value;
+      const m = /^#([0-9a-f]{6})$/i.exec(e.target.value); if (m) $(cId).value = e.target.value;
+      render();
+    });
+  });
+  $('sel_fw').addEventListener('change', e => { state[side].fw = e.target.value; render(); });
+  $('t_url').addEventListener('input', e => { state[side].url = e.target.value; render(); });
+  document.querySelectorAll('input[name=btype]').forEach(rb => {
+    rb.addEventListener('change', e => { state[side].type = e.target.value; applyTypeVisibility(); render(); });
+  });
+  // 复选框开关 + 折叠
+  CHECK_KEYS.forEach(([cId,key,fieldId]) => {
+    $(cId).addEventListener('change', e => {
+      state[side][key] = e.target.checked;
+      $(fieldId).style.display = e.target.checked ? 'block' : 'none';
+      render();
+    });
+  });
+  // 连发圆角文本框
+  RTEXT_KEYS.forEach(([id,key]) => {
+    $(id).addEventListener('input', e => { state[side][key] = e.target.value; render(); });
+  });
+  // 全局滑块
+  GLOBAL_RANGE.forEach(k => {
+    const r=$('r_'+k), v=$('v_'+k); if(!r) return;
+    r.addEventListener('input', e => { globalState[k] = +e.target.value; v.value=e.target.value; render(); });
+    v.addEventListener('input', e => { let val=parseInt(e.target.value,10); if(isNaN(val))return; globalState[k]=val; if(val>+r.max)r.max=val; r.value=val; render(); });
+  });
+  GLOBAL_COLOR.forEach(([cId,tId,key]) => {
+    $(cId).addEventListener('input', e => { globalState[key]=e.target.value; $(tId).value=e.target.value; render(); });
+    $(tId).addEventListener('input', e => { globalState[key]=e.target.value; const m=/^#([0-9a-f]{6})$/i.exec(e.target.value); if(m)$(cId).value=e.target.value; render(); });
+  });
+  GLOBAL_CHECK.forEach(([cId,key,fieldId]) => {
+    $(cId).addEventListener('change', e => { globalState[key]=e.target.checked; if(fieldId)$(fieldId).style.display=e.target.checked?'block':'none'; render(); });
+  });
+  $('sel_themeStyle').addEventListener('change', e => { globalState.themeStyle = e.target.value; render(); });
+
+  // 折叠
+  document.querySelectorAll('.acc-head').forEach(h => {
+    h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
+  });
+  // 编辑方切换
+  document.querySelectorAll('.seg button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.seg button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active'); side = btn.dataset.side;
+      $('t_url').value = state[side].url;
+      updateMirrorLabel();
+      loadControls(); render();
+    });
+  });
+  // 切线 / 聊天底色
+  $('gridChk').addEventListener('change', e => {
+    $('chatArea').classList.toggle('show-grid', e.target.checked);
+    document.querySelector('.preview-controls').classList.toggle('show-legend', e.target.checked);
+  });
+  $('c_chatbg').addEventListener('input', e => { applyChatBg(); saveState(); });
+  // 背景图：上传文件
+  $('btn_uploadBg').addEventListener('click', () => $('file_chatbg').click());
+  $('file_chatbg').addEventListener('change', e => {
+    const f = e.target.files[0]; if (!f) return;
+    const reader = new FileReader();
+    reader.onload = ev => { chatBgImage = `url("${ev.target.result}")`; $('t_chatbg').value=''; applyChatBg(); saveState(); };
+    reader.readAsDataURL(f);
+  });
+  // 背景图：URL
+  $('t_chatbg').addEventListener('input', e => {
+    chatBgImage = e.target.value.trim() ? `url("${e.target.value.trim()}")` : '';
+    applyChatBg(); saveState();
+  });
+  // 清除背景图
+  $('btn_clearBg').addEventListener('click', () => {
+    chatBgImage = ''; $('t_chatbg').value=''; $('file_chatbg').value=''; applyChatBg(); saveState();
+  });
+  // 复制（带降级：file:// 下 clipboard 可能不可用，退回 execCommand）
+  $('copyBtn').addEventListener('click', () => {
+    const txt = buildFullCSS();
+    const ok = () => { $('copyBtn').textContent='✓ 已复制！'; setTimeout(()=>$('copyBtn').textContent='📋 复制 CSS',1200); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(ok).catch(()=>legacyCopy(txt,ok));
+    } else { legacyCopy(txt, ok); }
+  });
+  // 导出 CSS 文件（下载，file:// 下也可用）
+  $('downloadBtn').addEventListener('click', () => {
+    const blob = new Blob([buildFullCSS()], {type:'text/css;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'nuojiji-气泡主题.css';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    $('downloadBtn').textContent = '✓ 已导出！'; setTimeout(()=>$('downloadBtn').textContent='💾 导出 CSS 文件',1200);
+  });
+  $('resetBtn').addEventListener('click', () => {
+    state[side] = freshState(side==='them'?DEFAULT_THEM_IMG:DEFAULT_ME_IMG);
+    $('t_url').value = state[side].url; loadControls(); render();
+  });
+  // 添加贴纸
+  $('addStickerBtn').addEventListener('click', () => {
+    state[side].stickers.push(freshSticker());
+    renderStickerCards(); render();
+  });
+}
+
+// 计算单个贴纸的定位 CSS（预览用 absolute 定位 span）
+function stickerPosStyle(st) {
+  const p = STICKER_POS[st.pos] || STICKER_POS['top-left'];
+  let css = `position:absolute;width:${st.size}px;height:${st.size}px;`
+    + `background:url('${st.url}') no-repeat center/contain;pointer-events:none;z-index:3;`;
+  css += `${p.v[0]}:calc(${p.v[1]} + ${st.dy}px);`;
+  css += `${p.h[0]}:calc(${p.h[1]} + ${st.dx}px);`;
+  const tf = [];
+  if (p.mid) tf.push('translateY(-50%)');
+  if (st.rot) tf.push(`rotate(${st.rot}deg)`);
+  if (tf.length) css += `transform:${tf.join(' ')};`;
+  return css;
+}
+
+// hex + alpha% → rgba
+function hexA(hex, pct) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return hex;
+  const n=parseInt(m[1],16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${(pct/100).toFixed(2)})`;
+}
+// 四数字圆角字符串 "20 20 4 20" → "20px 20px 4px 20px"
+function radStr(v){ return (v||'').trim().split(/\s+/).map(n=>/^-?\d/.test(n)?n+'px':n).join(' ') || '0'; }
+// 各内建样式的标准连发圆角（R=大圆角，靠 s.radius；小角固定 4px）
+// 返回 {single, first, mid, last}，me/them 镜像不同
+function styleRadii(R, isMe) {
+  const r = R, s = 4;
+  if (isMe) return {  // 我方靠右，尾巴在右下
+    single: `${r}px`,
+    first:  `${r}px ${r}px ${s}px ${r}px`,
+    mid:    `${r}px ${s}px ${s}px ${r}px`,
+    last:   `${r}px ${s}px ${r}px ${r}px`,
+  };
+  return {            // 对方靠左，尾巴在左下
+    single: `${r}px`,
+    first:  `${r}px ${r}px ${r}px ${s}px`,
+    mid:    `${s}px ${r}px ${r}px ${s}px`,
+    last:   `${s}px ${r}px ${r}px ${r}px`,
+  };
+}
+
+// 取某位置的圆角（纯色气泡用）。isMe 用于镜像，themeStyle 决定是否连发分化
+function radiusForPos(s, pos, isMe) {
+  // 手动开「连发圆角」优先，完全自定义
+  if (s.radiusMode) return radStr({single:s.rSingle,first:s.rFirst,mid:s.rMid,last:s.rLast}[pos] || s.rSingle);
+  const ts = globalState.themeStyle;
+  if (ts === 'instagram') return styleRadii(s.radius, isMe)[pos];     // IG：连发拼接
+  if (ts === 'whatsapp') {
+    // WA：APP 真实值——固定 7.5px 小圆角；最后一条/单条在「下方外角」带尖嘴(=0)
+    // me:  .msg-rad-wa-me-tail   = 7.5px 7.5px 0 7.5px  （右下尖）
+    // them:.msg-rad-wa-them-tail = 7.5px 7.5px 7.5px 0  （左下尖）
+    if (pos === 'last' || pos === 'single')
+      return isMe ? `7.5px 7.5px 0 7.5px` : `7.5px 7.5px 7.5px 0`;
+    return `7.5px`;
+  }
+  // qq / plain：不分组，统一圆角
+  return `${s.radius}px`;
+}
+
+// 进阶效果片段（纯色 & 图片都可叠加）
+// 文字四向内边距（兼容旧存档：没存 padX 时退回 pv/ph）
+function padT(s){ return s.padT != null ? s.padT : (s.pv != null ? s.pv : 8); }
+function padB(s){ return s.padB != null ? s.padB : (s.pv != null ? s.pv : 8); }
+function padL(s){ return s.padL != null ? s.padL : (s.ph != null ? s.ph : 12); }
+function padR(s){ return s.padR != null ? s.padR : (s.ph != null ? s.ph : 12); }
+
+function effectsCss(s) {
+  let css = '';
+  if (s.txtShadowOn) css += `text-shadow:0 0 ${s.txtShadowBlur}px ${s.txtShadowColor};`;
+  if (s.glassOn) css += `-webkit-backdrop-filter:blur(${s.glassBlur}px) saturate(180%);backdrop-filter:blur(${s.glassBlur}px) saturate(180%);`;
+  if (s.opacity < 100) css += `opacity:${(s.opacity/100).toFixed(2)};`;
+  if (s.letter > 0) css += `letter-spacing:${s.letter}px;`;
+  if (s.rotate) css += `transform:rotate(${s.rotate}deg);`;
+  return css;
+}
+
+// 单边 inline 样式（预览用）。pos = single/first/mid/last，isMe 决定圆角镜像
+function bubbleCss(s, pos, isMe) {
+  const common = `
+    --bt:${s.bt}px;--bb:${s.bb}px;--bl:${s.bl}px;--br:${s.br}px;
+    color:${s.fg};
+    font-size:${s.fsize}px; font-weight:${s.fw}; line-height:${s.lh/100};
+    padding:${padT(s)}px ${padR(s)}px ${padB(s)}px ${padL(s)}px;
+    min-width:${s.min}px; max-width:${s.max}px; width:max-content;` + effectsCss(s);
+  if (s.type === 'image') {
+    return common + `
+      background:transparent; box-shadow:none; border-radius:0;
+      border-style:solid; border-color:transparent;
+      border-width:${s.bt}px ${s.br}px ${s.bb}px ${s.bl}px;
+      border-image:url("${s.url}") ${s.st} ${s.sr} ${s.sb} ${s.sl} fill / ${s.bt}px ${s.br}px ${s.bb}px ${s.bl}px stretch;`;
+  }
+  // 毛玻璃开启时，背景色转半透明（用 bgAlpha），否则背后模糊看不到
+  const solidBg = (s.glassOn && !s.gradOn) ? hexA(s.bg, s.bgAlpha) : s.bg;
+  const bg = s.gradOn ? `linear-gradient(${s.gradAngle}deg, ${s.gradFrom}, ${s.gradTo})` : solidBg;
+  const border = s.bw > 0 ? `border:${s.bw}px solid ${s.bc};` : `border:none;`;
+  // WhatsApp 样式：APP 自带小阴影 + 紧凑内边距（预览还原真实长相）
+  const isWA = globalState.themeStyle === 'whatsapp';
+  const shadow = s.shadow > 0 ? `box-shadow:0 2px ${s.shadow}px rgba(0,0,0,.18);`
+               : isWA ? `box-shadow:0 1px 0.5px rgba(0,0,0,.13);` : `box-shadow:none;`;
+  return common + `
+    background:${bg}; border-radius:${radiusForPos(s,pos,isMe)}; ${border} ${shadow}
+    border-image:none;`;
+}
+
+// 对话脚本：交替分组，模拟真实聊天
+const SAMPLE = [
+  { who:'them', msgs:['哈哈哈哈哈哈','这种人多种呢','我快疯了啊哈哈'] },
+  { who:'me',   msgs:['看看你的照片~','好呀'] },
+  { who:'them', msgs:['这是一条比较长的消息，用来测试文字很多时气泡会不会向下变高、图案不被破坏'] },
+  { who:'me',   msgs:['这边也发一条长长长长长的消息看看我方气泡拉高拉宽之后帽子和酒杯有没有变形呢'] },
+  { who:'them', media:'image' },   // 演示：图片消息（特殊消息去气泡）
+  { who:'me',   media:'sticker' }, // 演示：表情包消息
+];
+// 预览用的假图片/表情
+const DEMO_IMG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='110'%3E%3Crect width='160' height='110' rx='10' fill='%23ffd8e2'/%3E%3Ccircle cx='118' cy='34' r='16' fill='%23ffec99'/%3E%3Cpath d='M0 92 L52 50 L96 86 L128 60 L160 88 L160 110 L0 110 Z' fill='%23a7e8db'/%3E%3Ctext x='14' y='30' font-size='15'%3E%F0%9F%93%B7%3C/text%3E%3C/svg%3E";
+const DEMO_STICKER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Ctext x='48' y='70' font-size='72' text-anchor='middle'%3E%F0%9F%90%B1%3C/text%3E%3C/svg%3E";
+const DEMO_AVATAR_THEM = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' fill='%23ffd1dc'/%3E%3Ctext x='40' y='52' font-size='40' text-anchor='middle'%3E%F0%9F%90%B1%3C/text%3E%3C/svg%3E";
+const DEMO_AVATAR_ME   = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' fill='%23cdebff'/%3E%3Ctext x='40' y='52' font-size='40' text-anchor='middle'%3E%F0%9F%99%82%3C/text%3E%3C/svg%3E";
+
+function avatarHtml(isMe, visible) {
+  const g = globalState;
+  const sz = g.avatarSize;
+  const border = g.avatarBorderOn ? `border:${g.avatarBorderW}px solid ${g.avatarBorderColor};` : '';
+  const vis = visible ? '' : 'visibility:hidden;';
+  const src = isMe ? DEMO_AVATAR_ME : DEMO_AVATAR_THEM;
+  return `<img src="${src}" style="width:${sz}px;height:${sz}px;border-radius:${g.avatarRadius}%;${border}${vis}flex-shrink:0;object-fit:cover;">`;
+}
+
+// WhatsApp 气泡内时间+勾勾
+function waMetaHtml(isMe) {
+  const g = globalState;
+  const checks = isMe ? `<span style="color:${g.waCheckRead};font-size:13px;margin-left:3px">✓✓</span>` : '';
+  return `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;color:${g.waMetaColor};margin-left:8px;float:right;position:relative;top:4px">14:30${checks}</span>`;
+}
+// IG/QQ 已读状态
+function statusHtml() {
+  const g = globalState;
+  return `<div style="font-size:${g.statusSize}px;color:${g.statusReadColor};text-align:right;margin:2px 2px 0 0;font-weight:500">14:30 已讀</div>`;
+}
+
+function render() {
+  const chat = $('chatArea'); chat.innerHTML = '';
+  const g = globalState, ts = g.themeStyle;
+  const overlay =
+    '<div class="grid-overlay"><span class="stretch-zone"></span>'+
+    '<span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>'+
+    '<span class="line-h top"></span><span class="line-h bottom"></span><span class="line-v left"></span><span class="line-v right"></span></div>';
+  chat.style.padding = `${g.msgPadV}px ${g.msgPadH}px`;
+  const posOf = (i,n) => n===1?'single' : i===0?'first' : i===n-1?'last':'mid';
+
+  SAMPLE.forEach((group, gi) => {
+    const isMe = group.who === 'me';
+    const s = isMe ? state.me : state.them;
+
+    // 媒体消息演示（图片 / 表情包）：演示「特殊消息去气泡」效果
+    if (group.media) {
+      const row = document.createElement('div');
+      row.style.cssText = `display:flex;align-items:flex-end;gap:8px;margin-bottom:${g.plainBetween}px;${isMe?'flex-direction:row-reverse;':''}`;
+      if (g.avatarShow) { const w=document.createElement('div'); w.innerHTML=avatarHtml(isMe,true); row.appendChild(w.firstChild); }
+      const b = document.createElement('div'); b.className='bubble';
+      // 关键：stripMedia 开启时，媒体不套气泡壳；关闭时套上（还原 APP 现状的难看效果）
+      const wrapped = !g.stripMedia;
+      b.style.cssText = (wrapped ? bubbleCss(s,'single',isMe) : 'padding:0;background:transparent;border:none;box-shadow:none;')
+        + 'position:relative;overflow:visible;line-height:0;';
+      if (group.media === 'image') {
+        b.innerHTML = `<img src="${DEMO_IMG}" style="display:block;width:160px;height:110px;border-radius:12px;object-fit:cover">`;
+      } else {
+        b.innerHTML = `<img src="${DEMO_STICKER}" style="display:block;width:90px;height:90px">`;
+      }
+      const wrap = document.createElement('div');
+      wrap.style.cssText = `display:flex;flex-direction:column;${isMe?'align-items:flex-end':'align-items:flex-start'};`;
+      const tag = document.createElement('div');
+      tag.textContent = group.media==='image' ? '🖼 图片消息' : '🐱 表情包';
+      tag.style.cssText = `font-size:10px;color:var(--cocoa-soft);margin:0 4px 3px;font-weight:700;${isMe?'text-align:right':''}`;
+      wrap.appendChild(tag); wrap.appendChild(b);
+      row.appendChild(wrap);
+      chat.appendChild(row);
+      return;
+    }
+
+    const n = group.msgs.length;
+    group.msgs.forEach((txt, i) => {
+      const pos = posOf(i, n);
+      const isLast = (i === n-1);
+      // 行容器（flex：头像 + 气泡）
+      const row = document.createElement('div');
+      row.style.cssText = `display:flex;align-items:flex-end;gap:8px;${isMe?'flex-direction:row-reverse;':''}`;
+      // 同人连发内间距 / 不同人之间间距（WA 气泡独立，连发也留间隙）
+      let withinGap = (ts==='plain') ? g.plainWithin : g.msgGap;
+      if (ts==='whatsapp') withinGap = Math.max(withinGap, 4);
+      row.style.marginBottom = (isLast ? ((ts==='plain')?g.plainBetween:Math.max(g.plainBetween-12,g.msgGap)) : withinGap) + 'px';
+
+      // 头像（占位，连发只第一条显示则其余隐形占位保持对齐）
+      if (g.avatarShow) {
+        const showThis = g.avatarFirstOnly ? (i===0) : true;
+        const wrap = document.createElement('div');
+        wrap.innerHTML = avatarHtml(isMe, showThis);
+        row.appendChild(wrap.firstChild);
+      }
+
+      // 气泡 + 状态 纵向堆叠
+      const stack = document.createElement('div');
+      stack.style.cssText = `display:flex;flex-direction:column;${isMe?'align-items:flex-end':'align-items:flex-start'};max-width:75%;`;
+      const b = document.createElement('div'); b.className='bubble';
+      b.style.cssText = bubbleCss(s,pos,isMe) + 'position:relative;overflow:visible;';
+      b.style.setProperty('--bt',s.bt+'px'); b.style.setProperty('--bb',s.bb+'px');
+      b.style.setProperty('--bl',s.bl+'px'); b.style.setProperty('--br',s.br+'px');
+      const stk = s.stickers.filter(x => x.url && x.url.trim())
+        .map(x => `<span style="${stickerPosStyle(x)}"></span>`).join('');
+      const wa = (ts==='whatsapp') ? waMetaHtml(isMe) : '';
+      // WhatsApp 尖嘴（仅最后一条/单条；APP 真实 clip-path 三角，贴气泡外侧底部）
+      let waArrow = '';
+      if (ts==='whatsapp' && isLast) {
+        const bubbleColor = s.gradOn ? s.gradFrom : s.bg;
+        const side = isMe ? 'right:-8px' : 'left:-8px';
+        const clip = isMe ? "path('M 0 0 C 0 8, 5 13, 8 13 L 0 13 Z')" : "path('M 8 0 C 8 8, 3 13, 0 13 L 8 13 Z')";
+        waArrow = `<span style="position:absolute;${side};bottom:0;width:8px;height:13px;background:${bubbleColor};clip-path:${clip};-webkit-clip-path:${clip};pointer-events:none;z-index:0"></span>`;
+      }
+      const shiftStyle = (s.shiftX||s.shiftY) ? `;transform:translate(${s.shiftX||0}px,${s.shiftY||0}px)` : '';
+      b.innerHTML = '<span style="display:block;position:relative;z-index:1'+shiftStyle+'">'+txt+wa+'</span>'
+        + waArrow + stk + (s.type==='image'?overlay:'');
+      stack.appendChild(b);
+      // IG/QQ：我方最后一条下方显示已读
+      if ((ts==='instagram'||ts==='qq') && isMe && isLast) {
+        const st = document.createElement('div'); st.innerHTML = statusHtml(); stack.appendChild(st.firstChild);
+      }
+      row.appendChild(stack);
+      chat.appendChild(row);
+    });
+  });
+  $('cssOut').textContent = buildFullCSS();
+  saveState();
+}
+
+// 进阶效果 CSS（导出，带 !important）
+function effectsExport(s) {
+  let out = '';
+  if (s.txtShadowOn) out += `\n  text-shadow: 0 0 ${s.txtShadowBlur}px ${s.txtShadowColor} !important;`;
+  if (s.glassOn) out += `\n  -webkit-backdrop-filter: blur(${s.glassBlur}px) saturate(180%) !important;\n  backdrop-filter: blur(${s.glassBlur}px) saturate(180%) !important;`;
+  if (s.opacity < 100) out += `\n  opacity: ${(s.opacity/100).toFixed(2)} !important;`;
+  if (s.letter > 0) out += `\n  letter-spacing: ${s.letter}px !important;`;
+  if (s.rotate) out += `\n  transform: rotate(${s.rotate}deg) !important;`;
+  return out;
+}
+
+// 导出 APP 用 CSS
+function sideCss(sel, s) {
+  let decl;
+  if (s.type === 'image') {
+    decl = `
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  border-style: solid !important;
+  border-color: transparent !important;
+  border-width: ${s.bt}px ${s.br}px ${s.bb}px ${s.bl}px !important;
+  border-image:
+    url("${s.url}")
+    ${s.st} ${s.sr} ${s.sb} ${s.sl} fill /
+    ${s.bt}px ${s.br}px ${s.bb}px ${s.bl}px
+    stretch !important;`;
+  } else {
+    const solidExport = (s.glassOn && !s.gradOn) ? hexA(s.bg, s.bgAlpha) : s.bg;
+    const bg = s.gradOn
+      ? `background: linear-gradient(${s.gradAngle}deg, ${s.gradFrom}, ${s.gradTo}) !important;`
+      : `background: ${solidExport} !important;`;
+    const border = s.bw>0 ? `border: ${s.bw}px solid ${s.bc} !important;` : `border: none !important;`;
+    const shadow = s.shadow>0 ? `box-shadow: 0 2px ${s.shadow}px rgba(0,0,0,.18) !important;` : `box-shadow: none !important;`;
+    // 是否需要连发分化圆角：手动开 或 选了 IG/WhatsApp 样式
+    const splitRadius = s.radiusMode || globalState.themeStyle === 'instagram' || globalState.themeStyle === 'whatsapp';
+    // 分化时通用块不写 radius（留给 first/mid/last/single）
+    const radius = splitRadius ? '' : `\n  border-radius: ${s.radius}px !important;`;
+    decl = `
+  ${bg}${radius}
+  ${border}
+  ${shadow}
+  border-image: none !important;`;
+  }
+  const stickers = (s.stickers||[]).filter(x => x.url && x.url.trim());
+  const hasSticker = stickers.length > 0;
+  const visibility = hasSticker ? `\n  position: relative !important;\n  overflow: visible !important;` : '';
+  let css = `${sel},
+${sel}.first,
+${sel}.mid,
+${sel}.last {${decl}
+  color: ${s.fg} !important;
+  font-size: ${s.fsize}px !important;
+  font-weight: ${s.fw} !important;
+  line-height: ${s.lh/100} !important;
+  padding: ${padT(s)}px ${padR(s)}px ${padB(s)}px ${padL(s)}px !important;
+  min-width: ${s.min}px !important;
+  max-width: ${s.max}px !important;
+  width: max-content !important;${effectsExport(s)}${visibility}
+}`;
+  // 文字整体偏移（位移气泡内的文字内容，可越过中段）
+  if (s.shiftX || s.shiftY) {
+    css += `\n/* 文字整体偏移 */\n${sel} { position: relative !important; }\n${sel} > * { display: inline-block; transform: translate(${s.shiftX||0}px, ${s.shiftY||0}px); }`;
+  }
+  // 连发分化圆角（纯色气泡才有意义；素淨样式用 .plain-*，IG/QQ/WA 用 .first/.mid/.last）
+  const isMe = sel.includes('me');
+  const wantSplit = s.type !== 'image' && (s.radiusMode || globalState.themeStyle === 'instagram' || globalState.themeStyle === 'whatsapp');
+  if (wantSplit) {
+    const which = isMe ? 'me' : 'them';
+    const plain = `.msg-plain-${which}`;
+    let map;
+    if (s.radiusMode) {
+      // 用户完全自定义
+      map = [['single',radStr(s.rSingle)],['first',radStr(s.rFirst)],['mid',radStr(s.rMid)],['last',radStr(s.rLast)]];
+    } else {
+      // 跟随内建样式（用 radiusForPos 算，保证与预览一致）
+      map = ['single','first','mid','last'].map(p => [p, radiusForPos(s, p, isMe)]);
+    }
+    css += `\n\n/* ${which==='me'?'我方':'对方'}连发分化圆角（${globalState.themeStyle}） */`;
+    map.forEach(([p,val]) => {
+      css += `\n${sel}.${p}, ${plain}.plain-${p} { border-radius: ${val} !important; }`;
+    });
+  }
+  if (hasSticker) css += stickerCss(sel, s, stickers);
+  return css;
+}
+
+// 生成贴纸 CSS：用三层容器的 6 个伪元素位（超过 6 个的提示用户）
+function stickerCss(bubbleSel, s, stickers) {
+  // me/them 派生 deco / msg 选择器
+  const which = bubbleSel.includes('me') ? 'me' : 'them';
+  const decoSel = `.bubble-deco-${which}`;
+  const msgSel  = `.msg-${which}`;
+  // 6 个伪元素槽位：[选择器, 伪元素]
+  const SLOTS = [
+    [bubbleSel, '::before'], [bubbleSel, '::after'],
+    [decoSel,   '::before'], [decoSel,   '::after'],
+    [msgSel,    '::before'], [msgSel,    '::after'],
+  ];
+  let out = `\n\n/* ${which==='me'?'我方':'对方'}气泡装饰贴纸 */`;
+  // deco / msg 容器要 overflow:visible，且收紧成贴合气泡宽度（width:max-content），
+  // 否则外层容器比气泡宽/高，挂在它身上的贴纸不会随气泡拉伸而跟着定位 → 飘位。
+  out += `\n${decoSel} { overflow: visible !important; width: max-content !important; max-width: 100% !important; }`;
+  out += `\n${msgSel}  { overflow: visible !important; }`;
+  // 槽位分配：只有 bubbleSel 的两个伪元素锚在「真气泡」上（随文字拉伸钉死角位），
+  // deco/msg 槽位锚在外层容器上、拉伸时仍可能轻微偏移。
+  // 因此把贴纸排序：贴在四角的优先占用前两个 bubbleSel 槽，最不易飘。
+  const cornerOrder = { 'top-left':0,'top-right':0,'bottom-left':0,'bottom-right':0,'mid-left':1,'mid-right':1 };
+  const ordered = stickers
+    .map((st, idx) => ({ st, idx }))
+    .sort((a, b) => (cornerOrder[a.st.pos] ?? 2) - (cornerOrder[b.st.pos] ?? 2) || a.idx - b.idx)
+    .map(x => x.st);
+  ordered.forEach((st, i) => {
+    if (i >= 6) return; // 超过 6 个忽略
+    const [sel, pseudo] = SLOTS[i];
+    const p = STICKER_POS[st.pos] || STICKER_POS['top-left'];
+    const tf = [];
+    if (p.mid) tf.push('translateY(-50%)');
+    if (st.rot) tf.push(`rotate(${st.rot}deg)`);
+    out += `
+${sel}${pseudo} {
+  content: "" !important;
+  position: absolute !important;
+  width: ${st.size}px !important;
+  height: ${st.size}px !important;
+  background: url("${st.url}") no-repeat center / contain !important;
+  ${p.v[0]}: calc(${p.v[1]} + ${st.dy}px) !important;
+  ${p.h[0]}: calc(${p.h[1]} + ${st.dx}px) !important;${tf.length?`\n  transform: ${tf.join(' ')} !important;`:''}
+  pointer-events: none !important;
+  z-index: 3 !important;
+}`;
+  });
+  if (stickers.length > 6) out += `\n/* ⚠️ 超过 6 个贴纸，第 7 个起未生成（伪元素位已用完，可改用气泡内多层背景） */`;
+  if (stickers.length > 2) out += `\n/* ℹ️ 只有前 2 个贴纸锚在「真气泡」上、随气泡拉伸钉死角位；第 3 个起挂在外层容器，气泡变高变宽时可能轻微偏移。把最在意位置的贴纸放在前两个即可（导出已自动把四角贴纸优先排到前面）。 */`;
+  return out;
+}
+
+function buildFullCSS() {
+  const g = globalState;
+  const avatarBorder = g.avatarBorderOn ? `${g.avatarBorderW}px solid ${g.avatarBorderColor}` : 'none';
+  return `/* ====== 全局间距（消息区 & 素淨模式） ====== */
+:root {
+  --chat-messages-gap: ${g.msgGap}px;
+  --chat-messages-padding: ${g.msgPadV}px ${g.msgPadH}px;
+  --plain-gap-within-group: ${g.plainWithin}px;     /* 素淨：同人连发间距 */
+  --plain-gap-between-groups: ${g.plainBetween}px;  /* 素淨：不同人之间间距 */
+
+  /* ====== 头像 ====== */
+  --avatar-size: ${g.avatarSize}px;
+  --avatar-radius: ${g.avatarRadius}%;
+  --avatar-border: ${avatarBorder};
+  --plain-avatar-size: ${g.avatarSize}px;
+  --plain-avatar-radius: ${g.avatarRadius}%;
+
+  /* ====== 已读状态（IG / QQ） ====== */
+  --status-color: ${g.statusColor};
+  --status-size: ${g.statusSize}px;
+  --status-read-color: ${g.statusReadColor};
+  --status-sent-color: ${g.statusSentColor};
+
+  /* ====== WhatsApp 时间 + 勾勾 ====== */
+  --wa-me-meta-color: ${g.waMetaColor};
+  --wa-them-meta-color: ${g.waMetaColor};
+  --wa-me-check-read-color: ${g.waCheckRead};
+  /* WhatsApp 气泡底色（尖嘴会跟随此色，需与气泡背景一致） */
+  --wa-bubble-me: ${state.me.gradOn ? state.me.gradFrom : state.me.bg};
+  --wa-bubble-them: ${state.them.gradOn ? state.them.gradFrom : state.them.bg};
+}${g.avatarShow ? '' : `
+
+/* 隐藏头像 */
+.msg-avatar-them-container, .msg-avatar-me-container { display: none !important; }`}${(g.avatarShow && g.avatarFirstOnly) ? `
+
+/* 连发只在第一条显示头像 */
+.msg-avatar-them-container, .msg-avatar-me-container { visibility: hidden; }
+.msg-avatar-them-container.is-first, .msg-avatar-them-container.is-single,
+.msg-avatar-me-container.is-first, .msg-avatar-me-container.is-single { visibility: visible; }` : ''}
+
+/* === 对方气泡（角色） === */
+${sideCss('.bubble-them-custom', state.them)}
+
+/* === 我方气泡（用户） === */
+${sideCss('.bubble-me-custom', state.me)}
+
+/* 气泡间距（上下连发，兜底） */
+.msg-bubble-container {
+  margin-top: ${Math.min(state.them.gap, state.me.gap)}px !important;
+}${g.stripMedia ? `
+
+/* ====== 特殊消息去气泡外壳 ======
+   图片 / 表情包 / 位置 / 转账 / 礼物 / 转发卡片 等媒体消息
+   （.no-padding = 所有媒体，.msg-radius-media = 视觉媒体）
+   不被自订气泡的背景/描边/圆角/内边距包住，只让纯文字用气泡样式。 */
+.bubble-me-custom.no-padding,
+.bubble-them-custom.no-padding,
+.bubble-me-custom.msg-radius-media,
+.bubble-them-custom.msg-radius-media {
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-image: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  text-shadow: none !important;
+  min-width: 0 !important;
+  transform: none !important;
+}
+/* 这些媒体气泡上的装饰贴纸伪元素也一并隐藏，避免飘在图片角上 */
+.bubble-me-custom.no-padding::before, .bubble-me-custom.no-padding::after,
+.bubble-them-custom.no-padding::before, .bubble-them-custom.no-padding::after,
+.bubble-me-custom.msg-radius-media::before, .bubble-me-custom.msg-radius-media::after,
+.bubble-them-custom.msg-radius-media::before, .bubble-them-custom.msg-radius-media::after {
+  display: none !important;
+}` : ''}`;
+}
+
+// ============ 导入 / 导出存档 ============
+function importMsg(text, ok) {
+  const el = $('importMsg');
+  el.textContent = text;
+  el.style.color = ok ? '#2e9e6b' : 'var(--caramel-d)';
+}
+
+// 导出完整存档（JSON，100% 还原）
+function exportArchive() {
+  const data = {
+    _format: 'nuojiji-bubble-tuner',
+    _version: 2,
+    state: state,
+    globalState: globalState,
+    chatBg: $('c_chatbg').value,
+    // 背景图若是 data URL 太大，存档里也带上（用户自己机器，可接受）
+    chatBgImage: chatBgImage,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'nuojiji-气泡存档.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  const btn = $('exportArchiveBtn');
+  btn.textContent = '✓ 已导出存档！'; setTimeout(()=>btn.textContent='📦 导出存档',1400);
+}
+
+// 应用一个存档对象（来自本工具导出的 JSON）
+function applyArchive(data) {
+  if (data.state) {
+    if (data.state.them) Object.assign(state.them, freshState(DEFAULT_THEM_IMG), data.state.them);
+    if (data.state.me)   Object.assign(state.me,   freshState(DEFAULT_ME_IMG),   data.state.me);
+    // 兼容旧存档 pv/ph → padX
+    ['them','me'].forEach(k => {
+      const st = state[k];
+      if (st.padT == null) st.padT = st.pv != null ? st.pv : 8;
+      if (st.padB == null) st.padB = st.pv != null ? st.pv : 8;
+      if (st.padL == null) st.padL = st.ph != null ? st.ph : 12;
+      if (st.padR == null) st.padR = st.ph != null ? st.ph : 12;
+    });
+  }
+  if (data.globalState) Object.assign(globalState, data.globalState);
+  if (data.chatBg) $('c_chatbg').value = data.chatBg;
+  if (typeof data.chatBgImage === 'string') {
+    chatBgImage = data.chatBgImage;
+    const mu = /^url\("?(.*?)"?\)$/.exec(chatBgImage);
+    if (mu && !mu[1].startsWith('data:')) $('t_chatbg').value = mu[1];
+  }
+}
+
+// ---- CSS 反解析：把已生成的气泡 CSS 拆回滑块 ----
+// 只解析「我们自己导出格式」的字段，逐条正则抽取，抽不到的保持默认。
+function parseHexFromBg(str) {
+  const m = /#([0-9a-fA-F]{3,8})\b/.exec(str); return m ? '#'+m[1] : null;
+}
+// 把 "16px" / "16px 16px 4px 16px" 拆出第一个数字
+function firstNum(str) { const m = /(-?\d+(?:\.\d+)?)/.exec(str||''); return m ? parseFloat(m[1]) : null; }
+
+// 解析单边 CSS 块到 state[side]
+function parseSideBlock(block, s) {
+  const grab = (re) => { const m = re.exec(block); return m ? m[1].trim() : null; };
+
+  // 类型：有 border-image: url(...) fill → image
+  const biUrl = grab(/border-image:\s*url\(["']?([^"')]+)["']?\)/i);
+  const biFill = /border-image:[^;]*\bfill\b/i.test(block);
+  if (biUrl && biFill) {
+    s.type = 'image';
+    s.url = biUrl;
+    // border-image: url(..) ST SR SB SL fill / BT BR BB BL stretch
+    const slice = /border-image:\s*url\([^)]*\)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+fill\s*\/\s*([\d.]+)px\s+([\d.]+)px\s+([\d.]+)px\s+([\d.]+)px/i.exec(block);
+    if (slice) {
+      s.st=+slice[1]; s.sr=+slice[2]; s.sb=+slice[3]; s.sl=+slice[4];
+      s.bt=+slice[5]; s.br=+slice[6]; s.bb=+slice[7]; s.bl=+slice[8];
+    } else {
+      // 退而用 border-width
+      const bw = /border-width:\s*([\d.]+)px\s+([\d.]+)px\s+([\d.]+)px\s+([\d.]+)px/i.exec(block);
+      if (bw){ s.bt=+bw[1]; s.br=+bw[2]; s.bb=+bw[3]; s.bl=+bw[4]; }
+    }
+  } else {
+    s.type = 'solid';
+    // 渐变 or 纯色
+    const grad = /background:\s*linear-gradient\(\s*([\d.]+)deg\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)/i.exec(block);
+    if (grad) {
+      s.gradOn = true; s.gradAngle = Math.round(+grad[1]);
+      const f = parseHexFromBg(grad[2]); const t = parseHexFromBg(grad[3]);
+      if (f) s.gradFrom = f; if (t) s.gradTo = t;
+    } else {
+      s.gradOn = false;
+      const bg = grab(/background:\s*([^;!]+)/i);
+      if (bg) {
+        const rgba = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/i.exec(bg);
+        if (rgba) {
+          const hex = '#'+[rgba[1],rgba[2],rgba[3]].map(n=>(+n).toString(16).padStart(2,'0')).join('');
+          s.bg = hex;
+          if (rgba[4] != null) { s.glassOn = true; s.bgAlpha = Math.round(parseFloat(rgba[4])*100); }
+        } else { s.bg = bg.trim(); }
+      }
+    }
+    // 描边
+    const bd = /border:\s*([\d.]+)px\s+solid\s+([^;!]+)/i.exec(block);
+    if (bd) { s.bw = Math.round(+bd[1]); const c=bd[2].trim(); if(c) s.bc=c; }
+    else if (/border:\s*none/i.test(block)) s.bw = 0;
+    // 圆角（通用块；分化圆角下通用块可能没有，后面 split 再补）
+    const rad = /border-radius:\s*([^;!]+)/i.exec(block);
+    if (rad) { const n = firstNum(rad[1]); if (n!=null) s.radius = Math.round(n); }
+    // 阴影
+    const sh = /box-shadow:\s*0\s+2px\s+([\d.]+)px/i.exec(block);
+    if (sh) s.shadow = Math.round(+sh[1]);
+    else if (/box-shadow:\s*none/i.test(block)) s.shadow = 0;
+  }
+
+  // 通用文字 / 内边距
+  let m;
+  if ((m=/color:\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\))/i.exec(block))) s.fg = m[1];
+  if ((m=/font-size:\s*([\d.]+)px/i.exec(block))) s.fsize = Math.round(+m[1]);
+  if ((m=/font-weight:\s*(\d+)/i.exec(block))) s.fw = m[1];
+  if ((m=/line-height:\s*([\d.]+)/i.exec(block))) s.lh = Math.round(+m[1]*100);
+  if ((m=/letter-spacing:\s*([\d.]+)px/i.exec(block))) { s.letter = +m[1]; }
+  if ((m=/min-width:\s*([\d.]+)px/i.exec(block))) s.min = Math.round(+m[1]);
+  if ((m=/max-width:\s*([\d.]+)px/i.exec(block))) s.max = Math.round(+m[1]);
+  // padding: T R B L
+  if ((m=/padding:\s*([\d.]+)px\s+([\d.]+)px\s+([\d.]+)px\s+([\d.]+)px/i.exec(block))) {
+    s.padT=+m[1]; s.padR=+m[2]; s.padB=+m[3]; s.padL=+m[4];
+  }
+  // 进阶效果
+  if ((m=/text-shadow:\s*0\s+0\s+([\d.]+)px\s+(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\))/i.exec(block))) {
+    s.txtShadowOn = true; s.txtShadowBlur = Math.round(+m[1]); s.txtShadowColor = m[2];
+  }
+  if ((m=/backdrop-filter:\s*blur\(([\d.]+)px\)/i.exec(block))) { s.glassOn = true; s.glassBlur = Math.round(+m[1]); }
+  if ((m=/opacity:\s*([\d.]+)/i.exec(block))) s.opacity = Math.round(parseFloat(m[1])*100);
+  if ((m=/transform:\s*rotate\(\s*(-?[\d.]+)deg/i.exec(block))) s.rotate = +m[1];
+}
+
+// 从整段 CSS 抽出某选择器的声明块文本
+function extractBlock(css, selectorFrag) {
+  // 找包含该选择器片段、且不是 .first/.mid/.last 单独那种 split 行的「主块」
+  // 主块特征：选择器里同时出现 4 个逗号分隔或含通用属性。简单做法：抓第一个含 selectorFrag 又含 "color:" 的 { } 块。
+  const re = new RegExp('([^{}]*' + selectorFrag.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '[^{}]*)\\{([^}]*)\\}', 'gi');
+  let m, best = null;
+  while ((m = re.exec(css))) {
+    if (/color\s*:|background\s*:|border-image\s*:/i.test(m[2])) { best = m[2]; break; }
+  }
+  return best;
+}
+
+// 解析 split 圆角行（.first/.mid/.last/.single）
+function parseSplitRadius(css, selectorFrag, s) {
+  const got = {};
+  ['single','first','mid','last'].forEach(p => {
+    const re = new RegExp(selectorFrag.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '\\.' + p + '\\b[^{}]*\\{([^}]*border-radius:\\s*([^;!]+)[^}]*)\\}', 'i');
+    const m = re.exec(css);
+    if (m) got[p] = m[2].trim();
+  });
+  if (Object.keys(got).length) {
+    s.radiusMode = true;
+    if (got.single) s.rSingle = got.single.replace(/px/g,'').trim();
+    if (got.first)  s.rFirst  = got.first.replace(/px/g,'').trim();
+    if (got.mid)    s.rMid    = got.mid.replace(/px/g,'').trim();
+    if (got.last)   s.rLast   = got.last.replace(/px/g,'').trim();
+  }
+}
+
+// 解析全局 :root 变量
+function parseGlobalVars(css) {
+  const g = globalState;
+  const root = /:root\s*\{([^}]*)\}/i.exec(css);
+  if (!root) return;
+  const body = root[1];
+  const v = (name) => { const m = new RegExp('--'+name+'\\s*:\\s*([^;]+)','i').exec(body); return m ? m[1].trim() : null; };
+  let x;
+  if ((x=v('chat-messages-gap'))!=null) g.msgGap = firstNum(x);
+  if ((x=v('chat-messages-padding'))!=null) { const m=/([\d.]+)px\s+([\d.]+)px/.exec(x); if(m){g.msgPadV=+m[1];g.msgPadH=+m[2];} }
+  if ((x=v('plain-gap-within-group'))!=null) g.plainWithin = firstNum(x);
+  if ((x=v('plain-gap-between-groups'))!=null) g.plainBetween = firstNum(x);
+  if ((x=v('avatar-size'))!=null) g.avatarSize = firstNum(x);
+  if ((x=v('avatar-radius'))!=null) g.avatarRadius = firstNum(x);
+  if ((x=v('avatar-border'))!=null && x!=='none') { const m=/([\d.]+)px\s+solid\s+(\S+)/.exec(x); if(m){g.avatarBorderOn=true;g.avatarBorderW=+m[1];g.avatarBorderColor=m[2];} }
+  if ((x=v('status-color'))!=null) g.statusColor = x;
+  if ((x=v('status-size'))!=null) g.statusSize = firstNum(x);
+  if ((x=v('status-read-color'))!=null) g.statusReadColor = x;
+  if ((x=v('status-sent-color'))!=null) g.statusSentColor = x;
+  if ((x=v('wa-me-meta-color'))!=null) g.waMetaColor = x;
+  if ((x=v('wa-me-check-read-color'))!=null) g.waCheckRead = x;
+  // 头像显示 / 连发只第一条
+  if (/\.msg-avatar-them-container[^{}]*\{\s*display:\s*none/i.test(css)) g.avatarShow = false;
+  else g.avatarShow = true;
+  g.avatarFirstOnly = /\.is-first[^{}]*visibility:\s*visible/i.test(css) || /visibility:\s*hidden/i.test(css);
+  // 特殊消息去气泡：CSS 里有 .no-padding/.msg-radius-media 的清壳规则即视为开启
+  g.stripMedia = /\.bubble-(me|them)-custom\.(no-padding|msg-radius-media)/i.test(css);
+}
+
+// 反解析整段 CSS
+function importCssText(css) {
+  parseGlobalVars(css);
+  const themBlock = extractBlock(css, '.bubble-them-custom');
+  const meBlock   = extractBlock(css, '.bubble-me-custom');
+  if (!themBlock && !meBlock) return false;
+  if (themBlock) { parseSideBlock(themBlock, state.them); parseSplitRadius(css, '.bubble-them-custom', state.them); }
+  if (meBlock)   { parseSideBlock(meBlock,   state.me);   parseSplitRadius(css, '.bubble-me-custom',   state.me); }
+  // 推断 themeStyle：若有 split 圆角且非手动模式痕迹，倾向 instagram；否则 plain
+  // （CSS 不含样式名，这里只能保守：有分化→instagram，无→保持现值）
+  return true;
+}
+
+// 统一导入入口：自动识别 JSON / CSS
+function doImport() {
+  const raw = $('importBox').value.trim();
+  if (!raw) { importMsg('框是空的，先粘贴存档或 CSS 进来 🍓', false); return; }
+  // 试 JSON
+  let asJson = null;
+  if (raw[0] === '{') { try { asJson = JSON.parse(raw); } catch(e) {} }
+  try {
+    if (asJson && (asJson._format === 'nuojiji-bubble-tuner' || asJson.state || asJson.globalState)) {
+      applyArchive(asJson);
+      loadControls(); applyChatBg(); render();
+      importMsg('✓ 存档已导入，全部还原，继续调吧！', true);
+      return;
+    }
+    if (importCssText(raw)) {
+      loadControls(); applyChatBg(); render();
+      importMsg('✓ CSS 已尽力解析回滑块（个别项可能需手动微调）', true);
+      return;
+    }
+    importMsg('没认出来 😿 请确认粘贴的是本工具的存档 JSON 或气泡 CSS', false);
+  } catch (e) {
+    importMsg('导入出错：' + e.message, false);
+  }
+}
+
+$('importBtn').addEventListener('click', doImport);
+$('exportArchiveBtn').addEventListener('click', exportArchive);
+
+// ============ 一键镜像同步（当前方 → 另一方，左右对称翻转） ============
+// 把「左上 右上 右下 左下」四角圆角字符串水平镜像：TL↔TR，BR↔BL
+function mirrorRadStr(str) {
+  const p = (str||'').trim().split(/\s+/);
+  if (p.length === 4) return [p[1], p[0], p[3], p[2]].join(' ');  // TR TL BL BR
+  return str; // 单值/异常不动
+}
+// 镜像位置预设的左右：left↔right
+function mirrorPos(pos) {
+  return { 'top-left':'top-right','top-right':'top-left',
+           'bottom-left':'bottom-right','bottom-right':'bottom-left',
+           'mid-left':'mid-right','mid-right':'mid-left' }[pos] || pos;
+}
+function mirrorSync() {
+  const from = side, to = (side === 'them') ? 'me' : 'them';
+  const src = JSON.parse(JSON.stringify(state[from]));  // 深拷贝，别动原对象
+  // 左右对称的项目翻转
+  [src.padL, src.padR] = [src.padR, src.padL];           // 内边距 左↔右
+  [src.sl, src.sr]     = [src.sr, src.sl];               // 九宫格切片 左↔右
+  [src.bl, src.br]     = [src.br, src.bl];               // 边框宽度 左↔右
+  src.shiftX = -(src.shiftX || 0);                       // 横向偏移取反
+  src.rotate = -(src.rotate || 0);                       // 微倾取反
+  if (src.gradOn) src.gradAngle = ((360 - src.gradAngle) % 360 + 360) % 360; // 渐变角度水平镜像
+  // 连发分化圆角四角水平镜像
+  src.rSingle = mirrorRadStr(src.rSingle);
+  src.rFirst  = mirrorRadStr(src.rFirst);
+  src.rMid    = mirrorRadStr(src.rMid);
+  src.rLast   = mirrorRadStr(src.rLast);
+  // 贴纸：位置 + 横向微调 镜像
+  src.stickers = (src.stickers || []).map(st => ({
+    ...st, pos: mirrorPos(st.pos), dx: -(st.dx || 0), rot: -(st.rot || 0),
+  }));
+  state[to] = src;
+  // 切到目标方让用户立刻看到结果
+  side = to;
+  document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('active', b.dataset.side === side));
+  $('t_url').value = state[side].url;
+  loadControls(); render();
+  const btn = $('mirrorBtn');
+  const old = btn.innerHTML;
+  btn.innerHTML = `✓ 已镜像同步到${to==='me'?'我方':'对方'}！`;
+  setTimeout(() => { btn.innerHTML = old; updateMirrorLabel(); }, 1500);
+}
+// 按钮文案随当前编辑方更新（对方→我方 / 我方→对方）
+function updateMirrorLabel() {
+  $('mirrorFrom').textContent = (side === 'them') ? '对方' : '我方';
+  $('mirrorTo').textContent   = (side === 'them') ? '我方' : '对方';
+}
+$('mirrorBtn').addEventListener('click', mirrorSync);
+
+// 手机端：收起/展开面板，看预览更方便
+$('mobileToggle').addEventListener('click', () => {
+  document.body.classList.toggle('panel-collapsed');
+  $('mobileToggle').textContent = document.body.classList.contains('panel-collapsed') ? '✏️' : '⚙️';
+});
+
+// init
+loadState();
+applyChatBg();
+$('t_url').value = state[side].url;
+bindControls();
+loadControls();
+updateMirrorLabel();
+render();
+</script>
+</body>
+</html>

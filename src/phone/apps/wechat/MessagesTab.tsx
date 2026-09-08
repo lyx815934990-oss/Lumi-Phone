@@ -691,8 +691,8 @@ export function MessagesTab({
         paddingTop: 'max(0px, env(safe-area-inset-top, 0px))',
       }}
     >
-      {/* 顶栏 */}
-      <div className="relative flex shrink-0 items-center justify-center px-4 pb-1 pt-2">
+      {/* 顶栏：须高于分段条 / 会话列表，否则加号下拉会被盖住 */}
+      <div className="relative z-[200] flex shrink-0 items-center justify-center px-4 pb-1 pt-2">
         {onHome ? (
           <div className="absolute left-3 top-1/2 flex -translate-y-1/2 items-center">
             <Pressable
@@ -751,11 +751,16 @@ export function MessagesTab({
             </Pressable>
             {plusOpen ? (
               <>
-                <Pressable type="button" aria-label="关闭" className="fixed inset-0 z-[198]" onClick={() => setPlusOpen(false)}>
+                <Pressable
+                  type="button"
+                  aria-label="关闭"
+                  className="fixed inset-0 z-[210]"
+                  onClick={() => setPlusOpen(false)}
+                >
                   {null}
                 </Pressable>
                 <div
-                  className="absolute right-0 top-[calc(100%+6px)] z-[199] min-w-[160px] overflow-hidden rounded-[12px] py-1"
+                  className="absolute right-0 top-[calc(100%+6px)] z-[220] min-w-[160px] overflow-hidden rounded-[12px] py-1"
                   style={{
                     background: LUMI_SHELL.card,
                     border: `1px solid ${LUMI_SHELL.hairline}`,

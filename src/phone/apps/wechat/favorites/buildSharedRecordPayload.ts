@@ -70,6 +70,17 @@ export async function buildSharedRecordPayloadFromFavorite(item: FavoriteItem): 
     }
   }
 
+  if (item.type === 'innerOs') {
+    const os = item.content.trim() || '（空内心）'
+    const said = item.spokenText?.trim()
+    const summary = said ? `【嘴上】${said}\n【心里】${os}` : `【心里】${os}`
+    return {
+      ...base,
+      recordType: 'text',
+      contentSummary: summary,
+    }
+  }
+
   return {
     ...base,
     recordType: 'text',

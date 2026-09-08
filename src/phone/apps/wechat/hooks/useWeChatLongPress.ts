@@ -17,11 +17,23 @@ type BindHandlers = {
   onPointerCancel: () => void
   onPointerLeave: () => void
   onContextMenu: (e: React.MouseEvent) => void
+  onSelectStart: (e: React.SyntheticEvent) => void
+  onDragStart: (e: React.DragEvent) => void
+}
+
+function clearDomSelection() {
+  try {
+    const sel = window.getSelection?.()
+    if (sel && sel.rangeCount > 0) sel.removeAllRanges()
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
  * 微信式长按：500ms 触发；按下期间可做轻微缩放反馈；移动/抬起/取消则终止。
  * 统一用 PointerEvent，兼容 touch / mouse。
+ * 按下期间阻止系统文本框选（selectstart + 清选区）。
  */
 export function useLongPress({
   enabled = true,
@@ -53,6 +65,11 @@ export function useLongPress({
     (e: React.PointerEvent) => {
       if (e.button != null && e.button !== 0) return
       const ne = e.nativeEvent
+      // 鼠标按下即禁止系统拖选文本；触摸不 preventDefault，以免打断滚动
+      if (ne.pointerType === 'mouse') {
+        e.preventDefault()
+      }
+      clearDomSelection()
       pressingRef.current = true
       firedRef.current = false
       setPressing(enabled)
@@ -63,6 +80,7 @@ export function useLongPress({
         timerRef.current = null
         if (!pressingRef.current || firedRef.current) return
         firedRef.current = true
+        clearDomSelection()
         if ('vibrate' in navigator && typeof navigator.vibrate === 'function') {
           try {
             navigator.vibrate([50])
@@ -89,6 +107,9 @@ export function useLongPress({
       const dy = ne.clientY - st.y
       if (dx * dx + dy * dy >= moveThresholdPx * moveThresholdPx) {
         clear()
+      } else if (pressingRef.current) {
+        // 微动时也清掉已出现的选区，避免 Windows/WebView 拖出蓝框
+        clearDomSelection()
       }
     },
     [moveThresholdPx, clear],
@@ -117,9 +138,25 @@ export function useLongPress({
       // 移动端/长按可能触发系统菜单；这里阻止，保持微信一致体验
       if (!enabled) return
       e.preventDefault()
+      clearDomSelection()
     },
     [enabled],
   )
+
+  const onSelectStart = useCallback(
+    (e: React.SyntheticEvent) => {
+      if (!enabled) return
+      // 长按/按下期间禁止系统文本框选
+      e.preventDefault()
+      clearDomSelection()
+    },
+    [enabled],
+  )
+
+  const onDragStart = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    clearDomSelection()
+  }, [])
 
   const bind = useMemo<BindHandlers>(
     () => ({
@@ -129,8 +166,19 @@ export function useLongPress({
       onPointerCancel,
       onPointerLeave,
       onContextMenu,
+      onSelectStart,
+      onDragStart,
     }),
-    [onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onPointerLeave, onContextMenu],
+    [
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+      onPointerCancel,
+      onPointerLeave,
+      onContextMenu,
+      onSelectStart,
+      onDragStart,
+    ],
   )
 
   return { bind, pressing }

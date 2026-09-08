@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#27 水电分账 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background-color:#f4efe6;background-image:radial-gradient(rgba(90,70,40,.06) 0.6px,transparent 0.6px),linear-gradient(180deg,#f7f2e8,#efe6d6);background-size:3px 3px,auto;color:#2a2218}
+.stage{max-width:420px;margin:12px auto 28px;padding:0 12px 24px}
+.hero{width:100%;height:110px;object-fit:cover;border-radius:12px;display:block}
+.title-custom{padding:12px 4px;font-size:19px}
+.sheet{padding:16px;border-radius:14px;background:linear-gradient(180deg,#fffdf8,#f3ebe0);border:1px solid #e0d4c0;box-shadow:0 12px 32px rgba(60,40,20,.12)}
+.total{font-size:28px;font-weight:800;margin:4px 0 8px}
+.stats{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;opacity:.75;margin-bottom:10px}
+.avrow{display:flex;gap:10px;margin-bottom:12px}
+.avrow .av{width:36px;height:36px;border-radius:50%;background:linear-gradient(145deg,#efe4d0,#d8c8a8);display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.bill{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:10px 8px;border-bottom:1px dashed rgba(0,0,0,.08);font-size:13px;cursor:pointer}
+.bill.bad{background:linear-gradient(90deg,#fff0e8,#fff8f400);border-radius:8px;outline:1px solid #e8a09055}
+.bill .m{font-size:11px;opacity:.6;margin-top:2px}
+.detail{display:none;padding:8px 10px 10px;font-size:12px;line-height:1.6;background:#fff8f0;border-radius:0 0 8px 8px;margin-top:-4px;margin-bottom:6px;color:#6a4030}
+.bill.open+.detail,.detail.open{display:block}
+.tip{margin-top:10px;padding:8px 10px;border-radius:8px;background:#fff3e0;font-size:12px;color:#8a6b28}
+.btn{width:100%;margin-top:10px;padding:10px;border:0;border-radius:8px;background:#2a2218;color:#f5e3a8;font-weight:700;cursor:pointer}
+.btn.sent{opacity:.55}
+.foot{margin-top:8px;font-size:10px;opacity:.5;text-align:center}
+.npc-block{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.npc-row{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:12px;background:rgba(40,32,24,.05);border:1px solid rgba(90,70,40,.1);font-size:12px;line-height:1.5}
+.av{flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(145deg,#efe4d0,#d8c8a8);display:inline-flex;align-items:center;justify-content:center;font-size:15px}
+.dense{margin-top:16px;padding:14px;border-radius:14px;background:#f6f1e8;border:1px solid #e5dccb;font-size:12px}
+.dx-h{font-weight:700;font-size:14px}.dx-sub{margin:4px 0 10px;font-size:11px;opacity:.75}
+.dx-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;font-size:11px}
+.dx-list{border-radius:8px;overflow:hidden;background:rgba(0,0,0,.03)}
+.dx-row{display:flex;gap:8px;padding:8px 10px;border-bottom:1px dashed rgba(0,0,0,.08);line-height:1.45}
+.dx-t{font-family:ui-monospace,Consolas,monospace;opacity:.55;min-width:22px}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./26.html">上一张</a><b>#27 水电分账</b><a href="./28.html">下一张</a></div>
+<p class="fore">合租账本 · 某项异常高 · 展开才是冷战物证</p>
+<div class="stage">
+<img class="hero" alt="bill split paper" src="https://image.pollinations.ai/prompt/utility%20bill%20paper%20split%20receipt%20warm%20desk%20lamp%20no%20people">
+<p class="title-custom">🧾 合租水电 · 分账页</p>
+<div class="sheet">
+<div class="m" style="font-size:12px;opacity:.65">账期 9 月 · 待确认 · 合租群同步</div>
+<div class="total">¥1,286 <span style="font-size:12px;font-weight:500;opacity:.6">待分摊 · 2 人</span></div>
+<div class="stats"><span>你应付 ¥643</span><span>祁洵 ¥643</span><span>异常 1</span></div>
+<div class="avrow"><span class="av">你</span><span class="av">祁</span></div>
+<div class="bill" data-acc="1"><span><b>水费</b><div class="m">抄表日 9/1</div></span><span>¥42</span></div>
+<div class="detail">市政抄表正常。两人在家天数接近。无争议。</div>
+<div class="bill" data-acc="1"><span><b>电费</b><div class="m">含台灯通宵</div></span><span>¥186</span></div>
+<div class="detail">灯坏了那晚台灯开了一夜。建议：谁说「没事」谁承担超额 30%。</div>
+<div class="bill" data-acc="1"><span><b>网费</b><div class="m">合约未到期</div></span><span>¥99</span></div>
+<div class="detail">合约到 12 月。早退需赔违约金——像冷静期条款。</div>
+<div class="bill" data-acc="1"><span><b>燃气</b><div class="m">几乎未用</div></span><span>¥35</span></div>
+<div class="detail">雨季很少开火。多数外卖与关东煮。</div>
+<div class="bill bad" data-acc="1" id="abn"><span><b>异常·深夜外卖柜</b><div class="m">同址关东煮×2</div></span><span>¥64</span></div>
+<div class="detail open" id="abnDetail">异常项备注：同一地址两单关东煮 · 建议情感入账。分摊规则：谁说「别先走」谁今晚请。「靠过来一点」可协商免息。这是冷战物证，不是算术题。</div>
+<div class="bill" data-acc="1"><span><b>清洁</b><div class="m">公区</div></span><span>¥80</span></div>
+<div class="detail">公区含伞架沥水。雨季加收。</div>
+<div class="bill" data-acc="1"><span><b>伞架沥水垫</b><div class="m">雨季新增</div></span><span>¥28</span></div>
+<div class="detail">折叠伞常滴水。垫子上有「8821」记号笔。</div>
+<div class="bill" data-acc="1"><span><b>公摊·灯具报修</b><div class="m">灯坏了已换</div></span><span>¥52</span></div>
+<div class="detail">楼道灯已换。报修单备注：请勿在灯坏处独自停留过久。</div>
+<div class="tip">确认后将推送收款码 · 24 小时内未付将记「没事」一次</div>
+<button type="button" class="btn" id="collect">一键催收（戏仿）</button>
+<div class="foot">账本同步：合租群 · 导出 Excel 可用 · BILL-8821</div>
+</div>
+<div class="npc-block"><div class="npc-row"><span class="av">🧮</span><span>合租第三方：异常项点开才好看，别装没看见。</span></div><div class="npc-row"><span class="av">💬</span><span>祁洵：那两份关东煮我请，别算进冷战。</span></div><div class="npc-row"><span class="av">🧑</span><span>路人：账单比聊天记录诚实。</span></div><div class="npc-row"><span class="av">🏪</span><span>店员：双份小票尾号 8821，我记得。</span></div><div class="npc-row"><span class="av">📝</span><span>你（自言）：电费那行台灯通宵……是我。</span></div><div class="npc-row"><span class="av">🌧️</span><span>雨声：靠过来一点对账，别隔着屏。</span></div><div class="npc-row"><span class="av">💼</span><span>同事乙：你们合租群比项目群活跃。</span></div><div class="npc-row"><span class="av">📦</span><span>系统：本区为「水电分账」番外旁观串。</span></div></div>
+<div class="dense">
+<div class="dx-h">关联碎片 · 水电分账 · #27</div>
+<div class="dx-sub">某项费用异常高成为冷战物证</div>
+<div class="dx-stats"><span>线索 <b>12</b></span><span>旁观 <b>8</b></span><span>结构 <b>9</b></span><span>仪式 <b>开</b></span></div>
+<div class="dx-list"><div class="dx-row"><span class="dx-t">01</span><span>账期+总额 ¥1,286 · 2 人分摊</span></div><div class="dx-row"><span class="dx-t">02</span><span>异常项：深夜外卖柜 · 关东煮×2 · ¥64</span></div><div class="dx-row"><span class="dx-t">03</span><span>展开备注：情感入账 · 「别先走」谁请</span></div><div class="dx-row"><span class="dx-t">04</span><span>电费含台灯通宵 · 灯坏了</span></div><div class="dx-row"><span class="dx-t">05</span><span>伞架沥水垫 · 雨季新增</span></div><div class="dx-row"><span class="dx-t">06</span><span>一键催收戏仿</span></div><div class="dx-row"><span class="dx-t">07</span><span>贴本轮：雨 · 伞 · 便利店 · 关东煮</span></div><div class="dx-row"><span class="dx-t">08</span><span>系统注记：样卡 #27 · C类 · 标签 文件单据·搞笑·BE</span></div></div>
+</div>
+</div>
+<script>
+(function(){
+var bills=document.querySelectorAll(".bill");
+for(var i=0;i<bills.length;i++){
+bills[i].addEventListener("click",function(){
+var next=this.nextElementSibling;
+if(!next||!next.classList.contains("detail"))return;
+var open=next.classList.contains("open");
+var details=document.querySelectorAll(".detail");
+for(var j=0;j<details.length;j++)details[j].classList.remove("open");
+var bs=document.querySelectorAll(".bill");
+for(var k=0;k<bs.length;k++)bs[k].classList.remove("open");
+if(!open){next.classList.add("open");this.classList.add("open")}
+});
+}
+var btn=document.getElementById("collect");
+if(btn)btn.addEventListener("click",function(){
+btn.classList.add("sent");
+btn.textContent="已催收 · 等待对方确认情感入账";
+});
+})();
+</script>
+</body>
+</html>

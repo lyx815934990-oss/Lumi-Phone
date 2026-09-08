@@ -42,6 +42,11 @@ export async function syncNetworkStoryNowFromPrimary(params: {
   storyNowMs?: number | null
   /** 默认 true：人脉成员若仍走系统钟或落后于剧情「现在」，对齐为 custom */
   syncOnlineClock?: boolean
+  /**
+   * 手动纠错回拨：允许把人脉/线上钟**拉回**到指定「现在」
+   * （默认只抬升，避免自动摘要把已纠正的更早日期盖掉）
+   */
+  forceAlign?: boolean
 }): Promise<{ syncedPeerIds: string[] }> {
   const sourceId = params.sourceCharacterId.trim()
   const storyDay = String(params.storyDay ?? '').trim()
@@ -68,6 +73,7 @@ export async function syncNetworkStoryNowFromPrimary(params: {
   const syncTargets = [...idSet]
 
   const syncClock = params.syncOnlineClock !== false
+  const forceAlign = params.forceAlign === true
   const syncedPeerIds: string[] = []
   const wallNow = Date.now()
 
@@ -79,7 +85,8 @@ export async function syncNetworkStoryNowFromPrimary(params: {
       const peerMs = stateNowMs(prev)
       let wrote = false
       // 含源角色：源若仅推进了时钟而未写 state、或 fan-out 种子 NPC 尚无「现在」，一并对齐
-      if (peerMs == null || peerMs < sourceNowMs) {
+      // forceAlign：手改摘要回拨时强制覆盖更晚的错误「现在」
+      if (peerMs == null || peerMs < sourceNowMs || (forceAlign && peerMs !== sourceNowMs)) {
         const next: StoryTimelineState = {
           ...prev,
           characterId: pid,
@@ -107,7 +114,8 @@ export async function syncNetworkStoryNowFromPrimary(params: {
           mode !== 'custom' ||
           settings?.timePerceptionEnabled === false ||
           effectiveLive == null ||
-          effectiveLive < sourceNowMs
+          effectiveLive < sourceNowMs ||
+          (forceAlign && effectiveLive != null && effectiveLive !== sourceNowMs)
         const clearDetach = settings?.preferSystemClockDespiteStoryFloor === true
         if (needsClock || clearDetach) {
           await personaDb.putCharacterTimeSettings({

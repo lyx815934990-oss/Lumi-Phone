@@ -201,6 +201,7 @@ function schedulePersist() {
         directAnswerNoProbe: snap.builtinPresets.directAnswerNoProbe,
         passionateDirectBall: snap.builtinPresets.passionateDirectBall,
         realisticConflict: snap.builtinPresets.realisticConflict,
+        realisticAutonomy: snap.builtinPresets.realisticAutonomy,
         gentleOlderBrother: snap.builtinPresets.gentleOlderBrother,
         autonomousSocialLife: snap.builtinPresets.autonomousSocialLife,
         schoolCampusCommonKnowledge: snap.builtinPresets.schoolCampusCommonKnowledge,

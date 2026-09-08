@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "rig": "mixamo",
+  "baseMesh": "avatar-base.fbx",
+  "clips": [
+    {
+      "id": "walk-slow",
+      "file": "walk-slow.fbx",
+      "label": "慢走"
+    },
+    {
+      "id": "walk-normal",
+      "file": "walk-normal.fbx",
+      "label": "正常走路"
+    },
+    {
+      "id": "turn-left",
+      "file": "turn-left.fbx",
+      "label": "左转"
+    },
+    {
+      "id": "run",
+      "file": "run.fbx",
+      "label": "跑动"
+    },
+    {
+      "id": "sleep",
+      "file": "sleep.fbx",
+      "label": "睡觉"
+    },
+    {
+      "id": "angry",
+      "file": "angry.fbx",
+      "label": "生气"
+    },
+    {
+      "id": "curious",
+      "file": "curious.fbx",
+      "label": "好奇"
+    },
+    {
+      "id": "wave",
+      "file": "avatar-base.fbx",
+      "label": "打招呼"
+    },
+    {
+      "id": "kiss",
+      "file": "kiss.fbx",
+      "label": "Kiss"
+    },
+    {
+      "id": "picked-up",
+      "file": "picked-up.fbx",
+      "label": "被拎起"
+    }
+  ]
+}

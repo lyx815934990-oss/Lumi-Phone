@@ -1733,6 +1733,73 @@ export function upsertStoryTimelineCalendarAnchorInRowText(
   return `${anchorLine}\n\n${raw}`.trim()
 }
 
+/**
+ * 手动纠正「当前状态」正文里的【当前锚点】公历段（可回拨），保留地点/在场等。
+ */
+export function upsertStoryTimelineCurrentAnchorCalendarInText(
+  stateText: string,
+  calendarLabel: string | null | undefined,
+): string {
+  const label = String(calendarLabel ?? '').trim()
+  const raw = String(stateText ?? '')
+  if (!label) return raw
+  const lines = raw.split('\n')
+  let found = false
+  const next = lines.map((line) => {
+    const m = line.match(/^(\s*【当前锚点】)\s*(.*)$/)
+    if (!m) return line
+    found = true
+    const rest = (m[2] ?? '').trim()
+    const parts = rest
+      .split(/\s*·\s*/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .filter(
+        (p) =>
+          !STORY_TIMELINE_GREGORIAN_ANCHOR_RE.test(p) &&
+          !GREGORIAN_ANCHOR_PART_RE.test(p) &&
+          !/^剧情日\s/.test(p) &&
+          !/^时段\s/.test(p),
+      )
+    return `${m[1]}${[label, ...parts].join(' · ')}`
+  })
+  if (found) return next.join('\n')
+  return `【当前锚点】${label}\n\n${raw}`.trim()
+}
+
+/** 从【当前锚点】行提取可编辑公历段 */
+export function extractStoryTimelineCurrentAnchorCalendarLabel(stateText: string): string {
+  const anchor = String(stateText ?? '').match(/【当前锚点】([^\n]+)/)?.[1]?.trim() ?? ''
+  if (!anchor) return ''
+  const m = anchor.match(STORY_TIMELINE_GREGORIAN_ANCHOR_RE)
+  return m?.[0]?.trim() ?? ''
+}
+
+/**
+ * 从公历标签解析「现在」用的故事日与钟点。
+ * 区间标签取**结束段**（例：19:30 - 21:00 → 日 + 21:00）。
+ */
+export function parseStoryCalendarDayAndClockFromLabel(
+  label: string | null | undefined,
+): { day: string; clock: string | null } | null {
+  const raw = String(label ?? '').trim()
+  if (!raw) return null
+  const segments = raw.split(/\s*-\s*/).map((s) => s.trim()).filter(Boolean)
+  const seg = segments[segments.length - 1] || raw
+  const day =
+    seg.match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1] ||
+    raw.match(/(\d{4}年\d{1,2}月\d{1,2}日)/g)?.slice(-1)[0] ||
+    null
+  if (!day) return null
+  const clocks = seg.match(/(\d{1,2}):(\d{2})/g)
+  const lastClock = clocks?.[clocks.length - 1]
+  const hm = lastClock?.match(/^(\d{1,2}):(\d{2})$/)
+  const clock = hm
+    ? `${String(hm[1]).padStart(2, '0')}:${hm[2]}`
+    : null
+  return { day, clock }
+}
+
 /** 从摘要行提取可编辑的公历日历段（不含地点/在场） */
 export function extractStoryTimelineEditableCalendarLabel(rowText: string): string {
   const anchor = String(rowText ?? '').match(/【本轮锚点】([^\n]+)/)?.[1]?.trim() ?? ''

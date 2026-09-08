@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#50 晨间事后聊天 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:radial-gradient(ellipse at 30% 20%,#3a2438,#140e18 70%);color:#f3e6f0;}
+.stage{max-width:800px;margin:0 auto;padding:0 12px 32px}
+.shell{border-radius:16px;overflow:hidden;border:1px solid rgba(232,160,191,.25);box-shadow:0 20px 50px rgba(0,0,0,.45);background:linear-gradient(180deg,#1c1520,#120e18);color:#f0e6f2}
+.title-custom{margin:0;padding:14px 16px;font-size:17px;color:#f0c0d4;border-bottom:1px solid rgba(255,255,255,.08)}
+.stats{display:flex;flex-wrap:wrap;gap:10px;padding:8px 14px;font-size:11px;opacity:.85}
+.row{margin:6px 12px;padding:10px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);font-size:12px;line-height:1.55}
+.btn{margin:8px 12px;padding:9px 14px;border:0;border-radius:10px;background:#e8a0bf;color:#1a1018;font-weight:700;cursor:pointer}
+.btn.dis{opacity:.4;pointer-events:none}
+.av{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#2a2030;margin-right:6px}
+.npc{margin:10px 12px;padding:10px;background:rgba(232,160,191,.08);border-radius:10px;font-size:12px;display:flex;gap:8px}
+.foot{padding:10px 14px 16px;font-size:10px;opacity:.5}
+.hero{width:100%;height:110px;object-fit:cover;display:block;opacity:.9}
+.check{display:flex;gap:8px;align-items:flex-start}
+.bub{margin:8px 12px;padding:10px 12px;border-radius:14px;font-size:13px;line-height:1.5;max-width:85%}.me{background:#2a2030;margin-left:auto}.ta{background:#e8a0bf33}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./49.html">上一张</a><b>#50 晨间事后聊天</b><span>下一张</span></div>
+<p class="fore">早晨的对话框——终于没再发没事。</p>
+<div class="stage"><div class="shell"><p class="title-custom">聊天 · 晨间</p><div class="stats"><span>09:12</span><span>已读</span><span>雨停了</span></div>
+<div class="bub ta"><span class="av">☔</span>祁洵：醒了吗。伞还在门口。</div>
+<div class="bub me">醒了。草稿我还留着。</div>
+<div class="bub ta">哪一句。</div>
+<div class="bub me" id="line">其实不是没事。你别先走。</div>
+<div class="bub ta">……我看到了。昨晚灯修好了。</div>
+<div class="bub me">那我们还去便利店吗。</div>
+<div class="bub ta">去。关东煮还是两份。</div>
+<button class="btn" type="button" id="send">补发昨晚草稿</button>
+<div class="npc"><span class="av">☀️</span><div id="ok"><b>系统</b>：发送键不再灰显。</div></div>
+<div class="foot">收束 · #50</div></div></div>
+<script>
+(function(){document.getElementById("send").addEventListener("click",function(){document.getElementById("ok").textContent="已补发 · 对方正在输入…";this.classList.add("dis")})})();
+</script>
+</body>
+</html>

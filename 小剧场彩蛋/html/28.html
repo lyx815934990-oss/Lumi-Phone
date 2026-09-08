@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#28 宠物体检 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:linear-gradient(180deg,#e8f0ea,#d4e0d8);color:#1e2a22}
+.stage{max-width:420px;margin:12px auto 28px;padding:0 12px 24px}
+.hero{width:100%;height:110px;object-fit:cover;border-radius:12px;display:block}
+.title-custom{padding:12px 4px;font-size:19px}
+.card{padding:16px;border-radius:14px;background:linear-gradient(180deg,#f7fbf8,#eef4f0);border:1px solid #c8d8cc;box-shadow:0 12px 28px rgba(40,60,50,.12);position:relative;overflow:hidden}
+.card::before{content:"";position:absolute;top:0;left:0;right:0;height:6px;background:repeating-linear-gradient(90deg,#2d6b57,#2d6b57 12px,#c9a24b 12px,#c9a24b 24px)}
+.vet-h{font-weight:800;letter-spacing:.1em;margin:8px 0 6px}
+.pet{padding:10px;border-radius:10px;background:#fff;border:1px dashed #c8d8cc;font-size:13px;line-height:1.55;margin-bottom:10px}
+.stats{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;margin-bottom:10px;opacity:.8}
+.row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed rgba(0,0,0,.08);font-size:13px;gap:8px}
+.pages{display:flex;gap:0;margin:12px 0;border:1px solid #c8d8cc;border-radius:8px;overflow:hidden;width:fit-content}
+.pages button{padding:6px 12px;border:0;background:#fff;font-size:11px;cursor:pointer}
+.pages button.on{background:#2d6b57;color:#fff}
+.pane{display:none}
+.pane.on{display:block}
+.advice{margin-top:10px;padding:12px;border-radius:10px;background:#e8f5e0;color:#2d6b37;font-size:12px;line-height:1.65}
+.owner{margin-top:10px;padding:10px;border-radius:8px;background:#fff8e8;font-size:12px;line-height:1.6;border:1px solid #e8dcc0}
+.foot{margin-top:10px;font-size:10px;opacity:.5;text-align:center}
+.npc-block{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.npc-row{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:12px;background:rgba(255,255,255,.65);border:1px solid rgba(45,107,87,.12);font-size:12px;line-height:1.5}
+.av{flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(145deg,#d8e8dc,#b0c8b8);display:inline-flex;align-items:center;justify-content:center;font-size:15px}
+.dense{margin-top:16px;padding:14px;border-radius:14px;background:#f0f6f2;border:1px solid #c8d8cc;font-size:12px}
+.dx-h{font-weight:700;font-size:14px}.dx-sub{margin:4px 0 10px;font-size:11px;opacity:.75}
+.dx-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;font-size:11px}
+.dx-list{border-radius:8px;overflow:hidden;background:rgba(0,0,0,.03)}
+.dx-row{display:flex;gap:8px;padding:8px 10px;border-bottom:1px dashed rgba(0,0,0,.08);line-height:1.45}
+.dx-t{font-family:ui-monospace,Consolas,monospace;opacity:.55;min-width:22px}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./27.html">上一张</a><b>#28 宠物体检</b><a href="./29.html">下一张</a></div>
+<p class="fore">病历卡 · 医嘱双关 · 动物比人先和好</p>
+<div class="stage">
+<img class="hero" alt="vet card" src="https://image.pollinations.ai/prompt/veterinary%20clinic%20pet%20exam%20card%20soft%20mint%20light%20no%20people">
+<p class="title-custom">🐾 宠物医院 · 病历卡</p>
+<div class="card">
+<div class="vet-h">复诊病历 · PET-8821</div>
+<div class="pet"><b>名：豆豆</b> · 品种：英短 · 今日复诊<br>监护人：你 / 临时陪同：祁洵</div>
+<div class="stats"><span>体重正常</span><span>疫苗齐</span><span>雷声敏感</span><span>勿虐待描写</span></div>
+<div class="pages">
+<button type="button" class="on" data-p="vitals">体征</button>
+<button type="button" data-p="advice">医嘱</button>
+<button type="button" data-p="owner">主人备注</button>
+</div>
+<div class="pane on" id="vitals">
+<div class="row"><span>体温</span><span>正常 · 38.4℃</span></div>
+<div class="row"><span>精神</span><span>尚可 · 对雷声敏感</span></div>
+<div class="row"><span>食欲</span><span>偏好关东煮气味（勿喂）</span></div>
+<div class="row"><span>睡眠</span><span>雨夜惊醒 2 次</span></div>
+<div class="row"><span>社交</span><span>对「靠过来一点」有反应</span></div>
+<div class="row"><span>环境</span><span>灯坏了会躲进伞堆</span></div>
+</div>
+<div class="pane" id="advice">
+<div class="advice">医嘱：主人近期冷战，建议增加陪同抚摸时长。动物比人先和好。复诊提示：若再听到「别先走」而门长时间半开，请检查门锁与情绪。多陪伴——是给猫的，也是给你们的。</div>
+<div class="row"><span>下次预约</span><span>两周后 · 可与雨夜散步绑定</span></div>
+<div class="row"><span>费用</span><span>¥168 · 已付 · 发票抬头个人</span></div>
+</div>
+<div class="pane" id="owner">
+<div class="owner">主人备注栏：<br>· 豆豆不参与冷静期协议<br>· 便利店袋禁止给猫闻太久<br>· 若祁洵来接，可放行<br>· 草稿箱那句「其实不是没事」与猫无关，请勿朗读<br>· 共伞回家时注意爪印</div>
+</div>
+<div class="foot">仅供剧情戏仿 · 禁止虐待动物描写 · 温柔疏离向</div>
+</div>
+<div class="npc-block"><div class="npc-row"><span class="av">🐱</span><span>豆豆（凝视）：你们吵的时候我听得见雷。</span></div><div class="npc-row"><span class="av">👩‍⚕️</span><span>值班医生：医嘱写「多陪伴」时我看了监护人两眼。</span></div><div class="npc-row"><span class="av">💬</span><span>祁洵：我来接诊，伞在门口。</span></div><div class="npc-row"><span class="av">🧑</span><span>路人：宠物医院门口两个人共一把伞。</span></div><div class="npc-row"><span class="av">🏪</span><span>店员：关东煮香别给猫闻，上次被骂了。</span></div><div class="npc-row"><span class="av">📝</span><span>你（自言）：动物比人先和好——刺耳但真。</span></div><div class="npc-row"><span class="av">🌧️</span><span>雨声：靠过来一点，豆豆才肯进手提箱。</span></div><div class="npc-row"><span class="av">📦</span><span>系统：本区为「宠物体检」番外旁观串。</span></div></div>
+<div class="dense">
+<div class="dx-h">关联碎片 · 宠物体检 · #28</div>
+<div class="dx-sub">以宠物视角旁观主人冷战的温柔疏离</div>
+<div class="dx-stats"><span>线索 <b>12</b></span><span>旁观 <b>8</b></span><span>结构 <b>9</b></span><span>仪式 <b>开</b></span></div>
+<div class="dx-list"><div class="dx-row"><span class="dx-t">01</span><span>宠物名+品种：豆豆 · 英短</span></div><div class="dx-row"><span class="dx-t">02</span><span>就诊原因：复诊 · 雷声敏感</span></div><div class="dx-row"><span class="dx-t">03</span><span>体征正常项 · 环境：灯坏了躲伞堆</span></div><div class="dx-row"><span class="dx-t">04</span><span>医嘱：多陪伴（双关）</span></div><div class="dx-row"><span class="dx-t">05</span><span>主人备注栏 · 祁洵可放行</span></div><div class="dx-row"><span class="dx-t">06</span><span>仪式：翻页到医嘱</span></div><div class="dx-row"><span class="dx-t">07</span><span>费用 ¥168 · PET-8821</span></div><div class="dx-row"><span class="dx-t">08</span><span>系统注记：样卡 #28 · C类 · 标签 文件单据·甜·BE</span></div></div>
+</div>
+</div>
+<script>
+(function(){
+var buttons=document.querySelectorAll(".pages button");
+var panes=document.querySelectorAll(".pane");
+for(var i=0;i<buttons.length;i++){
+buttons[i].addEventListener("click",function(){
+var id=this.getAttribute("data-p");
+for(var j=0;j<buttons.length;j++)buttons[j].classList.remove("on");
+this.classList.add("on");
+for(var k=0;k<panes.length;k++){
+panes[k].classList.remove("on");
+if(panes[k].id===id)panes[k].classList.add("on");
+}
+});
+}
+})();
+</script>
+</body>
+</html>

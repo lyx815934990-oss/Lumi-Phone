@@ -1,10 +1,14 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Type } from 'lucide-react'
+import { BottomSheet } from '../../../../storyRpg/components/ui/BottomSheet'
 import {
   applyDatingPlotFontPreset,
   applyDatingPlotFontToAllRegions,
+  clampDatingPlotFontSizePx,
   createEmptyDatingPlotFontSettings,
+  DATING_PLOT_FONT_SIZE_DEFAULT,
+  DATING_PLOT_FONT_SIZE_MAX,
+  DATING_PLOT_FONT_SIZE_MIN,
   deleteDatingPlotFontPreset,
   isDatingPlotFontGlobal,
   newDatingPlotFontAssetId,
@@ -90,7 +94,6 @@ function LibraryTab({
             ...settings,
             library: [...settings.library, item],
           }
-          // 首个字体：直接设为全局（清空分区覆盖 + 开启跟随），避免「库里有衬线却仍显示黑体」
           const next =
             settings.library.length === 0
               ? setDatingPlotFontAsGlobal(withLib, id)
@@ -123,19 +126,19 @@ function LibraryTab({
 
   return (
     <div className="space-y-3 pt-1">
-      <p className="text-[12px] leading-relaxed text-[#8e8e8e]">
+      <p className="text-[12px] leading-relaxed text-[var(--sr-text-muted)]">
         在此上传并存放字体文件，可自定义显示名称。应用与预设在另外两个页签设置。
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={busy}
           onClick={() => fileRef.current?.click()}
-          className="rounded-xl bg-neutral-900 px-3.5 py-2 text-[13px] font-medium text-white disabled:opacity-50"
+          className="rounded-xl bg-[var(--sr-gold)] px-3.5 py-2 text-[13px] font-medium text-[var(--sr-gold-on)] shadow-[0_2px_10px_var(--sr-gold-glow)] disabled:opacity-50"
         >
           {busy ? '上传中…' : '上传到字体库'}
         </button>
-        <span className="text-[11px] text-[#a3a3a3]">.ttf / .otf / .woff / .woff2</span>
+        <span className="text-[11px] text-[var(--sr-text-faint)]">.ttf / .otf / .woff / .woff2</span>
         <input
           ref={fileRef}
           type="file"
@@ -147,10 +150,10 @@ function LibraryTab({
           }}
         />
       </div>
-      {err ? <p className="text-[12px] text-red-600">{err}</p> : null}
+      {err ? <p className="text-[12px] text-[var(--ds-danger,#d08080)]">{err}</p> : null}
 
       {!settings.library.length ? (
-        <div className="rounded-xl border border-dashed border-[#e0e0e0] bg-[#fafafa] px-3 py-4 text-center text-[12px] text-[#9a9a9a]">
+        <div className="rounded-xl border border-dashed border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-8 text-center text-[12px] text-[var(--sr-text-faint)]">
           字体库为空
         </div>
       ) : (
@@ -158,27 +161,30 @@ function LibraryTab({
           {settings.library.map((a) => {
             const editing = editingId === a.id
             return (
-              <li key={a.id} className="rounded-xl border border-[#e8e8e8] bg-[#fafafa] px-3 py-2.5">
+              <li
+                key={a.id}
+                className="rounded-2xl border border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-2.5"
+              >
                 {editing ? (
                   <div className="space-y-2">
                     <input
                       value={editName}
                       onChange={(e) => setEditName(e.target.value.slice(0, 40))}
-                      className="h-9 w-full rounded-[10px] border border-[#e5e5e5] bg-white px-3 text-[13px] text-[#1a1a1a] outline-none focus:border-[#cfcfcf]"
+                      className="h-9 w-full rounded-xl border border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] px-3 text-[13px] text-[var(--sr-text)] outline-none placeholder:text-[var(--sr-text-faint)] focus:border-[var(--sr-gold)]/45"
                       placeholder="字体显示名"
                       autoFocus
                     />
                     <div className="flex justify-end gap-2">
                       <button
                         type="button"
-                        className="rounded-lg px-2.5 py-1 text-[12px] text-[#6a6a6a]"
+                        className="rounded-lg px-2.5 py-1 text-[12px] text-[var(--sr-text-muted)] hover:text-[var(--sr-text)]"
                         onClick={() => setEditingId(null)}
                       >
                         取消
                       </button>
                       <button
                         type="button"
-                        className="rounded-lg bg-[#2a2a2a] px-2.5 py-1 text-[12px] text-white"
+                        className="rounded-lg bg-[var(--sr-gold)] px-2.5 py-1 text-[12px] font-medium text-[var(--sr-gold-on)]"
                         onClick={() => {
                           onChange(renameDatingPlotFontLibraryItem(settings, a.id, editName))
                           setEditingId(null)
@@ -189,35 +195,35 @@ function LibraryTab({
                     </div>
                   </div>
                 ) : (
-                  <>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-[13px] font-medium text-[#1a1a1a]">{a.displayName}</p>
-                        <p className="mt-0.5 truncate text-[10px] text-[#a3a3a3]">
-                          {dataUrlById[a.id] ? `文件 · ${a.fileName}` : '文件缺失 · 请重新上传'}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 gap-1">
-                        <button
-                          type="button"
-                          className="rounded-lg px-2 py-1 text-[11px] text-[#525252] active:bg-[#ececec]"
-                          onClick={() => {
-                            setEditingId(a.id)
-                            setEditName(a.displayName)
-                          }}
-                        >
-                          改名
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-lg px-2 py-1 text-[11px] text-[#8a8a8a] active:bg-[#ececec]"
-                          onClick={() => removeItem(a.id)}
-                        >
-                          删除
-                        </button>
-                      </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-medium text-[var(--sr-text)]">
+                        {a.displayName}
+                      </p>
+                      <p className="mt-0.5 truncate text-[10px] text-[var(--sr-text-faint)]">
+                        {dataUrlById[a.id] ? `文件 · ${a.fileName}` : '文件缺失 · 请重新上传'}
+                      </p>
                     </div>
-                  </>
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-[var(--sr-border)] px-2 py-1 text-[11px] text-[var(--sr-text-soft)] hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-text)]"
+                        onClick={() => {
+                          setEditingId(a.id)
+                          setEditName(a.displayName)
+                        }}
+                      >
+                        改名
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg px-2 py-1 text-[11px] text-[var(--sr-text-muted)] hover:text-[var(--ds-danger,#d08080)]"
+                        onClick={() => removeItem(a.id)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </div>
                 )}
               </li>
             )
@@ -243,14 +249,14 @@ function ApplyTab({
 
   return (
     <div className="space-y-3 pt-1">
-      <p className="text-[12px] leading-relaxed text-[#8e8e8e]">
-        「设为全局字体」会清空正文/对白/内心的分区覆盖，并开启跟随——三区都会用该字体。若只勾选某一区，则该区优先用勾选字体，其余区仍跟随全局。
+      <p className="text-[12px] leading-relaxed text-[var(--sr-text-muted)]">
+        「设为全局字体」会清空正文/对白/内心的分区覆盖，并开启跟随——三区都会用该字体。若只勾选某一区，则该区优先用勾选字体，其余区仍跟随全局。上方「剧情字号」滑杆会统一放大旁白、对白与内心，保存预设时一并记下。
       </p>
 
-      <label className="flex items-center justify-between gap-3 rounded-xl border border-[#e8e8e8] bg-[#fafafa] px-3 py-2.5">
+      <label className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-2.5">
         <div className="min-w-0">
-          <p className="text-[13px] font-medium text-[#1a1a1a]">跟随全局字体</p>
-          <p className="mt-0.5 text-[11px] leading-snug text-[#8e8e8e]">
+          <p className="text-[13px] font-medium text-[var(--sr-text)]">跟随全局字体</p>
+          <p className="mt-0.5 text-[11px] leading-snug text-[var(--sr-text-muted)]">
             关闭后，未指定区域使用系统默认
           </p>
         </div>
@@ -259,20 +265,20 @@ function ApplyTab({
           role="switch"
           aria-checked={settings.followGlobal}
           onClick={() => onChange({ ...settings, followGlobal: !settings.followGlobal })}
-          className={`relative h-8 w-[52px] shrink-0 rounded-full p-1 transition-colors ${
-            settings.followGlobal ? 'bg-[#1a1a1a]' : 'bg-[#cccccc]'
+          className={`relative inline-flex h-[24px] w-[44px] shrink-0 items-center rounded-full transition-colors ${
+            settings.followGlobal ? 'bg-[var(--sr-gold)]' : 'bg-[var(--sr-border)]'
           }`}
         >
           <span
-            className={`block h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
-              settings.followGlobal ? 'translate-x-[20px]' : 'translate-x-0'
+            className={`inline-block size-[20px] rounded-full bg-[var(--sr-gold-on,#0f0f13)] shadow transition-transform ${
+              settings.followGlobal ? 'translate-x-[21px]' : 'translate-x-0.5'
             }`}
           />
         </button>
       </label>
 
       {!settings.library.length ? (
-        <div className="rounded-xl border border-dashed border-[#e0e0e0] bg-[#fafafa] px-3 py-4 text-center text-[12px] text-[#9a9a9a]">
+        <div className="rounded-xl border border-dashed border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-8 text-center text-[12px] text-[var(--sr-text-faint)]">
           请先在「字体库」上传字体
         </div>
       ) : (
@@ -281,16 +287,19 @@ function ApplyTab({
             const isGlobal = isDatingPlotFontGlobal(settings, a.id)
             const missing = !dataUrlById[a.id]?.trim()
             return (
-              <li key={a.id} className="rounded-xl border border-[#e8e8e8] bg-[#fafafa] px-3 py-2.5">
+              <li
+                key={a.id}
+                className="rounded-2xl border border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-2.5"
+              >
                 <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                  <p className="text-[13px] font-medium text-[#1a1a1a]">{a.displayName}</p>
+                  <p className="text-[13px] font-medium text-[var(--sr-text)]">{a.displayName}</p>
                   {isGlobal ? (
-                    <span className="rounded-full bg-[#1a1a1a] px-2 py-0.5 text-[10px] font-medium text-white">
+                    <span className="rounded-full bg-[var(--sr-gold)] px-2 py-0.5 text-[10px] font-medium text-[var(--sr-gold-on)]">
                       全局
                     </span>
                   ) : null}
                   {missing ? (
-                    <span className="rounded-full bg-[#fee2e2] px-2 py-0.5 text-[10px] text-[#b91c1c]">
+                    <span className="rounded-full border border-[var(--ds-danger,#d08080)]/35 bg-[var(--ds-danger,#d08080)]/15 px-2 py-0.5 text-[10px] text-[var(--ds-danger,#d08080)]">
                       文件缺失
                     </span>
                   ) : null}
@@ -301,10 +310,10 @@ function ApplyTab({
                     return (
                       <label
                         key={r.id}
-                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${
+                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
                           on
-                            ? 'border-[#1a1a1a] bg-[#1a1a1a] text-white'
-                            : 'border-[#e0e0e0] bg-white text-[#525252]'
+                            ? 'border-[var(--sr-gold)] bg-[var(--sr-gold)] text-[var(--sr-gold-on)]'
+                            : 'border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] text-[var(--sr-text-soft)] hover:border-[var(--sr-gold)]/35'
                         } ${missing ? 'opacity-50' : ''}`}
                       >
                         <input
@@ -327,7 +336,7 @@ function ApplyTab({
                   <button
                     type="button"
                     disabled={missing}
-                    className="text-[11px] text-[#6a6a6a] underline decoration-dotted underline-offset-2 disabled:opacity-40"
+                    className="text-[11px] text-[var(--sr-text-muted)] underline decoration-dotted underline-offset-2 hover:text-[var(--sr-gold)] disabled:opacity-40"
                     onClick={() => {
                       onChange(setDatingPlotFontAsGlobal(settings, a.id))
                       onToast('已设为全局：三区将跟随该字体')
@@ -338,7 +347,7 @@ function ApplyTab({
                   <button
                     type="button"
                     disabled={missing}
-                    className="text-[11px] text-[#6a6a6a] underline decoration-dotted underline-offset-2 disabled:opacity-40"
+                    className="text-[11px] text-[var(--sr-text-muted)] underline decoration-dotted underline-offset-2 hover:text-[var(--sr-gold)] disabled:opacity-40"
                     onClick={() => onChange(applyDatingPlotFontToAllRegions(settings, a.id))}
                   >
                     应用到全部三个区域
@@ -350,18 +359,18 @@ function ApplyTab({
         </ul>
       )}
 
-      <div className="rounded-xl border border-[#e8e8e8] bg-white px-3 py-2.5">
-        <p className="text-[12px] font-medium text-[#333]">保存为预设</p>
+      <div className="rounded-2xl border border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-2.5">
+        <p className="text-[12px] font-medium text-[var(--sr-text)]">保存为预设</p>
         <div className="mt-2 flex gap-2">
           <input
             value={presetName}
             onChange={(e) => setPresetName(e.target.value.slice(0, 40))}
             placeholder="预设名称，如：剧情柔和"
-            className="h-9 min-w-0 flex-1 rounded-[10px] border border-[#e5e5e5] px-3 text-[13px] outline-none focus:border-[#cfcfcf]"
+            className="h-9 min-w-0 flex-1 rounded-xl border border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] px-3 text-[13px] text-[var(--sr-text)] outline-none placeholder:text-[var(--sr-text-faint)] focus:border-[var(--sr-gold)]/45"
           />
           <button
             type="button"
-            className="shrink-0 rounded-xl bg-[#2a2a2a] px-3 text-[12px] font-medium text-white disabled:opacity-40"
+            className="shrink-0 rounded-xl bg-[var(--sr-gold)] px-3 text-[12px] font-medium text-[var(--sr-gold-on)] disabled:opacity-40"
             disabled={!presetName.trim()}
             onClick={() => {
               onChange(saveDatingPlotFontPreset(settings, presetName))
@@ -390,11 +399,11 @@ function PresetsTab({
 }) {
   return (
     <div className="space-y-3 pt-1">
-      <p className="text-[12px] leading-relaxed text-[#8e8e8e]">
+      <p className="text-[12px] leading-relaxed text-[var(--sr-text-muted)]">
         点击预设可直接套用对应字体分配；若引用的字体已从字体库删除或文件丢失，将提示无法应用。
       </p>
       {!settings.presets.length ? (
-        <div className="rounded-xl border border-dashed border-[#e0e0e0] bg-[#fafafa] px-3 py-4 text-center text-[12px] text-[#9a9a9a]">
+        <div className="rounded-xl border border-dashed border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-8 text-center text-[12px] text-[var(--sr-text-faint)]">
           暂无预设 · 在「应用」页签保存
         </div>
       ) : (
@@ -402,16 +411,17 @@ function PresetsTab({
           {settings.presets.map((p) => (
             <li
               key={p.id}
-              className="flex items-center gap-2 rounded-xl border border-[#e8e8e8] bg-[#fafafa] px-3 py-2.5"
+              className="flex items-center gap-2 rounded-2xl border border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-2.5"
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-medium text-[#1a1a1a]">{p.name}</p>
-                <p className="mt-0.5 text-[10px] text-[#a3a3a3]">
+                <p className="truncate text-[13px] font-medium text-[var(--sr-text)]">{p.name}</p>
+                <p className="mt-0.5 text-[10px] text-[var(--sr-text-faint)]">
                   {[
                     p.narrativeAssetId ? '正文' : null,
                     p.dialogueAssetId ? '对白' : null,
                     p.innerOsAssetId ? '内心' : null,
                     p.globalAssetId ? '全局' : null,
+                    `${clampDatingPlotFontSizePx(p.baseFontSizePx ?? DATING_PLOT_FONT_SIZE_DEFAULT)}px`,
                   ]
                     .filter(Boolean)
                     .join(' · ') || '未分配'}
@@ -419,7 +429,7 @@ function PresetsTab({
               </div>
               <button
                 type="button"
-                className="shrink-0 rounded-full bg-[#2a2a2a] px-3 py-1 text-[11px] font-medium text-white"
+                className="shrink-0 rounded-full bg-[var(--sr-gold)] px-3 py-1 text-[11px] font-medium text-[var(--sr-gold-on)]"
                 onClick={() => {
                   const result = applyDatingPlotFontPreset(settings, p.id, dataUrlById)
                   if (!result.ok) {
@@ -434,7 +444,7 @@ function PresetsTab({
               </button>
               <button
                 type="button"
-                className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-[#8a8a8a]"
+                className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-[var(--sr-text-muted)] hover:text-[var(--ds-danger,#d08080)]"
                 onClick={() => onChange(deleteDatingPlotFontPreset(settings, p.id))}
               >
                 删除
@@ -478,13 +488,48 @@ export function DatingPlotFontSettingsFields({
 
   return (
     <div className="space-y-3 pt-1">
-      <div className="flex gap-1 rounded-full bg-[#ebebeb] p-1">
+      <div className="rounded-2xl border border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-[var(--sr-text)]">剧情字号</p>
+            <p className="mt-0.5 text-[11px] leading-snug text-[var(--sr-text-muted)]">
+              正文 / 对白 / 内心统一字号（默认 {DATING_PLOT_FONT_SIZE_DEFAULT}px）
+            </p>
+          </div>
+          <span className="shrink-0 font-mono text-[12px] text-[var(--sr-text-soft)]">
+            {settings.baseFontSizePx}px
+          </span>
+        </div>
+        <input
+          type="range"
+          min={DATING_PLOT_FONT_SIZE_MIN}
+          max={DATING_PLOT_FONT_SIZE_MAX}
+          step={1}
+          value={settings.baseFontSizePx}
+          onChange={(e) =>
+            onChange({
+              ...settings,
+              baseFontSizePx: clampDatingPlotFontSizePx(Number(e.target.value)),
+            })
+          }
+          className="mt-2.5 w-full accent-[var(--sr-gold)]"
+          aria-label="剧情字号"
+        />
+        <div className="mt-1 flex justify-between text-[10px] text-[var(--sr-text-faint)]">
+          <span>{DATING_PLOT_FONT_SIZE_MIN}</span>
+          <span>{DATING_PLOT_FONT_SIZE_MAX}</span>
+        </div>
+      </div>
+
+      <div className="flex gap-1 rounded-full border border-[var(--sr-border)] bg-[var(--sr-panel)] p-1">
         {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
             className={`flex-1 rounded-full py-1.5 text-[12px] font-medium transition-colors ${
-              tab === t.id ? 'bg-white text-[#1a1a1a] shadow-sm' : 'text-[#6a6a6a]'
+              tab === t.id
+                ? 'bg-[var(--sr-gold)] text-[var(--sr-gold-on)] shadow-[0_2px_10px_var(--sr-gold-glow)]'
+                : 'text-[var(--sr-text-muted)] hover:text-[var(--sr-text)]'
             }`}
             onClick={() => setTab(t.id)}
           >
@@ -493,7 +538,9 @@ export function DatingPlotFontSettingsFields({
         ))}
       </div>
       {toast ? (
-        <p className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-center text-[12px] text-white">{toast}</p>
+        <p className="rounded-xl border border-[var(--sr-gold)]/35 bg-[var(--sr-gold)]/15 px-3 py-2 text-center text-[12px] text-[var(--sr-gold)]">
+          {toast}
+        </p>
       ) : null}
       {tab === 'library' ? (
         <LibraryTab
@@ -532,6 +579,8 @@ export function DatingPlotFontSettingsButton({
   onDataUrlChange,
   className = '',
   iconOnly = false,
+  storyHeader = false,
+  themeStyle,
 }: {
   characterId: string
   value: DatingPlotFontSettings
@@ -540,76 +589,14 @@ export function DatingPlotFontSettingsButton({
   onDataUrlChange: (next: Record<string, string>) => void
   className?: string
   iconOnly?: boolean
+  /** 剧情页标题栏胶囊样式 */
+  storyHeader?: boolean
+  /** Portal 后需自带主题变量，否则 --sr-* 失效 */
+  themeStyle?: CSSProperties
 }) {
   const [open, setOpen] = useState(false)
-  const panelRef = useRef<HTMLDivElement | null>(null)
-  const titleId = useId()
   const settings = normalizeDatingPlotFontSettings(value)
   const summary = summarizeDatingPlotFontSettings(settings)
-
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.body.style.overflow = prevOverflow
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  const panel: ReactNode = open
-    ? createPortal(
-        <div
-          className="fixed inset-0 z-[240] flex items-center justify-center bg-black/45 px-4"
-          style={{
-            paddingTop: 'max(12px, env(safe-area-inset-top, 0px))',
-            paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))',
-          }}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setOpen(false)
-          }}
-        >
-          <div
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            className="flex max-h-[min(85dvh,640px)] w-[min(92vw,360px)] flex-col overflow-hidden rounded-[18px] border border-[#e4e4e4] bg-[#f4f4f4] shadow-[0_20px_50px_rgba(0,0,0,0.16)]"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#e0e0e0] bg-[#f0f0f0] px-4 py-3">
-              <div className="min-w-0">
-                <p id={titleId} className="text-[16px] font-semibold tracking-wide text-[#1a1a1a]">
-                  剧情字体
-                </p>
-                <p className="mt-0.5 truncate text-[11px] text-[#8a8a8a]">{summary}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="shrink-0 rounded-lg bg-[#2a2a2a] px-3 py-1.5 text-[13px] font-medium text-[#f5f5f5]"
-              >
-                完成
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#f4f4f4] px-3 pb-3">
-              <DatingPlotFontSettingsFields
-                characterId={characterId}
-                value={settings}
-                dataUrlById={dataUrlById}
-                onChange={onChange}
-                onDataUrlChange={onDataUrlChange}
-              />
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )
-    : null
 
   return (
     <>
@@ -618,15 +605,37 @@ export function DatingPlotFontSettingsButton({
         onClick={() => setOpen((v) => !v)}
         title={`剧情字体 · ${summary}`}
         className={
-          iconOnly
-            ? `inline-flex items-center justify-center rounded-lg border border-stone-200 bg-stone-50 p-2 text-[#262626] transition-all duration-200 hover:border-stone-400 ${className}`
-            : `inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[13px] text-[#262626] transition-all duration-200 hover:border-stone-400 ${className}`
+          storyHeader
+            ? `inline-flex h-8 min-w-8 items-center justify-center rounded-full border border-[var(--sr-border)] bg-[var(--sr-glass)] px-2.5 font-[family-name:var(--sr-font-serif)] text-[12px] tracking-wide text-[var(--sr-text-muted)] backdrop-blur-sm transition hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-text)] ${className}`
+            : iconOnly
+              ? `inline-flex items-center justify-center rounded-lg border border-white/20 bg-white/10 p-2 text-white/85 transition hover:bg-white/15 ${className}`
+              : `inline-flex items-center gap-1 rounded-lg border border-[var(--sr-border)] bg-[var(--sr-glass)] px-2.5 py-1.5 text-[13px] text-[var(--sr-text-soft)] transition hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-text)] ${className}`
         }
       >
-        <Type className="size-4" strokeWidth={1.75} />
-        {iconOnly ? null : <span>字体</span>}
+        {storyHeader ? (
+          <span>字</span>
+        ) : (
+          <>
+            <Type className="size-4" strokeWidth={1.75} />
+            {iconOnly ? null : <span>字体</span>}
+          </>
+        )}
       </button>
-      {panel}
+      <BottomSheet
+        open={open}
+        onOpenChange={setOpen}
+        title="剧情字体"
+        subtitle={summary}
+        themeStyle={themeStyle}
+      >
+        <DatingPlotFontSettingsFields
+          characterId={characterId}
+          value={settings}
+          dataUrlById={dataUrlById}
+          onChange={onChange}
+          onDataUrlChange={onDataUrlChange}
+        />
+      </BottomSheet>
     </>
   )
 }

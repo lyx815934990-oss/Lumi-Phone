@@ -1,16 +1,6 @@
 import {
-  ArrowLeft,
-  BookMarked,
-  BookUser,
-  Brain,
   ChevronDown,
-  FilePenLine,
-  Heart,
-  ImageIcon,
-  Layers,
   Loader2,
-  MessageSquareOff,
-  MessagesSquare,
   MoreHorizontal,
   Pause,
   PenLine,
@@ -55,7 +45,6 @@ import {
 } from './datingPlotFontSettings'
 import { hydrateDatingPlotFontDataUrls } from './datingPlotFontPersist'
 import {
-  DatingPlotPaceSettingsButton,
   DatingPlotPaceSettingsFields,
 } from './DatingPlotPaceSettingsPanel'
 import { normalizeDatingPlotPaceSettings } from './datingPlotPace'
@@ -64,7 +53,6 @@ import {
   subscribeDatingPlotContentHint,
 } from './datingPlotGenerationEvents'
 import { splitDatingAssistantOutput } from './plotCoT'
-import { StoryFeed } from './StoryFeed'
 import { extractVnVoiceParamsBlock } from './vnVoiceParamsStrip'
 import { StyleSettingsDrawer } from './StyleSettingsDrawer'
 import { DatingArchiveWorldbookSheet } from './DatingArchiveWorldbookSheet'
@@ -76,14 +64,20 @@ import {
 } from './types'
 import type { BranchOption, DatingCardStyle, NarrativePerspective } from './types'
 import { DirectorModeHelpButton, DirectorModeHelpPanel } from './DirectorModeHelp'
-import { requestDatingDirectorContinueDrafts, CONTINUE_DRAFT_TIME_ADVANCE_OPTIONS, type ContinueDraftTimeAdvance } from './datingDirectorContinueDraftAi'
-import { DATING_PLOT_PACE_UNIT_OPTIONS } from './datingPlotPace'
+import { DatingContinueProbeSheet } from './DatingContinueProbeSheet'
+import type { DatingStoryNormalActions } from './datingStoryNormalActions'
+import { normalizeDatingStoryAppearance } from './datingStoryAppearance'
+import { buildStoryRpgThemeStyle } from '../../../../storyRpg/theme/storyRpgThemeBridge'
+import { StoryModeSwitch } from '../../../../storyRpg/components/header/StoryModeSwitch'
+import {
+  loadDatingComposerCollapsed,
+  saveDatingComposerCollapsed,
+} from './datingComposerDockStorage'
 import { DatingNum } from './DatingNum'
-import { datingNumStyle } from './datingTypography'
-import { AccountNumericText } from '../../../userSystem/AccountNum'
 import { DatingNetworkMentionControls } from './DatingNetworkMentionControls'
 import { DatingPlotImageSettingsSheet } from './DatingPlotImageSettingsSheet'
 import { DatingCapsuleSwitch } from './DatingCapsuleSwitch'
+import { DatingStoryNormalLayout } from './DatingStoryNormalLayout'
 import {
   parseDatingPlotImageCountRange,
 } from './datingPlotImageCount'
@@ -119,7 +113,7 @@ import {
 } from '../../voiceprint/services/minimaxApi'
 import { lookupBoundVoiceIdForCharacter } from '../../voiceprint/characterVoiceMapStorage'
 import { densityToTrackCount, hexAndOpacityToRgba, resolveEffectiveDanmakuVisuals } from '../danmakuResolve'
-import { DanmakuOverlay, type DanmakuOverlayBullet } from '../DanmakuOverlay'
+import type { DanmakuOverlayBullet } from '../DanmakuOverlay'
 import { registerDatingOfflineDanmakuSink } from './datingOfflineDanmakuBridge'
 import {
   clearDatingOfflineDmSnapshot,
@@ -129,8 +123,10 @@ import {
 } from './datingOfflineDanmakuStorage'
 import { isIOSWebKit } from '../../../utils/platform'
 import { useEditableKeyboardLift } from '../../../hooks/useEditableKeyboardLift'
-import { isAndroidWeb, keyboardScrollPaddingBottom } from '../../../hooks/keyboardInset'
-import { KeyboardBottomWhitePad } from '../../../components/KeyboardBottomWhitePad'
+import {
+  computeWeChatStyleKeyboardInset,
+  measureComposerOverlapPx,
+} from '../../../hooks/keyboardInset'
 
 function randomBetweenInclusive(min: number, max: number) {
   return Math.floor(min + Math.random() * (max - min + 1))
@@ -573,8 +569,11 @@ function VnLogItemRenderer({
           [{item.name || '未署名'}] 的内心
         </p>
         <p
-          className="font-serif text-[15px] italic leading-relaxed text-[#C5A880]"
-          style={{ fontFamily: 'var(--dating-font-inner-os)' }}
+          className="font-serif italic leading-relaxed text-[#C5A880]"
+          style={{
+            fontFamily: 'var(--dating-font-inner-os)',
+            fontSize: 'var(--dating-font-size, 15px)',
+          }}
         >
           “{item.text}”
         </p>
@@ -622,8 +621,11 @@ function VnLogItemRenderer({
         ) : null}
       </div>
       <p
-        className="text-[15px] leading-relaxed text-[#2B313B]"
-        style={{ fontFamily: 'var(--dating-font-dialogue)' }}
+        className="leading-relaxed text-[#2B313B]"
+        style={{
+          fontFamily: 'var(--dating-font-dialogue)',
+          fontSize: 'var(--dating-font-size, 15px)',
+        }}
       >
         {item.text}
       </p>
@@ -667,32 +669,44 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     patchPlotImageSettings,
     patchDatingLanguageSettings,
     patchDatingPlotFontSettings,
+    setCommentModeEnabled,
+    setPlotArtifactVisualEnabled,
+    setPlotArtifactVisualPresetId,
+    patchStoryAppearance,
     sendPlayerInput,
     stageBranchChoice,
     branchesLoading,
     resetCurrentArchive,
     regeneratingPlotId,
     updatePlotItem,
+    updatePlotStoryTime,
+    generatePlotDimension,
     setPlotVersionIndex,
     deletePlotItem,
+    saveEditedPlotBody,
     regenerateAiPlot,
     vnRollbackLastRound,
   } = useDating()
   const [input, setInput] = useState('')
   const vnCustomInputRef = useRef<HTMLTextAreaElement | null>(null)
   const [iosKeyboardPad, setIosKeyboardPad] = useState(0)
+  const [viewportOffsetTop, setViewportOffsetTop] = useState(0)
+  const iosKeyboardBaselineRef = useRef(0)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const composerRef = useRef<HTMLDivElement | null>(null)
   const androidKeyboardInsetPx = useEditableKeyboardLift(composerRef, inputRef)
-  const keyboardInsetPx = isIOSWebKit() ? iosKeyboardPad : androidKeyboardInsetPx.padPx
+  const keyboardInsetPx = isIOSWebKit()
+    ? iosKeyboardPad
+    : Math.max(androidKeyboardInsetPx.liftPx, androidKeyboardInsetPx.padPx)
+  const keyboardPadPx = isIOSWebKit()
+    ? iosKeyboardPad
+    : Math.max(androidKeyboardInsetPx.padPx, androidKeyboardInsetPx.liftPx)
   const [menuOpen, setMenuOpen] = useState(false)
   const [portraitSetupOpen, setPortraitSetupOpen] = useState(false)
   const [bgmConfigOpen, setBgmConfigOpen] = useState(false)
-  const [switchOpen, setSwitchOpen] = useState(false)
+  const [, setSwitchOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
-  const [perspectiveOpen, setPerspectiveOpen] = useState(false)
   const [perspective, setPerspective] = useState<NarrativePerspective>('second')
-  const [lengthOpen, setLengthOpen] = useState(false)
   const [lengthTargetChars, setLengthTargetChars] = useState('500')
 
   const plotPace = useMemo(
@@ -710,13 +724,16 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     }
   }, [currentCharacter.id])
 
-  const blurPersistLengthTarget = useCallback(() => {
-    const n = Number(lengthTargetChars)
-    const clamped = clampDatingLengthTargetChars(Number.isFinite(n) ? n : 500)
-    setLengthTargetChars(String(clamped))
-    setDatingLengthTargetChars(clamped)
-  }, [lengthTargetChars, setDatingLengthTargetChars])
-  const [autoUserOpen, setAutoUserOpen] = useState(false)
+  /** 可传入刚改的字数；勿在 setLengthTargetChars 之后立刻无参调用（会读到闭包旧值并盖回 500） */
+  const blurPersistLengthTarget = useCallback(
+    (override?: string | number) => {
+      const raw = override !== undefined ? Number(override) : Number(lengthTargetChars)
+      const clamped = clampDatingLengthTargetChars(Number.isFinite(raw) ? raw : 500)
+      setLengthTargetChars(String(clamped))
+      setDatingLengthTargetChars(clamped)
+    },
+    [lengthTargetChars, setDatingLengthTargetChars],
+  )
   const godLocksNoInterrupt = currentArchive.godPerspective
   const autoUserReaction = !!currentArchive.autoUserReaction
   const thinkingChainEnabled = currentArchive.thinkingChainEnabled !== false
@@ -800,17 +817,13 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
   const [vnCustomInput, setVnCustomInput] = useState('')
   const [vnCustomInputModalOpen, setVnCustomInputModalOpen] = useState(false)
   const [directorModeHelpOpen, setDirectorModeHelpOpen] = useState(false)
-  const [continueDraftPromptOpen, setContinueDraftPromptOpen] = useState(false)
-  const [continueDraftTarget, setContinueDraftTarget] = useState<'normal' | 'vn'>('normal')
-  const [continueDraftCount, setContinueDraftCount] = useState('2')
-  const [continueDraftBias, setContinueDraftBias] = useState('')
-  /** both = 双方都有行动；char = 侧重角色；user = 侧重玩家 */
-  const [continueDraftActionFocus, setContinueDraftActionFocus] = useState<'both' | 'char' | 'user'>('both')
-  const [continueDraftTimeAdvance, setContinueDraftTimeAdvance] = useState<ContinueDraftTimeAdvance>('none')
-  const [continueDraftTimeAmount, setContinueDraftTimeAmount] = useState('3')
-  const [continueDraftTimeUnit, setContinueDraftTimeUnit] = useState<'hour' | 'day' | 'month' | 'year'>('day')
-  const [continueDraftGenerating, setContinueDraftGenerating] = useState(false)
-  const [continueDraftPreview, setContinueDraftPreview] = useState<string[] | null>(null)
+  const [continueProbeOpen, setContinueProbeOpen] = useState(false)
+  const [continueProbeTarget, setContinueProbeTarget] = useState<'normal' | 'vn'>('normal')
+  const [composerCollapsed, setComposerCollapsed] = useState(loadDatingComposerCollapsed)
+  const persistComposerCollapsed = useCallback((collapsed: boolean) => {
+    setComposerCollapsed(collapsed)
+    saveDatingComposerCollapsed(collapsed)
+  }, [])
   const [plotFontDataUrls, setPlotFontDataUrls] = useState<Record<string, string>>({})
   /** FontFace 注册成功后递增，迫使 CSS 变量作用域刷新，避免一直停在系统黑体回退 */
   const [plotFontReadyTick, setPlotFontReadyTick] = useState(0)
@@ -848,6 +861,43 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     [plotFontSettings, plotFontDataUrls, plotFontReadyTick],
   )
 
+  const storyAppearance = useMemo(
+    () => normalizeDatingStoryAppearance(currentArchive.storyAppearance),
+    [currentArchive.storyAppearance],
+  )
+
+  const languageSettingsValue = useMemo(
+    () =>
+      normalizeDatingLanguageSettings({
+        plotOutputLanguage: currentArchive.plotOutputLanguage,
+        dialogueLanguage: currentArchive.dialogueLanguage,
+        innerOsLanguage: currentArchive.innerOsLanguage,
+        dialogueTranslationSyncEnabled: currentArchive.dialogueTranslationSyncEnabled,
+        innerOsTranslationSyncEnabled: currentArchive.innerOsTranslationSyncEnabled,
+        dialogueTranslationLanguage: currentArchive.dialogueTranslationLanguage,
+      }),
+    [
+      currentArchive.dialogueLanguage,
+      currentArchive.dialogueTranslationLanguage,
+      currentArchive.dialogueTranslationSyncEnabled,
+      currentArchive.innerOsLanguage,
+      currentArchive.innerOsTranslationSyncEnabled,
+      currentArchive.plotOutputLanguage,
+    ],
+  )
+
+  const jumpToPlot = useCallback((plotId: string) => {
+    requestAnimationFrame(() => {
+      document.getElementById(`dating-plot-${plotId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [])
+
+  const composerPlaceholder = currentArchive.mainCharacterOffstage
+    ? '输入你与 NPC/人脉的场景、对白或动作…'
+    : currentArchive.directorMode
+      ? '输入下一段剧情走向 / 导演指令…'
+      : '输入你想说的话或动作，推进约会剧情…'
+
   useEffect(() => {
     let cancelled = false
     void ensureDatingPlotFontsLoaded(plotFontSettings, plotFontDataUrls).then((ok) => {
@@ -883,25 +933,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
   const PLOT_TAIL_LS = (id: string) => `wechat-dating-plot-tail:${id.trim()}`
   const PLOT_TAIL_DEFAULT = 24
   const [plotTailVisible, setPlotTailVisible] = useState(PLOT_TAIL_DEFAULT)
-  const [floorsPanelOpen, setFloorsPanelOpen] = useState(false)
-  const floorsPanelRef = useRef<HTMLDivElement | null>(null)
   const floorsMax = Math.min(80, Math.max(3, currentArchive.plots.length || 3))
-  const floorsDisplay = Math.min(Math.max(3, plotTailVisible), floorsMax)
-  const [floorsDraft, setFloorsDraft] = useState(String(PLOT_TAIL_DEFAULT))
-
-  useEffect(() => {
-    if (!floorsPanelOpen) return
-    const onDown = (e: PointerEvent) => {
-      const el = floorsPanelRef.current
-      if (el && !el.contains(e.target as Node)) setFloorsPanelOpen(false)
-    }
-    document.addEventListener('pointerdown', onDown, true)
-    return () => document.removeEventListener('pointerdown', onDown, true)
-  }, [floorsPanelOpen])
-
-  useEffect(() => {
-    setFloorsDraft(String(floorsDisplay))
-  }, [floorsDisplay])
 
   useEffect(() => {
     try {
@@ -929,15 +961,6 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     },
     [currentCharacter.id],
   )
-
-  const applyFloorsDraft = useCallback(() => {
-    const n = parseInt(floorsDraft.trim(), 10)
-    if (!Number.isFinite(n)) {
-      setFloorsDraft(String(floorsDisplay))
-      return
-    }
-    persistPlotTail(n)
-  }, [floorsDraft, floorsDisplay, persistPlotTail])
 
   const buildTranscriptFromDatingPlots = useCallback((): ChatTranscriptTurn[] => {
     const out: ChatTranscriptTurn[] = []
@@ -1014,89 +1037,34 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     }
   }, [apiConfig, buildTranscriptFromDatingPlots, currentCharacter.id, heartWhisperLoading, showHeartWhisperToast])
 
-  const openContinueDraftPrompt = useCallback((target: 'normal' | 'vn') => {
-    setContinueDraftTarget(target)
-    setContinueDraftPromptOpen(true)
+  const openContinueProbeSheet = useCallback((target: 'normal' | 'vn') => {
+    setContinueProbeTarget(target)
+    setContinueProbeOpen(true)
   }, [])
 
-  const runContinueDraftGenerate = useCallback(async () => {
-    if (continueDraftGenerating) return
-    if (!apiConfig?.apiUrl?.trim() || !apiConfig?.apiKey?.trim() || !apiConfig?.modelId?.trim()) {
-      showHeartWhisperToast('请先配置聊天 API')
-      return
-    }
-    const countRaw = Number.parseInt(continueDraftCount.trim(), 10)
-    const count = Number.isFinite(countRaw) ? Math.max(1, Math.min(6, countRaw)) : 2
-    setContinueDraftGenerating(true)
-    try {
-      const amountRaw = Number.parseFloat(continueDraftTimeAmount)
-      const guides = await requestDatingDirectorContinueDrafts({
-        apiConfig,
-        character: currentCharacter,
-        plots: currentArchive.plots,
-        count,
-        playerDisplayName: vnUserDisplayName,
-        bias: continueDraftBias,
-        actionFocus: continueDraftActionFocus,
-        timeAdvance: continueDraftTimeAdvance,
-        timeAdvanceCustom:
-          continueDraftTimeAdvance === 'custom'
-            ? {
-                amount: Number.isFinite(amountRaw) && amountRaw > 0 ? amountRaw : 3,
-                unit: continueDraftTimeUnit,
-              }
-            : null,
-        godPerspective: currentArchive.godPerspective,
-        mainCharacterOffstage: currentArchive.mainCharacterOffstage,
-        isVnMode: currentArchive.modePreference === 'vn',
-      })
-      setContinueDraftPromptOpen(false)
-      setContinueDraftPreview(guides)
-    } catch (err) {
-      showHeartWhisperToast(err instanceof Error ? err.message : '续写生成失败')
-    } finally {
-      setContinueDraftGenerating(false)
-    }
-  }, [
-    apiConfig,
-    continueDraftBias,
-    continueDraftCount,
-    continueDraftActionFocus,
-    continueDraftTimeAdvance,
-    continueDraftTimeAmount,
-    continueDraftTimeUnit,
-    continueDraftGenerating,
-    currentArchive.godPerspective,
-    currentArchive.mainCharacterOffstage,
-    currentArchive.modePreference,
-    currentArchive.plots,
-    currentCharacter,
-    showHeartWhisperToast,
-    vnUserDisplayName,
-  ])
-
-  const applyContinueDraftToInput = useCallback(
+  const applyContinueProbeToInput = useCallback(
     (text: string) => {
       const t = text.trim()
       if (!t) {
-        showHeartWhisperToast('这条续写是空的')
+        showHeartWhisperToast('内容为空')
         return
       }
       setDirectorMode(true)
-      if (continueDraftTarget === 'vn') {
+      if (continueProbeTarget === 'vn') {
         setVnCustomInput(t)
         setVnCustomInputModalOpen(true)
       } else {
+        persistComposerCollapsed(false)
         setInput(t)
         window.setTimeout(() => {
           inputRef.current?.focus()
           composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
         }, 40)
       }
-      setContinueDraftPreview(null)
+      setContinueProbeOpen(false)
       showHeartWhisperToast('已填入输入框（已开导演模式）')
     },
-    [continueDraftTarget, setDirectorMode, showHeartWhisperToast],
+    [continueProbeTarget, persistComposerCollapsed, setDirectorMode, showHeartWhisperToast],
   )
 
   useEffect(() => {
@@ -1238,9 +1206,6 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     }),
     [],
   )
-  const effectiveCardStyle = useMemo(() => {
-    return { ...defaultCardStyle, ...(currentCharacter.cardStyle ?? {}) }
-  }, [currentCharacter.cardStyle, defaultCardStyle])
 
   const displayAvatarUrl = useMemo(
     () => resolveCharacterAvatarUrl({ avatarUrl: currentCharacter.avatarUrl }),
@@ -1282,57 +1247,6 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     reader.readAsDataURL(file)
   }
 
-  const cardTextColor = effectiveCardStyle.textColor || '#262626'
-  const tagBgStyle = useMemo((): React.CSSProperties => {
-    const cs = effectiveCardStyle
-    const opacity = Math.max(0, Math.min(1, cs.tagBgOpacity ?? 1))
-    const st: React.CSSProperties = {
-      opacity,
-    }
-    if (cs.tagBgMode === 'solid') {
-      st.backgroundColor = cs.tagSolidColor
-    } else if (cs.tagBgMode === 'gradient') {
-      const ang = Number.isFinite(cs.tagGradientAngle) ? cs.tagGradientAngle : 135
-      st.backgroundImage = `linear-gradient(${ang}deg, ${cs.tagGradientFrom}, ${cs.tagGradientTo})`
-    } else if (cs.tagBgMode === 'image') {
-      st.backgroundImage = cs.tagImageUrl ? `url(${cs.tagImageUrl})` : 'none'
-      st.backgroundSize = 'cover'
-      st.backgroundPosition = 'center'
-    }
-    return st
-  }, [effectiveCardStyle])
-  const cardBgLayerStyle: React.CSSProperties = useMemo(() => {
-    const cs = effectiveCardStyle
-    const opacity = Math.max(0, Math.min(1, cs.bgOpacity ?? 1))
-    const base: React.CSSProperties = {
-      opacity,
-      borderRadius: 16,
-    }
-    if (cs.bgMode === 'solid') {
-      base.backgroundColor = cs.solidColor
-    } else if (cs.bgMode === 'gradient') {
-      const ang = Number.isFinite(cs.gradientAngle) ? cs.gradientAngle : 135
-      base.backgroundImage = `linear-gradient(${ang}deg, ${cs.gradientFrom}, ${cs.gradientTo})`
-    } else if (cs.bgMode === 'image') {
-      base.backgroundImage = cs.imageUrl ? `url(${cs.imageUrl})` : 'none'
-      base.backgroundSize = 'cover'
-      base.backgroundPosition = 'center'
-    }
-    return base
-  }, [effectiveCardStyle])
-
-  const cardGlassLayerStyle: React.CSSProperties = useMemo(() => {
-    const cs = effectiveCardStyle
-    if (!cs.glass) return { display: 'none' }
-    const blurPx = Math.max(0, Math.min(40, Number.isFinite(cs.glassBlur) ? cs.glassBlur : 18))
-    return {
-      borderRadius: 16,
-      background: 'rgba(255,255,255,0.42)',
-      border: '1px solid rgba(231,229,228,0.75)',
-      backdropFilter: `blur(${blurPx}px)`,
-      WebkitBackdropFilter: `blur(${blurPx}px)`,
-    }
-  }, [effectiveCardStyle])
   const [vnShownText, setVnShownText] = useState('')
   const [vnTyping, setVnTyping] = useState(false)
   const [vnSubmitting, setVnSubmitting] = useState(false)
@@ -1654,17 +1568,6 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     }
   }, [enqueueOfflineStoryDanmakuLines, isVn])
 
-  const offlineDmZoneStyle = useMemo((): CSSProperties => {
-    const p = effectiveStoryDm?.position ?? 'top'
-    if (p === 'middle') return { top: '28%', height: '30%' }
-    if (p === 'bottom') return { top: '54%', height: '30%' }
-    if (p === 'random') return { top: '6%', height: '58%' }
-    return { top: '3%', height: '26%' }
-  }, [effectiveStoryDm?.position])
-
-  const showOfflineDmOverlay =
-    !isVn && !!currentArchive.offlineDanmakuEnabled && !!effectiveStoryDm && !effectiveStoryDm.skipCharacter
-
   const [vnBgCurrentUrl, setVnBgCurrentUrl] = useState<string>(VN_BACKGROUND_ASSETS[0]?.url || VN_BG_FALLBACK)
   const [vnBgPrevUrl, setVnBgPrevUrl] = useState<string | null>(null)
   const [vnBgFlashOn, setVnBgFlashOn] = useState(false)
@@ -1722,25 +1625,64 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
       字
     </>
   )
-  const autoUserLabel = godLocksNoInterrupt ? '不抢话' : autoUserReaction ? '抢话' : '不抢话'
 
   useEffect(() => {
-    if (!isIOSWebKit() || isVn) {
+    if (isVn) {
       setIosKeyboardPad(0)
+      setViewportOffsetTop(0)
       return
     }
     const vv = window.visualViewport
     if (!vv) return
-    const update = () => {
-      const overlap = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
-      setIosKeyboardPad(Math.round(overlap))
+
+    let rafId: number | null = null
+    const measureAndCommit = () => {
+      rafId = null
+      const offsetTop = Math.max(0, Math.round(vv.offsetTop || 0))
+      setViewportOffsetTop(offsetTop)
+
+      if (!isIOSWebKit()) {
+        // Android：抬升量由 useEditableKeyboardLift 负责；仍同步 offsetTop 钉顶栏
+        return
+      }
+
+      const fromVv = computeWeChatStyleKeyboardInset(iosKeyboardBaselineRef)
+      const overlap = measureComposerOverlapPx(composerRef.current)
+      const next = Math.max(0, Math.round(Math.max(fromVv, overlap)))
+      setIosKeyboardPad((prev) => {
+        if (Math.abs(prev - next) < 4 && !(prev <= 0 && next > 0)) return prev
+        // 键盘刚弹起时再补测一两次，吃掉 accessory bar / 动画滞后
+        if (next > 40 && prev <= 40) {
+          window.setTimeout(schedule, 120)
+          window.setTimeout(schedule, 280)
+        }
+        return next
+      })
     }
-    update()
-    vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
+
+    const schedule = () => {
+      if (rafId != null) return
+      rafId = window.requestAnimationFrame(measureAndCommit)
+    }
+
+    measureAndCommit()
+    vv.addEventListener('resize', schedule)
+    vv.addEventListener('scroll', schedule)
+    window.addEventListener('orientationchange', schedule)
+    const nav = navigator as Navigator & {
+      virtualKeyboard?: {
+        addEventListener?: (type: 'geometrychange', listener: () => void) => void
+        removeEventListener?: (type: 'geometrychange', listener: () => void) => void
+      }
+    }
+    nav.virtualKeyboard?.addEventListener?.('geometrychange', schedule)
+
     return () => {
-      vv.removeEventListener('resize', update)
-      vv.removeEventListener('scroll', update)
+      if (rafId != null) window.cancelAnimationFrame(rafId)
+      vv.removeEventListener('resize', schedule)
+      vv.removeEventListener('scroll', schedule)
+      window.removeEventListener('orientationchange', schedule)
+      nav.virtualKeyboard?.removeEventListener?.('geometrychange', schedule)
     }
   }, [isVn])
 
@@ -1771,17 +1713,20 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     })
   }, [currentArchive.modePreference, currentCharacter.id, isVn])
 
-  const scrollComposerIntoView = useCallback(() => {
+  /** 聚焦输入：展开底栏并滚列表，但禁止 scrollIntoView，避免 iOS 把整页（含顶栏）顶出可视区 */
+  const onComposerFocus = useCallback(() => {
+    persistComposerCollapsed(false)
     const scroll = normalScrollRef.current
-    const block = composerRef.current
-    if (!scroll || !block) return
+    if (!scroll) return
     requestAnimationFrame(() => {
-      block.scrollIntoView({ block: 'end', behavior: 'smooth', inline: 'nearest' })
-    })
-    window.setTimeout(() => {
       scroll.scrollTo({ top: scroll.scrollHeight, behavior: 'smooth' })
-    }, 280)
-  }, [])
+    })
+  }, [persistComposerCollapsed])
+
+  useEffect(() => {
+    if (isVn || keyboardInsetPx <= 0 || !composerCollapsed) return
+    persistComposerCollapsed(false)
+  }, [composerCollapsed, isVn, keyboardInsetPx, persistComposerCollapsed])
 
   const stopVnLineVoice = useCallback((opts?: { invalidatePending?: boolean }) => {
     const invalidatePending = opts?.invalidatePending !== false
@@ -3032,7 +2977,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
   const isLastVnBubble = !isVnEmpty && !hasNextVnBubble
   const shouldShowVnFloatingOptions = isVnEmpty || isLastVnBubble
   const showVnBlockingGeneratingModal = isVn && (vnSubmitting || isAwaitingVnAiReply)
-  const handleBranchPick = useCallback((x: BranchOption) => {
+  const handleBranchPick = useCallback(async (x: BranchOption) => {
     stageBranchChoice(x)
     setInput(x.content)
   }, [stageBranchChoice])
@@ -3084,7 +3029,6 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     })
   }
 
-  const perspectiveLabel = perspective === 'first' ? '第一人称' : perspective === 'second' ? '第二人称' : '第三人称'
   const lengthTargetNum = (() => {
     const n = Number(lengthTargetChars)
     if (!Number.isFinite(n)) return 500
@@ -3099,6 +3043,9 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
       generateParallelOnSend: !!currentArchive.generateParallelOnSend,
       generateIfLineOnSend: !!currentArchive.generateIfLineOnSend,
       thinkingChainEnabled: currentArchive.thinkingChainEnabled !== false,
+      commentModeEnabled: currentArchive.commentModeEnabled !== false,
+      plotArtifactVisualEnabled: currentArchive.plotArtifactVisualEnabled !== false,
+      plotArtifactVisualPresetId: currentArchive.plotArtifactVisualPresetId?.trim() || 'random',
       plotPace,
       ...(styleTuning.stylePrompt.trim() ? { stylePrompt: styleTuning.stylePrompt.trim() } : {}),
       ...(styleTuning.referenceSnippet.trim() ? { referenceSnippet: styleTuning.referenceSnippet.trim() } : {}),
@@ -3111,11 +3058,25 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
       currentArchive.generateParallelOnSend,
       currentArchive.generateIfLineOnSend,
       currentArchive.thinkingChainEnabled,
+      currentArchive.commentModeEnabled,
+      currentArchive.plotArtifactVisualEnabled,
+      currentArchive.plotArtifactVisualPresetId,
       plotPace,
       styleTuning.stylePrompt,
       styleTuning.referenceSnippet,
     ],
   )
+
+  const handleNormalSend = useCallback(async () => {
+    const raw = input.trim()
+    if (!raw) return
+    const ok = await sendPlayerInput(stripDatingNetworkMentionMarkers(raw), perspective, {
+      ...narrativeGenOptions,
+      presentNetworkCharacterIds: collectDatingNetworkMentionIds(raw),
+    })
+    if (ok) setInput('')
+  }, [input, narrativeGenOptions, perspective, sendPlayerInput])
+
   const handleVnBranchPick = useCallback(
     async (x: BranchOption) => {
       setVnSubmitting(true)
@@ -3211,11 +3172,6 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
   }, [resetCurrentArchive])
 
   useEffect(() => {
-    if (!currentArchive.godPerspective) return
-    setAutoUserOpen(false)
-  }, [currentArchive.godPerspective])
-
-  useEffect(() => {
     if (vnAutoTimerRef.current) {
       window.clearTimeout(vnAutoTimerRef.current)
       vnAutoTimerRef.current = null
@@ -3267,646 +3223,183 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     })
   }, [isVn, logOpen, vnLogEntries.length])
 
+  /** 普通剧情页业务动作（无布局 UI；重建布局时挂载此对象） */
+  const normalActions = useMemo((): DatingStoryNormalActions => ({
+    onBackToSelect,
+    input,
+    setInput,
+    inputRef,
+    composerRef,
+    feedScrollRef: normalScrollRef,
+    loading,
+    placeholder: composerPlaceholder,
+    onSend: handleNormalSend,
+    onInputKeyDown: (e) => applyMentionKeyDown(e, input, setInput),
+    onInputFocus: onComposerFocus,
+    insertQuotePair,
+    openContinueProbe: openContinueProbeSheet,
+    handleBranchPick,
+    openRetryBiasPanel,
+    jumpToPlot,
+    perspective,
+    setPerspective,
+    narrativeGenOptions,
+    lengthTargetChars,
+    setLengthTargetChars,
+    blurPersistLengthTarget,
+    plotPace,
+    toggleThinkingChain,
+    thinkingChainEnabled,
+    godLocksNoInterrupt,
+    autoUserReaction,
+    composerCollapsed,
+    persistComposerCollapsed,
+    keyboardInsetPx,
+    keyboardPadPx,
+    viewportOffsetTop,
+    plotTailVisible,
+    persistPlotTail,
+    floorsMax,
+    currentCharacter,
+    currentArchive,
+    plots: currentArchive.plots,
+    displayAvatarUrl,
+    regeneratingPlotId,
+    branchesLoading,
+    languageSettingsValue,
+    plotFontSettings,
+    plotFontDataUrls,
+    storyAppearance,
+    setGodPerspective,
+    setDirectorMode,
+    setMainCharacterOffstage,
+    setGenerateParallelOnSend,
+    setGenerateIfLineOnSend,
+    setCommentModeEnabled,
+    setPlotArtifactVisualEnabled,
+    setPlotArtifactVisualPresetId,
+    setAutoUserReaction,
+    setPlotPaceSettings,
+    patchDatingLanguageSettings,
+    patchDatingPlotFontSettings,
+    setPlotFontDataUrls,
+    patchStoryAppearance,
+    patchPlotImageSettings,
+    setMenuOpen,
+    setEditOpen,
+    setSwitchOpen,
+    setResetArchiveConfirmOpen,
+    setMode,
+    setBranchEnabled,
+    setOfflineDanmakuEnabled,
+    setCurrentCharacterId,
+    characters,
+    setHeartWhisperOpen,
+    setArchiveWbSheetOpen,
+    setStyleDrawerOpen,
+    setStyleTuning,
+    setPlotImageSettingsOpen,
+    setDirectorModeHelpOpen,
+    updatePlotItem,
+    updatePlotStoryTime,
+    generatePlotDimension,
+    setPlotVersionIndex,
+    deletePlotItem,
+    saveEditedPlotBody,
+    regenerateAiPlot,
+    plotImageGenEnabled,
+    imageGenConfigured,
+    plotImageCountNode,
+  }), [
+    applyMentionKeyDown,
+    autoUserReaction,
+    blurPersistLengthTarget,
+    branchesLoading,
+    characters,
+    composerCollapsed,
+    composerPlaceholder,
+    currentArchive,
+    currentCharacter,
+    deletePlotItem,
+    displayAvatarUrl,
+    floorsMax,
+    generatePlotDimension,
+    godLocksNoInterrupt,
+    handleBranchPick,
+    handleNormalSend,
+    imageGenConfigured,
+    input,
+    insertQuotePair,
+    jumpToPlot,
+    keyboardInsetPx,
+    keyboardPadPx,
+    viewportOffsetTop,
+    languageSettingsValue,
+    lengthTargetChars,
+    loading,
+    narrativeGenOptions,
+    onBackToSelect,
+    openContinueProbeSheet,
+    openRetryBiasPanel,
+    patchDatingLanguageSettings,
+    patchDatingPlotFontSettings,
+    patchPlotImageSettings,
+    patchStoryAppearance,
+    persistComposerCollapsed,
+    persistPlotTail,
+    perspective,
+    plotFontDataUrls,
+    plotFontSettings,
+    plotImageCountNode,
+    plotImageGenEnabled,
+    plotPace,
+    plotTailVisible,
+    regenerateAiPlot,
+    regeneratingPlotId,
+    saveEditedPlotBody,
+    onComposerFocus,
+    setArchiveWbSheetOpen,
+    setAutoUserReaction,
+    setBranchEnabled,
+    setCommentModeEnabled,
+    setPlotArtifactVisualEnabled,
+    setPlotArtifactVisualPresetId,
+    setCurrentCharacterId,
+    setDirectorMode,
+    setDirectorModeHelpOpen,
+    setEditOpen,
+    setGenerateIfLineOnSend,
+    setGenerateParallelOnSend,
+    setGodPerspective,
+    setHeartWhisperOpen,
+    setLengthTargetChars,
+    setMainCharacterOffstage,
+    setMenuOpen,
+    setMode,
+    setOfflineDanmakuEnabled,
+    setPerspective,
+    setPlotFontDataUrls,
+    setPlotImageSettingsOpen,
+    setPlotPaceSettings,
+    setPlotVersionIndex,
+    setResetArchiveConfirmOpen,
+    setStyleDrawerOpen,
+    setStyleTuning,
+    setSwitchOpen,
+    storyAppearance,
+    thinkingChainEnabled,
+    toggleThinkingChain,
+    updatePlotItem,
+    updatePlotStoryTime,
+  ])
+
   return (
-    <div
-      className="relative h-full min-h-0 overflow-hidden bg-transparent"
-      style={plotFontCssVars}
-    >
+    <div className="relative h-full min-h-0 overflow-hidden" style={plotFontCssVars}>
       {!isVn ? (
-        <div className="flex h-full min-h-0 flex-col">
-          <header className="sticky top-0 z-20 shrink-0 bg-transparent px-4 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
-            <div
-              className="relative rounded-[18px] border border-black/[0.06] px-3 py-2.5 shadow-[0_8px_24px_rgba(16,16,18,0.04)]"
-              style={{ color: cardTextColor }}
-            >
-              {/* 背景层（纯色/渐变/图片） */}
-              <div className="absolute inset-0 rounded-[18px]" style={cardBgLayerStyle} />
-              {/* 毛玻璃层：必须盖在背景层上，backdrop-blur 才能模糊到图片/渐变 */}
-              {effectiveCardStyle.glass ? (
-                <div className="absolute inset-0 rounded-[18px]" style={cardGlassLayerStyle} />
-              ) : null}
-              <button
-                type="button"
-                onClick={onBackToSelect}
-                className="absolute left-2.5 top-1/2 z-[1] -translate-y-1/2 rounded-full p-1.5 transition-all duration-200 ease-out hover:bg-black/[0.04]"
-                aria-label="返回"
-              >
-                <ArrowLeft className="size-[18px]" strokeWidth={1.7} />
-              </button>
-              <div ref={floorsPanelRef} className="absolute right-2 top-1/2 z-10 -translate-y-1/2">
-                <div className="flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    title="隐藏历史楼层（仅视图）"
-                    onClick={() => setFloorsPanelOpen((v) => !v)}
-                    className={`rounded-full p-1.5 transition-all duration-200 ease-out hover:bg-black/[0.04] ${
-                      floorsPanelOpen ? 'bg-black/[0.06] text-stone-800' : ''
-                    }`}
-                  >
-                    <Layers className="size-[18px]" strokeWidth={1.7} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen((v) => !v)
-                      setFloorsPanelOpen(false)
-                    }}
-                    className="rounded-full p-1.5 transition-all duration-200 ease-out hover:bg-black/[0.04]"
-                    aria-label="更多"
-                  >
-                    <MoreHorizontal className="size-[18px]" strokeWidth={1.7} />
-                  </button>
-                </div>
-              {floorsPanelOpen ? (
-                <div className="absolute right-0 top-10 z-30 w-[232px] rounded-xl border border-stone-200/90 bg-white/90 p-3 shadow-lg backdrop-blur-xl">
-                  <p className="text-[11px] font-medium text-stone-500">从尾部展示条数</p>
-                  <p className="mt-0.5 text-[10px] leading-snug text-stone-400">
-                    仅影响列表展示，不删除存档；范围 3～{floorsMax}。点列表顶「已隐藏…展开」可一次显示全部。
-                  </p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={3}
-                      max={floorsMax}
-                      value={floorsDraft}
-                      onChange={(e) => setFloorsDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') applyFloorsDraft()
-                      }}
-                      onBlur={applyFloorsDraft}
-                      className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[13px] tabular-nums text-stone-800 outline-none focus:border-stone-400"
-                      style={datingNumStyle}
-                    />
-                    <button
-                      type="button"
-                      onClick={applyFloorsDraft}
-                      className="shrink-0 rounded-lg bg-stone-900 px-2.5 py-1.5 text-[12px] font-medium text-white hover:bg-stone-800"
-                    >
-                      应用
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-              </div>
-              {effectiveCardStyle.showContent ? (
-                <div className="relative flex items-center gap-3 pl-9 pr-16">
-                  <img
-                    src={displayAvatarUrl}
-                    alt={currentCharacter.realName}
-                    className="h-11 w-11 shrink-0 rounded-[14px] object-cover ring-1 ring-black/10"
-                  />
-                  <div className="min-w-0 flex-1 py-0.5">
-                    <div className="flex min-w-0 items-baseline gap-2">
-                      <h2 className="truncate text-[17px] font-semibold tracking-tight leading-tight">
-                        {currentCharacter.realName}
-                      </h2>
-                      <p className="shrink-0 text-[11px] tabular-nums opacity-55">
-                        <DatingNum>{currentCharacter.age}</DatingNum>
-                        <span className="mx-1 opacity-40">·</span>
-                        {currentCharacter.zodiac}
-                      </p>
-                    </div>
-                    {currentCharacter.motto?.trim() ? (
-                      <p className="mt-0.5 truncate text-[11px] leading-snug opacity-50">
-                        {currentCharacter.motto}
-                      </p>
-                    ) : (
-                      <p className="mt-0.5 truncate text-[11px] leading-snug opacity-40">
-                        <DatingNum>{currentCharacter.heightCm}</DatingNum>
-                        <span className="mx-1 opacity-40">cm</span>
-                        <span className="mx-0.5 opacity-30">·</span>
-                        <DatingNum>{currentCharacter.weightKg}</DatingNum>
-                        <span className="mx-1 opacity-40">kg</span>
-                        {currentCharacter.birthdayMD ? (
-                          <>
-                            <span className="mx-0.5 opacity-30">·</span>
-                            <AccountNumericText text={currentCharacter.birthdayMD} className="inline" />
-                          </>
-                        ) : null}
-                      </p>
-                    )}
-                    {currentCharacter.identityTags.some((t) => parseIdentityTag(t).text) ? (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {currentCharacter.identityTags.map((t) => {
-                          const parsed = parseIdentityTag(t)
-                          if (!parsed.text) return null
-                          if (parsed.isPainPoint) {
-                            return (
-                              <span
-                                key={t}
-                                className="px-2 py-0.5 text-[10px] font-medium"
-                                style={{
-                                  background: 'rgba(185,28,28,0.08)',
-                                  border: '1px solid rgba(185,28,28,0.18)',
-                                  color: '#b91c1c',
-                                  borderRadius: effectiveCardStyle.tagRadius,
-                                }}
-                              >
-                                {parsed.text}
-                              </span>
-                            )
-                          }
-                          return (
-                            <span
-                              key={t}
-                              className="px-2 py-0.5 text-[10px] font-medium"
-                              style={{
-                                ...tagBgStyle,
-                                color: effectiveCardStyle.tagTextColor,
-                                borderRadius: effectiveCardStyle.tagRadius,
-                              }}
-                            >
-                              {parsed.text}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : (
-                <div className="relative h-11 pl-9 pr-16" />
-              )}
-              {menuOpen ? (
-                <div className="absolute right-2 top-[calc(50%+22px)] z-30 w-52 rounded-xl border border-stone-200 bg-white p-1 shadow-md">
-                  <button className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-[#262626] hover:bg-stone-50" onClick={() => setMode(isVn ? 'normal' : 'vn')}>
-                    模式切换：{isVn ? '切到普通模式' : '切到VN模式'}
-                  </button>
-                  <div
-                    className="flex items-center justify-between rounded-lg px-3 py-2 text-[13px] text-[#262626] hover:bg-stone-50"
-                    title="开启后每轮 AI 剧情结束会请求弹幕（使用 API 设置中的弹幕预设；需在弹幕配置中为该角色启用）"
-                  >
-                    <span>弹幕模式</span>
-                    <DatingCapsuleSwitch
-                      checked={!!currentArchive.offlineDanmakuEnabled}
-                      onToggle={() => setOfflineDanmakuEnabled(!currentArchive.offlineDanmakuEnabled)}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg px-3 py-2 text-[13px] text-[#262626] hover:bg-stone-50">
-                    <span>剧情分支</span>
-                    <DatingCapsuleSwitch
-                      checked={currentArchive.branchEnabled}
-                      onToggle={() => setBranchEnabled(!currentArchive.branchEnabled)}
-                    />
-                  </div>
-                  <button
-                    className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-[#262626] hover:bg-stone-50"
-                    onClick={() => {
-                      setEditOpen(true)
-                      setMenuOpen(false)
-                      setSwitchOpen(false)
-                    }}
-                  >
-                    编辑当前角色卡片信息
-                  </button>
-                  <button
-                    className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-[#262626] hover:bg-stone-50"
-                    onClick={() => {
-                      setMenuOpen(false)
-                      setSwitchOpen(false)
-                      setResetArchiveConfirmOpen(true)
-                    }}
-                  >
-                    重置当前角色进度
-                  </button>
-                  <button className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] text-[#262626] hover:bg-stone-50" onClick={() => setSwitchOpen((v) => !v)}>
-                    切换其他AI角色 <ChevronDown className="size-4" />
-                  </button>
-                  {switchOpen ? (
-                    <div className="mt-1 rounded-lg border border-stone-200 bg-stone-50 p-1">
-                      {characters.map((x) => (
-                        <button
-                          key={x.id}
-                          className="w-full rounded-md px-2 py-1.5 text-left text-[12px] text-[#262626] hover:bg-white"
-                          onClick={() => {
-                            setCurrentCharacterId(x.id)
-                            setMenuOpen(false)
-                            setSwitchOpen(false)
-                          }}
-                        >
-                          {x.realName}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          </header>
-
-          {/* 弹幕与聊天室一致：盖在「剧情滚动区」视口上，不随列表滚动 */}
-          <div className="relative min-h-0 flex-1">
-            {showOfflineDmOverlay ? (
-              <div className="pointer-events-none absolute inset-0 z-[60]">
-                <DanmakuOverlay bullets={offlineDmBullets} zoneStyle={offlineDmZoneStyle} />
-              </div>
-            ) : null}
-            <div
-              ref={normalScrollRef}
-              className="relative min-h-0 h-full overflow-y-auto overscroll-contain px-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] pt-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-              style={
-                keyboardInsetPx > 0
-                  ? {
-                      paddingBottom: isIOSWebKit()
-                        ? `calc(${keyboardInsetPx}px + max(1rem, env(safe-area-inset-bottom, 0px)))`
-                        : keyboardScrollPaddingBottom(keyboardInsetPx, { basePx: 16 }),
-                    }
-                  : undefined
-              }
-            >
-            {currentArchive.plots.length ? (
-              <div className="mx-auto w-full max-w-xl">
-                <StoryFeed
-                  plots={currentArchive.plots}
-                  timelineExpandCharacterId={currentCharacter.id}
-                  tailVisibleCount={plotTailVisible}
-                  onTailVisibleCountChange={persistPlotTail}
-                  regeneratingPlotId={regeneratingPlotId}
-                  interactionLocked={branchesLoading || Boolean(regeneratingPlotId)}
-                  narrativePerspective={perspective}
-                  onUpdatePlot={(id, patch) => updatePlotItem(id, patch)}
-                  onRegeneratePlot={openRetryBiasPanel}
-                  onSetPlotVersionIndex={(id, idx) => setPlotVersionIndex(id, idx)}
-                  onDeletePlot={(id) => deletePlotItem(id)}
-                  branchEnabled={currentArchive.branchEnabled}
-                  pendingBranches={currentArchive.pendingBranches}
-                  branchesLoading={branchesLoading}
-                  onBranchPick={handleBranchPick}
-                />
-              </div>
-            ) : null}
-
-            <div
-              ref={composerRef}
-              className="mx-auto mt-5 w-full max-w-xl scroll-mt-4 rounded-[20px] border border-black/[0.06] bg-white/95 p-4 shadow-[0_10px_32px_rgba(16,16,18,0.045)]"
-            >
-              <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                <label className="flex cursor-pointer items-center gap-2 text-[13px] text-[#262626]">
-                  <input
-                    type="checkbox"
-                    className="size-4 rounded border-stone-200 accent-neutral-800"
-                    checked={currentArchive.godPerspective}
-                    onChange={(e) => setGodPerspective(e.target.checked)}
-                  />
-                  上帝视角
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-[13px] text-[#262626]">
-                  <input
-                    type="checkbox"
-                    className="size-4 rounded border-stone-200 accent-neutral-800"
-                    checked={!!currentArchive.directorMode}
-                    onChange={(e) => setDirectorMode(e.target.checked)}
-                  />
-                  导演模式
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-[13px] text-[#262626]">
-                  <input
-                    type="checkbox"
-                    className="size-4 rounded border-stone-200 accent-neutral-800"
-                    checked={!!currentArchive.mainCharacterOffstage}
-                    onChange={(e) => setMainCharacterOffstage(e.target.checked)}
-                  />
-                  侧幕叙写
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-[13px] text-[#262626]">
-                  <input
-                    type="checkbox"
-                    className="size-4 rounded border-stone-200 accent-violet-700"
-                    checked={!!currentArchive.generateParallelOnSend}
-                    onChange={(e) => setGenerateParallelOnSend(e.target.checked)}
-                  />
-                  平行事件
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-[13px] text-[#262626]">
-                  <input
-                    type="checkbox"
-                    className="size-4 rounded border-stone-200 accent-violet-700"
-                    checked={!!currentArchive.generateIfLineOnSend}
-                    onChange={(e) => setGenerateIfLineOnSend(e.target.checked)}
-                  />
-                  IF线
-                </label>
-                <DirectorModeHelpButton onClick={() => setDirectorModeHelpOpen(true)} />
-              </div>
-              <p className="mb-2 text-[12px] leading-snug text-[#8e8e8e]">
-                旁白直接写；弯引号 / 英文引号为对白；** 为内心 OS（NPC 默认不知）；旁白上的轻吐槽勿用 ** 包裹
-              </p>
-              <div className="mb-3 flex flex-wrap items-start gap-2">
-                <button
-                  type="button"
-                  onClick={() => insertQuotePair('\u201C', '\u201D')}
-                  className="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[13px] text-[#262626] transition-all duration-200 hover:border-stone-400"
-                  title="对白（弯引号）"
-                >
-                  “”
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertQuotePair('**', '**')}
-                  className="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 font-mono text-[13px] text-[#262626] transition-all duration-200 hover:border-stone-400"
-                  title="内心 OS"
-                >
-                  <span className="font-mono">**</span>
-                </button>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setPerspectiveOpen((v) => !v)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[13px] text-[#262626] transition-all duration-200 hover:border-stone-400"
-                    title={`人称 · ${perspectiveLabel}`}
-                    aria-label={`人称 · ${perspectiveLabel}`}
-                  >
-                    <BookUser className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
-                    <span className="max-w-[4.5em] truncate">{perspectiveLabel}</span>
-                    <ChevronDown className="size-3.5 shrink-0 opacity-60" aria-hidden />
-                  </button>
-                  {perspectiveOpen ? (
-                    <div className="absolute left-0 top-full z-20 mt-1 w-[140px] rounded-xl border border-stone-200 bg-white p-1 shadow-md">
-                      {(
-                        [
-                          { id: 'first' as const, label: '第一人称' },
-                          { id: 'second' as const, label: '第二人称' },
-                          { id: 'third' as const, label: '第三人称' },
-                        ] as const
-                      ).map((it) => (
-                        <button
-                          key={it.id}
-                          type="button"
-                          onClick={() => {
-                            setPerspective(it.id)
-                            setPerspectiveOpen(false)
-                          }}
-                          className={`w-full rounded-lg px-2.5 py-2 text-left text-[12px] transition-all ${
-                            perspective === it.id ? 'bg-stone-100 text-[#262626]' : 'text-[#525252] hover:bg-stone-50'
-                          }`}
-                        >
-                          {it.label}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setLengthOpen((v) => !v)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[13px] text-[#262626] transition-all duration-200 hover:border-stone-400"
-                    title="选择字数"
-                  >
-                    {lengthLabelNode}
-                    <ChevronDown className="size-3.5" />
-                  </button>
-                  {lengthOpen ? (
-                    <div className="absolute left-0 top-full z-20 mt-1 w-[170px] rounded-xl border border-stone-200 bg-white p-2 shadow-md">
-                      <p className="px-1 text-[11px] text-[#8e8e8e]">目标字数（正文汉字，约 88%～118% 区间）</p>
-                      <input
-                        type="number"
-                        min={DATING_AI_LENGTH_TARGET_MIN}
-                        max={DATING_AI_LENGTH_TARGET_MAX}
-                        step={50}
-                        value={lengthTargetChars}
-                        onChange={(e) => setLengthTargetChars(e.target.value)}
-                        onBlur={blurPersistLengthTarget}
-                        className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-[12px] text-[#262626] outline-none focus:border-stone-400"
-                        placeholder="如 180"
-                      />
-                      <p className="mt-1 px-1 text-[10px] leading-snug text-[#9a9a9a]">
-                        不含思维链与 VN 语音参数块；已随当前角色存档。字数越高生成越慢，仍受模型与 API 上限影响。
-                      </p>
-                    </div>
-                  ) : null}
-                </div>
-                <DatingPlotPaceSettingsButton
-                  value={plotPace}
-                  onPatch={setPlotPaceSettings}
-                />
-                <button
-                  type="button"
-                  onClick={toggleThinkingChain}
-                  className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[13px] transition-all duration-200 ${
-                    thinkingChainEnabled
-                      ? 'border-stone-200 bg-stone-50 text-[#262626] hover:border-stone-400'
-                      : 'border-stone-100 bg-stone-100 text-[#a3a3a3] hover:border-stone-300 hover:text-[#737373]'
-                  }`}
-                  title={
-                    thinkingChainEnabled
-                      ? '思维链 · 开（先自检再写正文）'
-                      : '思维链 · 关（模型直出正文，更快）'
-                  }
-                  aria-label={thinkingChainEnabled ? '思维链已开启' : '思维链已关闭'}
-                  aria-pressed={thinkingChainEnabled}
-                >
-                  <Brain className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
-                  <span>{thinkingChainEnabled ? '思维链' : '直出'}</span>
-                </button>
-                <div className="relative">
-                  <button
-                    type="button"
-                    disabled={godLocksNoInterrupt}
-                    onClick={() => {
-                      if (godLocksNoInterrupt) return
-                      setAutoUserOpen((v) => !v)
-                    }}
-                    className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[13px] transition-all duration-200 ${
-                      godLocksNoInterrupt
-                        ? 'cursor-not-allowed border-stone-100 bg-stone-100 text-[#a3a3a3]'
-                        : 'border-stone-200 bg-stone-50 text-[#262626] hover:border-stone-400'
-                    }`}
-                    title={
-                      godLocksNoInterrupt
-                        ? '上帝视角下固定不抢话，避免旁白代写玩家导致冲突'
-                        : `抢话 · ${autoUserLabel}`
-                    }
-                    aria-label={
-                      godLocksNoInterrupt
-                        ? '上帝视角下固定不抢话'
-                        : `抢话 · ${autoUserLabel}`
-                    }
-                  >
-                    {!godLocksNoInterrupt && autoUserReaction ? (
-                      <MessagesSquare className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
-                    ) : (
-                      <MessageSquareOff className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
-                    )}
-                    <span>{autoUserLabel}</span>
-                    {!godLocksNoInterrupt ? (
-                      <ChevronDown className="size-3.5 shrink-0 opacity-60" aria-hidden />
-                    ) : null}
-                  </button>
-                  {autoUserOpen && !godLocksNoInterrupt ? (
-                    <div className="absolute left-0 top-full z-20 mt-1 w-[126px] rounded-xl border border-stone-200 bg-white p-1 shadow-md">
-                      {(
-                        [
-                          { id: 'off', label: '不抢话', v: false },
-                          { id: 'on', label: '抢话', v: true },
-                        ] as const
-                      ).map((it) => (
-                        <button
-                          key={it.id}
-                          type="button"
-                          onClick={() => {
-                            setAutoUserReaction(it.v)
-                            setAutoUserOpen(false)
-                          }}
-                          className={`w-full rounded-lg px-2.5 py-2 text-left text-[12px] transition-all ${
-                            autoUserReaction === it.v ? 'bg-stone-100 text-[#262626]' : 'text-[#525252] hover:bg-stone-50'
-                          }`}
-                        >
-                          {it.label}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-                <DatingLanguageSettingsButton
-                  iconOnly
-                  value={normalizeDatingLanguageSettings({
-                    plotOutputLanguage: currentArchive.plotOutputLanguage,
-                    dialogueLanguage: currentArchive.dialogueLanguage,
-                    innerOsLanguage: currentArchive.innerOsLanguage,
-                    dialogueTranslationSyncEnabled: currentArchive.dialogueTranslationSyncEnabled,
-                    innerOsTranslationSyncEnabled: currentArchive.innerOsTranslationSyncEnabled,
-                    dialogueTranslationLanguage: currentArchive.dialogueTranslationLanguage,
-                  })}
-                  onPatch={patchDatingLanguageSettings}
-                />
-                <button
-                  type="button"
-                  onClick={() => setHeartWhisperOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[13px] text-[#262626] transition-all duration-200 hover:border-stone-400"
-                  title="心语"
-                >
-                  <Heart className="size-4" strokeWidth={1.75} />
-                  心语
-                </button>
-                <DatingNetworkMentionControls
-                  datingCharacterId={currentCharacter.id}
-                  text={input}
-                  onTextChange={setInput}
-                  inputRef={inputRef}
-                  disabled={loading}
-                />
-                <button
-                  type="button"
-                  disabled={loading || continueDraftGenerating}
-                  onClick={() => openContinueDraftPrompt('normal')}
-                  className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[13px] text-[#262626] transition-all duration-200 hover:border-stone-400 disabled:opacity-50"
-                  title="按导演模式生成续写指导，预览后再填入输入框"
-                >
-                  {continueDraftGenerating ? (
-                    <Loader2 className="size-4 animate-spin" strokeWidth={1.75} />
-                  ) : (
-                    <PenLine className="size-4" strokeWidth={1.75} />
-                  )}
-                  续写
-                </button>
-                <DatingPlotFontSettingsButton
-                  iconOnly
-                  characterId={currentCharacter.id}
-                  value={plotFontSettings}
-                  dataUrlById={plotFontDataUrls}
-                  onChange={patchDatingPlotFontSettings}
-                  onDataUrlChange={setPlotFontDataUrls}
-                />
-                <div className="ml-auto flex shrink-0 items-center gap-1.5 pl-1">
-                  <button
-                    type="button"
-                    onClick={() => setArchiveWbSheetOpen(true)}
-                    title="档案室世界书"
-                    className="rounded-lg border border-stone-200/90 bg-stone-50/80 p-2 text-stone-400 transition-all duration-200 hover:border-stone-300 hover:bg-white hover:text-stone-800"
-                  >
-                    <BookMarked className="size-4" strokeWidth={1.65} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStyleDrawerOpen(true)}
-                    title="文风设定"
-                    className="rounded-lg border border-stone-200/90 bg-stone-50/80 p-2 text-stone-400 transition-all duration-200 hover:border-stone-300 hover:bg-white hover:text-stone-800"
-                  >
-                    <FilePenLine className="size-4" strokeWidth={1.65} />
-                  </button>
-                </div>
-              </div>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <div
-                  className="inline-flex flex-wrap items-center gap-2 rounded-full border border-stone-200/90 bg-stone-50/70 px-2.5 py-1.5"
-                  title={
-                    imageGenConfigured
-                      ? '剧情生成后自动穿插场景配图'
-                      : '请先在 API 设置中配置生图引擎'
-                  }
-                >
-                  <ImageIcon className="size-3.5 text-stone-400" strokeWidth={1.75} />
-                  <span className="text-[12px] text-[#525252]">剧情配图</span>
-                  <DatingCapsuleSwitch
-                    checked={plotImageGenEnabled && imageGenConfigured}
-                    disabled={!imageGenConfigured}
-                    onToggle={() => patchPlotImageSettings({ plotImageGenEnabled: !plotImageGenEnabled })}
-                  />
-                  {plotImageGenEnabled && imageGenConfigured ? (
-                    <>
-                      <span className="mx-0.5 h-3 w-px bg-stone-200" aria-hidden />
-                      <button
-                        type="button"
-                        onClick={() => setPlotImageSettingsOpen(true)}
-                        className="rounded-full px-2 py-0.5 text-[11px] text-[#737373] transition-colors hover:bg-white/80 hover:text-[#262626]"
-                      >
-                        {plotImageCountNode}
-                      </button>
-                    </>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPlotImageSettingsOpen(true)}
-                  className="inline-flex items-center rounded-full border border-stone-200/90 bg-white/80 px-2.5 py-1.5 text-[11px] text-[#737373] transition-all duration-200 hover:border-stone-300 hover:bg-white hover:text-[#262626]"
-                >
-                  配图与形象
-                </button>
-              </div>
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => applyMentionKeyDown(e, input, setInput)}
-                onFocus={() => scrollComposerIntoView()}
-                placeholder={
-                  currentArchive.mainCharacterOffstage
-                    ? '输入你与 NPC/人脉的场景、对白或动作…'
-                    : currentArchive.directorMode
-                      ? '输入下一段剧情走向 / 导演指令…'
-                      : '输入你想说的话或动作，推进约会剧情…'
-                }
-                rows={4}
-                enterKeyHint="send"
-                autoComplete="off"
-                autoCorrect="off"
-                className="min-h-[7.5rem] w-full scroll-mb-32 resize-y rounded-xl border border-stone-200 bg-white px-4 py-3 text-[16px] leading-relaxed text-[#262626] outline-none transition-all duration-200 focus:border-stone-400 focus:ring-2 focus:ring-stone-300/50"
-              />
-              <div className="mt-3 flex justify-end">
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={async () => {
-                    const raw = input.trim()
-                    if (!raw) return
-                    const ok = await sendPlayerInput(stripDatingNetworkMentionMarkers(raw), perspective, {
-                      ...narrativeGenOptions,
-                      presentNetworkCharacterIds: collectDatingNetworkMentionIds(raw),
-                    })
-                    if (ok) setInput('')
-                  }}
-                  className="rounded-xl bg-neutral-900 px-6 py-2.5 text-[15px] font-medium text-white transition-all duration-200 ease-out hover:bg-neutral-800 disabled:opacity-60"
-                >
-                  {loading ? '生成中...' : '发送'}
-                </button>
-              </div>
-            </div>
-          </div>
-          </div>
-          {isAndroidWeb() ? <KeyboardBottomWhitePad insetPx={keyboardInsetPx} zIndex={45} /> : null}
-        </div>
+        <DatingStoryNormalLayout
+          actions={normalActions}
+          danmakuBullets={offlineDmBullets}
+        />
       ) : (
         <motion.div ref={vnRootRef} className="relative h-full" animate={vnViewportShake} initial={false}>
           {vnToast ? (
@@ -3914,6 +3407,18 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
               {vnToast}
             </div>
           ) : null}
+          <div className="absolute inset-x-0 top-0 z-[40] flex justify-center pt-[max(8px,env(safe-area-inset-top))]">
+            <StoryModeSwitch
+              mode="vn"
+              variant="overlay"
+              onModeChange={(next) => {
+                if (next === 'normal') {
+                  stopVnBgm()
+                  setMode('normal')
+                }
+              }}
+            />
+          </div>
           <div
             className="absolute inset-0 bg-cover bg-center transition-opacity duration-[420ms] ease-out"
             style={{
@@ -4238,6 +3743,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                 dataUrlById={plotFontDataUrls}
                 onChange={patchDatingPlotFontSettings}
                 onDataUrlChange={setPlotFontDataUrls}
+                themeStyle={buildStoryRpgThemeStyle(storyAppearance)}
               />
             </div>
             <VNBottomControls
@@ -4495,7 +4001,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                   step={10}
                   value={lengthTargetChars}
                   onChange={(e) => setLengthTargetChars(e.target.value)}
-                  onBlur={blurPersistLengthTarget}
+                  onBlur={() => blurPersistLengthTarget()}
                   className="w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[13px] text-[#262626] outline-none focus:border-stone-400"
                   placeholder="如 500"
                 />
@@ -4513,17 +4019,13 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                 />
                 <button
                   type="button"
-                  disabled={loading || continueDraftGenerating}
-                  onClick={() => openContinueDraftPrompt('vn')}
+                  disabled={loading}
+                  onClick={() => openContinueProbeSheet('vn')}
                   className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[13px] text-[#262626] transition-all duration-200 hover:border-stone-400 disabled:opacity-50"
-                  title="按导演模式生成续写指导"
+                  title="选择续写方向"
                 >
-                  {continueDraftGenerating ? (
-                    <Loader2 className="size-4 animate-spin" strokeWidth={1.75} />
-                  ) : (
-                    <PenLine className="size-4" strokeWidth={1.75} />
-                  )}
-                  续写
+                  <PenLine className="size-4" strokeWidth={1.75} />
+                  续写方向
                 </button>
                 <DatingPlotFontSettingsButton
                   iconOnly
@@ -4532,6 +4034,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                   dataUrlById={plotFontDataUrls}
                   onChange={patchDatingPlotFontSettings}
                   onDataUrlChange={setPlotFontDataUrls}
+                  themeStyle={buildStoryRpgThemeStyle(storyAppearance)}
                 />
               </div>
               <textarea
@@ -5195,22 +4698,34 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
 
       {resetArchiveConfirmOpen ? (
         <div
-          className="absolute inset-0 z-[52] flex items-center justify-center bg-black/35 px-4"
+          className="absolute inset-0 z-[52] flex items-center justify-center px-4"
+          style={{ background: 'rgba(0,0,0,0.32)' }}
           role="dialog"
           aria-modal="true"
           aria-labelledby="reset-archive-confirm-title"
           onClick={() => setResetArchiveConfirmOpen(false)}
         >
           <div
-            className="w-full max-w-[400px] rounded-2xl border border-stone-200 bg-white p-4 shadow-lg"
+            className="w-full max-w-[400px] rounded-2xl border p-4 shadow-[0_16px_48px_rgba(0,0,0,0.18)]"
+            style={{
+              ...buildStoryRpgThemeStyle(storyAppearance),
+              minHeight: 'auto',
+              height: 'auto',
+              background: 'var(--sr-panel-elevated)',
+              color: 'var(--sr-text)',
+              borderColor: 'var(--sr-border)',
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <p id="reset-archive-confirm-title" className="text-center text-[16px] font-semibold text-[#262626]">
+            <p
+              id="reset-archive-confirm-title"
+              className="text-center font-[family-name:var(--sr-font-serif)] text-[16px] font-semibold tracking-wide text-[var(--sr-text)]"
+            >
               重置当前角色进度？
             </p>
-            <p className="mt-2 text-center text-[12px] leading-relaxed text-[#737373]">
+            <p className="mt-2 text-center text-[12px] leading-relaxed text-[var(--sr-text-muted)]">
               将清空
-              <span className="font-medium text-[#404040]">
+              <span className="font-medium text-[var(--sr-text)]">
                 {currentCharacter.realName?.trim() || '当前角色'}
               </span>
               的全部线下约会剧情、分支记录与相关进度，并恢复为初始状态。此操作不可撤销。
@@ -5218,14 +4733,14 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 type="button"
-                className="rounded-xl border border-stone-200 bg-white px-4 py-2 text-[13px] text-[#262626] hover:bg-stone-50"
+                className="rounded-full border border-[var(--sr-border)] bg-[var(--sr-panel)] px-4 py-2 text-[13px] text-[var(--sr-text-soft)] transition hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-text)]"
                 onClick={() => setResetArchiveConfirmOpen(false)}
               >
                 取消
               </button>
               <button
                 type="button"
-                className="rounded-xl bg-neutral-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-neutral-800"
+                className="rounded-full bg-[var(--sr-gold)] px-4 py-2 text-[13px] font-medium text-[var(--sr-gold-on)] transition hover:opacity-90"
                 onClick={confirmResetArchive}
               >
                 确认重置
@@ -5235,299 +4750,94 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
         </div>
       ) : null}
 
-      {continueDraftPromptOpen ? (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/35 px-4 backdrop-blur-[3px]">
-          <div className="flex max-h-[min(88vh,680px)] w-full max-w-[360px] flex-col overflow-hidden rounded-[22px] border border-[#e8e8e8] bg-[#f7f7f7] shadow-[0_20px_50px_rgba(0,0,0,0.14)]">
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 pb-2 pt-5">
-              <p className="text-center text-[16px] font-semibold tracking-wide text-[#1a1a1a]">导演续写</p>
-              <p className="mt-2 text-center text-[12px] leading-relaxed text-[#737373]">
-                紧接上一段结尾生成下一拍指导；可选时间推进，间隔内的事会简要带过，不会硬切空白。
-              </p>
-              <p className="mt-4 text-[12px] font-medium text-[#333]">生成条数</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {(['1', '2', '3', '4', '5', '6'] as const).map((n) => {
-                  const active = continueDraftCount === n
-                  return (
-                    <button
-                      key={n}
-                      type="button"
-                      disabled={continueDraftGenerating}
-                      className={`rounded-full px-3 py-1.5 text-[12px] ${
-                        active ? 'bg-[#111] text-white' : 'bg-[#f0f0f0] text-[#333] active:bg-[#e8e8e8]'
-                      } disabled:opacity-50`}
-                      onClick={() => setContinueDraftCount(n)}
-                    >
-                      {n} 条
-                    </button>
-                  )
-                })}
-              </div>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={6}
-                disabled={continueDraftGenerating}
-                value={continueDraftCount}
-                onChange={(e) =>
-                  setContinueDraftCount(e.target.value.replace(/[^\d]/g, '').slice(0, 1) || '2')
-                }
-                className="mt-2 h-10 w-full rounded-2xl border border-[#e5e5e5] bg-white px-3 text-[14px] text-[#1a1a1a] outline-none placeholder:text-[#9a9a9a] focus:border-[#cfcfcf] disabled:opacity-50"
-              />
-              <p className="mt-4 text-[12px] font-medium text-[#333]">时间推进</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {CONTINUE_DRAFT_TIME_ADVANCE_OPTIONS.map((opt) => {
-                  const active = continueDraftTimeAdvance === opt.id
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      disabled={continueDraftGenerating}
-                      title={opt.hint}
-                      className={`rounded-full px-3 py-1.5 text-[12px] ${
-                        active ? 'bg-[#111] text-white' : 'bg-[#f0f0f0] text-[#333] active:bg-[#e8e8e8]'
-                      } disabled:opacity-50`}
-                      onClick={() => setContinueDraftTimeAdvance(opt.id)}
-                    >
-                      {opt.label}
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="mt-1.5 text-[11px] leading-snug text-[#9a9a9a]">
-                {continueDraftTimeAdvance === 'none'
-                  ? '默认同场下一拍，不跳时。'
-                  : '选推进后，指导会先带过这段时间里发生的事，再落到可演的一拍，避免直接跳空。'}
-              </p>
-              {continueDraftTimeAdvance === 'custom' ? (
-                <div className="mt-2 flex items-center gap-2">
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min={0.1}
-                    disabled={continueDraftGenerating}
-                    value={continueDraftTimeAmount}
-                    onChange={(e) =>
-                      setContinueDraftTimeAmount(e.target.value.replace(/[^\d.]/g, '').slice(0, 6) || '1')
-                    }
-                    className="h-10 w-[88px] rounded-2xl border border-[#e5e5e5] bg-white px-3 text-[14px] text-[#1a1a1a] outline-none focus:border-[#cfcfcf] disabled:opacity-50"
-                  />
-                  <select
-                    disabled={continueDraftGenerating}
-                    value={continueDraftTimeUnit}
-                    onChange={(e) =>
-                      setContinueDraftTimeUnit(e.target.value as 'hour' | 'day' | 'month' | 'year')
-                    }
-                    className="h-10 flex-1 rounded-2xl border border-[#e5e5e5] bg-white px-3 text-[13px] text-[#1a1a1a] outline-none focus:border-[#cfcfcf] disabled:opacity-50"
-                  >
-                    {DATING_PLOT_PACE_UNIT_OPTIONS.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
-              <p className="mt-4 text-[12px] font-medium text-[#333]">行动侧重</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {(
-                  [
-                    { id: 'both' as const, label: '双方行动' },
-                    { id: 'char' as const, label: '仅角色行动' },
-                    { id: 'user' as const, label: '仅用户行动' },
-                  ] as const
-                ).map((opt) => {
-                  const active = continueDraftActionFocus === opt.id
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      disabled={continueDraftGenerating}
-                      className={`rounded-full px-3 py-1.5 text-[12px] ${
-                        active ? 'bg-[#111] text-white' : 'bg-[#f0f0f0] text-[#333] active:bg-[#e8e8e8]'
-                      } disabled:opacity-50`}
-                      onClick={() => setContinueDraftActionFocus(opt.id)}
-                    >
-                      {opt.label}
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="mt-1.5 text-[11px] leading-snug text-[#9a9a9a]">
-                控制续写指导里主要写谁的动作/对白；另一方可作极短反应，勿抢戏。
-              </p>
-              <p className="mt-4 text-[12px] font-medium text-[#333]">续写偏向（选填）</p>
-              <textarea
-                value={continueDraftBias}
-                disabled={continueDraftGenerating}
-                onChange={(e) => setContinueDraftBias(e.target.value.slice(0, 240))}
-                rows={3}
-                maxLength={240}
-                placeholder="例：进来后先别说话，多看一眼；语气更软。时间推进已在上方选择时可补充细节"
-                className="mt-2 w-full rounded-2xl border border-[#e5e5e5] bg-white px-3 py-2.5 text-[13px] leading-relaxed text-[#1f1f1f] outline-none placeholder:text-[#b0b0b0] focus:border-[#cfcfcf] disabled:opacity-50"
-              />
-            </div>
-            <div className="flex shrink-0 gap-2.5 px-5 pb-5 pt-3">
-              <button
-                type="button"
-                disabled={continueDraftGenerating}
-                className="h-11 flex-1 rounded-2xl border border-[#e4e4e4] bg-white text-[14px] text-[#5a5a5a] shadow-[0_1px_0_rgba(255,255,255,0.9)] active:bg-[#f3f3f3] disabled:opacity-50"
-                onClick={() => setContinueDraftPromptOpen(false)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={continueDraftGenerating}
-                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-2xl bg-[#2a2a2a] text-[14px] font-medium text-[#f5f5f5] shadow-[0_6px_16px_rgba(0,0,0,0.12)] active:bg-[#1f1f1f] disabled:opacity-60"
-                onClick={() => {
-                  void runContinueDraftGenerate()
-                }}
-              >
-                {continueDraftGenerating ? (
-                  <>
-                    <Loader2 className="size-3.5 animate-spin" />
-                    生成中…
-                  </>
-                ) : (
-                  '确认生成'
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <DatingContinueProbeSheet
+        open={continueProbeOpen}
+        onClose={() => setContinueProbeOpen(false)}
+        target={continueProbeTarget}
+        onApply={applyContinueProbeToInput}
+        showToast={showHeartWhisperToast}
+        apiConfig={apiConfig}
+        character={currentCharacter}
+        plots={currentArchive.plots}
+        playerDisplayName={vnUserDisplayName}
+        godPerspective={!!currentArchive.godPerspective}
+        mainCharacterOffstage={!!currentArchive.mainCharacterOffstage}
+        isVnMode={currentArchive.modePreference === 'vn'}
+        theme={!isVn ? 'story' : 'classic'}
+        themeStyle={!isVn ? buildStoryRpgThemeStyle(storyAppearance) : undefined}
+      />
 
-      {continueDraftPreview ? (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/35 px-4 backdrop-blur-[3px]">
-          <div className="flex max-h-[min(88vh,680px)] w-full max-w-[360px] flex-col overflow-hidden rounded-[22px] border border-[#e8e8e8] bg-[#f7f7f7] shadow-[0_20px_50px_rgba(0,0,0,0.14)]">
-            <div className="shrink-0 border-b border-[#ebebeb] px-5 pb-3 pt-5">
-              <p className="text-center text-[16px] font-semibold tracking-wide text-[#1a1a1a]">续写预览</p>
-              <p className="mt-2 text-center text-[12px] leading-relaxed text-[#737373]">
-                可改每条后再填入；有时间推进时应含间隔带过。发送前会自动开启导演模式。
-              </p>
-            </div>
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-4 py-3">
-              {continueDraftPreview.map((guide, idx) => (
-                <div
-                  key={`continue-draft-${idx}`}
-                  className="rounded-[16px] border border-[#e8e8e8] bg-[#fafafa] p-3 shadow-[0_1px_0_rgba(255,255,255,0.8)]"
+      {retryBiasOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[280] flex items-center justify-center px-4"
+              style={{ background: 'rgba(0,0,0,0.28)' }}
+              onClick={() => {
+                setRetryBiasOpen(false)
+                setRetryBiasText('')
+                setRetryTargetPlotId(null)
+              }}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="dating-retry-bias-title"
+                className="w-full max-w-[420px] overflow-hidden rounded-2xl border p-4 shadow-[0_16px_48px_rgba(0,0,0,0.18)]"
+                style={{
+                  ...buildStoryRpgThemeStyle(storyAppearance),
+                  minHeight: 'auto',
+                  height: 'auto',
+                  background: 'var(--sr-panel-elevated)',
+                  color: 'var(--sr-text)',
+                  borderColor: 'var(--sr-border)',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p
+                  id="dating-retry-bias-title"
+                  className="text-center font-[family-name:var(--sr-font-serif)] text-[16px] font-semibold tracking-wide text-[var(--sr-text)]"
                 >
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-[11px] font-medium tracking-wide text-[#8a8a8a]">指导 {idx + 1}</p>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        className="rounded-full px-2.5 py-1 text-[11px] text-[#8a8a8a] active:bg-[#ececec] active:text-[#555]"
-                        onClick={() => {
-                          setContinueDraftPreview((prev) => {
-                            if (!prev) return prev
-                            if (prev.length <= 1) return ['']
-                            return prev.filter((_, i) => i !== idx)
-                          })
-                        }}
-                      >
-                        删除
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-full bg-[#2a2a2a] px-2.5 py-1 text-[11px] font-medium text-[#f5f5f5] active:bg-[#1f1f1f]"
-                        onClick={() => applyContinueDraftToInput(guide)}
-                      >
-                        填入
-                      </button>
-                    </div>
-                  </div>
-                  <textarea
-                    value={guide}
-                    onChange={(e) => {
-                      const next = e.target.value
-                      setContinueDraftPreview((prev) => {
-                        if (!prev) return prev
-                        return prev.map((b, i) => (i === idx ? next : b))
-                      })
+                  重新回复偏向
+                </p>
+                <p className="mt-1.5 text-center text-[12px] leading-relaxed text-[var(--sr-text-muted)]">
+                  选填本轮剧情方向；确认后将按该偏向重生回复。
+                </p>
+                <textarea
+                  value={retryBiasText}
+                  onChange={(e) => setRetryBiasText(e.target.value.slice(0, 320))}
+                  rows={5}
+                  maxLength={320}
+                  placeholder="例：对白更直接一点，减少环境描写，先把冲突点说开。"
+                  className="mt-3 w-full resize-y rounded-xl border border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-3 text-[13px] leading-relaxed text-[var(--sr-text)] outline-none placeholder:text-[var(--sr-text-faint)] focus:border-[var(--sr-gold)]/45"
+                />
+                <p className="mt-1 text-right text-[11px] text-[var(--sr-text-muted)]">
+                  {retryBiasText.length}/320
+                </p>
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-full border border-[var(--sr-border)] bg-[var(--sr-panel)] px-4 py-2 text-[13px] text-[var(--sr-text-soft)] transition hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-text)]"
+                    onClick={() => {
+                      setRetryBiasOpen(false)
+                      setRetryBiasText('')
+                      setRetryTargetPlotId(null)
                     }}
-                    rows={Math.min(10, Math.max(3, Math.ceil(guide.length / 22) + guide.split('\n').length))}
-                    className="w-full resize-y rounded-2xl border border-[#e6e6e6] bg-white px-3 py-2.5 text-[13px] leading-relaxed text-[#1f1f1f] outline-none placeholder:text-[#b0b0b0] focus:border-[#cfcfcf]"
-                    placeholder="导演续写指导…"
-                  />
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full bg-[var(--sr-gold)] px-4 py-2 text-[13px] font-medium text-[var(--sr-gold-on)] transition hover:opacity-90"
+                    onClick={confirmRetryWithBias}
+                  >
+                    确认重试
+                  </button>
                 </div>
-              ))}
-              {continueDraftPreview.length < 6 ? (
-                <button
-                  type="button"
-                  className="flex h-10 w-full items-center justify-center rounded-2xl border border-dashed border-[#cfcfcf] bg-transparent text-[13px] text-[#6e6e6e] active:bg-[#ececec]"
-                  onClick={() => {
-                    setContinueDraftPreview((prev) => (prev ? [...prev, ''] : ['']))
-                  }}
-                >
-                  添加一条
-                </button>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 gap-2.5 px-5 pb-5 pt-3">
-              <button
-                type="button"
-                className="h-11 flex-1 rounded-2xl border border-[#e4e4e4] bg-white text-[14px] text-[#5a5a5a] shadow-[0_1px_0_rgba(255,255,255,0.9)] active:bg-[#f3f3f3]"
-                onClick={() => setContinueDraftPreview(null)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="h-11 flex-1 rounded-2xl bg-[#2a2a2a] text-[14px] font-medium text-[#f5f5f5] shadow-[0_6px_16px_rgba(0,0,0,0.12)] active:bg-[#1f1f1f]"
-                onClick={() => {
-                  const first = (continueDraftPreview ?? []).map((g) => g.trim()).find(Boolean)
-                  if (first) applyContinueDraftToInput(first)
-                  else showHeartWhisperToast('没有可填入的内容')
-                }}
-              >
-                填入第一条
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {retryBiasOpen ? (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
-          <div className="w-full max-w-[520px] rounded-2xl border border-stone-200 bg-white p-4 shadow-lg">
-            <p className="text-center text-[16px] font-semibold text-[#262626]">重新回复偏向</p>
-            <p className="mt-2 text-center text-[12px] leading-relaxed text-[#8e8e8e]">
-              填写你希望本轮剧情偏向的方向（选填），将撤销该轮并重生一版回复。
-            </p>
-            <textarea
-              value={retryBiasText}
-              onChange={(e) => setRetryBiasText(e.target.value.slice(0, 320))}
-              rows={5}
-              maxLength={320}
-              placeholder="例：对白更直接一点，减少环境描写，先把冲突点说开。"
-              className="mt-3 w-full rounded-xl border border-stone-200 bg-white px-3 py-3 text-[13px] leading-relaxed text-[#262626] outline-none transition-all duration-200 focus:border-stone-400"
-            />
-            <p className="mt-1 text-right text-[11px] text-[#8e8e8e]">{retryBiasText.length}/320</p>
-            <div className="mt-3 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-xl border border-stone-200 bg-white px-4 py-2 text-[13px] text-[#262626] hover:bg-stone-50"
-                onClick={() => {
-                  setRetryBiasOpen(false)
-                  setRetryBiasText('')
-                  setRetryTargetPlotId(null)
-                }}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="rounded-xl bg-neutral-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-neutral-800"
-                onClick={confirmRetryWithBias}
-              >
-                确认重试
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       <StyleSettingsDrawer
         open={styleDrawerOpen}
@@ -5539,6 +4849,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
       <DatingArchiveWorldbookSheet
         open={archiveWbSheetOpen}
         onClose={() => setArchiveWbSheetOpen(false)}
+        themeStyle={buildStoryRpgThemeStyle(storyAppearance)}
       />
 
       <DatingPlotImageSettingsSheet

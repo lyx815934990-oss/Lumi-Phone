@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { EntryNoticeModal } from './components/EntryNoticeModal'
 import { HomeScreen } from './components/HomeScreen'
 import { LazyChunkErrorBoundary } from './components/LazyChunkErrorBoundary'
@@ -10,7 +10,11 @@ import { UserSystemAuthModal } from './components/UserSystemAuthModal'
 import { UserInfoCorrectionModal } from './components/UserInfoCorrectionModal'
 import { AccountStatusCheckingOverlay } from './components/AccountStatusCheckingOverlay'
 import { prefetchAppChunk, persistLoadedAssetsToServiceWorker } from './boot/warmShellCache'
-import { isWeChatAppModuleReady, loadWeChatAppDefault } from './boot/wechatAppModule'
+import {
+  isWeChatAppModuleReady,
+  loadWeChatAppDefault,
+  resetWeChatAppModuleCache,
+} from './boot/wechatAppModule'
 import { readEnableSplashScreenSync } from './boot/splashPref'
 import { BootResourceGate } from './components/BootResourceGate'
 import { SplashScreen } from './components/SplashScreen'
@@ -62,7 +66,10 @@ import { consumeDiscordRegisterFromCommunityTroubleshoot } from './userSystem/di
 import { storeDiscordRegisterPending } from './components/DiscordRegisterCompleteModal'
 
 // 与开屏预加载共用同一模块 Promise；禁止 cache-bust 重试，避免进度到 90% 被整页打断
-const WeChatApp = lazy(loadWeChatAppDefault)
+// 注意：失败后须换新的 lazy 实例（见 wechatLazyEpoch），React.lazy 会永久缓存 rejected Promise
+function createWeChatLazy() {
+  return lazy(loadWeChatAppDefault)
+}
 const UserAccountApp = lazyWithRetry(() =>
   import('./apps/userAccount/UserAccountApp').then((m) => ({ default: m.UserAccountApp })),
 )
@@ -130,13 +137,15 @@ function SuspenseApp({
   label,
   /** true：开屏已就绪 / 后台预挂，不再甩进度条 */
   skipFallback,
+  onBeforeRetry,
 }: {
   children: ReactNode
   label?: string
   skipFallback?: boolean
+  onBeforeRetry?: () => void
 }) {
   return (
-    <LazyChunkErrorBoundary label={label}>
+    <LazyChunkErrorBoundary label={label} onBeforeRetry={onBeforeRetry}>
       <Suspense fallback={skipFallback ? null : <LazyRouteFallback label={label} />}>{children}</Suspense>
     </LazyChunkErrorBoundary>
   )
@@ -221,6 +230,9 @@ export function PhoneApp() {
   const [evolutionPushSettled, setEvolutionPushSettled] = useState(false)
   /** Splash 结束后再挂听一听 / 宴席等次要运行时，减轻首开 */
   const [deferSecondaryRuntime, setDeferSecondaryRuntime] = useState(false)
+  /** 微信 lazy 失败后递增，强制换新实例（否则「再试一次」仍命中旧的 rejected Promise） */
+  const [wechatLazyEpoch, setWechatLazyEpoch] = useState(0)
+  const WeChatApp = useMemo(() => createWeChatLazy(), [wechatLazyEpoch])
   const openVerifiedRef = useRef(localDevBypassAuth || readAuthVerified())
   /** 本次页面加载是否已做过开屏后的唯一一次账号检测（刷新页面会重置） */
   const sessionBootAuthDoneRef = useRef(false)
@@ -731,6 +743,10 @@ export function PhoneApp() {
                 label="打开微信…"
                 // 开屏已拉好、或仍在桌面后台挂载：绝不弹进度条抢戏
                 skipFallback={isWeChatAppModuleReady() || !wechatVisible}
+                onBeforeRetry={() => {
+                  resetWeChatAppModuleCache()
+                  setWechatLazyEpoch((n) => n + 1)
+                }}
               >
                 <WeChatApp onBack={goHome} />
               </SuspenseApp>

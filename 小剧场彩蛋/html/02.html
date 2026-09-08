@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#02 共享相册冲突 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 12px 32px}
+.hero{width:100%;max-width:800px;margin:0 auto;height:132px;object-fit:cover;display:block;border-radius:0 0 4px 4px}
+.shell{max-width:800px;margin:0 auto;border-radius:18px;overflow:hidden;box-shadow:0 20px 50px rgba(20,16,12,.2);margin-top:-8px;position:relative}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px}
+.stats b{font-weight:750}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);flex-shrink:0}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.btn.dis{opacity:.4;pointer-events:none}
+.row{padding:10px 12px;margin:0 12px 8px;border-radius:12px;font-size:13px;line-height:1.55;cursor:pointer}
+.m{font-size:11px;opacity:.62}
+body{background:linear-gradient(160deg,#e8e0d4,#d4c8b8);color:#2a2420}
+.shell{background:#faf8f4;border:1px solid #e5dcc8}
+.title-custom{background:#f3efe6;border-bottom:1px solid #e5dcc8}
+.warn{margin:8px 12px;padding:8px 10px;border-radius:8px;background:#fff3e0;border:1px solid #f0d0a0;font-size:12px;color:#7a4a10}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 12px}
+.col{border-radius:12px;padding:10px;min-height:200px}
+.col.del{background:#f5e8e6;border:1px dashed #d8a090}
+.col.keep{background:#e8f0ea;border:1px solid #b0d0b8}
+.col h4{margin:0 0 8px;font-size:12px}
+.thumb{height:56px;border-radius:8px;margin-bottom:6px;cursor:pointer;transition:.2s}
+.thumb:hover{transform:scale(1.02)}
+.thumb.gone{background:repeating-linear-gradient(45deg,#ddd,#ddd 4px,#eee 4px,#eee 8px);opacity:.55}
+.note{display:none;margin:8px 12px;padding:10px;border-radius:10px;background:#fff;border:1px solid #e5dcc8;font-size:12px;line-height:1.55}
+.note.on{display:block}
+.npc{background:#fff;border:1px solid #e5dcc8}
+.btn{background:#5a8a6a;color:#fff;margin:8px 12px}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./01.html">上一张</a><b>#02 共享相册冲突</b><a href="./03.html">下一张</a></div>
+<p class="fore">同一张伞下侧脸——你删了，他加星了。</p>
+<div class="stage">
+<img class="hero" alt="相册冲突" src="https://image.pollinations.ai/prompt/shared%20photo%20album%20conflict%20rain%20umbrella%20steam%20abstract%20collage%20no%20people">
+<div class="shell">
+<p class="title-custom">共享相册 · 雨夜 · 冲突待处理</p>
+<div class="stats"><span>共有 <b>48</b></span><span>争议 <b>3</b></span><span>最近删除 <b>3</b></span></div>
+<div class="warn">冲突：同一批雨夜照片被双方处理不同 · 需手动合并</div>
+<div class="split">
+<div class="col del"><h4>你 · 已删除</h4>
+<div class="thumb gone" data-n="删·伞下侧脸"></div>
+<div class="thumb gone" data-n="删·便利店橱窗"></div>
+<div class="thumb gone" data-n="删·关东煮蒸汽"></div>
+<div class="m">移入最近删除 · 剩余 29 天</div></div>
+<div class="col keep"><h4>祁洵 · 仍保留</h4>
+<div class="thumb" style="background:linear-gradient(135deg,#c4b09a,#8a7060)" data-n="留·伞下侧脸 · 备注：别删这张"></div>
+<div class="thumb" style="background:linear-gradient(135deg,#8a9ab0,#5a6a78)" data-n="留·灯坏了之后 · 噪点多但人在"></div>
+<div class="thumb" style="background:linear-gradient(135deg,#a8c4b8,#6a8a7a)" data-n="留·靠过来一点 · 边缘有字"></div>
+<div class="m">23:52 加星 · 别先走</div></div>
+</div>
+<div class="note" id="note">点选色块查看备注</div>
+<button class="btn" type="button" id="merge">尝试合并（演示）</button>
+<div class="npc"><span class="av">🗂️</span><div><b>同步日志</b>：弱网重试 2 次。若恢复删除侧，将覆盖对方时间戳。</div></div>
+<div class="foot">相册「雨夜未命名」· 创建人：你 / 祁洵 · 128MB</div>
+</div></div>
+<script>
+(function(){
+var note=document.getElementById("note");
+var thumbs=document.querySelectorAll(".thumb");
+for(var i=0;i<thumbs.length;i++){thumbs[i].addEventListener("click",function(){if(!note)return;note.textContent=this.getAttribute("data-n")||"";note.classList.add("on")})}
+var m=document.getElementById("merge");
+if(m)m.addEventListener("click",function(){m.textContent="已生成冲突报告 · 未自动覆盖";m.classList.add("dis")});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#01 未发送草稿箱 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 12px 32px}
+.hero{width:100%;max-width:800px;margin:0 auto;height:132px;object-fit:cover;display:block;border-radius:0 0 4px 4px}
+.shell{max-width:800px;margin:0 auto;border-radius:18px;overflow:hidden;box-shadow:0 20px 50px rgba(20,16,12,.2);margin-top:-8px;position:relative}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px}
+.stats b{font-weight:750}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);flex-shrink:0}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.btn.dis{opacity:.4;pointer-events:none}
+.row{padding:10px 12px;margin:0 12px 8px;border-radius:12px;font-size:13px;line-height:1.55;cursor:pointer}
+.m{font-size:11px;opacity:.62}
+body{background:linear-gradient(165deg,#d8dee8,#c8d0dc 40%,#b8c4d4);color:#1a2430}
+.shell{background:linear-gradient(180deg,#f7f8fa,#eef1f5);border:1px solid rgba(255,255,255,.7);backdrop-filter:blur(12px)}
+.title-custom{background:rgba(255,255,255,.85);border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center}
+.badge{background:#e85d2c;color:#fff;border-radius:99px;min-width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+.stats{background:#e8ecf2;border-bottom:1px solid #dde3ea}
+.row{background:#fff;border:1px solid #e4e9f0;box-shadow:0 4px 14px rgba(30,40,60,.05)}
+.row.open{border-color:#c9a24b;background:linear-gradient(180deg,#fffdf6,#fff8ea)}
+.row .body{display:none;margin-top:8px;padding-top:8px;border-top:1px dashed #e8e0d0;font-size:13px;color:#2a2622}
+.row.open .body{display:block}
+.tip{background:#eef2ff;color:#3a4a6a;border:1px solid #d8e0f5}
+.npc{background:#fff;border:1px solid #e4e9f0}
+.btn{background:#c9a24b;color:#fff;margin:4px 6px}
+.actions{padding:8px 12px 4px;display:flex;flex-wrap:wrap;gap:4px}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><span>上一张</span><b>#01 未发送草稿箱</b><a href="./02.html">下一张</a></div>
+<p class="fore">其实我想说的不是没事——光标还停在「我」后面。</p>
+<div class="stage">
+<img class="hero" alt="雨夜手机光" src="https://image.pollinations.ai/prompt/rainy%20night%20phone%20screen%20glow%20soft%20blur%20empty%20street%20convenience%20store%20warm%20light%20no%20people">
+<div class="shell">
+<p class="title-custom"><span>未发送 · 草稿箱</span><span class="badge" id="badge">8</span></p>
+<div class="stats"><span>今日编辑 <b>5</b></span><span>自动存 <b>23:41</b></span><span>便利店灯下 · 雨未停</span></div>
+<div class="row open" data-d="1"><div><span class="av">☔</span><b>祁洵</b> <span class="m">23:40 · 已改 11 次</span></div><div class="m" style="margin-top:4px">其实我想说的不是没事……</div><div class="body">其实我想说的不是「没事」。伞还可以再往中间挪一点。关东煮我点了两份——你别先走。路口那盏灯坏了，我还能站一会儿。靠过来一点，好吗。</div></div>
+<div class="row" data-d="2"><div><span class="av">💡</span><b>祁洵</b> <span class="m">昨夜 01:06</span></div><div class="m" style="margin-top:4px">灯坏了也没关系，我……</div><div class="body">光标停在「我」后面。后面本该是「想留你一会儿」，删了又粘了三遍。</div></div>
+<div class="row" data-d="3"><div><span class="av">🏪</span><b>备注·便利店</b> <span class="m">周一 22:18</span></div><div class="m" style="margin-top:4px">到了说一声。柜还热着。</div><div class="body">南门便利店旁。关东煮柜温检测：仍热。别装没看见红点。</div></div>
+<div class="row" data-d="4"><div><span class="av">🌂</span><b>祁洵</b> <span class="m">上周日</span></div><div class="m" style="margin-top:4px">那句还是删了吧……太直白。</div><div class="body">「别先走」太直白。可是不写，雨声更吵。</div></div>
+<div class="row" data-d="5"><div><span class="av">🌧️</span><b>祁洵</b> <span class="m">9/1</span></div><div class="m" style="margin-top:4px">伞借你，记得还——或别还也行。</div><div class="body">伞骨有点歪。歪的那把，才是我们的。</div></div>
+<div class="row" data-d="6"><div><span class="av">📭</span><b>群发·取消</b> <span class="m">8/28</span></div><div class="m" style="margin-top:4px">雨停了吗 / 你到家了吗 / ……已清空</div><div class="body">三条都没发出去。清空键按得很轻，像怕被听见。</div></div>
+<div class="row" data-d="7"><div><span class="av">🪞</span><b>祁洵</b> <span class="m">8/20</span></div><div class="m" style="margin-top:4px">靠过来一点——打完又怕太近。</div><div class="body">发送键灰着。内容含「未确认情绪词」。</div></div>
+<div class="row" data-d="8"><div><span class="av">🎫</span><b>备注·停车</b> <span class="m">昨夜</span></div><div class="m" style="margin-top:4px">副驾有一把未取的伞</div><div class="body">过夜 7 小时 14 分。票根另存。</div></div>
+<div class="tip">提示：点草稿展开全文；发送键灰显——系统判定「说出口会改变今晚」。</div>
+<div class="actions"><button class="btn" type="button" id="expand">全部展开/收起</button><button class="btn dis" type="button">发送</button><button class="btn" type="button" id="save">存草稿</button></div>
+<div class="npc"><span class="av">🧑</span><div><b>路人甲</b>：灯坏了也站着，关东煮点两份的人很少只是路过。</div></div>
+<div class="foot">草稿箱 8/50 · 弱网同步失败 · 会话「祁洵」置顶 · 小剧场示范</div>
+</div></div>
+<script>
+(function(){
+var rows=document.querySelectorAll(".row[data-d]");
+var openAll=true;
+function paint(){var n=0;for(var i=0;i<rows.length;i++){if(rows[i].classList.contains("open"))n++}var b=document.getElementById("badge");if(b)b.textContent=String(rows.length)}
+for(var i=0;i<rows.length;i++){rows[i].addEventListener("click",function(){this.classList.toggle("open");paint()})}
+var ex=document.getElementById("expand");
+if(ex)ex.addEventListener("click",function(){openAll=!openAll;for(var j=0;j<rows.length;j++){if(openAll)rows[j].classList.add("open");else rows[j].classList.remove("open")}if(rows[0])rows[0].classList.add("open");paint()});
+var sv=document.getElementById("save");
+if(sv)sv.addEventListener("click",function(){sv.textContent="已保存 · 23:41";setTimeout(function(){sv.textContent="存草稿"},900)});
+paint();
+})();
+</script>
+</body>
+</html>

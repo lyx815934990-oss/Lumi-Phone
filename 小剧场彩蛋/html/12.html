@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#12 体检报告 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 12px 32px}
+.hero{width:100%;max-width:800px;margin:0 auto;height:132px;object-fit:cover;display:block;border-radius:0 0 4px 4px}
+.shell{max-width:800px;margin:0 auto;border-radius:18px;overflow:hidden;box-shadow:0 20px 50px rgba(20,16,12,.2);margin-top:-8px;position:relative}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px}
+.stats b{font-weight:750}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);flex-shrink:0}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.btn.dis{opacity:.4;pointer-events:none}
+.row{padding:10px 12px;margin:0 12px 8px;border-radius:12px;font-size:13px;line-height:1.55;cursor:pointer}
+.m{font-size:11px;opacity:.62}
+body{background:#f2f0ea;color:#2a2824}.shell{background:#fffcf7;border:1px solid #e0d8c8}.row{background:#f7f4ee;border:1px solid #ebe4d8;cursor:default}.row.hot{border-color:#e8a090;background:#fff5f2}.btn{background:#6a8a7a;color:#fff;margin:8px 12px}.npc{background:#f7f4ee}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./11.html">上一张</a><b>#12 体检报告</b><a href="./13.html">下一张</a></div>
+<p class="fore">心率偏快——解读页写：雨夜后见面相关。</p>
+<div class="stage"><img class="hero" alt="体检" src="https://image.pollinations.ai/prompt/medical%20report%20paper%20mint%20stamp%20soft%20desk%20no%20people"><div class="shell"><p class="title-custom">体检报告解读 · 摘要</p><div class="stats"><span>编号 H-8821</span><span>日期 9/3</span><span>医生备注开</span></div><div class="row"><b>血压</b> 正常偏高 · 注明紧张情境</div><div class="row hot"><b>心率</b> 偏快 · 解读：雨夜后见面相关？</div><div class="row"><b>睡眠</b> 碎片化 · 01:06 仍有亮屏</div><div class="row"><b>建议</b> 有人陪 · 少在灯坏了的路口站太久</div><div class="row"><b>紧急联系</b> 祁洵（待确认）</div><button class="btn" type="button" id="reveal">展开医生旁注</button><div class="tip" id="doc" style="display:none;background:#eef6f2">旁注：患者反复提及「别先走」。非病理，属心事。</div><div class="npc"><span class="av">🩺</span><div><b>护士</b>：报告仅供剧情。回去记得把伞擦干。</div></div><div class="foot">戏仿 · 非医疗建议</div></div></div>
+<script>
+(function(){var b=document.getElementById("reveal");var d=document.getElementById("doc");if(b&&d)b.addEventListener("click",function(){d.style.display="block";b.classList.add("dis")})})();
+</script>
+</body>
+</html>

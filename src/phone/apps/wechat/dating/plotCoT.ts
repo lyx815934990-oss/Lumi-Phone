@@ -6,6 +6,9 @@
 import { stripVnVoiceParamsPayload } from './vnVoiceParamsStrip'
 
 import type { PlotItem } from './types'
+import { extractAndStripPlotHtmlVisual } from './datingPlotHtmlVisual'
+import { extractAndStripReaderComments, stripReaderCommentAnchors } from './datingReaderComments'
+import { extractPlotSynopsisTail } from './plotSummaryTitle'
 import { getAiPlotVersionSlices } from './plotVersions'
 
 export const DATING_COT_TAG_PATTERNS: RegExp[] = [
@@ -150,20 +153,29 @@ export function splitDatingAssistantOutput(raw: string): {
   }
   let bodyTrim = stripEllipsisOnlyOsSpans(stripHtmlComments(content))
   const original = String(raw || '').trim()
-  let finalContent = bodyTrim || (logicPass || planSummary ? '' : original)
+  let finalContentBody = bodyTrim || (logicPass || planSummary ? '' : original)
 
   // 正文被剥空但 logicPass 很长且不像分册思维链：多为模型把剧情写在 thinking 内或未闭合误匹配 —— 回落为正文展示，避免 0 字与「全文只在折叠里」。
-  if (!finalContent.trim() && logicPass.trim()) {
+  if (!finalContentBody.trim() && logicPass.trim()) {
     const lp = logicPass.trim()
     if (!looksLikeStructuredCoT(lp) && lp.length > 35) {
-      finalContent = stripEllipsisOnlyOsSpans(stripHtmlComments(lp))
+      finalContentBody = stripEllipsisOnlyOsSpans(stripHtmlComments(lp))
       logicPass = ''
     }
   }
 
-  finalContent = finalContent.replace(/\n?【本节梗概】\s*[^\n]{0,400}\s*$/u, '').trimEnd()
+  if (!planSummary.trim()) {
+    const syn = extractPlotSynopsisTail(finalContentBody)
+    if (syn.summary) {
+      planSummary = syn.summary
+      finalContentBody = syn.content
+    }
+  } else {
+    const syn = extractPlotSynopsisTail(finalContentBody)
+    if (syn.summary) finalContentBody = syn.content
+  }
 
-  return { logicPass, planSummary, content: finalContent }
+  return { logicPass, planSummary, content: finalContentBody.trim() }
 }
 
 /** 注入 prompt / 游标前原文向量索引：剥离全部思维链块（含正文中间的 `<thinking>`） */
@@ -186,7 +198,7 @@ export function stripAllCoTBlocksFromDatingText(text: string): string {
   return stripEllipsisOnlyOsSpans(stripHtmlComments(s)).trim()
 }
 
-/** 约会 plot 写入 prompt / 语义召回索引的正文（玩家原文保留；AI 去思维链与 VN 语音参数） */
+/** 约会 plot 写入 prompt / 语义召回索引的正文（玩家原文保留；AI 去思维链、VN 语音参数、读者评论与 HTML 可视化块） */
 export function datingPlotBodyForPromptInjection(raw: string, plotType: 'player' | 'ai'): string {
   const rawStr = String(raw || '').trim()
   if (!rawStr) return ''
@@ -194,10 +206,12 @@ export function datingPlotBodyForPromptInjection(raw: string, plotType: 'player'
   const prose = splitDatingAssistantOutput(rawStr).content.trim()
   const sansVn = stripVnVoiceParamsPayload(prose).trim()
   const stripped = stripAllCoTBlocksFromDatingText(sansVn)
-  return stripped || sansVn
+  const { content: withoutHtml } = extractAndStripPlotHtmlVisual(stripped || sansVn)
+  const { content } = extractAndStripReaderComments(withoutHtml)
+  return stripReaderCommentAnchors(content) || sansVn
 }
 
-/** 思维溯源 / 主界面展示：与 split 规则一致，并剥离 VN 语音参数块 */
+/** 思维溯源 / 主界面展示：与 split 规则一致，并剥离 VN 语音参数 / 读者评论 / 物证 HTML 块 */
 export function resolveDatingAssistantDisplayText(raw: string): {
   thinkingText: string
   displayBody: string
@@ -212,6 +226,8 @@ export function resolveDatingAssistantDisplayText(raw: string): {
       thinkingText = ''
     }
   }
+  displayBody = extractAndStripPlotHtmlVisual(displayBody).content
+  displayBody = stripReaderCommentAnchors(extractAndStripReaderComments(displayBody).content)
   return { thinkingText, displayBody }
 }
 

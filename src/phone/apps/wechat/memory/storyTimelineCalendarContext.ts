@@ -6,13 +6,17 @@ import { normalizeWeChatTimeConfig, resolveWeChatCurrentTimeMs } from '../time/w
 import { resolveCharacterCurrentStoryStamp } from './onlineMemorySummaryFormat'
 import {
   composeStoryTimelineCalendarAnchorLabel,
+  createEmptyStoryTimelineState,
   formatGregorianStoryDayFromMs,
   formatStoryTimelineListTimeLabel,
   hasTimelineDeltaContent,
+  parseStoryCalendarDayAndClockFromLabel,
   parseStoryCalendarDayStartMs,
   STORY_TIMELINE_GREGORIAN_ANCHOR_RE,
+  upsertStoryTimelineCurrentAnchorCalendarInText,
   type StoryTimelineSummaryDelta,
 } from './storyTimelineTypes'
+import { storyDayTimeToMs, syncNetworkStoryNowFromPrimary } from './storyTimelineNetworkNowSync'
 
 export type StoryCalendarPlotRef = {
   type?: string
@@ -204,6 +208,66 @@ export const STORY_TIMELINE_CALENDAR_AWARENESS_RULES = `
 - **重要节日**：元旦、春节、清明、劳动节、端午、中秋、国庆、情人节、520、七夕、跨年夜等；命中或临近（±1～2 天）时在摘要中点明节日语境。
 - **禁止无闪回的时间倒流**：若提供了【剧情时间锚点】，接续剧情的 story_day / story_day_end 须为锚点**同日或更晚**；**禁止**无回忆/闪回/插叙铺垫却写成更早年份。闪回须在 relative_time 或正文摘要中明示。
 `.trim()
+
+/**
+ * 手改摘要行公历后：按**全部摘要行里最晚锚点**重算剧情轴「现在」。
+ * 允许回拨（修掉错误的更晚日期），并同步手动锚点正文 / 线上钟。
+ */
+export async function syncStoryTimelineStateNowFromLatestPlotRows(
+  characterId: string,
+): Promise<{ synced: boolean; label: string }> {
+  const cid = String(characterId || '').trim()
+  if (!cid) return { synced: false, label: '' }
+
+  let latest = ''
+  try {
+    const rows = await personaDb.listStoryTimelinePlotRowsByCharacterId(cid)
+    for (const r of rows) {
+      const label = formatStoryTimelineListTimeLabel(r.rowText ?? '').trim()
+      if (label) latest = pickLatestStoryCalendarLabel(latest, label)
+    }
+  } catch {
+    return { synced: false, label: '' }
+  }
+  if (!latest) return { synced: false, label: '' }
+
+  const parsed = parseStoryCalendarDayAndClockFromLabel(latest)
+  if (!parsed) return { synced: false, label: latest }
+
+  const nowLabel = composeStoryTimelineCalendarAnchorLabel({
+    story_day: parsed.day,
+    story_time: parsed.clock ?? undefined,
+  }).trim() || latest
+
+  try {
+    const prev =
+      (await personaDb.getStoryTimelineState(cid)) ?? createEmptyStoryTimelineState(cid)
+    let manual = prev.manualAnchorBlock?.trim() || ''
+    if (manual) {
+      manual = upsertStoryTimelineCurrentAnchorCalendarInText(manual, nowLabel)
+    }
+    await personaDb.putStoryTimelineState({
+      ...prev,
+      characterId: cid,
+      updatedAt: Date.now(),
+      currentStoryDay: parsed.day,
+      currentStoryTime: parsed.clock ?? prev.currentStoryTime,
+      todos: [],
+      ...(manual ? { manualAnchorBlock: manual.slice(0, 8000) } : {}),
+    })
+    await syncNetworkStoryNowFromPrimary({
+      sourceCharacterId: cid,
+      storyDay: parsed.day,
+      storyTime: parsed.clock,
+      storyNowMs: storyDayTimeToMs(parsed.day, parsed.clock),
+      syncOnlineClock: true,
+      forceAlign: true,
+    })
+    return { synced: true, label: nowLabel }
+  } catch {
+    return { synced: false, label: nowLabel }
+  }
+}
 
 /**
  * 手动补写剧情摘要用的故事「现在」：

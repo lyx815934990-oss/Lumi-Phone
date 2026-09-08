@@ -198,6 +198,7 @@ function remapCharacterIdPlaceholders(ch: Character, oldToNew: Map<string, strin
   out.name = r(out.name) ?? out.name
   out.identity = r(out.identity) ?? out.identity
   out.mbti = r(out.mbti) ?? out.mbti
+  out.animalArchetype = r(out.animalArchetype) ?? out.animalArchetype
   out.bio = r(out.bio) ?? out.bio
   out.motto = r(out.motto) ?? out.motto
   out.openingLines = r(out.openingLines) ?? out.openingLines

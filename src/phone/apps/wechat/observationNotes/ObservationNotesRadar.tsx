@@ -230,9 +230,11 @@ export function ObservationAffectionBar({
           <span className="tabular-nums" style={{ color: OBS_NOTES.garnet }}>
             {safe}
           </span>
-          <span className="ml-1.5 text-[12px]" style={{ color: OBS_NOTES.mist }}>
-            · {stageLabel}
-          </span>
+          {stageLabel.trim() ? (
+            <span className="ml-1.5 text-[12px]" style={{ color: OBS_NOTES.mist }}>
+              · {stageLabel.trim()}
+            </span>
+          ) : null}
         </p>
       </div>
       <div

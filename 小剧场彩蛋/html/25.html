@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#25 登记叫号 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+body{background:linear-gradient(180deg,#d8e4f0,#c4d0dc);color:#1a2830}
+.stage{max-width:420px;margin:12px auto 28px;padding:0 12px 24px}
+.hero{width:100%;height:110px;object-fit:cover;border-radius:12px;display:block}
+.title-custom{padding:12px 4px;font-size:19px;letter-spacing:.04em}
+.board{padding:18px;border-radius:14px;background:linear-gradient(160deg,#1a3048,#0e1a28);color:#e8eef4;box-shadow:0 16px 36px rgba(20,40,60,.35);border:1px solid #2a4860}
+.board-top{display:flex;justify-content:space-between;font-size:11px;opacity:.7;letter-spacing:.12em;margin-bottom:8px}
+.num{text-align:center;font-size:52px;font-weight:800;font-family:ui-monospace,Consolas,monospace;letter-spacing:.08em;color:#f5e3a8;text-shadow:0 0 24px rgba(245,227,168,.25)}
+.num.flash{animation:flash 1s infinite}
+@keyframes flash{50%{opacity:.45;color:#e8a090}}
+.sub{text-align:center;font-size:12px;opacity:.8;margin:6px 0 12px}
+.yours{display:flex;justify-content:space-between;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.06);font-size:13px;margin-bottom:10px}
+.stats{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;opacity:.75;margin-bottom:12px}
+.check{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.check div{padding:10px;border-radius:8px;font-size:12px;text-align:center;background:rgba(255,255,255,.06)}
+.check .ok{border:1px solid #3a6b57;color:#a8d5ba}
+.check .bad{border:1px solid #c45c4a;color:#e8a090;animation:flash 1.2s infinite}
+.warn{margin-top:12px;padding:10px;border-radius:8px;background:#fff3e022;color:#f5e3a8;font-size:12px;text-align:center}
+.list{margin-top:12px}
+.li{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px dashed rgba(255,255,255,.1);font-size:12px}
+.btn{margin-top:12px;width:100%;padding:10px;border:0;border-radius:8px;background:#c9a24b;color:#1a1810;font-weight:700;cursor:pointer}
+.paper{margin-top:12px;padding:12px;border-radius:10px;background-color:#f4efe6;background-image:radial-gradient(rgba(90,70,40,.06) 0.6px,transparent 0.6px),linear-gradient(180deg,#f7f2e8,#efe6d6);background-size:3px 3px,auto;color:#2a2218;font-size:12px;line-height:1.6}
+.foot{margin-top:8px;font-size:10px;opacity:.55;text-align:center;color:#1a2830}
+.npc-block{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.npc-row{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:12px;background:rgba(255,255,255,.55);border:1px solid rgba(40,60,80,.12);font-size:12px;line-height:1.5}
+.av{flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(145deg,#c8d8e8,#a0b4c8);display:inline-flex;align-items:center;justify-content:center;font-size:15px}
+.dense{margin-top:16px;padding:14px;border-radius:14px;background:#f0f4f8;border:1px solid #c8d4e0;font-size:12px;color:#1a2830}
+.dx-h{font-weight:700;font-size:14px}.dx-sub{margin:4px 0 10px;font-size:11px;opacity:.75}
+.dx-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;font-size:11px}
+.dx-list{border-radius:8px;overflow:hidden;background:rgba(0,0,0,.03)}
+.dx-row{display:flex;gap:8px;padding:8px 10px;border-bottom:1px dashed rgba(0,0,0,.08);line-height:1.45}
+.dx-t{font-family:ui-monospace,Consolas,monospace;opacity:.55;min-width:22px}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./24.html">上一张</a><b>#25 登记叫号</b><a href="./26.html">下一张</a></div>
+<p class="fore">婚姻登记处 · 叫到号却材料缺一 · 荒诞停顿</p>
+<div class="stage">
+<img class="hero" alt="registry board" src="https://image.pollinations.ai/prompt/government%20marriage%20registry%20LED%20queue%20number%20board%20blue%20no%20people">
+<p class="title-custom">📟 婚姻登记处 · 叫号屏</p>
+<div class="board">
+<div class="board-top"><span>窗口 03 · 补件综合</span><span id="clk">09:12:44</span></div>
+<div class="num" id="cur">A017</div>
+<div class="sub">当前办理 · 雨天窗口偏慢 · 请勿离开大厅过远</div>
+<div class="yours"><span>你的号</span><b id="mine">A021</b><span>前方 <b id="ahead">4</b> 人</span></div>
+<div class="stats"><span>已叫 A017</span><span>雨天加号</span><span>共伞候场区</span></div>
+<div class="check" id="check">
+<div class="ok">身份证 ✓</div>
+<div class="ok">照片 ✓</div>
+<div class="bad" data-miss="1">户口页 · 缺</div>
+<div class="ok">申请表 ✓</div>
+<div class="ok">居住证明 ✓</div>
+<div class="bad" data-miss="1">关系说明 · 空</div>
+<div class="ok">缴费回执 ✓</div>
+<div class="ok">雨夜情况说明？</div>
+</div>
+<div class="warn" id="warn">材料缺一 · 叫到号也将停顿 · 请到补件窗口</div>
+<button type="button" class="btn" id="nextCall">模拟叫下一号</button>
+<div class="list">
+<div class="li"><b>缺件指引</b><span>户口页可至自助机补打</span></div>
+<div class="li"><b>关系说明</b><span>可写「共伞同伴 / 祁洵」</span></div>
+<div class="li"><b>窗口建议</b><span>勿写「没事」作理由</span></div>
+<div class="li"><b>便民</b><span>一楼便利店可买档案袋</span></div>
+<div class="li"><b>无障碍</b><span>灯坏了走 B 通道</span></div>
+<div class="li"><b>叫号提醒</b><span>短信将发：别先走太远</span></div>
+</div>
+</div>
+<div class="paper">补件窗口纸条：关系说明栏允许写「靠过来一点」作为共同生活习惯说明。过号需重新取号。预估办理 12 分。</div>
+<div class="foot">取号时间 09:12 · 戏仿登记 · 无真实办理效力</div>
+<div class="npc-block"><div class="npc-row"><span class="av">👰</span><span>候场阿姨：年轻人材料缺一张也敢坐第一排。</span></div><div class="npc-row"><span class="av">🤵</span><span>窗口：关系说明空着，系统过不了，别先走去抽烟。</span></div><div class="npc-row"><span class="av">🧑</span><span>路人：伞架满了，雨还在下。</span></div><div class="npc-row"><span class="av">💬</span><span>祁洵：户口页我去打，你看屏幕。</span></div><div class="npc-row"><span class="av">🏪</span><span>店员：档案袋第三排，关东煮在热柜。</span></div><div class="npc-row"><span class="av">📝</span><span>你（自言）：叫到 A021 之前把缺项补上。</span></div><div class="npc-row"><span class="av">🌧️</span><span>雨声：靠过来一点看屏幕更清。</span></div><div class="npc-row"><span class="av">📦</span><span>系统：本区为「登记叫号」番外旁观串。</span></div></div>
+<div class="dense">
+<div class="dx-h">关联碎片 · 登记叫号 · #25</div>
+<div class="dx-sub">叫到号却材料缺一的荒诞停顿</div>
+<div class="dx-stats"><span>线索 <b>12</b></span><span>旁观 <b>8</b></span><span>结构 <b>9</b></span><span>仪式 <b>开</b></span></div>
+<div class="dx-list"><div class="dx-row"><span class="dx-t">01</span><span>【叫号屏】窗口+当前号 · 缺项闪烁</span></div><div class="dx-row"><span class="dx-t">02</span><span>你的号 A021 vs 当前 A017 · 前方 4 人</span></div><div class="dx-row"><span class="dx-t">03</span><span>材料清单：户口页缺 · 关系说明空</span></div><div class="dx-row"><span class="dx-t">04</span><span>可写「共伞同伴 / 祁洵」</span></div><div class="dx-row"><span class="dx-t">05</span><span>便利店可买档案袋 · 灯坏了走 B 通道</span></div><div class="dx-row"><span class="dx-t">06</span><span>短信提醒：别先走太远</span></div><div class="dx-row"><span class="dx-t">07</span><span>贴本轮：雨 · 伞 · 便利店 · 关东煮</span></div><div class="dx-row"><span class="dx-t">08</span><span>系统注记：样卡 #25 · C类 · 标签 文件单据·甜·搞笑</span></div></div>
+</div>
+</div>
+<script>
+(function(){
+var n=17,mine=21;
+var cur=document.getElementById("cur");
+var ahead=document.getElementById("ahead");
+var warn=document.getElementById("warn");
+var btn=document.getElementById("nextCall");
+var clk=document.getElementById("clk");
+function pad(x){return x<10?"0"+x:String(x)}
+function tick(){
+var d=new Date();
+if(clk)clk.textContent=pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds());
+}
+setInterval(tick,1000);tick();
+function paint(){
+if(cur)cur.textContent="A"+("00"+n).slice(-3);
+var a=Math.max(0,mine-n);
+if(ahead)ahead.textContent=String(a);
+if(n>=mine){
+cur.classList.add("flash");
+warn.textContent="已叫到你的号 · 材料仍缺一 · 请到补件窗口 · 过号需重取";
+}else{
+cur.classList.remove("flash");
+warn.textContent="材料缺一 · 叫到号也将停顿 · 请到补件窗口";
+}
+}
+if(btn)btn.addEventListener("click",function(){
+if(n<mine+2)n++;
+paint();
+});
+var miss=document.querySelectorAll("[data-miss]");
+for(var i=0;i<miss.length;i++){
+miss[i].addEventListener("click",function(){
+this.classList.remove("bad");
+this.classList.add("ok");
+this.textContent=this.textContent.replace("· 缺"," ✓").replace("· 空"," ✓");
+this.removeAttribute("data-miss");
+var left=document.querySelectorAll("[data-miss]").length;
+if(left===0){
+warn.textContent="材料已齐 · 请等待叫号 · 可坐候场区共伞";
+cur.classList.remove("flash");
+}
+});
+}
+paint();
+})();
+</script>
+</body>
+</html>

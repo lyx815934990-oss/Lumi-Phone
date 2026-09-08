@@ -1,9 +1,10 @@
 import { personaDb } from '../newFriendsPersona/idb'
 import {
-  affectionStageFromValue,
   clampPct,
+  isLegacyCodeAffectionStageLabel,
   OBS_ABILITY_AXIS_LABELS,
   OBS_MBTI_AXIS_LABELS,
+  resolveAffectionStageDisplay,
   type ObservationChangeEvent,
   type ObservationField,
   type ObservationFieldDiff,
@@ -195,14 +196,25 @@ export function normalizeObservationNotesDoc(input: unknown): ObservationNotesDo
     abilityRadar: normalizeRadar(r.abilityRadar, OBS_ABILITY_AXIS_LABELS),
     overallEvaluation: typeof r.overallEvaluation === 'string' ? r.overallEvaluation.trim() : '',
     affection,
-    affectionStageLabel:
-      typeof r.affectionStageLabel === 'string' && r.affectionStageLabel.trim()
-        ? r.affectionStageLabel.trim()
-        : affectionStageFromValue(affection),
     relationshipLabel:
       typeof r.relationshipLabel === 'string' && r.relationshipLabel.trim()
         ? r.relationshipLabel.trim()
         : '关系未明',
+    affectionStageLabel: (() => {
+      const rel =
+        typeof r.relationshipLabel === 'string' && r.relationshipLabel.trim()
+          ? r.relationshipLabel.trim()
+          : '关系未明'
+      const fromRel = resolveAffectionStageDisplay(rel)
+      if (fromRel) return fromRel
+      const raw =
+        typeof r.affectionStageLabel === 'string' && r.affectionStageLabel.trim()
+          ? r.affectionStageLabel.trim()
+          : ''
+      // 丢掉旧版按数值硬套的「轻微在意期」等，避免盖过 char 自填关系
+      if (!raw || isLegacyCodeAffectionStageLabel(raw)) return ''
+      return raw
+    })(),
     pendingDiffs: normalizeDiffs(r.pendingDiffs),
     changeHistory: normalizeHistory(r.changeHistory),
     lastSeenAt: typeof r.lastSeenAt === 'number' && Number.isFinite(r.lastSeenAt) ? r.lastSeenAt : null,
@@ -321,7 +333,7 @@ export function createBlankObservationNotesDoc(params: {
     },
     overallEvaluation: '',
     affection: 20,
-    affectionStageLabel: affectionStageFromValue(20),
+    affectionStageLabel: '',
     relationshipLabel: '关系未明',
     pendingDiffs: [],
     changeHistory: [],

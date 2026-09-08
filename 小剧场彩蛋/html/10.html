@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#10 外卖追踪 · 小剧场</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:auto;overflow:auto;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}
+.egg-nav{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:rgba(20,18,16,.92);color:#f0e6d8;font-size:12px;backdrop-filter:blur(8px)}
+.egg-nav a{color:#f5d78a;text-decoration:none}
+.egg-nav b{flex:1;text-align:center;font-weight:650;letter-spacing:.04em}
+.egg-nav span{opacity:.4}
+.fore{max-width:800px;margin:0 auto;padding:10px 16px 0;text-align:center;font-size:12px;font-style:italic;opacity:.75;line-height:1.5}
+.title-custom{margin:0;font-weight:700}
+.stage{max-width:800px;margin:0 auto;padding:0 12px 32px}
+.hero{width:100%;max-width:800px;margin:0 auto;height:132px;object-fit:cover;display:block;border-radius:0 0 4px 4px}
+.shell{max-width:800px;margin:0 auto;border-radius:18px;overflow:hidden;box-shadow:0 20px 50px rgba(20,16,12,.2);margin-top:-8px;position:relative}
+.title-custom{margin:0;padding:14px 16px;font-size:18px;font-weight:750}
+.stats{display:flex;flex-wrap:wrap;gap:10px 14px;padding:8px 14px;font-size:11px}
+.stats b{font-weight:750}
+.av{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;margin-right:6px;background:rgba(0,0,0,.06);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);flex-shrink:0}
+.npc{margin:10px 12px;padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.55;display:flex;gap:8px;align-items:flex-start}
+.tip{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.55}
+.foot{padding:10px 14px 18px;font-size:10px;opacity:.55;line-height:1.5}
+.btn{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.btn.dis{opacity:.4;pointer-events:none}
+.row{padding:10px 12px;margin:0 12px 8px;border-radius:12px;font-size:13px;line-height:1.55;cursor:pointer}
+.m{font-size:11px;opacity:.62}
+body{background:#f0ebe3;color:#2a2420}.shell{background:#fffaf3;border:1px solid #e5dcc8}.step{padding:10px 14px;border-left:3px solid #ddd;margin-left:16px;font-size:13px}.step.on{border-color:#e85d2c;background:#fff5f0}.btn{background:#e85d2c;color:#fff;margin:8px 12px}.npc{background:#fff;border:1px solid #e5dcc8}
+</style>
+</head>
+<body>
+<div class="egg-nav"><a href="../index.html">目录</a><a href="./09.html">上一张</a><b>#10 外卖追踪</b><a href="./11.html">下一张</a></div>
+<p class="fore">骑手停在坏掉的灯下面——两份关东煮。</p>
+<div class="stage"><img class="hero" alt="外卖" src="https://image.pollinations.ai/prompt/food%20delivery%20night%20rain%20street%20steam%20warm%20bag%20no%20people"><div class="shell"><p class="title-custom">骑手实时追踪 · 关东煮</p><div class="stats"><span>单号 WX8821</span><span>双人套</span><span>预计 23:40</span></div><div class="step" data-s="0"><b>已接单</b><div class="m">店员：多给了纸巾</div></div><div class="step on" data-s="1" id="cur"><b>配送中</b><div class="m">便利店站停留 · 灯坏了</div></div><div class="step" data-s="2"><b>即将送达</b><div class="m">备注：别先走</div></div><div class="step" data-s="3"><b>已完成</b><div class="m">待确认</div></div><button class="btn" type="button" id="next">推进状态</button><div class="npc"><span class="av">🛵</span><div><b>骑手</b>：雨大，我把伞往中间挪了挪保温袋。</div></div><div class="foot">客服已关联活动页</div></div></div>
+<script>
+(function(){var i=1;var steps=document.querySelectorAll(".step");var b=document.getElementById("next");if(b)b.addEventListener("click",function(){if(i>=steps.length-1){b.textContent="已送达";b.classList.add("dis");return}steps[i].classList.remove("on");i++;steps[i].classList.add("on")})})();
+</script>
+</body>
+</html>

@@ -4,11 +4,13 @@ import {
   ChevronRight,
   Globe2,
   Headphones,
+  LayoutGrid,
   MessageCircleQuestionMark,
   Radio,
   ScrollText,
   Store,
   Feather,
+  Home,
 } from 'lucide-react'
 import type { WeChatPersonaContact } from '../phone/types'
 import { Suspense, useEffect, useState, type ReactNode } from 'react'
@@ -34,6 +36,8 @@ import { useMomentsInteractionUnreadCount } from './moments/MomentsNoticeRuntime
 import { MomentsSerifNumericText } from './moments/ArchiveTimelineDateColumn'
 import type { OnOpenMomentParticipantProfile } from './moments/momentProfileNavigation'
 import { mockContactsToMomentRefs } from './moments/publishMomentUtils'
+import { BEAD_CRAFT_UNDER_DEV } from '../phone/apps/beadCraft/beadCraftDevFlags'
+import { HOME_BUILD_UNDER_DEV } from '../phone/apps/homeBuild/homeBuildDevFlags'
 
 const WeChatMomentsPage = lazyWithRetry(() =>
   import('./moments/WeChatMomentsPage').then((m) => ({ default: m.WeChatMomentsPage })),
@@ -66,6 +70,14 @@ const ObservationNotesHubApp = lazyWithRetry(() =>
   import('../phone/apps/wechat/observationNotes/ObservationNotesHubApp').then((m) => ({
     default: m.ObservationNotesHubApp,
   })),
+)
+const BeadCraftApp = lazyWithRetry(() =>
+  import('../phone/apps/beadCraft/BeadCraftApp').then((m) => ({
+    default: m.BeadCraftApp,
+  })),
+)
+const HomeBuildApp = lazyWithRetry(() =>
+  import('../phone/apps/homeBuild').then((m) => ({ default: m.HomeBuildApp })),
 )
 
 function DiscoverSuspense({
@@ -110,6 +122,8 @@ type DiscoverActionId =
   | 'subconscious-archives'
   | 'observation-notes'
   | 'jubensha'
+  | 'bead-craft'
+  | 'home-build'
   | 'shop'
 
 type DiscoverAction = {
@@ -154,6 +168,8 @@ const DISCOVER_ACTIONS: DiscoverAction[] = [
   { id: 'subconscious-archives', label: '私语档案', icon: ScrollText },
   { id: 'observation-notes', label: '私藏侧写', icon: Feather },
   { id: 'jubensha', label: '剧本杀馆', icon: BookOpen },
+  { id: 'bead-craft', label: '一起拼豆', icon: LayoutGrid },
+  { id: 'home-build', label: '3D家园', icon: Home },
   { id: 'shop', label: '小店', icon: Store },
 ]
 
@@ -188,6 +204,8 @@ export function WeChatDiscoverInstagram({
     | 'subconscious-archives'
     | 'observation-notes'
     | 'jubensha'
+    | 'bead-craft'
+    | 'home-build'
   >('list')
   useEffect(() => {
     onImmersiveViewChange?.(activeView !== 'list')
@@ -333,6 +351,30 @@ export function WeChatDiscoverInstagram({
       </div>
     )
   }
+  if (activeView === 'bead-craft') {
+    return (
+      <DiscoverSuspense onClose={() => setActiveView('list')}>
+        <BeadCraftApp
+          className={`h-full min-h-0 ${className}`}
+          onBack={() => setActiveView('list')}
+          personaContacts={personaContacts}
+          wechatAccountId={wechatAccountId}
+        />
+      </DiscoverSuspense>
+    )
+  }
+  if (activeView === 'home-build') {
+    return (
+      <DiscoverSuspense onClose={() => setActiveView('list')}>
+        <HomeBuildApp
+          className={`h-full min-h-0 ${className}`}
+          onBack={() => setActiveView('list')}
+          personaContacts={personaContacts}
+          wechatAccountId={wechatAccountId}
+        />
+      </DiscoverSuspense>
+    )
+  }
   return (
     <div
       className={`h-full min-h-0 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${className}`}
@@ -382,6 +424,8 @@ export function WeChatDiscoverInstagram({
                       if (item.id === 'subconscious-archives') setActiveView('subconscious-archives')
                       if (item.id === 'observation-notes') setActiveView('observation-notes')
                       if (item.id === 'jubensha') setActiveView('jubensha')
+                      if (item.id === 'bead-craft') setActiveView('bead-craft')
+                      if (item.id === 'home-build') setActiveView('home-build')
                     }}
                     className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors"
                     style={{
@@ -407,6 +451,18 @@ export function WeChatDiscoverInstagram({
                           <MomentsSerifNumericText
                             text={momentsUnreadCount > 99 ? '99+' : String(momentsUnreadCount)}
                           />
+                        </span>
+                      ) : null}
+                      {(item.id === 'bead-craft' && BEAD_CRAFT_UNDER_DEV) ||
+                      (item.id === 'home-build' && HOME_BUILD_UNDER_DEV) ? (
+                        <span
+                          className="rounded-full px-2 py-0.5 text-[10px] font-medium leading-none"
+                          style={{
+                            background: 'rgba(16,16,18,0.05)',
+                            color: LUMI_SHELL.mist,
+                          }}
+                        >
+                          开发中
                         </span>
                       ) : null}
                       <ChevronRight className="size-4" strokeWidth={1.75} color={LUMI_SHELL.mist} aria-hidden />
