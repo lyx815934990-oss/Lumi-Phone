@@ -37,7 +37,9 @@ import { MomentsSerifNumericText } from './moments/ArchiveTimelineDateColumn'
 import type { OnOpenMomentParticipantProfile } from './moments/momentProfileNavigation'
 import { mockContactsToMomentRefs } from './moments/publishMomentUtils'
 import { BEAD_CRAFT_UNDER_DEV } from '../phone/apps/beadCraft/beadCraftDevFlags'
+import { BeadCraftUnderDev } from '../phone/apps/beadCraft/BeadCraftUnderDev'
 import { HOME_BUILD_UNDER_DEV } from '../phone/apps/homeBuild/homeBuildDevFlags'
+import { HomeBuildUnderDev } from '../phone/apps/homeBuild/HomeBuildUnderDev'
 
 const WeChatMomentsPage = lazyWithRetry(() =>
   import('./moments/WeChatMomentsPage').then((m) => ({ default: m.WeChatMomentsPage })),
@@ -71,14 +73,22 @@ const ObservationNotesHubApp = lazyWithRetry(() =>
     default: m.ObservationNotesHubApp,
   })),
 )
-const BeadCraftApp = lazyWithRetry(() =>
-  import('../phone/apps/beadCraft/BeadCraftApp').then((m) => ({
-    default: m.BeadCraftApp,
-  })),
-)
-const HomeBuildApp = lazyWithRetry(() =>
-  import('../phone/apps/homeBuild').then((m) => ({ default: m.HomeBuildApp })),
-)
+/**
+ * 拼豆 / 3D家园：后续扩展功能，开屏与微信主包不预拉完整资源。
+ * 开发中只挂轻量占位；开启后再按需 lazy 完整包（含 three 等）。
+ */
+const BeadCraftApp = BEAD_CRAFT_UNDER_DEV
+  ? null
+  : lazyWithRetry(() =>
+      import('../phone/apps/beadCraft/BeadCraftApp').then((m) => ({
+        default: m.BeadCraftApp,
+      })),
+    )
+const HomeBuildApp = HOME_BUILD_UNDER_DEV
+  ? null
+  : lazyWithRetry(() =>
+      import('../phone/apps/homeBuild').then((m) => ({ default: m.HomeBuildApp })),
+    )
 
 function DiscoverSuspense({
   children,
@@ -352,6 +362,14 @@ export function WeChatDiscoverInstagram({
     )
   }
   if (activeView === 'bead-craft') {
+    if (BEAD_CRAFT_UNDER_DEV || !BeadCraftApp) {
+      return (
+        <BeadCraftUnderDev
+          className={`h-full min-h-0 ${className}`}
+          onBack={() => setActiveView('list')}
+        />
+      )
+    }
     return (
       <DiscoverSuspense onClose={() => setActiveView('list')}>
         <BeadCraftApp
@@ -364,6 +382,14 @@ export function WeChatDiscoverInstagram({
     )
   }
   if (activeView === 'home-build') {
+    if (HOME_BUILD_UNDER_DEV || !HomeBuildApp) {
+      return (
+        <HomeBuildUnderDev
+          className={`h-full min-h-0 ${className}`}
+          onBack={() => setActiveView('list')}
+        />
+      )
+    }
     return (
       <DiscoverSuspense onClose={() => setActiveView('list')}>
         <HomeBuildApp

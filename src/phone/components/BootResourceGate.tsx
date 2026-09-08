@@ -22,7 +22,8 @@ function sleep(ms: number) {
 
 /**
  * 接管 index.html 里的 #lumi-boot。
- * 开屏阶段尽量拉齐非剧本杀 App / 发现页资源后再进桌面。
+ * 开屏阶段尽量拉齐非剧本杀 App / 常用发现页资源后再进桌面。
+ * 不含剧本杀，也不含拼豆 / 3D家园等后续扩展包。
  */
 export function BootResourceGate({ enabled, onReady }: BootResourceGateProps) {
   const onReadyRef = useRef(onReady)

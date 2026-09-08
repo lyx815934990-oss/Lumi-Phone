@@ -5,8 +5,9 @@ import { loadWeChatAppDefault, resetWeChatAppModuleCache } from './wechatAppModu
 import { isQixiEnvelopeEventDay } from '../apps/qixi/qixiEnvelopeStorage'
 import { ensureQixiLetterFontLoaded, warmQixiLetterFont } from '../apps/qixi/qixiFont'
 
+/** 剧本杀 / 超大媒体 / 后续扩展（拼豆·3D家园）不进开屏壳缓存 */
 const SKIP_URL_RE =
-  /JBSGameFlow|jubensha|Jubensha|jbsChat|剧本杀|\.mp4(?:$|\?)|聊天室背景/i
+  /JBSGameFlow|jubensha|Jubensha|jbsChat|剧本杀|\.mp4(?:$|\?)|聊天室背景|beadCraft|BeadCraft|homeBuild|HomeBuild|home-models|react-three|(?:^|\/)three(?:[-/.]|$)/i
 
 export function shouldSkipBootAssetUrl(url: string): boolean {
   return SKIP_URL_RE.test(url)
@@ -52,6 +53,7 @@ type PreloadTask = {
 /**
  * 非剧本杀路由 / 发现页 chunk（与 PhoneApp / Discover 的 lazy 对齐）。
  * 绝不包含 jubensha / JBSGameFlow / 对局媒体。
+ * 绝不包含「一起拼豆」「3D家园」（后续扩展，仅按需打开时再拉）。
  */
 const BOOT_PRELOAD_TASKS: PreloadTask[] = [
   { label: '微信', critical: true, load: () => loadWeChatAppDefault() },

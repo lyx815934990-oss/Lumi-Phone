@@ -5,13 +5,13 @@
 
 const NOTIFY_ICON_CACHE = 'lumi-notify-icons-v1'
 /** 发版后 bump，强制丢掉指着旧 hash / 坏 vendor 拆包的壳缓存 */
-const ASSET_CACHE = 'lumi-runtime-assets-v7'
-const SHELL_CACHE = 'lumi-shell-v7'
+const ASSET_CACHE = 'lumi-runtime-assets-v8'
+const SHELL_CACHE = 'lumi-shell-v8'
 const NOTIFY_ICON_PATH_MARKER = '/__lumi_notify_icon__/'
 
-/** 剧本杀 / 超大视频：永不进 SW 缓存，也勿拦截为 cache-first */
+/** 剧本杀 / 超大视频 / 扩展功能（拼豆·3D家园）：永不进 SW 缓存，也勿拦截为 cache-first */
 const SKIP_CACHE_RE =
-  /JBSGameFlow|jubensha|Jubensha|jbsChat|剧本杀|\.mp4(?:$|\?)|聊天室背景/i
+  /JBSGameFlow|jubensha|Jubensha|jbsChat|剧本杀|\.mp4(?:$|\?)|聊天室背景|beadCraft|BeadCraft|homeBuild|HomeBuild|home-models|react-three|(?:^|\/)three(?:[-/.]|$)/i
 
 function resolveDefaultIconUrl() {
   try {
