@@ -593,18 +593,43 @@ export function resolveStoryTimelineDeltaAnchorEndMs(
 const STORY_TIMELINE_FLASHBACK_HINT_RE =
   /回忆|闪回|插叙|回溯|当年|那时|过去|多年前|几年前|幼时|童年|中学|大学|两年前|三年前|四年前|五年前|十年前/
 
-/** 正文/摘要是否明示跨公历日（允许 story_day 晚于接续锚点当日） */
+/** 正文/摘要/导演指令是否明示跨公历日 */
 export function storyMaterialImpliesCalendarDayAdvance(text: string): boolean {
+  return inferCalendarDayAdvanceSteps(text) > 0
+}
+
+/**
+ * 从材料推断至少跨几天（次日=1，后天=2…）。
+ * 用于：有跨日证据时强制推进 story_day，而不是仅「允许」模型自己写对。
+ */
+export function inferCalendarDayAdvanceSteps(text: string): number {
   const t = String(text ?? '')
-  if (!t.trim()) return false
+  if (!t.trim()) return 0
+  if (/大后天/.test(t)) return 3
+  if (/后天/.test(t)) return 2
   if (
-    /第二天|次日|翌日|隔天|隔日|隔了一天|过了一天|明天[早晚上下午夜]|后天|大后天|数日后|几天后|一周后|下周一|下周二|下周三|下周四|下周五|下周六|下周日|下周|下个月|熬到天亮|通宵到天亮|跨过午夜|过了零点|跨日|隔夜|天亮后|翌日清晨|次日清晨/.test(
+    /到了次日|到次日|第二天|次日|翌日|隔天|隔日|隔了一天|过了一天|熬到天亮|通宵到天亮|跨过午夜|过了零点|跨日|隔夜到|天亮后|翌日清晨|次日清晨|几天后|数日后|一周后|下周|到了明天|到明天|明天[早晚上下午夜]|明日[早晚上下午夜]/.test(
       t,
     )
   ) {
-    return true
+    return 1
   }
-  return false
+  return 0
+}
+
+function addGregorianStoryDaysFromMs(dayStartMs: number, days: number): string {
+  const d = new Date(dayStartMs)
+  d.setDate(d.getDate() + days)
+  return formatGregorianStoryDayFromMs(d.getTime())
+}
+
+function clockToMinutes(clock: string): number | null {
+  const m = clock.trim().match(/^(\d{1,2}):(\d{2})$/)
+  if (!m) return null
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null
+  return h * 60 + min
 }
 
 /** 摘要增量是否明示为回忆/闪回（允许 story_day 早于接续锚点） */
@@ -650,13 +675,16 @@ export function enforceStoryTimelineDeltaChronology(
 }
 
 /**
- * 无跨日证据时，禁止把 story_day / story_day_end 推到接续锚点日之后。
- * 解决「同场续写却被写成次日/后日」污染剧情轴「现在」的问题。
+ * 剧情日历连续性：
+ * - 有「次日/明天」等证据 → 若模型仍写在接续日，**强制**推进到次日（或后天等）
+ * - 无跨日证据 → 禁止无故写成次日/后日
+ * - 同日续写 → 禁止 story_time 早于上一回合末尾时刻（避免晚上倒回下午）
  */
 export function enforceStoryTimelineDeltaSameDayUnlessCrossDay(
   delta: StoryTimelineSummaryDelta,
   sameDayFloorMs: number | null | undefined,
   evidenceText?: string,
+  floorLabelWithClock?: string | null,
 ): StoryTimelineSummaryDelta {
   if (sameDayFloorMs == null || !Number.isFinite(sameDayFloorMs)) return delta
   if (isStoryTimelineFlashbackDelta(delta)) return delta
@@ -667,32 +695,69 @@ export function enforceStoryTimelineDeltaSameDayUnlessCrossDay(
     .filter(Boolean)
     .join('\n')
 
-  if (storyMaterialImpliesCalendarDayAdvance(blob)) return delta
-
-  // 正文/摘要点名了更晚的公历日 → 视为有跨日依据
+  let advanceSteps = inferCalendarDayAdvanceSteps(blob)
+  // 正文/摘要点名了更晚的公历日 → 至少推进到该日
   for (const m of blob.matchAll(/(\d{4}年\d{1,2}月\d{1,2}日)/g)) {
     const ms = storyCalendarDayStartMs(m[1]!)
-    if (ms != null && ms > sameDayFloorMs) return delta
+    if (ms != null && ms > sameDayFloorMs) {
+      const days = Math.round((ms - sameDayFloorMs) / 86400000)
+      if (days > advanceSteps) advanceSteps = days
+    }
   }
 
   const patch: StoryTimelineSummaryDelta = { ...delta }
   if (!patch.story_day?.trim()) patch.story_day = floorDay
 
+  if (advanceSteps > 0) {
+    const minDay = addGregorianStoryDaysFromMs(sameDayFloorMs, advanceSteps)
+    const minDayMs = storyCalendarDayStartMs(minDay)
+    const startMs = patch.story_day?.trim() ? storyCalendarDayStartMs(patch.story_day) : null
+    // 模型仍停在接续日或更早 → 强制推到次日等
+    if (minDayMs != null && (startMs == null || startMs < minDayMs)) {
+      patch.story_day = minDay
+    }
+    const endMs = patch.story_day_end?.trim() ? storyCalendarDayStartMs(patch.story_day_end) : null
+    const dayMs = patch.story_day?.trim() ? storyCalendarDayStartMs(patch.story_day) : null
+    if (endMs != null && dayMs != null && endMs < dayMs) {
+      patch.story_day_end = undefined
+    }
+    return patch
+  }
+
+  // —— 无跨日证据：锁同日 ——
   const startMs = patch.story_day?.trim() ? storyCalendarDayStartMs(patch.story_day) : null
   const endMs = patch.story_day_end?.trim() ? storyCalendarDayStartMs(patch.story_day_end) : null
 
   if (startMs != null && startMs > sameDayFloorMs) {
     patch.story_day = floorDay
   }
-  // 无跨日依据却把结束日写成次日 → 丢掉跨日 end，避免卡片「改时间」显示成后一天
   if (endMs != null && endMs > sameDayFloorMs) {
     patch.story_day_end = undefined
-  } else if (
-    patch.story_day_end?.trim() &&
-    patch.story_day?.trim() &&
-    storyCalendarDayStartMs(patch.story_day_end) === storyCalendarDayStartMs(patch.story_day)
+  }
+
+  // 同日禁止时刻倒流（20:40 → 15:00）
+  const floorParsed = parseStoryCalendarDayAndClockFromLabel(floorLabelWithClock || floorDay)
+  const floorClock = floorParsed?.clock || null
+  const dayAfterClamp = patch.story_day?.trim() ? storyCalendarDayStartMs(patch.story_day) : null
+  if (
+    floorClock &&
+    dayAfterClamp != null &&
+    dayAfterClamp === sameDayFloorMs
   ) {
-    // 同日 end 可保留时刻；若与 start 同日则保留 story_day_end 亦可，这里保留
+    const nextClock = extractClockTimeFromStoryTime(patch.story_time)
+    const floorMin = clockToMinutes(floorClock)
+    const nextMin = nextClock ? clockToMinutes(nextClock) : null
+    if (floorMin != null && nextMin != null && nextMin < floorMin) {
+      patch.story_time = floorClock
+    }
+    const endClock = extractClockTimeFromStoryTime(patch.story_time_end)
+    const endMin = endClock ? clockToMinutes(endClock) : null
+    const startMin = clockToMinutes(
+      extractClockTimeFromStoryTime(patch.story_time) || floorClock,
+    )
+    if (startMin != null && endMin != null && endMin < startMin) {
+      patch.story_time_end = undefined
+    }
   }
 
   return patch

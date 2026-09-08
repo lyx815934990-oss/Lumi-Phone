@@ -117,6 +117,7 @@ export async function persistStoryTimelineFromSummaryDelta(
     enforceStoryTimelineDeltaChronology(delta, floorMs),
     floorMs,
     [delta.event_summary, delta.relative_time, delta.row_title].filter(Boolean).join('\n'),
+    floorLabel,
   )
   const merged = mergeStoryTimelineState(prev, cid, enforcedDelta, scope)
   if (!merged) return

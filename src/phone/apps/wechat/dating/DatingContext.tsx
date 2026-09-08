@@ -1166,6 +1166,8 @@ async function timelinePersistFieldsFromAiTextRaw(
   opts?: {
     apiConfig?: ApiConfig | null
     plotBody?: string
+    /** 玩家输入 / 导演指令（「次日」等跨日证据） */
+    userText?: string
     offlineBlock?: string
     characterId?: string
     characterRealName?: string
@@ -1185,6 +1187,7 @@ async function timelinePersistFieldsFromAiTextRaw(
   const plotBody =
     String(opts?.plotBody || '').trim() ||
     extractAiPlotSections(splitDatingAiResponseAndUnifiedMemoryJson(aiTextRaw).plotRaw).content.trim()
+  const userText = String(opts?.userText || '').trim()
   if (!timelineDelta || !hasTimelineDeltaContent(timelineDelta)) {
     timelineDelta = await resolveStoryTimelineDeltaWithSeparateAttempt({
       chatFallback: opts?.apiConfig ?? null,
@@ -1206,16 +1209,23 @@ async function timelinePersistFieldsFromAiTextRaw(
   if (timelineDelta && floorMs != null) {
     timelineDelta = enforceStoryTimelineDeltaChronology(timelineDelta, floorMs)
   }
-  // 无跨日证据：锁在「接续基准日」（未跳时时=线下末条日；已跳时=故事现在日），禁止模型无故写成次日/后日
+  // 有「次日」等证据则强制推进；无则锁同日，并禁止同日时刻倒流
   if (timelineDelta) {
     const sameDayFloorLabel = opts?.calendarAdvanced
       ? opts?.storyCalendarAnchor
       : opts?.offlineLastCalendarAnchor || opts?.storyCalendarAnchor
     const sameDayFloorMs = resolveStoryCalendarAnchorFloorMs(sameDayFloorLabel)
+    const evidenceBlob = [userText, plotBody].filter(Boolean).join('\n')
+    const floorLabelWithClock = pickLatestStoryCalendarLabel(
+      sameDayFloorLabel,
+      opts?.offlineLastCalendarAnchor,
+      opts?.storyCalendarAnchor,
+    )
     timelineDelta = enforceStoryTimelineDeltaSameDayUnlessCrossDay(
       timelineDelta,
       sameDayFloorMs,
-      plotBody,
+      evidenceBlob,
+      floorLabelWithClock,
     )
   }
   if (timelineDelta && opts?.mainCharacterOffstage) {
@@ -2027,11 +2037,13 @@ ${body}`
         ? '关系阶段参考：熟悉推进期（须有事件与玩家行为支撑，禁止无动因跨级靠近）'
         : '关系阶段参考：稳定互动期（在既有关系上推进新矛盾或新选择）'
   const roleMode = godPerspective
-    ? '【视角锁定·上帝·全篇】只写用户当前看不见、也不知晓的非面对面角色/NPC场景；**玩家本人不得出场、不得与约会对象/NPC 同场同框**；旁白一律第三人称写约会对象与 NPC（须在思维链【代写边界卡】与预检维度 8 中闭环）；禁止描写用户当下可见现场，禁止与用户直接对话；**与抢话互斥，不得代写玩家当轮言行**。**不得把「尚未总结」摘录或「长期记忆」里已出现的气泡/事实，改写成旁白里又发给用户/又讲一遍同款行程**；须写屏幕外或未写过的信息。本轮**禁止**切回当面约会主镜头，也**禁止**写成侧幕（玩家与 NPC、主角色缺席）为主。'
+    ? '【视角锁定·上帝·全篇】只写用户当前看不见、也不知晓的非面对面角色/NPC场景；**玩家本人不得出场、不得与约会对象/NPC 同场同框**；旁白一律第三人称写约会对象与 NPC（须在思维链【代写边界卡】与预检维度 8 中闭环）；禁止描写用户当下可见现场，禁止与用户直接对话；**与抢话互斥，不得代写玩家当轮言行**。**不得把「尚未总结」摘录或「长期记忆」里已出现的气泡/事实，改写成旁白里又发给用户/又讲一遍同款行程**；须写屏幕外或未写过的信息。本轮**禁止**切回当面约会主镜头，也**禁止**写成侧幕（玩家与 NPC、主角色缺席）为主。' +
+      '【上帝·知情封锁·最高优先级】本轮是**信息差切片**：玩家（{{user}}）**不在场、看不见、听不见**，对本轮一切细节**默认不知情**。**禁止**写玩家「其实知道 / 感应到 / 开天眼看到屏外」；**禁止**旁白用「你当然清楚他在别处……」等暗示玩家知情。本轮内容对玩家保密，**后续当面/侧幕续写**时玩家仍须按不知情承接，除非届时写出合法知情路径（当面告知、消息被看到、可信转述等）。'
     : mainCharacterOffstage
       ? `【视角锁定·侧幕·全篇】本轮约会主角色 ${character.realName} **全程不在场**；正文只写玩家与 NPC/人脉角色之间的互动与场景，**禁止** ${character.realName} 出场、开口对白、被写成在场者（仅允许他人转述、手机/消息侧写、回忆等**非同框**信息，且不得把镜头切到其所在现场）。玩家可正常在场并与 NPC 互动。本轮**禁止**写成上帝式纯屏外（玩家不在场）为主，也**禁止**把主镜头切回玩家与 ${character.realName} 当面约会。
-【侧幕·知情封锁·最高优先级】本轮场景发生时 ${character.realName} **不在场、看不见、听不见**，故对本轮剧情细节**默认不知情**。**禁止**写 ${character.realName}「其实都知道 / 感应到 / 远程听到 / 突然全知」；**禁止**旁白暗示其同步获知本轮对白与动作。若须让其日后知情，只能通过本轮已写明的合法路径（他人转述、消息被其看到等），且须写出传递过程，不得默认开天眼。`
-      : `【视角未锁定·混合开放】未勾选「上帝视角」也未勾选「侧幕叙写」。请按上下文与玩家输入**由模型自行判断**续写：通常以玩家与 ${character.realName} 的当面互动为主轴，但**允许**按剧情需要自然混入——①少量屏外/信息差镜头（上帝式侧写：对象或 NPC 在别处做什么）；②主角色暂时不在眼前时的侧幕（玩家与人脉/路人互动）。可「当面为主、屏外/侧幕点缀」，也可在本轮内短切混合；**不必**整篇锁死单一视角。保持克制真实、不油腻。**线上微信聊天已说定内容为既定事实**，线下须服从（见【线上聊天事实铁律】），不得把已聊事实当新料对用户重复宣布。若用户要**全篇**纯上帝或纯侧幕，须勾选对应开关。`
+【侧幕·知情封锁·最高优先级】本轮场景发生时 ${character.realName} **不在场、看不见、听不见**，故对本轮剧情细节**默认不知情**。**禁止**写 ${character.realName}「其实都知道 / 感应到 / 远程听到 / 突然全知」；**禁止**旁白暗示其同步获知本轮对白与动作；**禁止**后续当面续写时让其无故点破本侧幕。若须让其日后知情，只能通过本轮/后文已写明的合法路径（他人转述、消息被其看到、玩家亲口告知等），且须写出传递过程，不得默认开天眼。`
+      : `【视角未锁定·混合开放】未勾选「上帝视角」也未勾选「侧幕叙写」。请按上下文与玩家输入**由模型自行判断**续写：通常以玩家与 ${character.realName} 的当面互动为主轴，但**允许**按剧情需要自然混入——①少量屏外/信息差镜头（上帝式侧写：对象或 NPC 在别处做什么）；②主角色暂时不在眼前时的侧幕（玩家与人脉/路人互动）。可「当面为主、屏外/侧幕点缀」，也可在本轮内短切混合；**不必**整篇锁死单一视角。保持克制真实、不油腻。**线上微信聊天已说定内容为既定事实**，线下须服从（见【线上聊天事实铁律】），不得把已聊事实当新料对用户重复宣布。若用户要**全篇**纯上帝或纯侧幕，须勾选对应开关。
+【混合·知情差铁律】凡短切上帝式屏外：该切片细节对**玩家默认不知情**；凡短切侧幕（${character.realName} 不在场）：对该切片细节 **${character.realName} 默认不知情**。切回当面后**禁止**不知情方开天眼复述/点破；合法知情须写出传递路径。`
   const playerThirdPronoun =
     playerIdentity?.gender === 'female' ? '她' : playerIdentity?.gender === 'male' ? '他' : '他/她'
   const playerThirdPronounHint =
@@ -2499,10 +2511,11 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
           ? `【玩家输入＝既定事实】下列输入视为进入本段正文前**已经发生**的玩家言行或既定场面；正文应从他人的**即时感知与反应**写起并推向下一步，禁止再铺垫「即将」重复发生同一事件。\n`
           : ''
   const godHistoryIsolationNote = godPerspective
-    ? `【上帝视角·历史隔离】「最近剧情」中若含玩家与角色当面互动的旧稿，**本轮仍须切换为屏外镜头**；禁止延续同场同框，禁止把历史里的面对面对话当作本轮默认场面。\n`
-    : ''
+    ? `【上帝视角·历史隔离】「最近剧情」中若含玩家与角色当面互动的旧稿，**本轮仍须切换为屏外镜头**；禁止延续同场同框，禁止把历史里的面对面对话当作本轮默认场面。\n` +
+      `【上帝视角·玩家知情封锁】本轮正文仅供读者旁观；**玩家本人对本轮一无所知**。禁止写玩家同步知情、遥感到场、或事后「早知道你刚才……」却无合法路径。\n`
+    : `【上帝切片·玩家知情铁律】「最近剧情」/时间轴中，凡**玩家不在场**的上帝视角/屏外段落：对玩家（{{user}}）**默认不知情**。切回当面或侧幕续写时，**禁止**让玩家无故复述、点破、精准反应屏外细节，或写成「你当时就看见了」；**禁止**把上帝模式当成玩家已知剧情。除非本轮/前文已有合法知情路径（当面告知、消息被看到、可信转述、当面目击等，须能对上）。\n`
   const mainCharacterOffstageReminder = mainCharacterOffstage
-    ? `【当轮强提醒·主角色缺席】约会对象 ${character.realName} **本轮不得出场**。重点写玩家与 NPC/人脉的对白、动作与矛盾；人脉角色须用真实姓名。**禁止** ${character.realName} 的引号对白、当面互动或同框描写。**知情**：${character.realName} 对本轮侧幕内容默认不知；禁止写成其全知或远程旁听。\n`
+    ? `【当轮强提醒·主角色缺席】约会对象 ${character.realName} **本轮不得出场**。重点写玩家与 NPC/人脉的对白、动作与矛盾；人脉角色须用真实姓名。**禁止** ${character.realName} 的引号对白、当面互动或同框描写。**知情**：${character.realName} 对本轮侧幕内容**完全不知情**；禁止写成其全知、远程旁听或感应；后续当面也不得无故点破。\n`
     : ''
   const mainCharacterOffstageHistoryNote = mainCharacterOffstage
     ? `【主角色缺席·历史隔离】「最近剧情」若含 ${character.realName} 出场旧稿，本轮仍须维持其**不在场**；禁止借承接把主角色拉回画面。\n`
@@ -2510,9 +2523,9 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   /** 当面/混合续写时：历史里的侧幕段对主角色默认保密（与本轮是否勾选侧幕无关） */
   const sideStageKnowledgeIsolationNote = !godPerspective
     ? mainCharacterOffstage
-      ? `【侧幕知情·本轮】本轮全文属信息差切片：仅玩家与在场 NPC 可知；${character.realName} 不在知情名单内（除非本轮写出明确传递路径）。思维链【知情边界卡】须写明：${character.realName}=不知本侧幕。\n`
-      : `【侧幕/信息差·知情铁律】「最近剧情」或时间轴中，凡玩家与他人独处、${character.realName} **未在场**的侧幕段落：对 ${character.realName} **默认不知情**。当面续写时**禁止**其无因复述、点破、精准追问侧幕细节，或表现出「当时就知道」；除非本轮/前文已有合法知情路径（玩家亲口告知、当面目击、可信转述、消息被其看到等，须能对上）。短切侧幕同样适用：切回当面后不得让 ${character.realName} 开天眼。上帝视角（玩家不在场）≠ 侧幕（主角色不在场）——勿混用知情对象。\n`
-    : ''
+      ? `【侧幕知情·本轮】本轮全文属信息差切片：仅玩家与在场 NPC 可知；${character.realName} **不在知情名单**（除非本轮写出明确传递路径）。思维链【知情边界卡】须写明：${character.realName}=不知本侧幕。\n`
+      : `【侧幕/不在场·知情铁律·最高优先级】「最近剧情」或时间轴中，凡 ${character.realName} **未在场**的段落（侧幕、玩家与他人独处、短切屏外等）：对 ${character.realName} **默认不知情**。**不在场＝不知道**：看不见、听不见、不能感应、不能开天眼。当面续写时**禁止**其无因复述、点破、精准追问侧幕/不在场细节，或表现出「当时就知道」；除非本轮/前文已有合法知情路径（玩家亲口告知、当面目击、可信转述、消息被其看到等，须能对上）。短切侧幕同样适用：切回当面后不得让 ${character.realName} 开天眼。上帝视角（玩家不在场、对**玩家**保密）≠ 侧幕（主角色不在场、对 **${character.realName}** 保密）——勿混用知情对象。\n`
+    : `【侧幕对照·本轮上帝】本轮是上帝切片（对**玩家**保密）。若历史含侧幕：那些段对 ${character.realName} 仍默认保密，勿在本轮屏外旁白里写成 ${character.realName}「其实一直知道玩家与他人独处细节」却无传递路径。\n`
   const charWbCap = Math.min(refCap, Math.max(8000, 380 + Math.round(targetChars * 6)))
   const charWbgCap = Math.min(refCap, Math.max(4000, 260 + Math.round(targetChars * 3)))
   const mainCharRow = await personaDb.getCharacter(character.id).catch(() => null)
@@ -4312,6 +4325,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           const { timelineSnap, timelineDelta } = await timelinePersistFieldsFromAiTextRaw(aiTextRaw, plotTs, {
             apiConfig,
             plotBody: parsedForPersist.content,
+            userText: msg,
             offlineBlock: memoryGather?.offlineBlock,
             characterId: char.id,
             characterRealName: char.realName,
@@ -5080,6 +5094,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           await timelinePersistFieldsFromAiTextRaw(aiTextRaw, plotTsRegen, {
             apiConfig,
             plotBody: parsedRegen.content,
+            userText: userMsg,
             offlineBlock: memoryGather?.offlineBlock,
             characterId: char.id,
             characterRealName: char.realName,

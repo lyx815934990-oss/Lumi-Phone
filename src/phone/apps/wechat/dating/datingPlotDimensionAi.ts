@@ -168,7 +168,7 @@ function buildDimensionSystemPrompt(
     languageSettings?: DimensionLanguageSettings | null
     /** 与主线约会同一套文风（用户设定或默认汪曾祺白描） */
     styleGenOptions?: Pick<NarrativeGenOptions, 'stylePrompt' | 'referenceSnippet'> | null
-    /** 与私聊同一会话开关：语感同化 */
+    /** 与私聊同一会话开关：语气同化 */
     mimicUserSpeakingStyleEnabled?: boolean
     lifeContext?: DatingPlotDimensionLifeContext | null
   },
@@ -188,10 +188,10 @@ function buildDimensionSystemPrompt(
     kind === 'parallel'
       ? `【平行事件·叙述立场】本任务是锚点正文的**屏外同步切片**：用第三人称旁白写「另一边」正在发生的事；**不是**锚点内任何角色的视角，也**不是**对玩家的第二人称互动。`
       : opts.godPerspective
-        ? `本轮存档已勾选上帝视角：**全篇**写屏外可见场景，玩家不得与约会对象同场同框。`
+        ? `本轮存档已勾选上帝视角：**全篇**写屏外可见场景，玩家不得与约会对象同场同框；本切片细节对玩家默认不知情（后续当面禁止无故点破）。`
         : opts.mainCharacterOffstage
-          ? `本轮存档已勾选侧幕叙写：**全篇**主角色缺席，约会主角色 ${charName} 不得出场、不得被写成在场互动对象；对本轮侧幕内容默认不知情（禁止开天眼）。`
-          : `本轮未锁定上帝/侧幕：以锚点人称与关系为主轴续写；允许按需短切少量屏外或 NPC 侧幕，不必整篇锁死单一视角。`
+          ? `本轮存档已勾选侧幕叙写：**全篇**主角色缺席，约会主角色 ${charName} 不得出场、不得被写成在场互动对象；对本轮侧幕内容默认完全不知情（禁止开天眼；后续当面亦同）。`
+          : `本轮未锁定上帝/侧幕：以锚点人称与关系为主轴续写；允许按需短切少量屏外或 NPC 侧幕，不必整篇锁死单一视角。屏外切片对玩家保密；主角色不在场切片对 ${charName} 保密。`
 
   const taskBlock =
     kind === 'parallel'

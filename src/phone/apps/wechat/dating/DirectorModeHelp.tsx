@@ -134,7 +134,7 @@ export function DirectorModeHelpPanel(props: { open: boolean; onClose: () => voi
               勾选后这一轮**整段**只写「你看不见的地方」：约会对象或路人在别处干什么；没有你本人，也不会直接跟你说话。
             </p>
             <p className="rounded-xl bg-stone-50 px-3 py-2 text-[12px] text-stone-500 ring-1 ring-stone-100">
-              开着的时候，AI 不会替你写你这一轮说了什么、做了什么。
+              开着的时候，AI 不会替你写你这一轮说了什么、做了什么。这段剧情对你（玩家）默认**不知情**；之后回到当面续写时，也不会写成你「早就知道」屏外发生了什么，除非剧情里出现告知/转述等合理路径。
             </p>
           </ModeCard>
 
@@ -147,7 +147,7 @@ export function DirectorModeHelpPanel(props: { open: boolean; onClose: () => voi
               勾选后这一轮**整段**约会对象先不出场，只写你和其他人脉、路人之间的对话和场面；你可以正常在场互动。
             </p>
             <p className="text-[12px] text-stone-500">
-              对象当时不在场，默认**不知道**这段侧幕里发生了什么；之后当面续写也不会无故点破，除非你告诉对方、或剧情里出现转述/看到消息等合理路径。
+              对象当时不在场，默认**完全不知道**这段侧幕里发生了什么；之后当面续写也不会无故点破，除非你告诉对方、或剧情里出现转述/看到消息等合理路径。凡对象不在场的场景，对象都不知情。
             </p>
             <p className="text-[12px] text-stone-500">适合社团、上班、偶遇路人等「对象不在眼前」的段落。</p>
           </ModeCard>
