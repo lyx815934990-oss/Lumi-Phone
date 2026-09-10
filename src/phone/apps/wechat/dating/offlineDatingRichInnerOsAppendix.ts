@@ -1,5 +1,5 @@
 /** 档案室内置预设：线下约会·多内心 OS 描写（仅注入线下约会思维链，不对用户展示正文） */
-import { DATING_INNER_OS_MARKUP_RULE } from './datingInnerOsMarkup'
+import { DATING_INNER_OS_EQUALITY_RULE, DATING_INNER_OS_MARKUP_RULE } from './datingInnerOsMarkup'
 
 export const OFFLINE_DATING_RICH_INNER_OS_APPENDIX = `
 <Offline_Dating_Rich_InnerMonologue>
@@ -17,6 +17,9 @@ export const OFFLINE_DATING_RICH_INNER_OS_APPENDIX = `
 2. **第一人称**：OS 内「我」指该角色本人；禁止 OS 内第三人称接龙（「他怎样」应写在 ** 外旁白）。
 3. **多人场**：写 NPC OS 时必须一眼可读是谁（【内心｜姓名】或紧邻对白前缀）。
 4. **表里反差**：鼓励「外显神态克制 + OS 里翻涌」或「对白逞强 + OS 露怯」，但 OS 须基于当轮可见刺激，禁止无因臆测玩家内心。
+5. **平等尊重（硬）**：见下方铁律——OS **不是**骂人/幼化特区。
+
+${DATING_INNER_OS_EQUALITY_RULE}
 
 **三、与神态描写的配合**
 - 每写一处 OS，优先在其**前或后**接 1 个**可见**微神态/小动作（眉梢、视线躲闪、指节收紧、呼吸一滞、摸耳垂、唇角似笑非笑等），避免「只有脑内戏、人物像木偶」；**旁白勿写「他很尴尬」类状态句**，须用具体神态动作外化，OS 写潜台词而非复读状态标签。
@@ -26,6 +29,10 @@ export const OFFLINE_DATING_RICH_INNER_OS_APPENDIX = `
 - 本轮计划写几处 OS？每处约多少字（须 ≥45 汉字）、落在哪个情节节点？
 - 每条是否含至少两层（表层判断/犹豫/未说出口）？是否避免十来字敷衍？
 - 是否与神态/动作成对出现？是否避免与对白同义复读？
+- **是否出现「傻逼 / 小没良心的 / 小家伙…」等侮辱幼化称呼？有则整条重写。**
+- **是否出现「胆子越来越大了 / 胆子肥了 / 能耐了你」等量胆子上位腔？有则整条重写。**
+- **是否出现「你那小身板可以吗 / 就凭你也敢」等狠话贬低？有则整条重写。**
+- **是否把 {{user}} 的狠话当笑话嘲讽（「到时候你可别先认输」等）？有则整条重写。**
 - 若 VN：【内心】条数与单条字数是否达到本预设下限？
 </Offline_Dating_Rich_InnerMonologue>
 `.trim()

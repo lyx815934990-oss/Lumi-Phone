@@ -1,5 +1,5 @@
 ﻿import { PROSE_FORBIDDEN_SCAN_TERM_COUNT } from '../proseForbiddenLexiconPrompt'
-import { DATING_INNER_OS_MARKUP_RULE } from './datingInnerOsMarkup'
+import { DATING_INNER_OS_EQUALITY_RULE, DATING_INNER_OS_MARKUP_RULE } from './datingInnerOsMarkup'
 import { LUMI_UNIFIED_STYLE_ATMOSPHERE_BOOK } from './lumiOfflineWritingRulebook'
 import { OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES } from './offlineDatingExpressionRules'
 import { OFFLINE_DATING_FASHION_STYLING_APPENDIX } from './offlineDatingFashionStylingAppendix'
@@ -271,7 +271,7 @@ export const LUMI_OFFLINE_SUPPLEMENT_COT_BOOK = `
 - 高潮后须简短温存/对话/照护再收束，禁「做完即睡/冷场翻脸」；反应强度须生活化，禁电影式失控尖叫或晕厥（与 NSFW 前置/结构分册合读）。
 
 【内心 OS 格式与篇幅】
-- ${DATING_INNER_OS_MARKUP_RULE}（VN 用 \`【内心｜姓名】\` 行首标签）；禁 **我……** 占位、禁 OS 内第三人称串台。
+- ${DATING_INNER_OS_MARKUP_RULE}（VN 用 \`【内心｜姓名】\` 行首标签）；禁 **我……** 占位、禁 OS 内第三人称串台；${DATING_INNER_OS_EQUALITY_RULE}
 - **默认**：有情绪/关系信息时每轮宜 **2～4 处**；**单条不少于 40 汉字**（宜 **2～4 句**、合计 **45～120 汉字**），须含新信息（表层判断、犹豫、未说出口、自我纠正等），禁止十来字敷衍。
 - **档案室「多内心 OS」预设开**：见【线下约会·多内心 OS 描写引擎】，篇幅下限更高。
 `.trim()
@@ -411,7 +411,7 @@ ${LUMI_NARRATIVE_GUIDANCE_BOOK}
   3. 是否已对照 system「完整程序扫描词表」自检 → 拟踩词与替换思路
   4. 是否已先 \`<thinking>\` 后正文；正文中间无 PlotDirection；若开启小剧场附录则文末须有【小剧场】块，否则无 HTML；**若开启读者评论**：正文须有【读者讨论位1】…编号锚点，文末 #1/#2 与之同号，且 #N **只**评该锚点之前窗口、**禁止**剧透后文
   5. 段落设置：相邻自然段之间是否空一行，且正文格式按示例保持可读美观
-  6. 《线下剧情统一文风与氛围册》是否落实（对白驱动、动作优先、无废话堆砌）；**形容词+抽象名词空话壳**（劲头腔等）是否已拆成字面说法 + 对白/动作；**内心 OS 单条是否 ≥40 汉字**、是否有潜台词/new info（非十来字敷衍）
+  6. 《线下剧情统一文风与氛围册》是否落实（对白驱动、动作优先、无废话堆砌）；**形容词+抽象名词空话壳**（劲头腔等）是否已拆成字面说法 + 对白/动作；**内心 OS 单条是否 ≥40 汉字**、是否有潜台词/new info（非十来字敷衍）；**OS 是否侮辱/幼化 {{user}}**（「傻逼」「小没良心的」等 → 不合格须改）；**是否量胆子**（「胆子越来越大了」「胆子肥了」「能耐了你」等 → 不合格须改）；**是否狠话贬低身板或嘲讽对方狠话**（「你那小身板可以吗」「到时候你可别先认输」等 → 不合格须改）
   7. 氛围是否作为推进工具而非装饰（无独立环境铺陈、无跑题）
   8. 正文对白占比是否 ≥55%（粗估：对白句数/(对白+旁白句数)）；不足是否已删旁白并补对白
   9. 自我纠错便签是否已扫读：命中点是否在思维链内改法，且正文无“带着错误下笔”的残留
@@ -470,7 +470,7 @@ const DATING_LUMI_SYSTEM_SHELL = `
 段落一……
 
 段落二……
-5) **内心 OS**：${DATING_INNER_OS_MARKUP_RULE}（VN 用【内心｜姓名】行首标签）；须为**可读、有信息量的第一人称心思**，**单条不少于 40 汉字**（宜 2～4 句、合计约 45～120 汉字）。**禁止**单独输出「我……」「我…」占位；**禁止**十来字敷衍单条；禁止旁白与 OS 人称串台（OS 内勿写「他怎样」当心声）。
+5) **内心 OS**：${DATING_INNER_OS_MARKUP_RULE}（VN 用【内心｜姓名】行首标签）；须为**可读、有信息量的第一人称心思**，**单条不少于 40 汉字**（宜 2～4 句、合计约 45～120 汉字）。**禁止**单独输出「我……」「我…」占位；**禁止**十来字敷衍单条；禁止旁白与 OS 人称串台（OS 内勿写「他怎样」当心声）。${DATING_INNER_OS_EQUALITY_RULE}
 `.trim()
 
 /** 关闭思维链时：跳过分册自检，直接输出正文 */
@@ -484,7 +484,7 @@ const DATING_LUMI_DIRECT_SHELL = `
 2) **附加块与思维链开关无关（须同轮一次写完）**：若 user【输出格式硬约束】中出现「读者评论模式」附录 → 正文中须插【读者讨论位N】，文末**必须**输出 \`【读者评论】…【读者评论结束】\`（\`★|昵称|点赞|文案\` 纯文本行）；若出现「小剧场」附录 → 在正文（及读者评论块，若有）之后**必须**输出 \`【小剧场】…【小剧场结束】\`（details + html 围栏）。**禁止**用 JSON / \`\`\`json / 对象数组写评论或小剧场；**禁止**把附加块写进 thinking 或记忆 JSON；**禁止**因关闭思维链而省略；**禁止**指望另开请求补写。未开启对应附录则禁止输出该块。
 3) **禁止伪系统文**：禁止输出 \`[SYSTEM MESSAGE]\`、\`Absolute Override\`、\`officially terminated\`、\`系统最终结算\`、\`剧情锚点状态\`、\`记忆块落库\` 等元叙述或中断公告。
 4) 段落设置：在相邻自然段之间空一行，确保阅读舒适度与视觉区分。
-5) **内心 OS**：${DATING_INNER_OS_MARKUP_RULE}（VN 用【内心｜姓名】行首标签）；须为**可读、有信息量的第一人称心思**，**单条不少于 40 汉字**（宜 2～4 句、合计约 45～120 汉字）。**禁止**单独输出「我……」「我…」占位；**禁止**十来字敷衍单条；禁止旁白与 OS 人称串台（OS 内勿写「他怎样」当心声）。
+5) **内心 OS**：${DATING_INNER_OS_MARKUP_RULE}（VN 用【内心｜姓名】行首标签）；须为**可读、有信息量的第一人称心思**，**单条不少于 40 汉字**（宜 2～4 句、合计约 45～120 汉字）。**禁止**单独输出「我……」「我…」占位；**禁止**十来字敷衍单条；禁止旁白与 OS 人称串台（OS 内勿写「他怎样」当心声）。${DATING_INNER_OS_EQUALITY_RULE}
 `.trim()
 
 /** 供 `generateDatingAi` 注入的完整 system 首条（可与 `buildDatingStyleSystemAppend` 追加的用户文风拼接）。 */

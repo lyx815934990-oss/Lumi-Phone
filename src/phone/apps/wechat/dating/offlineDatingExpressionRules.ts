@@ -1,5 +1,5 @@
 /** 线下约会剧情：神态与情绪外化（始终注入 system，与档案室预设无关） */
-import { DATING_INNER_OS_MARKUP_RULE } from './datingInnerOsMarkup'
+import { DATING_INNER_OS_EQUALITY_RULE, DATING_INNER_OS_MARKUP_RULE } from './datingInnerOsMarkup'
 
 export const OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES = `
 【线下约会·神态与情绪外化】
@@ -24,4 +24,6 @@ export const OFFLINE_DATING_EXPRESSION_AND_DEMEANOR_RULES = `
    - **禁止**：「胸腔里的心脏」「胸膛深处的心跳」「心脏在肋骨里撞击/砸/擂/撞得生疼」等叠床架屋；要写就直接写「心跳很快」「心口一紧」，或一句可见反应（耳根红了、呼吸乱了）。
    - **宜**：他耳根红了。/ 他心跳很快，话顿了一下。/ 她摸了下发烫的耳垂。
    - **忌**：他的耳朵红得几乎要滴出血来；胸腔里的心脏一下下撞击着肋骨。
+
+${DATING_INNER_OS_EQUALITY_RULE}
 `.trim()
