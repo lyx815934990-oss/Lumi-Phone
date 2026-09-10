@@ -39,7 +39,10 @@ import {
   type StoryTimelinePromptLoadOpts,
   type StoryTimelineSummaryDelta,
 } from './storyTimelineTypes'
-import { pickLatestStoryCalendarLabel } from './storyTimelineCalendarContext'
+import {
+  pickLatestStoryCalendarLabel,
+  resolveStoryCalendarAnchorFromPlotItems,
+} from './storyTimelineCalendarContext'
 import { normalizeWeChatTimeConfig, resolveWeChatCurrentTimeMs } from '../time/wechatTimeUtils'
 import { formatStoryTimeClockFromMs } from '../time/applyOnlineChatTimeFusion'
 
@@ -82,20 +85,9 @@ export async function persistStoryTimelineFromSummaryDelta(
   } catch {
     /* ignore */
   }
-  try {
-    const timeRow = await personaDb.getCharacterTimeSettings(cid)
-    const cfg = timeRow?.config ? normalizeWeChatTimeConfig(timeRow.config) : null
-    if (cfg?.mode === 'custom' && timeRow?.timePerceptionEnabled !== false) {
-      const liveMs = resolveWeChatCurrentTimeMs(cfg)
-      const liveLabel = composeStoryTimelineCalendarAnchorLabel({
-        story_day: formatGregorianStoryDayFromMs(liveMs),
-        story_time: formatStoryTimeClockFromMs(liveMs),
-      }).trim()
-      floorLabel = pickLatestStoryCalendarLabel(floorLabel, liveLabel)
-    }
-  } catch {
-    /* ignore */
-  }
+  // 不把「自定义线上钟 live」并入 chronology floor：
+  // 钟跨过午夜后会把仍属前一日的同场摘要强行钳到次日（16号戏→17号摘要）。
+  // live 钟只影响界面「现在」，不该改写本轮材料所在公历日。
   try {
     const chatRows = await personaDb.listWeChatChatMessagesRecentByCharacter({
       characterId: cid,
@@ -199,8 +191,20 @@ export async function rebuildStoryTimelineFromDatingPlots(
   plots: PlotItem[],
   opts?: {
     apiConfig?: ApiConfigCore | null
+    /**
+     * 手改剧情发生时间纠错时：禁止用当前线上钟抬升「现在」。
+     * 否则错误更晚的 custom 钟会盖回刚改对的 plot/摘要，且非 forceAlign 同步也拉不回线上钟。
+     */
+    skipLiveClockLift?: boolean
+    /**
+     * 删剧情 / 回滚 / 重生前裁剪：以剩余 plot 合并结果为「现在」，
+     * 禁止用线上钟或残留摘要行抬升，并以 forceAlign 把线上钟回拨到该锚点。
+     */
+    forceAlignNowToPlots?: boolean
   },
 ): Promise<{ parallelSummaryPlotIds: string[] }> {
+  const forceAlignNowToPlots = opts?.forceAlignNowToPlots === true
+  const skipLiveClockLift = forceAlignNowToPlots || opts?.skipLiveClockLift === true
   const cid = characterId.trim()
   if (!cid) return { parallelSummaryPlotIds: [] }
 
@@ -254,25 +258,28 @@ export async function rebuildStoryTimelineFromDatingPlots(
   }
 
   // 手改行 / 线上时钟若已晚于 plot 合并结果，抬升「现在」，禁止错误年份盖回
-  if (merged) {
+  // （纠错改时间 / 删剧情回拨：禁止用错误更晚钟或残留行抬升）
+  if (merged && !forceAlignNowToPlots) {
     let latestRowLabel = ''
     for (const r of existingRows) {
       const label = formatStoryTimelineListTimeLabel(r.rowText ?? '').trim()
       if (label) latestRowLabel = pickLatestStoryCalendarLabel(latestRowLabel, label)
     }
     let liveLabel = ''
-    try {
-      const timeRow = await personaDb.getCharacterTimeSettings(cid)
-      const cfg = timeRow?.config ? normalizeWeChatTimeConfig(timeRow.config) : null
-      if (cfg?.mode === 'custom' && timeRow?.timePerceptionEnabled !== false) {
-        const liveMs = resolveWeChatCurrentTimeMs(cfg)
-        liveLabel = composeStoryTimelineCalendarAnchorLabel({
-          story_day: formatGregorianStoryDayFromMs(liveMs),
-          story_time: formatStoryTimeClockFromMs(liveMs),
-        }).trim()
+    if (!skipLiveClockLift) {
+      try {
+        const timeRow = await personaDb.getCharacterTimeSettings(cid)
+        const cfg = timeRow?.config ? normalizeWeChatTimeConfig(timeRow.config) : null
+        if (cfg?.mode === 'custom' && timeRow?.timePerceptionEnabled !== false) {
+          const liveMs = resolveWeChatCurrentTimeMs(cfg)
+          liveLabel = composeStoryTimelineCalendarAnchorLabel({
+            story_day: formatGregorianStoryDayFromMs(liveMs),
+            story_time: formatStoryTimeClockFromMs(liveMs),
+          }).trim()
+        }
+      } catch {
+        /* ignore */
       }
-    } catch {
-      /* ignore */
     }
     const lifted = pickLatestStoryCalendarLabel(
       composeStoryTimelineCalendarAnchorLabel({
@@ -300,14 +307,42 @@ export async function rebuildStoryTimelineFromDatingPlots(
   if (!merged && !plotRows.length) {
     // 剩余剧情无可用 delta（如重生首段 AI）：清空 plot 绑定行与世界锚点
     await personaDb.deleteStoryTimelinePlotRowsWithPlotIdForCharacter(cid)
-    if (prevState) {
+    const fallbackAnchor = forceAlignNowToPlots
+      ? resolveStoryCalendarAnchorFromPlotItems(plots).trim()
+      : ''
+    const fallbackDay = fallbackAnchor.match(/(\d{4}年\d{1,2}月\d{1,2}日)/)?.[1]
+    const fallbackClock = fallbackAnchor.match(/(\d{1,2}):(\d{2})/)
+    const fallbackTime = fallbackClock
+      ? `${String(fallbackClock[1]).padStart(2, '0')}:${fallbackClock[2]}`
+      : undefined
+    if (prevState || fallbackDay) {
       await personaDb.putStoryTimelineState({
         ...createEmptyStoryTimelineState(cid),
         todos: [],
+        ...(fallbackDay
+          ? {
+              currentStoryDay: fallbackDay,
+              ...(fallbackTime ? { currentStoryTime: fallbackTime } : {}),
+            }
+          : {}),
         ...(prevState?.manualAnchorBlock?.trim()
           ? { manualAnchorBlock: prevState.manualAnchorBlock }
           : {}),
       })
+    }
+    if (forceAlignNowToPlots && fallbackDay) {
+      try {
+        await syncNetworkStoryNowFromPrimary({
+          sourceCharacterId: cid,
+          storyDay: fallbackDay,
+          storyTime: fallbackTime,
+          storyNowMs: storyDayTimeToMs(fallbackDay, fallbackTime),
+          syncOnlineClock: true,
+          forceAlign: true,
+        })
+      } catch {
+        /* ignore */
+      }
     }
     const allRowsEmpty = await personaDb.listStoryTimelinePlotRowsByCharacterId(cid)
     await syncDatingPlotSummaryCursorFromPlotRows(cid, allRowsEmpty)
@@ -325,12 +360,14 @@ export async function rebuildStoryTimelineFromDatingPlots(
     })
     try {
       // rebuild 人脉：重建主状态后对齐同圈剧情「现在」
+      // 删剧情回拨时 forceAlign，允许线上钟回到剩余 plot 锚点
       await syncNetworkStoryNowFromPrimary({
         sourceCharacterId: cid,
         storyDay: merged.currentStoryDay,
         storyTime: merged.currentStoryTime,
         storyNowMs: storyDayTimeToMs(merged.currentStoryDay, merged.currentStoryTime),
         syncOnlineClock: true,
+        forceAlign: forceAlignNowToPlots,
       })
     } catch {
       /* ignore */

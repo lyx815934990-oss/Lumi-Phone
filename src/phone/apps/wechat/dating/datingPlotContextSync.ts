@@ -120,8 +120,10 @@ export async function finalizeDatingPlotListMutationSideEffects(
   const charId = params.perspectiveCharacterId.trim()
   if (charId) {
     try {
+      // 删轮/回滚后：按剩余剧情重算「现在」，并 forceAlign 回拨线上钟（避免仍停在已删轮的更晚时刻）
       await rebuildStoryTimelineFromDatingPlots(charId, params.nextPlots, {
         apiConfig: params.apiConfig ?? null,
+        forceAlignNowToPlots: true,
       })
     } catch (e) {
       console.warn('[dating] story timeline rebuild after plot mutation failed', e)

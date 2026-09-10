@@ -13,6 +13,10 @@ import {
   pickLatestStoryCalendarLabel,
   resolveStoryCalendarAnchorFromPlotItems,
 } from '../memory/storyTimelineCalendarContext'
+import {
+  storyDayTimeToMs,
+  syncNetworkStoryNowFromPrimary,
+} from '../memory/storyTimelineNetworkNowSync'
 import { rebuildStoryTimelineFromDatingPlots } from '../memory/storyTimelinePersist'
 import {
   computeStoryTimelineRowTextHash,
@@ -78,8 +82,9 @@ async function syncOfflineSummaryRowCalendar(params: {
 }
 
 /**
- * 按「当前剧情 + 摘要行」重算轴上「现在」。
- * 可下调（例如误写成 2029 后手改回 2028），不把旧的 state / 线上拨钟当不可逾越的上限。
+ * 按「当前剧情 + 摘要行」重算轴上「现在」，并**强制对齐线上自定义时钟**。
+ * 可下调（例如误写成 2029 后手改回 2028）；不把旧的 state / 线上拨钟当不可逾越的上限。
+ * （与记忆档案馆摘要「改时间」同一套 forceAlign，避免线上钟钉死错误「现在」污染注入。）
  */
 export async function applyStoryTimelineNowFromLatestAnchors(params: {
   characterId: string
@@ -115,15 +120,30 @@ export async function applyStoryTimelineNowFromLatestAnchors(params: {
   const nextTime = timeMatch
     ? `${String(timeMatch[1]).padStart(2, '0')}:${timeMatch[2]}`
     : curTime
-  if (curDay === dayPart && (!timeMatch || curTime === nextTime)) return latest
-  await personaDb.putStoryTimelineState({
-    ...st,
-    characterId: cid,
-    updatedAt: Date.now(),
-    currentStoryDay: dayPart,
-    currentStoryTime: nextTime || st.currentStoryTime,
-    todos: [],
-  })
+  const stateNeedsWrite = curDay !== dayPart || (Boolean(timeMatch) && curTime !== nextTime)
+  if (stateNeedsWrite) {
+    await personaDb.putStoryTimelineState({
+      ...st,
+      characterId: cid,
+      updatedAt: Date.now(),
+      currentStoryDay: dayPart,
+      currentStoryTime: nextTime || st.currentStoryTime,
+      todos: [],
+    })
+  }
+  // 无论 state 是否已是该日：线上钟若仍停在错误更晚/更早位置，必须拉齐，否则聊天注入「故事现在」仍用错钟
+  try {
+    await syncNetworkStoryNowFromPrimary({
+      sourceCharacterId: cid,
+      storyDay: dayPart,
+      storyTime: nextTime || st.currentStoryTime,
+      storyNowMs: storyDayTimeToMs(dayPart, nextTime || st.currentStoryTime),
+      syncOnlineClock: true,
+      forceAlign: true,
+    })
+  } catch (e) {
+    console.warn('[dating] force-align online clock after story-now resync failed', e)
+  }
   return latest
 }
 
@@ -165,6 +185,8 @@ export async function persistPlotStoryTimeEdit(params: {
   try {
     await rebuildStoryTimelineFromDatingPlots(cid, plotsForRebuild, {
       apiConfig: params.apiConfig ?? null,
+      // 纠错时禁止错误线上钟在 rebuild 里抬升「现在」
+      skipLiveClockLift: true,
     })
   } catch (e) {
     console.warn('[dating] rebuild story timeline after plot time edit failed', e)

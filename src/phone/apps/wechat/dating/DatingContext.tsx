@@ -2359,7 +2359,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     ? calendarAdvanced ||
       (chronologyFloorForPrompt && chronologyFloorForPrompt !== offlineLastCalendarAnchor)
       ? `\n【剧情时间锚点】故事「现在」= **${storyNowLabel}**（线上/剧情轴已推进；线下末条参考 ${offlineLastCalendarAnchor || '无'} 为往事）。本轮正文与 [TIMELINE] 的 story_day/**年份与月日默认等于该「现在」同日**（时刻可略后）；仅当正文明示跨日或用户已跳时到更晚时才可写更晚日期。禁止写成末条年或更早（例：禁止在「现在」已是 10月11日时仍写 10月8日）。勿用手机日期。\n`
-      : `\n【剧情时间锚点（上一回合故事内末尾·本轮须承接；勿用手机日期）】${storyNowLabel}\n【同日默认】正文未写跨日时，本轮 story_day **必须仍是该日**，只允许时刻往后；禁止无故写成次日。\n`
+      : `\n【剧情时间锚点（上一回合故事内末尾·本轮须承接；勿用手机日期）】${storyNowLabel}\n【同日默认】正文未写**已发生的切日**（到了次日/隔夜到天亮等）时，本轮 story_day **必须仍是该日**，只允许时刻往后；「约好明天见」只是计划，**禁止**因此写成次日。\n`
     : ''
   const storyCalendarChronologyRule =
     chronologyFloorForPrompt || offlineLastCalendarAnchor
@@ -4981,6 +4981,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         try {
           await rebuildStoryTimelineFromDatingPlots(char.id, before, {
             apiConfig,
+            forceAlignNowToPlots: true,
           })
         } catch (timelineRevertErr) {
           console.warn('[dating] story timeline revert before regenerate failed', timelineRevertErr)

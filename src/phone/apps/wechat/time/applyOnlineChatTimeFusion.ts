@@ -13,7 +13,7 @@ import {
   syncNetworkStoryNowFromPrimary,
 } from '../memory/storyTimelineNetworkNowSync'
 import type { WeChatTimeConfig } from '../newFriendsPersona/types'
-import { normalizeWeChatTimeConfig } from './wechatTimeUtils'
+import { normalizeWeChatTimeConfig, resolveWeChatCurrentTimeMs } from './wechatTimeUtils'
 
 export type StoryTimeFloorInfo = {
   /** 用户可见剧情锚点文案 */
@@ -488,6 +488,7 @@ export async function applyOnlineChatTimeFusion(
  * 将剧情轴「现在」与线上流动时钟对齐（仅前进、不早于剧情锚点）。
  * - 无剧情锚点 / 非 custom / 时间感知关 / 墙钟未落在故事日历上：不写库。
  * - 供私聊 AI 注入、控制台展示等在「时钟已流逝但未点保存」时补同步。
+ * - **优先读 IDB 最新 custom 钟**（线下改时间 forceAlign 后，避免 React hook 仍持旧钟把错误「现在」写回）。
  */
 export async function syncStoryTimelineNowFromOnlineClock(params: {
   characterId: string
@@ -495,9 +496,6 @@ export async function syncStoryTimelineNowFromOnlineClock(params: {
 }): Promise<{ storyLabel: string; synced: boolean }> {
   const cid = params.characterId.trim()
   if (!cid) return { storyLabel: '', synced: false }
-
-  const live = Math.round(params.liveTimeMs)
-  if (!Number.isFinite(live) || live <= 0) return { storyLabel: '', synced: false }
 
   const floor = await resolveCharacterStoryTimeFloor(cid)
   if (!floor.hasFloor || floor.floorMs == null) {
@@ -513,10 +511,21 @@ export async function syncStoryTimelineNowFromOnlineClock(params: {
     return { storyLabel: floor.label, synced: false }
   }
 
+  const cfg = normalizeWeChatTimeConfig(settings?.config)
+  const fromIdb = resolveWeChatCurrentTimeMs(cfg)
+  const fromCaller = Math.round(params.liveTimeMs)
+  // IDB 已 forceAlign 纠错后以库为准；caller 仅作兜底
+  let live =
+    Number.isFinite(fromIdb) && fromIdb > 0
+      ? Math.round(fromIdb)
+      : Number.isFinite(fromCaller) && fromCaller > 0
+        ? fromCaller
+        : NaN
+  if (!Number.isFinite(live) || live <= 0) return { storyLabel: floor.label, synced: false }
+
   let chosen = live
   if (chosen < floor.floorMs) chosen = floor.floorMs
 
-  const cfg = normalizeWeChatTimeConfig(settings?.config)
   if (
     !isWeChatClockAlignedWithStoryFloor(chosen, floor.floorMs, 'custom', {
       customBaseTime: cfg.customBaseTime,
