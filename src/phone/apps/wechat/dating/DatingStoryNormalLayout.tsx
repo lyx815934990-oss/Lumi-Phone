@@ -597,6 +597,7 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
         onBack={actions.onBackToSelect}
         onResetProgress={() => actions.setResetArchiveConfirmOpen(true)}
         onWorldBook={() => actions.setArchiveWbSheetOpen(true)}
+        onWritingPresets={() => actions.setWritingPresetsSheetOpen(true)}
         onOpenLook={() => setLookSheetOpen(true)}
         onOpenTutorial={() => setTutorialOpen(true)}
         lookOpen={lookSheetOpen}

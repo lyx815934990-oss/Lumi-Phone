@@ -56,6 +56,7 @@ import { splitDatingAssistantOutput } from './plotCoT'
 import { extractVnVoiceParamsBlock } from './vnVoiceParamsStrip'
 import { StyleSettingsDrawer } from './StyleSettingsDrawer'
 import { DatingArchiveWorldbookSheet } from './DatingArchiveWorldbookSheet'
+import { DatingWritingPresetsSheet } from './DatingWritingPresetsSheet'
 import { loadDatingStyleTuning, type DatingStyleTuning } from './styleTuningStorage'
 import {
   clampDatingLengthTargetChars,
@@ -781,6 +782,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
   const [resetArchiveConfirmOpen, setResetArchiveConfirmOpen] = useState(false)
   const [styleDrawerOpen, setStyleDrawerOpen] = useState(false)
   const [archiveWbSheetOpen, setArchiveWbSheetOpen] = useState(false)
+  const [writingPresetsSheetOpen, setWritingPresetsSheetOpen] = useState(false)
   const [plotImageSettingsOpen, setPlotImageSettingsOpen] = useState(false)
   const { configured: imageGenConfigured } = useImageGenSettings()
   const [styleTuning, setStyleTuning] = useState<DatingStyleTuning>(() => ({ stylePrompt: '', referenceSnippet: '' }))
@@ -3296,6 +3298,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     characters,
     setHeartWhisperOpen,
     setArchiveWbSheetOpen,
+    setWritingPresetsSheetOpen,
     setStyleDrawerOpen,
     setStyleTuning,
     setPlotImageSettingsOpen,
@@ -3359,6 +3362,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     saveEditedPlotBody,
     onComposerFocus,
     setArchiveWbSheetOpen,
+    setWritingPresetsSheetOpen,
     setAutoUserReaction,
     setBranchEnabled,
     setCommentModeEnabled,
@@ -3565,6 +3569,16 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                 }}
               >
                 档案室世界书
+              </button>
+              <button
+                type="button"
+                className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-[#262626] hover:bg-stone-50"
+                onClick={() => {
+                  setWritingPresetsSheetOpen(true)
+                  setMenuOpen(false)
+                }}
+              >
+                写作预设
               </button>
               <button
                 type="button"
@@ -4849,6 +4863,12 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
       <DatingArchiveWorldbookSheet
         open={archiveWbSheetOpen}
         onClose={() => setArchiveWbSheetOpen(false)}
+        themeStyle={buildStoryRpgThemeStyle(storyAppearance)}
+      />
+
+      <DatingWritingPresetsSheet
+        open={writingPresetsSheetOpen}
+        onClose={() => setWritingPresetsSheetOpen(false)}
         themeStyle={buildStoryRpgThemeStyle(storyAppearance)}
       />
 

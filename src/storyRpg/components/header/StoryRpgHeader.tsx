@@ -1,4 +1,4 @@
-import { ArrowLeft, BookOpen, CircleHelp, RotateCcw, Sparkles } from 'lucide-react'
+import { ArrowLeft, BookOpen, CircleHelp, PenLine, RotateCcw, Sparkles } from 'lucide-react'
 import { motion } from 'framer-motion'
 import type { DatingStoryAppearance } from '../../../phone/apps/wechat/dating/datingStoryAppearance'
 import {
@@ -18,6 +18,8 @@ type Props = {
   onBack?: () => void
   onResetProgress?: () => void
   onWorldBook?: () => void
+  /** 打开「写作预设」（系统默认 / 自定义预设） */
+  onWritingPresets?: () => void
   /** 打开「外观」合集（主题·字体·文风） */
   onOpenLook?: () => void
   /** 打开文字教程 / 说明 */
@@ -37,6 +39,7 @@ export function StoryRpgHeader({
   onBack,
   onResetProgress,
   onWorldBook,
+  onWritingPresets,
   onOpenLook,
   onOpenTutorial,
   lookOpen = false,
@@ -104,6 +107,19 @@ export function StoryRpgHeader({
         ) : (
           <span className="size-8 shrink-0" aria-hidden />
         )}
+
+        {onWritingPresets ? (
+          <button
+            type="button"
+            onClick={onWritingPresets}
+            className={iconBtn}
+            aria-label="写作预设"
+            title="写作预设（系统默认 / 自定义）"
+            {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-writing-presets' }}
+          >
+            <PenLine className="size-[17px]" />
+          </button>
+        ) : null}
 
         <div className="flex min-w-0 max-w-[30%] items-center gap-1.5">
           {avatar ? (

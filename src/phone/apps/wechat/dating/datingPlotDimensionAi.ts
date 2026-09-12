@@ -25,6 +25,7 @@ import { PROSE_FORBIDDEN_LEXICON_PROMPT } from '../proseForbiddenLexiconPrompt'
 import { MBTI_OUTPUT_BAN_RULE } from '../mbtiOutputBan'
 import { splitDatingAssistantOutput } from './plotCoT'
 import { buildDatingStyleSystemAppend } from './datingStylePrompt'
+import { OFFLINE_DATING_CREATIVE_RULES } from './offlineDatingMustInjectPrompts'
 import { DATING_MIMIC_USER_SPEAKING_STYLE_APPENDIX } from '../wechatMimicUserSpeakingStyle'
 import { loadMimicUserSpeakingStyleEnabled } from '../mimicUserSpeakingStyleSettings'
 import { OFFLINE_DATING_RICH_INNER_OS_APPENDIX } from './offlineDatingRichInnerOsAppendix'
@@ -290,6 +291,7 @@ ${fashionBlock ? `\n\n${fashionBlock}` : ''}
 ${intimacyPoseBlock ? `\n\n${intimacyPoseBlock}` : ''}
 
 你是线下约会「${PLOT_DIMENSION_LABELS[kind]}」写手：与主线约会**同一文风管线、同一档案室约束**，不是另一套模板腔助手。
+${OFFLINE_DATING_CREATIVE_RULES}
 ${modeNote}
 ${styleDuty}
 ${perspectiveRule}

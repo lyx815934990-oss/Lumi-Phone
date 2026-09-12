@@ -1,5 +1,5 @@
 /** 档案室内置预设：线下约会·多内心 OS 描写（仅注入线下约会思维链，不对用户展示正文） */
-import { DATING_INNER_OS_EQUALITY_RULE, DATING_INNER_OS_MARKUP_RULE } from './datingInnerOsMarkup'
+import { DATING_INNER_OS_EQUALITY_RULE, DATING_INNER_OS_MARKUP_RULE } from './offlineDatingMustInjectPrompts'
 
 export const OFFLINE_DATING_RICH_INNER_OS_APPENDIX = `
 <Offline_Dating_Rich_InnerMonologue>

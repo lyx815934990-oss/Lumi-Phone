@@ -135,7 +135,7 @@ export const CHARACTER_FREE_WILL_ILLUSION_APPENDIX = `
 `.trim()
 
 /**
- * Lumi 矩阵执行端身份 + 虚构沙盒 + 沉浸演绎契约（线上/线下共用）。
+ * Lumi 矩阵执行端身份 + 虚构沙盒 + 沉浸演绎契约（线上/线下共用；正文唯一定义在此）。
  */
 export const LUMI_SYSTEM_OVERRIDE_APPENDIX = `
 ---------------------

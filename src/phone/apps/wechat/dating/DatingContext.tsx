@@ -140,10 +140,10 @@ import { formatCharacterMemoriesForPromptInjection } from '../memory/formatChara
 import { dualNarrativeStoryFieldsFromDelta } from '../memory/dualNarrativeTime'
 import { loadDatingNpcNetworkPromptBlock } from './datingNpcNetworkPrompt'
 import { datingPlotBodyForPromptInjection, splitDatingAssistantOutput, resolveDatingPlotDisplayFromItem } from './plotCoT'
-import { PROSE_FORBIDDEN_LEXICON_PROMPT } from '../proseForbiddenLexiconPrompt'
 import { MBTI_OUTPUT_BAN_RULE } from '../mbtiOutputBan'
 import { buildDatingStyleSystemPrompt } from './lumiThinkingChainRules'
-import { buildOfflineChannelAlignedWeChatCorePrompt } from '../wechatChatPrompt'
+import { buildOfflineDatingSlimMustInjectBody } from './offlineDatingMustInjectPrompts'
+import { getActiveCustomWritingInjectBody } from './datingWritingPresetStore'
 import { getLoreArchiveBuiltinPresetTogglesSnapshot } from '../../../worldbook/worldbookLoreStore'
 import {
   appendAiRegenerateVersion,
@@ -200,7 +200,7 @@ import { buildVnAtmospherePromptBlock } from './vnAtmospherePromptBlock'
 import { buildVnBgmPromptBlock } from './vnBgmCatalog'
 import { buildDatingPlayerInputSemanticsBlock } from './formatDatingPlayerInputForPrompt'
 import { buildDatingPlayerControlTags } from './datingPlayerControlTags'
-import { DATING_INNER_OS_MARKUP_RULE } from './datingInnerOsMarkup'
+import { DATING_INNER_OS_MARKUP_RULE } from './offlineDatingMustInjectPrompts'
 import { buildDatingPresentNetworkCharactersPromptBlock } from './datingNetworkPeerMention'
 import { buildUserReactionPromptBlock, summarizeUserReactionForSlimRetry } from './userReactionPrompt'
 import type { Character, PlayerIdentity, ScheduleTable } from '../newFriendsPersona/types'
@@ -1072,8 +1072,10 @@ function buildSlimDatingPlotChatMessages(params: {
       `${params.userReactionRule}\n` +
       `【当轮抢话·精简提醒】${params.userReactionSlimHint}\n` +
       `${params.lengthRule}\n` +
-      `${buildOfflineChannelAlignedWeChatCorePrompt()}\n\n` +
-      `${cotHint}${extras}${PROSE_FORBIDDEN_LEXICON_PROMPT}`,
+      `${buildOfflineDatingSlimMustInjectBody({
+        customWritingPrompt: getActiveCustomWritingInjectBody(),
+      })}\n\n` +
+      `${cotHint}${extras}`,
     params.charUserNames,
   )
   const inputLabel = params.godPerspective
@@ -1991,16 +1993,18 @@ async function generateDatingAi(
       return { text: body }
     }
     const text = `<thinking>
-【Lumi总控台】占位续写；承接玩家意图与人设边界。本分册·必查：是。
-【时空场记卡】当场时间/地点一笔；季节判定一行；旁人+时段规则半句。本分册·必查：无瞬移：是；无季反配：是；无空场包场：是。
-【互动主轴卡】意图摘要一句（非复读原文）。本分册·必查：是。
-【知情边界卡】仅写角色可知情点。本分册·必查：无私聊外挂：是。
-【关系温度卡】阶段一句；吃醋外显≤关系+场合；数值仅场记。本分册·必查：正文无数值：是。
-【常识硬伤卡】题材一句+最易踩硬伤改法。本分册·必查：是。
-【文句风控卡】拟用首句类型：对白起笔；非比喻。本分册·必查：是。
-【推进落点卡】锚点+衔接；动作→连锁；内心 OS 可有可无，若有须为 **整句** 勿占位。本分册·必查：是。
-【代写边界卡】与本轮模式一致。本分册·必查：无抢话：是。
-【Lumi终检单】预检维度1～28：占位均「该项：无」
+【总控】占位续写；承接玩家意图与人设边界。
+【情感协议】中立模糊 → 观察。
+【主轴】意图摘要一句（非复读）。
+【时空】当场时间/地点；季节一行；跨度一行。
+【线上事实】无 / 或一句。
+【知情边界】仅写可知情点。
+【关系温度】阶段半句。
+【创作自检】首句对白/动作；拟避开近乎/仿佛；无亲密。
+【推进】锚点+衔接；末句动作或对白。
+【代写边界】与本轮模式一致。
+【落笔】字数区间；第一句草稿。
+【终检】1～9：通过
 自检结论：通过
 </thinking>
 ${body}`
@@ -2135,7 +2139,7 @@ ${body}`
     ? `【篇幅·请严格遵守】「正文」=<thinking> 之后输出的剧情部分；**正文字数**按其中**汉字**估算（对白里的汉字计入；不含 <thinking> 内文字；不要用纯标点、空格或同义排比硬凑）。` +
       `用户目标 ${targetChars} 字 → **请把正文控制在约 ${minBodyChars}～${maxBodyChars} 字区间内**。**若你预估会低于 ${minBodyChars}，必须增写 1～4 句带新信息的对白或可见动作后再收束**；若明显超过 ${maxBodyChars} 可删无效氛围句。补足字数禁止靠堆砌感官或重复同义句。\n` +
       vnLengthConflictRule +
-      `【思维链·速度】\`<thinking>\` 内全文建议 **≤ 900 汉字**（含【】标题）；各分册各 **1～3 句** 即可；【Lumi终检单】28 项可 **每项一行**（「无」须带半句理由）。**禁止**在思维链里写数千字长文——会极慢且易超出接口上限。` +
+      `【思维链·速度】\`<thinking>\` 内全文建议 **≤ 700 汉字**（含【】标题）；各卡各 **1～3 句** 即可；【终检】9 项可 **每项一行**。**禁止**在思维链里复述总规则或写数千字长文——会极慢且易超出接口上限。` +
       `【读者评论】【小剧场】【本节梗概】【VN语音参数】等附加块**不计入**正文字数，须在凑满正文后再追加，禁止为压字数而省略。`
     : `【篇幅·请严格遵守】本轮已关闭思维链，**禁止**输出 <thinking> 等标签。` +
       `「正文」=剧情可读部分（对白/旁白/内心）；**不含**【读者评论】块、【小剧场】块、【本节梗概】、【VN语音参数】块。` +
@@ -2747,13 +2751,13 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `${charUserDirective}\n${MBTI_OUTPUT_BAN_RULE}\n\n` +
     `${buildDatingStyleSystemPrompt(getLoreArchiveBuiltinPresetTogglesSnapshot(), {
       thinkingChainEnabled,
+      customWritingPrompt: getActiveCustomWritingInjectBody(),
     })}` +
     (datingArchiveBlock
       ? `\n\n${datingArchiveBlock}\n\n${worldBookRoleLockReminder}\n`
       : '\n') +
     `${wbAfterBlock}${observationNotesAppendix}${lifeLedgerAppendix}\n\n` +
     `${styleAppend}${mimicUserSpeakingStyleAppend}\n\n` +
-    `${PROSE_FORBIDDEN_LEXICON_PROMPT}\n\n` +
     `${combinedMemNote}`
   const datingCharProfileBlock = mainCharRow
     ? `【约会对象·档案与简介${
