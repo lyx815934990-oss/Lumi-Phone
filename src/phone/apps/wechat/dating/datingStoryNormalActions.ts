@@ -115,6 +115,7 @@ export type DatingStoryNormalActions = {
 
   setHeartWhisperOpen: (v: boolean) => void
   setArchiveWbSheetOpen: (v: boolean) => void
+  setWritingPresetsSheetOpen: (v: boolean) => void
   setStyleDrawerOpen: (v: boolean) => void
   setStyleTuning: (v: DatingStyleTuning) => void
   setPlotImageSettingsOpen: (v: boolean) => void
