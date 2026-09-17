@@ -14119,20 +14119,6 @@ export function ChatRoomInner({
   )
 
   /** 大富翁调试：跳过邀约卡，本地直接开局 */
-  const handlePlayGameDirect = useCallback(
-    (gameType: MiniGameType) => {
-      if (!isGameAvailable(gameType)) {
-        showComposerToast('该游戏尚在开发中')
-        return
-      }
-      setGameLobbyOpen(false)
-      setMiniGameSession({
-        gameType,
-        inviteId: `local-direct-${gameType}-${Date.now()}`,
-      })
-    },
-    [showComposerToast],
-  )
 
   const busyExpireHandledEndRef = useRef(0)
   useEffect(() => {
@@ -19672,11 +19658,9 @@ export function ChatRoomInner({
         charName={peerNotifyTitle.trim() || '对方'}
         avatarUrl={peerAvatarResolved}
         playerAvatarUrl={playerAvatarResolved}
-        playerIdentityId={playerIdentityId}
         conversationKey={conversationKey}
         onCloseLobby={() => setGameLobbyOpen(false)}
         onSendInvite={handleSendGameInvite}
-        onPlayDirect={handlePlayGameDirect}
         onCloseGame={() => setMiniGameSession(null)}
         onGameFinished={handleMiniGameFinished}
       />
