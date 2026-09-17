@@ -20,8 +20,12 @@ import {
   formatPrivateLineUnsummarized,
   MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
   MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
+  resolveRecentPrivateInjectAiRounds,
+  resolveRecentPrivateInjectMaxContextTokens,
+  resolveRecentPrivateInjectMode,
 } from './wechatMemoryPromptBlocks'
 import { stripPromptPolicyBlocksForTraceDisplay, stripUnsummarizedOnlineTimestampsForDisplay, sanitizeMemoryTraceDisplayText } from './memoryTraceDisplaySanitize'
+import type { DatingPlotContextInjectMode } from './dating/types'
 import {
   buildPrivateUnsummarizedTraceBlocks,
   lineRelationUiLabel,
@@ -33,6 +37,7 @@ import {
   listInjectedOfflinePlotTraceRowsForMemoryTrace,
   stripOfflineDatingPlotsInjectHeaderForTraceDisplay,
 } from './dating/loadOfflineDatingPlotsForWechatPrompt'
+import { loadDatingPlotInjectPrefs } from './dating/datingInjectPrefs'
 import type {
   MemoryTraceData,
   MemoryTraceInjectionSummary,
@@ -857,6 +862,24 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
   })).filter((r) => r.snippet.trim())
   const offlineCtxBody = offlinePlotRows.map((r) => r.snippet.trim()).filter(Boolean).join('\n\n')
 
+  const datingInjectPrefs = await loadDatingPlotInjectPrefs(cid)
+  let onlineRecentInjectRounds: number | undefined
+  let onlineRecentInjectMaxTokens: number | null | undefined
+  let onlineContextInjectMode: 'full_text' | 'near_rounds' | undefined
+  try {
+    const ck = params.conversationKey?.trim() || ''
+    if (ck) {
+      const chatSettings = await personaDb.getChatConversationSettings(ck)
+      onlineContextInjectMode = resolveRecentPrivateInjectMode(chatSettings)
+      onlineRecentInjectRounds = resolveRecentPrivateInjectAiRounds(chatSettings)
+      onlineRecentInjectMaxTokens = resolveRecentPrivateInjectMaxContextTokens(chatSettings)
+    }
+  } catch {
+    onlineRecentInjectRounds = undefined
+    onlineRecentInjectMaxTokens = undefined
+    onlineContextInjectMode = undefined
+  }
+
   const unsChats: MemoryTraceData['contextMatrix']['recentContext']['unsummarizedChats'] = []
   let unsPrivateSource = params.unsPrivateNotes.trim()
   let currentLineRaw = params.currentLinePrivateRaw?.trim() || ''
@@ -1050,6 +1073,13 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
         unsummarizedOfflinePlots: offlinePlotRows,
         unsummarizedChats: unsChats,
         recentRoundRefs,
+        plotContextInjectMode: datingInjectPrefs.mode,
+        plotSummaryInjectRounds: datingInjectPrefs.summaryRounds,
+        ...(onlineContextInjectMode ? { onlineContextInjectMode } : {}),
+        ...(onlineRecentInjectRounds != null ? { onlineRecentInjectRounds } : {}),
+        ...(onlineRecentInjectMaxTokens !== undefined
+          ? { onlineRecentInjectMaxTokens }
+          : {}),
       },
       deepMemory: {
         keywordHits: deep.keywordHits,
@@ -1205,6 +1235,10 @@ export async function publishDatingOfflineMemoryTrace(params: {
   unsPrivateBlock: string
   unsGroupBlock: string
   unsOfflineBlock: string
+  /** 本轮注入的「最近剧情 / 剧情上下文」正文（思维溯源③） */
+  plotContextBlock?: string
+  plotContextInjectMode?: DatingPlotContextInjectMode
+  plotSummaryInjectRounds?: number
   recentPrivateAiRoundsNotes?: string
   recentOfflineAiRoundsNotes?: string
   storyTimelineNotes?: string
@@ -1353,6 +1387,23 @@ export async function publishDatingOfflineMemoryTrace(params: {
     : ''
   const storyTimeline = buildStoryTimelineTraceBlock(storyTimelineNotesExpanded, expand)
 
+  let onlineRecentInjectRounds: number | undefined
+  let onlineRecentInjectMaxTokens: number | null | undefined
+  let onlineContextInjectMode: 'full_text' | 'near_rounds' | undefined
+  try {
+    const ck = params.conversationKey?.trim() || ''
+    if (ck) {
+      const chatSettings = await personaDb.getChatConversationSettings(ck)
+      onlineContextInjectMode = resolveRecentPrivateInjectMode(chatSettings)
+      onlineRecentInjectRounds = resolveRecentPrivateInjectAiRounds(chatSettings)
+      onlineRecentInjectMaxTokens = resolveRecentPrivateInjectMaxContextTokens(chatSettings)
+    }
+  } catch {
+    onlineRecentInjectRounds = undefined
+    onlineRecentInjectMaxTokens = undefined
+    onlineContextInjectMode = undefined
+  }
+
   const recentRoundRefs = buildRecentRoundRefsForTrace({
     recentPrivate: params.recentPrivateAiRoundsNotes ?? '',
     recentOffline: params.recentOfflineAiRoundsNotes ?? '',
@@ -1399,6 +1450,17 @@ export async function publishDatingOfflineMemoryTrace(params: {
         unsummarizedOfflinePlots: offlinePlotRows,
         unsummarizedChats: unsChats,
         recentRoundRefs,
+        plotContextBlock: sanitizeMemoryTraceDisplayText(String(params.plotContextBlock ?? '').trim()) || undefined,
+        plotContextInjectMode: params.plotContextInjectMode === 'summary' ? 'summary' : 'full_text',
+        plotSummaryInjectRounds:
+          typeof params.plotSummaryInjectRounds === 'number' && Number.isFinite(params.plotSummaryInjectRounds)
+            ? Math.max(1, Math.round(params.plotSummaryInjectRounds))
+            : undefined,
+        ...(onlineContextInjectMode ? { onlineContextInjectMode } : {}),
+        ...(onlineRecentInjectRounds != null ? { onlineRecentInjectRounds } : {}),
+        ...(onlineRecentInjectMaxTokens !== undefined
+          ? { onlineRecentInjectMaxTokens }
+          : {}),
       },
       deepMemory: {
         keywordHits: deep.keywordHits,

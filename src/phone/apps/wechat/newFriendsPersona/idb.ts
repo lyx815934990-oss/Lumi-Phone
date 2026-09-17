@@ -2,6 +2,7 @@ import { migrateLegacyRootPublicUrl } from '../../../../publicAssetUrl'
 import { repairCharacterAvatarForBundleImport } from '../../../utils/characterAvatarUrl'
 import { parseCharacterProfileImageHistory } from '../wechatCharacterProfileImageHistory'
 import { parseCharacterAppearanceRefImages } from '../characterAppearanceRefImages'
+import { sanitizeStoredWechatSignature } from './wechatSignatureStyleRules'
 import type {
   Character,
   CharacterMemory,
@@ -111,6 +112,10 @@ import {
   resolveMemoryEmbeddingModelId,
   type MemoryVectorRecallOpts,
 } from '../memory/memoryVectorRecall'
+import {
+  emptyMemoryVectorRecallStatus,
+  type MemoryVectorRecallRoundStatus,
+} from '../memory/memoryVectorRecallStatus'
 import {
   computeStoryTimelineRowTextHash,
   extractStoryTimelineRowKeywordsFromRowText,
@@ -769,11 +774,14 @@ function normalizeCharacter(input: unknown): Stored {
     ...entry,
     url: migrateLegacyRootPublicUrl(entry.url),
   }))
+  const charId = typeof c.id === 'string' ? c.id : `ch-${now}-${Math.random().toString(36).slice(2, 6)}`
+  const charName = typeof c.name === 'string' ? c.name : ''
+  const rawSignature = typeof raw.wechatSignature === 'string' ? (raw.wechatSignature as string) : ''
   return {
-    id: typeof c.id === 'string' ? c.id : `ch-${now}-${Math.random().toString(36).slice(2, 6)}`,
+    id: charId,
     createdAt: typeof c.createdAt === 'number' ? c.createdAt : now,
     updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : now,
-    name: typeof c.name === 'string' ? c.name : '',
+    name: charName,
     gender: c.gender === 'male' || c.gender === 'female' || c.gender === 'other' ? c.gender : 'female',
     age: typeof c.age === 'number' || c.age === null ? (c.age as number | null) : null,
     height: typeof raw.height === 'string' ? (raw.height as string) : '',
@@ -812,7 +820,7 @@ function normalizeCharacter(input: unknown): Stored {
         : undefined,
     wechatNickname: typeof raw.wechatNickname === 'string' ? (raw.wechatNickname as string) : '',
     wechatId: typeof raw.wechatId === 'string' ? (raw.wechatId as string) : '',
-    wechatSignature: typeof raw.wechatSignature === 'string' ? (raw.wechatSignature as string) : '',
+    wechatSignature: sanitizeStoredWechatSignature(rawSignature, `${charId}:${charName}`),
     wechatRegion: typeof raw.wechatRegion === 'string' ? (raw.wechatRegion as string) : '',
     momentsCoverUrl:
       typeof raw.momentsCoverUrl === 'string'
@@ -1164,7 +1172,21 @@ function normalizeWeChatChatMessage(input: unknown): WeChatChatMessage | null {
     if (status !== 'rejected' && status !== 'no_answer' && status !== 'duration') return undefined
     const durationRaw = typeof r.durationSec === 'number' ? r.durationSec : Number.NaN
     const durationSec = Number.isFinite(durationRaw) ? Math.max(0, Math.floor(durationRaw)) : undefined
-    return status === 'duration' ? { status, durationSec } : { status }
+    const sessionId = typeof r.sessionId === 'string' ? r.sessionId.trim() : ''
+    if (status === 'duration') {
+      const transcriptText =
+        typeof r.transcriptText === 'string' ? r.transcriptText.trim() : ''
+      const endedBy =
+        r.endedBy === 'user' || r.endedBy === 'character' ? r.endedBy : undefined
+      return {
+        status,
+        durationSec,
+        ...(sessionId ? { sessionId } : {}),
+        ...(transcriptText ? { transcriptText } : {}),
+        ...(endedBy ? { endedBy } : {}),
+      }
+    }
+    return { status }
   })()
   const rawVoice = (m as { voice?: unknown }).voice
   const voice: WeChatVoicePayload | undefined = (() => {
@@ -1906,6 +1928,28 @@ function normalizeChatConversationSettingsRow(input: unknown): ChatConversationS
           ),
         }
       : {}),
+    ...((r as { recentPrivateInjectMode?: unknown }).recentPrivateInjectMode === 'full_text' ||
+    (r as { recentPrivateInjectMode?: unknown }).recentPrivateInjectMode === 'near_rounds'
+      ? {
+          recentPrivateInjectMode: (r as { recentPrivateInjectMode: 'full_text' | 'near_rounds' })
+            .recentPrivateInjectMode,
+        }
+      : {}),
+    ...(typeof (r as { recentPrivateInjectMaxContextTokens?: unknown }).recentPrivateInjectMaxContextTokens ===
+      'number' &&
+    Number.isFinite((r as { recentPrivateInjectMaxContextTokens?: number }).recentPrivateInjectMaxContextTokens)
+      ? {
+          recentPrivateInjectMaxContextTokens: Math.max(
+            8_000,
+            Math.min(
+              200_000,
+              Math.round(
+                (r as { recentPrivateInjectMaxContextTokens: number }).recentPrivateInjectMaxContextTokens,
+              ),
+            ),
+          ),
+        }
+      : {}),
     ...((): Partial<ChatConversationSettingsRow> => {
       const stickerRaw =
         (r as { stickerRoundTriggerPercent?: unknown }).stickerRoundTriggerPercent ??
@@ -2164,6 +2208,26 @@ function mergeChatConversationSettingsRows(
     merged.recentPrivateInjectAiRounds = Math.max(
       0,
       Math.min(16, Math.floor(older.recentPrivateInjectAiRounds)),
+    )
+  }
+  if (
+    newer.recentPrivateInjectMode !== 'full_text' &&
+    newer.recentPrivateInjectMode !== 'near_rounds' &&
+    (older.recentPrivateInjectMode === 'full_text' || older.recentPrivateInjectMode === 'near_rounds')
+  ) {
+    merged.recentPrivateInjectMode = older.recentPrivateInjectMode
+  }
+  if (
+    !(
+      typeof newer.recentPrivateInjectMaxContextTokens === 'number' &&
+      Number.isFinite(newer.recentPrivateInjectMaxContextTokens)
+    ) &&
+    typeof older.recentPrivateInjectMaxContextTokens === 'number' &&
+    Number.isFinite(older.recentPrivateInjectMaxContextTokens)
+  ) {
+    merged.recentPrivateInjectMaxContextTokens = Math.max(
+      8_000,
+      Math.min(200_000, Math.round(older.recentPrivateInjectMaxContextTokens)),
     )
   }
   if (
@@ -6029,6 +6093,65 @@ export class PersonaDb {
     return { favorite: normalized, created: true }
   }
 
+  /** 按 messageId 查找普通消息收藏（不含内心 OS） */
+  async findMessageFavoriteByMessageId(messageId: string): Promise<Favorite | null> {
+    const mid = messageId.trim()
+    if (!mid) return null
+    const favs = await this.listFavorites()
+    return (
+      favs.find((f) => f.messageId.trim() === mid && f.kind !== 'innerOs') ?? null
+    )
+  }
+
+  /**
+   * 纯文本语录收藏（通话记录等无微信消息 id 的场景）。
+   * 同 messageId 已收藏则返回已有项（created=false）。
+   */
+  async addFavoriteFromPlainText(params: {
+    messageId: string
+    characterId: string
+    content: string
+    timestamp?: number
+  }): Promise<{ favorite: Favorite; created: boolean } | null> {
+    const messageId = String(params.messageId || '').trim()
+    const characterId = String(params.characterId || '').trim()
+    const content = String(params.content || '').trim().slice(0, 8000)
+    if (!messageId || !characterId || !content) return null
+
+    const existing = await this.findMessageFavoriteByMessageId(messageId)
+    if (existing) return { favorite: existing, created: false }
+
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(FAVORITES_STORE)) {
+      db.close()
+      return null
+    }
+    const now = Date.now()
+    const fav: Favorite = {
+      id: `fav-txt-${now}-${Math.random().toString(36).slice(2, 8)}`,
+      messageId,
+      characterId,
+      content,
+      timestamp:
+        typeof params.timestamp === 'number' && Number.isFinite(params.timestamp)
+          ? params.timestamp
+          : now,
+      createdAt: now,
+      kind: 'message',
+    }
+    const normalized = normalizeFavorite(fav)
+    if (!normalized) {
+      db.close()
+      return null
+    }
+    const tx = db.transaction(FAVORITES_STORE, 'readwrite')
+    tx.objectStore(FAVORITES_STORE).put(normalized)
+    await txDone(tx)
+    db.close()
+    emitWeChatStorageChanged()
+    return { favorite: normalized, created: true }
+  }
+
   /** 聊天语音合成完成后，同步到对应收藏（避免收藏页/转发重复合成）。 */
   async syncFavoriteVoiceAudioFromMessage(messageId: string, audioUrl: string): Promise<void> {
     const mid = messageId.trim()
@@ -8898,16 +9021,31 @@ export class PersonaDb {
     characterId: string,
     relevanceText: string,
     opts?: MemoryVectorRecallOpts | null,
-  ): Promise<{ text: string; pickedMemories: CharacterMemory[] }> {
+  ): Promise<{
+    text: string
+    pickedMemories: CharacterMemory[]
+    vectorRecall: MemoryVectorRecallRoundStatus
+  }> {
     const cid = characterId.trim()
-    if (!cid) return { text: '', pickedMemories: [] }
+    if (!cid) {
+      return {
+        text: '',
+        pickedMemories: [],
+        vectorRecall: emptyMemoryVectorRecallStatus({ detail: '无角色' }),
+      }
+    }
     const hay = String(relevanceText || '')
       .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase()
 
     const memorySettings = await this.getMemorySettings()
+    const modelId = resolveMemoryEmbeddingModelId(memorySettings, opts)
     const bucket = opts?.memoryBucket ?? 'own'
+    let vectorRecall = emptyMemoryVectorRecallStatus({
+      enabled: Boolean(opts && isMemoryVectorRecallEnabled(memorySettings, opts)),
+      modelId,
+    })
 
     const privRaw = await this.listCharacterMemoriesForCharacter(cid)
     const privateList =
@@ -8938,6 +9076,11 @@ export class PersonaDb {
     if (opts && isMemoryVectorRecallEnabled(memorySettings, opts)) {
       const rawHay = String(relevanceText || '').trim()
       if (rawHay.length >= 10) {
+        vectorRecall = {
+          ...vectorRecall,
+          enabled: true,
+          attempted: true,
+        }
         try {
           const querySlices = buildMemoryRecallQuerySlices(rawHay)
           const focusedQuery = querySlices[0] || rawHay.slice(-1800)
@@ -8945,7 +9088,7 @@ export class PersonaDb {
             memorySettings,
             opts.apiConfig ?? null,
             focusedQuery,
-            resolveMemoryEmbeddingModelId(memorySettings, opts),
+            modelId,
           )
 
           const reloadPrivate = async () => {
@@ -9004,8 +9147,26 @@ export class PersonaDb {
             }),
             MEMORY_KEYWORD_HIT_INJECT_CAP_GROUP,
           )
-        } catch {
-          /* 仅关键词 */
+          vectorRecall = {
+            ...vectorRecall,
+            ok: true,
+            hitCount: vecExtraPrivate.length + vecExtraGroup.length,
+            modelId: queryHit?.modelId?.trim() || modelId,
+          }
+        } catch (e) {
+          vectorRecall = {
+            ...vectorRecall,
+            ok: false,
+            hitCount: 0,
+            detail: e instanceof Error ? e.message : String(e),
+          }
+        }
+      } else {
+        vectorRecall = {
+          ...vectorRecall,
+          enabled: true,
+          attempted: false,
+          detail: '上下文过短',
         }
       }
     }
@@ -9164,13 +9325,13 @@ export class PersonaDb {
       const pickedMemories = [...privatePick, ...groupPick]
       const ctxOnly = await appendContextRecall('')
       if (ctxOnly.trim()) {
-        return { text: ctxOnly, pickedMemories }
+        return { text: ctxOnly, pickedMemories, vectorRecall }
       }
-      return { text: '', pickedMemories }
+      return { text: '', pickedMemories, vectorRecall }
     }
     const pickedMemories = [...privatePick, ...groupPick]
     const body = chunks.join('\n\n')
-    return { text: await appendContextRecall(body), pickedMemories }
+    return { text: await appendContextRecall(body), pickedMemories, vectorRecall }
   }
 
   /**
@@ -10227,6 +10388,8 @@ export class PersonaDb {
       clearProactiveMessageVariableIntervalBounds?: boolean
       /** 为 true 时移除主动消息调度锚点（须重新保存间隔后才开始倒计时） */
       clearProactiveMessageSchedule?: boolean
+      /** 为 true 时清除「近端原文最大 Token」，恢复默认字数软上限 */
+      clearRecentPrivateInjectMaxContextTokens?: boolean
     } & Partial<
       Pick<
         ChatConversationSettingsRow,
@@ -10277,6 +10440,8 @@ export class PersonaDb {
         | 'proactiveMessageVariableIntervalMaxSeconds'
         | 'proactiveMessageNextIntervalSeconds'
         | 'recentPrivateInjectAiRounds'
+        | 'recentPrivateInjectMode'
+        | 'recentPrivateInjectMaxContextTokens'
         | 'lastMessageTime'
         | 'uiOnlyHiddenBeforeTimestamp'
         | 'friendRequestAcceptedAtMs'
@@ -10431,6 +10596,24 @@ export class PersonaDb {
         : existing?.recentPrivateInjectAiRounds !== undefined
           ? { recentPrivateInjectAiRounds: existing.recentPrivateInjectAiRounds }
           : {}),
+      ...(params.recentPrivateInjectMode === 'full_text' || params.recentPrivateInjectMode === 'near_rounds'
+        ? { recentPrivateInjectMode: params.recentPrivateInjectMode }
+        : existing?.recentPrivateInjectMode === 'full_text' || existing?.recentPrivateInjectMode === 'near_rounds'
+          ? { recentPrivateInjectMode: existing.recentPrivateInjectMode }
+          : {}),
+      ...(params.clearRecentPrivateInjectMaxContextTokens
+        ? {}
+        : typeof params.recentPrivateInjectMaxContextTokens === 'number' &&
+            Number.isFinite(params.recentPrivateInjectMaxContextTokens)
+          ? {
+              recentPrivateInjectMaxContextTokens: Math.max(
+                8_000,
+                Math.min(200_000, Math.round(params.recentPrivateInjectMaxContextTokens)),
+              ),
+            }
+          : existing?.recentPrivateInjectMaxContextTokens !== undefined
+            ? { recentPrivateInjectMaxContextTokens: existing.recentPrivateInjectMaxContextTokens }
+            : {}),
       ...(params.clearClassicEmojiRoundTriggerPercent
         ? {}
         : typeof params.classicEmojiRoundTriggerPercent === 'number' &&

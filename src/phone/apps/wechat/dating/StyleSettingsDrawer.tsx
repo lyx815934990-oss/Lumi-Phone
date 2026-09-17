@@ -100,7 +100,7 @@ export function StyleSettingsDrawer({ open, characterId, onClose, onSaved }: Pro
             <div className="max-h-[min(72vh,560px)] space-y-4 overflow-y-auto px-4 py-4 [scrollbar-width:thin]">
               <div className="flex items-start justify-between gap-3 rounded-xl border border-stone-200/90 bg-white/90 px-3 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-medium text-stone-800">模仿用户说话风格</p>
+                  <p className="text-[13px] font-medium text-stone-800">语气同化</p>
                   <p className="mt-1 text-[11px] leading-relaxed text-stone-500">
                     与私聊同一开关：优先对齐私藏侧写口头禅/语言风格；只染对白语感，人设不变。线上线下同步。
                   </p>

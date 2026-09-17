@@ -276,7 +276,7 @@ export function VectorBridgeConfig({
             value={config.endpoint}
             onChange={(v) => onConfigChange({ endpoint: v })}
             onBlur={onVectorFieldsBlur}
-            placeholder="例如 https://你的网关/v1"
+            placeholder="例如 https://api.example.com/v1"
             disabled={disabled}
           />
         </MemoryEngineSoftField>
@@ -290,7 +290,7 @@ export function VectorBridgeConfig({
                 disabled={disabled}
                 onChange={(e) => onConfigChange({ apiKey: e.target.value })}
                 onBlur={onVectorFieldsBlur}
-                placeholder={hasSavedKey ? '已保存过密钥，输入新内容可覆盖' : '请输入密钥'}
+                placeholder={hasSavedKey ? '已内置 / 已保存密钥，输入新内容可覆盖' : 'API Key'}
                 className="w-full border-0 bg-transparent text-[14px] text-gray-900 outline-none placeholder:text-gray-400"
                 spellCheck={false}
                 autoCapitalize="off"

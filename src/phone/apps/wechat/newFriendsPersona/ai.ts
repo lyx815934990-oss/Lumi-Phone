@@ -29,6 +29,7 @@ import {
 } from '../../api/apiConfigSampling'
 import { buildOpenAiChatCompletionsEndpoint } from '../../api/openAiCompatibleEndpoints'
 import { LUMI_SYS_TOKENS_TOTAL_KEY } from '../../dataArchive/constants'
+import { logConsole } from '../consoleLogger'
 import {
   approximateChineseTextLength,
   clampWbItemGenTargetChars,
@@ -609,11 +610,370 @@ export function isOpenAiEmptyAssistantParseError(err: unknown): boolean {
   return /未解析到模型正文|返回格式不符合预期/.test(m)
 }
 
-function applyChatCompletionTokenLimits(body: Record<string, unknown>, maxTokens: number): void {
+/** o1/o3/gpt-5 等推理模型常只认 max_completion_tokens；普通模型双写两项易被 Gemini/中转判 INVALID_ARGUMENT */
+function prefersMaxCompletionTokens(modelId: string): boolean {
+  const id = modelId.trim().toLowerCase()
+  if (!id) return false
+  return /^(o[1-9]|o3|o4|gpt-5|chatgpt-4o-latest|codex)/i.test(id) || /(?:^|[/\-_])(o1|o3|o4|gpt-5)(?:[/\-_]|$)/i.test(id)
+}
+
+function applyChatCompletionTokenLimits(
+  body: Record<string, unknown>,
+  maxTokens: number,
+  modelId?: string,
+): void {
   const n = Math.max(1, Math.floor(maxTokens))
+  if (prefersMaxCompletionTokens(modelId ?? '')) {
+    body.max_completion_tokens = n
+    return
+  }
   body.max_tokens = n
-  /** OpenAI 新接口与部分中转站只认 max_completion_tokens */
-  body.max_completion_tokens = n
+}
+
+/** Gemini/部分中转要求 user/assistant 大致交替；微信多气泡会连发多条 assistant，合并后再发 */
+function mergeConsecutiveOpenAiTextMessages(messages: unknown[]): unknown[] {
+  const out: unknown[] = []
+  for (const m of messages) {
+    const mm = m && typeof m === 'object' ? (m as Record<string, unknown>) : null
+    if (!mm) {
+      out.push(m)
+      continue
+    }
+    const role = typeof mm.role === 'string' ? mm.role : ''
+    const content = mm.content
+    const last = out.length ? (out[out.length - 1] as Record<string, unknown>) : null
+    if (
+      last &&
+      (role === 'user' || role === 'assistant') &&
+      last.role === role &&
+      typeof content === 'string' &&
+      typeof last.content === 'string'
+    ) {
+      last.content = `${last.content}\n${content}`
+      continue
+    }
+    if (typeof content === 'string') {
+      out.push({ ...mm, content })
+    } else {
+      out.push(m)
+    }
+  }
+  return out
+}
+
+function shouldMergeConsecutiveRolesForModel(modelId: string): boolean {
+  return /gemini|gemma/i.test(modelId)
+}
+
+/** 部分中转在 JSON 后追加 `(traceid: …)`，需剥掉才能正确解析错误体 */
+function stripGatewayTrailingMeta(raw: string): { jsonText: string; traceId?: string } {
+  const text = raw.trim()
+  const m = /\(traceid:\s*([a-f0-9]+)\)\s*$/i.exec(text)
+  if (!m) return { jsonText: text }
+  const jsonText = text.slice(0, m.index).trim()
+  return { jsonText, traceId: m[1] }
+}
+
+function summarizeChatMessagesForDiag(messages: unknown[]): {
+  count: number
+  roles: string
+  approxChars: number
+  imageParts: number
+  imageDetail: string
+} {
+  let approxChars = 0
+  let imageParts = 0
+  let imageBytes = 0
+  const imageKinds: string[] = []
+  const roles: string[] = []
+  for (const m of messages) {
+    const mm = m && typeof m === 'object' ? (m as Record<string, unknown>) : null
+    if (!mm) continue
+    roles.push(typeof mm.role === 'string' ? mm.role : '?')
+    const c = mm.content
+    if (typeof c === 'string') {
+      approxChars += c.length
+      continue
+    }
+    if (!Array.isArray(c)) continue
+    for (const p of c) {
+      const part = p && typeof p === 'object' ? (p as Record<string, unknown>) : null
+      if (!part) continue
+      if (typeof part.text === 'string') approxChars += part.text.length
+      const imageUrl =
+        part?.image_url && typeof part.image_url === 'object'
+          ? (part.image_url as Record<string, unknown>).url
+          : part?.image_url
+      const url1 = typeof imageUrl === 'string' ? imageUrl : typeof part?.url === 'string' ? part.url : ''
+      const inline =
+        part.inline_data && typeof part.inline_data === 'object'
+          ? (part.inline_data as Record<string, unknown>)
+          : null
+      if (part.type === 'image_url' || url1 || inline) {
+        imageParts += 1
+        if (typeof url1 === 'string' && url1.startsWith('data:')) {
+          const mime = /^data:([^;]+);/i.exec(url1)?.[1] || 'data'
+          const b64 = url1.replace(/^data:[^,]*,/, '')
+          const bytes = Math.floor((b64.length * 3) / 4)
+          imageBytes += bytes
+          imageKinds.push(`${mime}~${Math.max(1, Math.round(bytes / 1024))}KB`)
+        } else if (inline && typeof inline.data === 'string') {
+          const mime = typeof inline.mime_type === 'string' ? inline.mime_type : 'inline'
+          const bytes = Math.floor((inline.data.length * 3) / 4)
+          imageBytes += bytes
+          imageKinds.push(`${mime}~${Math.max(1, Math.round(bytes / 1024))}KB`)
+        } else if (url1) {
+          imageKinds.push(url1.startsWith('http') ? 'http图' : '相对路径图')
+        } else {
+          imageKinds.push('图')
+        }
+      }
+    }
+  }
+  const imageDetail = imageParts
+    ? `${imageParts}张·合计约${Math.max(1, Math.round(imageBytes / 1024))}KB` +
+      (imageKinds.length ? `（${imageKinds.slice(0, 6).join(', ')}${imageKinds.length > 6 ? '…' : ''}）` : '')
+    : '无图'
+  return {
+    count: roles.length,
+    roles: roles.slice(0, 24).join('→') + (roles.length > 24 ? '…' : ''),
+    approxChars,
+    imageParts,
+    imageDetail,
+  }
+}
+
+function formatRequestParamKeys(body: Record<string, unknown>): string {
+  const skip = new Set(['messages', 'contents', 'systemInstruction', 'input'])
+  const bits: string[] = []
+  for (const [k, v] of Object.entries(body)) {
+    if (skip.has(k)) continue
+    if (v == null) continue
+    if (k === 'generationConfig' && typeof v === 'object') {
+      for (const [gk, gv] of Object.entries(v as Record<string, unknown>)) {
+        if (gv == null) continue
+        bits.push(`${gk}=${String(gv)}`)
+      }
+      continue
+    }
+    if (typeof v === 'object') {
+      bits.push(`${k}=${JSON.stringify(v).slice(0, 80)}`)
+      continue
+    }
+    bits.push(`${k}=${String(v)}`)
+  }
+  return bits.join(' · ') || '(无额外采样字段)'
+}
+
+type ParsedChatApiError = {
+  httpStatus: number
+  message: string
+  code?: string | number
+  status?: string
+  traceId?: string
+  details?: string
+  rawPreview: string
+}
+
+function parseChatApiErrorPayload(data: unknown, httpStatus: number, traceIdFromBody?: string): ParsedChatApiError {
+  const rawPreview =
+    typeof data === 'string'
+      ? data.slice(0, 500)
+      : (() => {
+          try {
+            return JSON.stringify(data).slice(0, 500)
+          } catch {
+            return String(data ?? '').slice(0, 500)
+          }
+        })()
+
+  const rec = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
+  const errObj =
+    rec?.error && typeof rec.error === 'object'
+      ? (rec.error as Record<string, unknown>)
+      : typeof rec?.error === 'string'
+        ? { message: rec.error }
+        : null
+
+  const message =
+    (typeof errObj?.message === 'string' && errObj.message.trim()) ||
+    (typeof rec?.message === 'string' && rec.message.trim()) ||
+    (typeof data === 'string' && data.trim()) ||
+    `请求失败（HTTP ${httpStatus}）`
+
+  const code = errObj?.code ?? rec?.code
+  const status =
+    (typeof errObj?.status === 'string' && errObj.status) ||
+    (typeof rec?.status === 'string' && rec.status) ||
+    undefined
+
+  let details: string | undefined
+  const detailRaw = errObj?.details ?? errObj?.param ?? errObj?.type ?? rec?.details
+  if (typeof detailRaw === 'string' && detailRaw.trim()) details = detailRaw.trim().slice(0, 300)
+  else if (Array.isArray(detailRaw) && detailRaw.length) {
+    try {
+      details = JSON.stringify(detailRaw).slice(0, 300)
+    } catch {
+      details = undefined
+    }
+  }
+
+  const nestedTrace =
+    (typeof errObj?.traceId === 'string' && errObj.traceId) ||
+    (typeof rec?.traceId === 'string' && rec.traceId) ||
+    traceIdFromBody
+
+  return {
+    httpStatus,
+    message: message.trim(),
+    code: typeof code === 'string' || typeof code === 'number' ? code : undefined,
+    status,
+    traceId: nestedTrace || undefined,
+    details,
+    rawPreview,
+  }
+}
+
+function buildInvalidArgumentHints(params: {
+  body: Record<string, unknown>
+  modelId: string
+  geminiNative: boolean
+  msgSummary: ReturnType<typeof summarizeChatMessagesForDiag>
+  parsed: ParsedChatApiError
+}): string[] {
+  const hints: string[] = []
+  const { body, modelId, geminiNative, msgSummary, parsed } = params
+  const isInvalidArg =
+    parsed.httpStatus === 400 ||
+    /INVALID_ARGUMENT/i.test(String(parsed.status ?? '')) ||
+    /invalid argument/i.test(parsed.message)
+
+  if (!isInvalidArg) return hints
+
+  const errText = `${parsed.message} ${parsed.details ?? ''} ${parsed.status ?? ''}`.toLowerCase()
+  const serverMentionsContext =
+    /context|token|too long|maximum|exceed|长度|过长|超限|上下文|max.?output|max.?token/i.test(errText)
+
+  // 仅在请求体确有「已知易炸字段」或服务端原文点名时提示；不要凭字数瞎猜超限
+  if (body.max_tokens != null && body.max_completion_tokens != null) {
+    hints.push('请求体同时含 max_tokens 与 max_completion_tokens（部分中转会因此 400）')
+  }
+  if (body.frequency_penalty != null || body.presence_penalty != null) {
+    hints.push('请求体含 frequency_penalty/presence_penalty（不少 Gemini 通道不认）')
+  }
+  const roles = msgSummary.roles.split('→').filter(Boolean)
+  let consecutive = 0
+  for (let i = 1; i < roles.length; i++) {
+    if (roles[i] === roles[i - 1] && (roles[i] === 'assistant' || roles[i] === 'user')) {
+      consecutive += 1
+    }
+  }
+  if (consecutive >= 3) {
+    hints.push(
+      `历史里有多段连续同角色（如连发多条 assistant）；部分 Gemini 中转比 preview 更挑剔，会导致仅某角色/长会话 400`,
+    )
+  }
+  if (msgSummary.approxChars >= 100_000) {
+    hints.push(
+      `本角色请求约 ${msgSummary.approxChars} 字，明显偏重；同一模型下「只有这个角色挂」时优先怀疑此人设/世界书/长历史，而不是模型名`,
+    )
+  }
+  if (!modelId.trim()) hints.push('模型 ID 为空')
+
+  if (serverMentionsContext) {
+    const maxTok =
+      typeof body.max_tokens === 'number'
+        ? body.max_tokens
+        : typeof body.max_completion_tokens === 'number'
+          ? body.max_completion_tokens
+          : undefined
+    const geminiMax =
+      body.generationConfig && typeof body.generationConfig === 'object'
+        ? (body.generationConfig as Record<string, unknown>).maxOutputTokens
+        : undefined
+    const outCap = maxTok ?? (typeof geminiMax === 'number' ? geminiMax : undefined)
+    hints.push(
+      `服务端原文像在抱怨长度/Token；本轮约 ${msgSummary.approxChars} 字${typeof outCap === 'number' ? `，输出上限 ${outCap}` : ''}（字数≠Token，仅对照用）`,
+    )
+  }
+
+  if (msgSummary.imageParts > 0) {
+    hints.push(
+      `本轮带了识图：${msgSummary.imageDetail}（同一模型下「某角色才 400」时，优先怀疑该角色头像/朋友圈背景/记忆配图格式或体积）`,
+    )
+  }
+
+  if (geminiNative) {
+    const roles = msgSummary.roles.split('→')
+    for (let i = 1; i < roles.length; i++) {
+      if (roles[i] && roles[i] === roles[i - 1] && roles[i] !== 'system') {
+        hints.push('Gemini 原生 contents 出现连续同角色（可对照上方 roles）')
+        break
+      }
+    }
+  }
+
+  if (!hints.length) {
+    hints.push('服务端未说明具体字段；请看上方「请求参数」逐项对照，勿把消息字数当成超限结论')
+  }
+  return hints
+}
+
+function reportChatApiFailure(params: {
+  cfg: ApiConfig
+  endpoint: string
+  geminiNative: boolean
+  body: Record<string, unknown>
+  messages: unknown[]
+  parsed: ParsedChatApiError
+  /** 例如「识图多模态」/「纯文本回退」便于区分两次请求 */
+  attemptLabel?: string
+}): Error {
+  const { cfg, endpoint, geminiNative, body, messages, parsed, attemptLabel } = params
+  const msgSummary = summarizeChatMessagesForDiag(messages)
+  const hints = buildInvalidArgumentHints({
+    body,
+    modelId: cfg.modelId || '',
+    geminiNative,
+    msgSummary,
+    parsed,
+  })
+
+  let hostPath = endpoint
+  try {
+    const u = new URL(endpoint.split('?')[0] || endpoint)
+    hostPath = `${u.host}${u.pathname}`
+  } catch {
+    hostPath = endpoint.slice(0, 120)
+  }
+
+  const title = attemptLabel ? `[AI请求失败诊断·${attemptLabel}]` : '[AI请求失败诊断]'
+
+  const lines = [
+    `${title} HTTP ${parsed.httpStatus}${parsed.status ? ` · ${parsed.status}` : ''}${parsed.code != null ? ` · code=${parsed.code}` : ''}`,
+    `服务端: ${parsed.message.slice(0, 400)}`,
+    ...(parsed.details ? [`细节: ${parsed.details}`] : []),
+    ...(parsed.traceId ? [`traceid: ${parsed.traceId}`] : []),
+    `模型: ${cfg.modelId || '(空)'}`,
+    `接口: ${geminiNative ? 'Gemini generateContent' : 'OpenAI兼容 chat/completions'} · ${hostPath}`,
+    `请求参数: ${formatRequestParamKeys(body)}`,
+    `消息概览: ${msgSummary.count}条 · roles=${msgSummary.roles || '-'} · 约${msgSummary.approxChars}字 · ${msgSummary.imageDetail}`,
+    ...(hints.length ? ['排查参考（非服务端结论）:', ...hints.map((h) => `· ${h}`)] : []),
+  ]
+
+  for (const line of lines) logConsole('ai', line)
+
+  const short = [
+    attemptLabel ? `[${attemptLabel}]` : '',
+    `HTTP ${parsed.httpStatus}`,
+    parsed.status || (parsed.code != null ? `code=${parsed.code}` : ''),
+    parsed.message.slice(0, 220),
+    msgSummary.imageParts > 0 ? `含${msgSummary.imageParts}张图` : '无图',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return new Error(short)
 }
 
 function parseOpenAiChoiceMessage(data: unknown): string {
@@ -650,15 +1010,25 @@ function parseOpenAiChoiceMessage(data: unknown): string {
 }
 
 /** fetch 后与 `resp.json()` 等价，但在非 JSON 时给出可操作提示（多为流式/HTML/网关错误页） */
-async function readFetchJsonBody(resp: Response): Promise<unknown> {
+async function readFetchJsonBody(resp: Response): Promise<{ data: unknown; traceId?: string }> {
   const raw = await resp.text()
   const text = raw.trim()
   if (!text) {
     throw new Error(`网关返回空响应体（HTTP ${resp.status}），无法解析。`)
   }
+  const { jsonText, traceId } = stripGatewayTrailingMeta(text)
   try {
-    return JSON.parse(text) as unknown
+    return { data: JSON.parse(jsonText) as unknown, traceId }
   } catch {
+    // 部分错误体会在 JSON 后夹杂纯文本；再尝试截到最后一个 }
+    const lastBrace = jsonText.lastIndexOf('}')
+    if (lastBrace > 0) {
+      try {
+        return { data: JSON.parse(jsonText.slice(0, lastBrace + 1)) as unknown, traceId }
+      } catch {
+        /* fall through */
+      }
+    }
     const head = text.slice(0, 240).replace(/\s+/g, ' ')
     throw new Error(
       `网关返回非合法 JSON（HTTP ${resp.status}）。常见原因：API 地址指向了 **SSE 流式** endpoint、反代返回 HTML/纯文本、或线路错误。响应开头：${head}${text.length > 240 ? '…' : ''}`,
@@ -675,7 +1045,8 @@ function parseOpenAiChatCompletionSseText(textRaw: string, httpStatus: number): 
   // 部分中转即使 stream:true 仍回整包 JSON（含错误体）
   if (text.startsWith('{') || text.startsWith('[')) {
     try {
-      return JSON.parse(text) as unknown
+      const { jsonText } = stripGatewayTrailingMeta(text)
+      return JSON.parse(jsonText) as unknown
     } catch {
       /* fall through to SSE parse */
     }
@@ -741,7 +1112,10 @@ function parseOpenAiChatCompletionSseText(textRaw: string, httpStatus: number): 
   }
 }
 
-async function readOpenAiChatCompletionBody(resp: Response, stream: boolean): Promise<unknown> {
+async function readOpenAiChatCompletionBody(
+  resp: Response,
+  stream: boolean,
+): Promise<{ data: unknown; traceId?: string }> {
   if (!stream) return readFetchJsonBody(resp)
   const raw = await resp.text()
   // 错误响应优先按 JSON 错误体解析，便于上层取 message
@@ -749,14 +1123,19 @@ async function readOpenAiChatCompletionBody(resp: Response, stream: boolean): Pr
     const t = raw.trim()
     if (t.startsWith('{') || t.startsWith('[')) {
       try {
-        return JSON.parse(t) as unknown
+        const { jsonText, traceId } = stripGatewayTrailingMeta(t)
+        return { data: JSON.parse(jsonText) as unknown, traceId }
       } catch {
         /* fall through */
       }
     }
-    return { error: { message: t.slice(0, 400) || `请求失败（HTTP ${resp.status}）` } }
+    const { traceId } = stripGatewayTrailingMeta(t)
+    return {
+      data: { error: { message: t.slice(0, 400) || `请求失败（HTTP ${resp.status}）` } },
+      traceId,
+    }
   }
-  return parseOpenAiChatCompletionSseText(raw, resp.status)
+  return { data: parseOpenAiChatCompletionSseText(raw, resp.status) }
 }
 
 function parseGeminiText(data: unknown): string {
@@ -859,6 +1238,11 @@ function partitionOpenAiMessagesForGemini(messages: unknown[]): {
       continue
     }
     const geminiRole: 'user' | 'model' = role === 'assistant' ? 'model' : 'user'
+    const last = contents[contents.length - 1]
+    if (last && last.role === geminiRole) {
+      last.parts.push({ text })
+      continue
+    }
     contents.push({ role: geminiRole, parts: [{ text }] })
   }
 
@@ -876,9 +1260,10 @@ function partitionOpenAiMessagesForGemini(messages: unknown[]): {
 export async function openAiCompatibleChatAny(
   cfg: ApiConfig,
   messages: unknown[],
-  options?: ChatSamplingOptions,
+  options?: ChatSamplingOptions & { diagAttemptLabel?: string },
 ): Promise<string> {
   const sampling = resolveChatSampling(cfg, options)
+  const attemptLabel = options?.diagAttemptLabel
   // Gemini 原生 generateContent：按 parts 规则（先 text，后 inline_data）。
   // 仅在 apiUrl 明确指向 generateContent 时启用，避免误伤 OpenAI Compatible 代理。
   if (isGeminiGenerateContentUrl(cfg.apiUrl)) {
@@ -928,23 +1313,31 @@ export async function openAiCompatibleChatAny(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    const data: unknown = await readFetchJsonBody(resp)
+    const { data, traceId } = await readFetchJsonBody(resp)
     if (!resp.ok) {
-      const rec = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
-      const errObj = rec?.error && typeof rec.error === 'object' ? (rec.error as Record<string, unknown>) : null
-      const msg = (typeof errObj?.message === 'string' ? errObj.message : '') || (typeof rec?.message === 'string' ? rec.message : '') || `请求失败（HTTP ${resp.status}）`
-      throw new Error(typeof msg === 'string' ? msg : '请求失败')
+      throw reportChatApiFailure({
+        cfg,
+        endpoint,
+        geminiNative: true,
+        body,
+        messages,
+        parsed: parseChatApiErrorPayload(data, resp.status, traceId),
+        attemptLabel,
+      })
     }
     bumpLumiSysTokensFromChatResponse(data)
     return parseGeminiText(data)
   }
 
   const endpoint = buildOpenAiChatCompletionsEndpoint(cfg.apiUrl)
+  const mergedMessages = shouldMergeConsecutiveRolesForModel(cfg.modelId || '')
+    ? mergeConsecutiveOpenAiTextMessages(messages)
+    : messages
   const body: Record<string, unknown> = {
     model: cfg.modelId || undefined,
-    messages,
+    messages: mergedMessages,
   }
-  applySamplingToOpenAiChatBody(body, sampling, applyChatCompletionTokenLimits)
+  applySamplingToOpenAiChatBody(body, sampling, (b, n) => applyChatCompletionTokenLimits(b, n, cfg.modelId))
   const resp = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -953,12 +1346,17 @@ export async function openAiCompatibleChatAny(
     },
     body: JSON.stringify(body),
   })
-  const data: unknown = await readOpenAiChatCompletionBody(resp, sampling.stream)
+  const { data, traceId } = await readOpenAiChatCompletionBody(resp, sampling.stream)
   if (!resp.ok) {
-    const rec = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
-    const errObj = rec?.error && typeof rec.error === 'object' ? (rec.error as Record<string, unknown>) : null
-    const msg = (typeof errObj?.message === 'string' ? errObj.message : '') || (typeof rec?.message === 'string' ? rec.message : '') || `请求失败（HTTP ${resp.status}）`
-    throw new Error(typeof msg === 'string' ? msg : '请求失败')
+    throw reportChatApiFailure({
+      cfg,
+      endpoint,
+      geminiNative: false,
+      body,
+      messages: mergedMessages,
+      parsed: parseChatApiErrorPayload(data, resp.status, traceId),
+      attemptLabel,
+    })
   }
   bumpLumiSysTokensFromChatResponse(data)
   return parseOpenAiChoiceMessage(data)
@@ -981,11 +1379,14 @@ export async function openAiCompatibleChatLenient(
 
   const sampling = resolveChatSampling(cfg, options)
   const endpoint = buildOpenAiChatCompletionsEndpoint(cfg.apiUrl)
+  const mergedMessages = shouldMergeConsecutiveRolesForModel(cfg.modelId || '')
+    ? mergeConsecutiveOpenAiTextMessages(messages)
+    : messages
   const body: Record<string, unknown> = {
     model: cfg.modelId || undefined,
-    messages,
+    messages: mergedMessages,
   }
-  applySamplingToOpenAiChatBody(body, sampling, applyChatCompletionTokenLimits)
+  applySamplingToOpenAiChatBody(body, sampling, (b, n) => applyChatCompletionTokenLimits(b, n, cfg.modelId))
   const resp = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -994,15 +1395,16 @@ export async function openAiCompatibleChatLenient(
     },
     body: JSON.stringify(body),
   })
-  const data: unknown = await readOpenAiChatCompletionBody(resp, sampling.stream)
+  const { data, traceId } = await readOpenAiChatCompletionBody(resp, sampling.stream)
   if (!resp.ok) {
-    const rec = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
-    const errObj = rec?.error && typeof rec.error === 'object' ? (rec.error as Record<string, unknown>) : null
-    const msg =
-      (typeof errObj?.message === 'string' ? errObj.message : '') ||
-      (typeof rec?.message === 'string' ? rec.message : '') ||
-      `请求失败（HTTP ${resp.status}）`
-    throw new Error(typeof msg === 'string' ? msg : '请求失败')
+    throw reportChatApiFailure({
+      cfg,
+      endpoint,
+      geminiNative: false,
+      body,
+      messages: mergedMessages,
+      parsed: parseChatApiErrorPayload(data, resp.status, traceId),
+    })
   }
   bumpLumiSysTokensFromChatResponse(data)
   return tryParseOpenAiChoiceMessageSafe(data)
@@ -1014,9 +1416,11 @@ export async function openAiCompatibleChat(
   options?: ChatSamplingOptions & {
     response_format?: 'json_object'
     signal?: AbortSignal
+    diagAttemptLabel?: string
   },
 ): Promise<string> {
   const sampling = resolveChatSampling(cfg, options)
+  const attemptLabel = options?.diagAttemptLabel
   // 文本链路也兼容 Gemini 原生 generateContent（避免 `contents is required`）
   if (isGeminiGenerateContentUrl(cfg.apiUrl)) {
     const endpoint = buildGeminiGenerateContentEndpoint(cfg)
@@ -1049,26 +1453,31 @@ export async function openAiCompatibleChat(
       body: JSON.stringify(body),
       signal: options?.signal,
     })
-    const data: unknown = await readFetchJsonBody(resp)
+    const { data, traceId } = await readFetchJsonBody(resp)
     if (!resp.ok) {
-      const rec = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
-      const errObj = rec?.error && typeof rec.error === 'object' ? (rec.error as Record<string, unknown>) : null
-      const msg =
-        (typeof errObj?.message === 'string' ? errObj.message : '') ||
-        (typeof rec?.message === 'string' ? rec.message : '') ||
-        `请求失败（HTTP ${resp.status}）`
-      throw new Error(typeof msg === 'string' ? msg : '请求失败')
+      throw reportChatApiFailure({
+        cfg,
+        endpoint,
+        geminiNative: true,
+        body,
+        messages: messages as unknown[],
+        parsed: parseChatApiErrorPayload(data, resp.status, traceId),
+        attemptLabel,
+      })
     }
     bumpLumiSysTokensFromChatResponse(data)
     return parseGeminiText(data)
   }
 
   const endpoint = buildOpenAiChatCompletionsEndpoint(cfg.apiUrl)
+  const mergedMessages = shouldMergeConsecutiveRolesForModel(cfg.modelId || '')
+    ? mergeConsecutiveOpenAiTextMessages(messages)
+    : messages
   const body: Record<string, unknown> = {
     model: cfg.modelId || undefined,
-    messages,
+    messages: mergedMessages,
   }
-  applySamplingToOpenAiChatBody(body, sampling, applyChatCompletionTokenLimits)
+  applySamplingToOpenAiChatBody(body, sampling, (b, n) => applyChatCompletionTokenLimits(b, n, cfg.modelId))
   if (options?.response_format === 'json_object') {
     body.response_format = { type: 'json_object' }
   }
@@ -1081,12 +1490,17 @@ export async function openAiCompatibleChat(
     body: JSON.stringify(body),
     signal: options?.signal,
   })
-  const data: unknown = await readOpenAiChatCompletionBody(resp, sampling.stream)
+  const { data, traceId } = await readOpenAiChatCompletionBody(resp, sampling.stream)
   if (!resp.ok) {
-    const rec = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
-    const errObj = rec?.error && typeof rec.error === 'object' ? (rec.error as Record<string, unknown>) : null
-    const msg = (typeof errObj?.message === 'string' ? errObj.message : '') || (typeof rec?.message === 'string' ? rec.message : '') || `请求失败（HTTP ${resp.status}）`
-    throw new Error(typeof msg === 'string' ? msg : '请求失败')
+    throw reportChatApiFailure({
+      cfg,
+      endpoint,
+      geminiNative: false,
+      body,
+      messages: mergedMessages,
+      parsed: parseChatApiErrorPayload(data, resp.status, traceId),
+      attemptLabel,
+    })
   }
   bumpLumiSysTokensFromChatResponse(data)
   return parseOpenAiChoiceMessage(data)
@@ -1368,7 +1782,7 @@ export async function generateWorldBookItemContent(params: {
   const npcRosterExtra =
     !forId &&
     (params.item.name === PERSONA_AI_NPC_ROSTER_ENTRY_NAME || /周边NPC|NPC简|关联人物|周边人物/.test(params.item.name))
-      ? `【本条特殊要求】「周边NPC」写围绕 {{char}} 的**具名**配角简档：每人含姓名、与 {{char}} 关系、一两句性格与近况。若本档案为原著/参考人物直接生成：不设 3–5 上限，开篇与日常圈具名配角尽量写全；名单内配角彼此若有原著关系（室友/好感/死党等）须双方互相写清，禁止只写各自与 {{char}}。禁止把配角写成 {{user}} 本人。若「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」/绑定身份显示 {{user}} 为同作相关角色，每人必须另写「对 {{user}}」；禁止原著本该认识 {{user}} 的配角写成路人。禁止写成完整人设或重复「人际与秘密」；中性朴实。\n`
+      ? `【本条特殊要求】「周边NPC」写围绕 {{char}} 的**具名**配角简档：每人含**户籍式全名**（姓+名；禁止「阿木」「徐姐」「小美」等小名/称呼当姓名）、与 {{char}} 关系、一两句性格与近况。若本档案为原著/参考人物直接生成：不设 3–5 上限，开篇与日常圈具名配角尽量写全；名单内配角彼此若有原著关系（室友/好感/死党等）须双方互相写清，禁止只写各自与 {{char}}。禁止把配角写成 {{user}} 本人。若「${PERSONA_AI_TOWARD_USER_ENTRY_NAME}」/绑定身份显示 {{user}} 为同作相关角色，每人必须另写「对 {{user}}」；禁止原著本该认识 {{user}} 的配角写成路人。禁止写成完整人设或重复「人际与秘密」；中性朴实。\n`
       : ''
 
   const vol05DesireExtra =

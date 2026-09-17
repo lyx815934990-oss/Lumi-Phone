@@ -66,11 +66,12 @@ type AiNpcJson = {
   motto: string
   /** 月-日，如 "08-03"，须与 age、主角年龄时间线自洽 */
   birthdayMD: string
-  /** 头像分类：由 AI 按人设智能选择 */
+  /** 头像分类：由 AI 按人设智能选择（落库为 /image/<分类>/…，勿用 Vite /assets 哈希） */
   avatarCategory:
     | '40岁以上长辈头像男'
     | '40岁以上长辈头像女'
     | '微信头像男E型阳光'
+    | '微信头像男I型清冷'
     | '微信头像女清冷和御姐'
     | '抽象搞笑男女通用'
     | '微信头像女可爱活泼'
@@ -107,41 +108,47 @@ type AiPlayerLinkJson = {
 
 type AiPayload = { npcs: AiNpcJson[]; relationships: AiRelJson[]; playerLinks?: AiPlayerLinkJson[] }
 
-const AVATAR_OLDER_MALE = Object.values(
-  import.meta.glob('../../../../../image/40岁以上长辈头像男/*.{png,jpg,jpeg,webp}', { eager: true, import: 'default' }) as Record<
-    string,
-    string
-  >,
+/** 只扫文件名，落库用可移植的 /image/… 路径（勿 eager default，否则变成 /assets 哈希，展示会被换成随机网友头像） */
+function listImageDirAvatarPaths(folder: string, globKeys: string[]): string[] {
+  const prefix = `/image/${folder}/`
+  const paths = globKeys
+    .map((key) => {
+      const file = key.replace(/\\/g, '/').split('/').pop()?.split('?')[0]?.trim()
+      if (!file) return ''
+      return `${prefix}${file}`
+    })
+    .filter(Boolean)
+  paths.sort()
+  return paths
+}
+
+const AVATAR_OLDER_MALE = listImageDirAvatarPaths(
+  '40岁以上长辈头像男',
+  Object.keys(import.meta.glob('../../../../../image/40岁以上长辈头像男/*.{png,jpg,jpeg,webp,gif}')),
 )
-const AVATAR_OLDER_FEMALE = Object.values(
-  import.meta.glob('../../../../../image/40岁以上长辈头像女/*.{png,jpg,jpeg,webp}', { eager: true, import: 'default' }) as Record<
-    string,
-    string
-  >,
+const AVATAR_OLDER_FEMALE = listImageDirAvatarPaths(
+  '40岁以上长辈头像女',
+  Object.keys(import.meta.glob('../../../../../image/40岁以上长辈头像女/*.{png,jpg,jpeg,webp,gif}')),
 )
-const AVATAR_MALE_E_SUNNY = Object.values(
-  import.meta.glob('../../../../../image/微信头像男E型阳光/*.{png,jpg,jpeg,webp}', { eager: true, import: 'default' }) as Record<
-    string,
-    string
-  >,
+const AVATAR_MALE_E_SUNNY = listImageDirAvatarPaths(
+  '微信头像男E型阳光',
+  Object.keys(import.meta.glob('../../../../../image/微信头像男E型阳光/*.{png,jpg,jpeg,webp,gif}')),
 )
-const AVATAR_FEMALE_COOL = Object.values(
-  import.meta.glob('../../../../../image/微信头像女清冷和御姐/*.{png,jpg,jpeg,webp}', { eager: true, import: 'default' }) as Record<
-    string,
-    string
-  >,
+const AVATAR_MALE_I_COOL = listImageDirAvatarPaths(
+  '微信头像男I型清冷',
+  Object.keys(import.meta.glob('../../../../../image/微信头像男I型清冷/*.{png,jpg,jpeg,webp,gif}')),
 )
-const AVATAR_ABSTRACT_UNISEX = Object.values(
-  import.meta.glob('../../../../../image/抽象搞笑男女通用/*.{png,jpg,jpeg,webp}', { eager: true, import: 'default' }) as Record<
-    string,
-    string
-  >,
+const AVATAR_FEMALE_COOL = listImageDirAvatarPaths(
+  '微信头像女清冷和御姐',
+  Object.keys(import.meta.glob('../../../../../image/微信头像女清冷和御姐/*.{png,jpg,jpeg,webp,gif}')),
 )
-const AVATAR_FEMALE_CUTE = Object.values(
-  import.meta.glob('../../../../../image/微信头像女可爱活泼/*.{png,jpg,jpeg,webp}', { eager: true, import: 'default' }) as Record<
-    string,
-    string
-  >,
+const AVATAR_ABSTRACT_UNISEX = listImageDirAvatarPaths(
+  '抽象搞笑男女通用',
+  Object.keys(import.meta.glob('../../../../../image/抽象搞笑男女通用/*.{png,jpg,jpeg,webp,gif}')),
+)
+const AVATAR_FEMALE_CUTE = listImageDirAvatarPaths(
+  '微信头像女可爱活泼',
+  Object.keys(import.meta.glob('../../../../../image/微信头像女可爱活泼/*.{png,jpg,jpeg,webp,gif}')),
 )
 
 function parseGender(g: string): Gender {
@@ -160,6 +167,7 @@ const ALL_AVATAR_POOL = [
   ...AVATAR_OLDER_MALE,
   ...AVATAR_OLDER_FEMALE,
   ...AVATAR_MALE_E_SUNNY,
+  ...AVATAR_MALE_I_COOL,
   ...AVATAR_FEMALE_COOL,
   ...AVATAR_ABSTRACT_UNISEX,
   ...AVATAR_FEMALE_CUTE,
@@ -174,6 +182,36 @@ function pickFromUnused(pool: string[], used: Set<string>): string | null {
   return url
 }
 
+function normalizeAvatarCategory(raw: unknown): AiNpcJson['avatarCategory'] | '' {
+  const t = String(raw ?? '').trim()
+  switch (t) {
+    case '40岁以上长辈头像男':
+    case '40岁以上长辈头像女':
+    case '微信头像男E型阳光':
+    case '微信头像男I型清冷':
+    case '微信头像女清冷和御姐':
+    case '抽象搞笑男女通用':
+    case '微信头像女可爱活泼':
+      return t
+    default:
+      return ''
+  }
+}
+
+/** 模型漏写/写错分类时，按性别+年龄兜底到对应图库（仍不走随机网友池） */
+function fallbackPoolsByGenderAge(gender: Gender, age: number): string[][] {
+  const elder = Number.isFinite(age) && age >= 40
+  if (gender === 'male') {
+    if (elder) return [[...AVATAR_OLDER_MALE], [...AVATAR_MALE_I_COOL, ...AVATAR_MALE_E_SUNNY]]
+    return [[...AVATAR_MALE_I_COOL, ...AVATAR_MALE_E_SUNNY], [...AVATAR_ABSTRACT_UNISEX]]
+  }
+  if (gender === 'female') {
+    if (elder) return [[...AVATAR_OLDER_FEMALE], [...AVATAR_FEMALE_COOL, ...AVATAR_FEMALE_CUTE]]
+    return [[...AVATAR_FEMALE_COOL, ...AVATAR_FEMALE_CUTE], [...AVATAR_ABSTRACT_UNISEX]]
+  }
+  return [[...AVATAR_ABSTRACT_UNISEX], [...ALL_AVATAR_POOL]]
+}
+
 function pickNpcAvatar(npc: AiNpcJson, gender: Gender, used: Set<string>): string {
   const tryPools = (pools: string[][]): string => {
     for (const p of pools) {
@@ -183,14 +221,17 @@ function pickNpcAvatar(npc: AiNpcJson, gender: Gender, used: Set<string>): strin
     return ''
   }
 
+  const category = normalizeAvatarCategory(npc.avatarCategory)
   const primary: string[][] = (() => {
-    switch (npc.avatarCategory) {
+    switch (category) {
       case '40岁以上长辈头像男':
-        return [[...AVATAR_OLDER_MALE], [...AVATAR_MALE_E_SUNNY, ...AVATAR_ABSTRACT_UNISEX]]
+        return [[...AVATAR_OLDER_MALE], [...AVATAR_MALE_E_SUNNY, ...AVATAR_MALE_I_COOL, ...AVATAR_ABSTRACT_UNISEX]]
       case '40岁以上长辈头像女':
         return [[...AVATAR_OLDER_FEMALE], [...AVATAR_FEMALE_COOL, ...AVATAR_FEMALE_CUTE, ...AVATAR_ABSTRACT_UNISEX]]
       case '微信头像男E型阳光':
-        return [[...AVATAR_MALE_E_SUNNY], [...AVATAR_ABSTRACT_UNISEX, ...AVATAR_OLDER_MALE]]
+        return [[...AVATAR_MALE_E_SUNNY], [...AVATAR_MALE_I_COOL, ...AVATAR_ABSTRACT_UNISEX, ...AVATAR_OLDER_MALE]]
+      case '微信头像男I型清冷':
+        return [[...AVATAR_MALE_I_COOL], [...AVATAR_MALE_E_SUNNY, ...AVATAR_ABSTRACT_UNISEX, ...AVATAR_OLDER_MALE]]
       case '微信头像女清冷和御姐':
         return [[...AVATAR_FEMALE_COOL], [...AVATAR_FEMALE_CUTE, ...AVATAR_ABSTRACT_UNISEX]]
       case '抽象搞笑男女通用':
@@ -198,18 +239,30 @@ function pickNpcAvatar(npc: AiNpcJson, gender: Gender, used: Set<string>): strin
       case '微信头像女可爱活泼':
         return [[...AVATAR_FEMALE_CUTE], [...AVATAR_FEMALE_COOL, ...AVATAR_ABSTRACT_UNISEX]]
       default:
-        return []
+        return fallbackPoolsByGenderAge(gender, Number(npc.age))
     }
   })()
 
   let url = tryPools(primary)
   if (url) return url
 
+  url = tryPools(fallbackPoolsByGenderAge(gender, Number(npc.age)))
+  if (url) return url
+
   url = pickFromUnused([...ALL_AVATAR_POOL], used) || ''
   if (url) return url
 
-  if (gender === 'male') return pickOne(AVATAR_MALE_E_SUNNY) || pickOne(AVATAR_ABSTRACT_UNISEX) || pickOne(ALL_AVATAR_POOL)
-  if (gender === 'female') return pickOne(AVATAR_FEMALE_COOL) || pickOne(AVATAR_FEMALE_CUTE) || pickOne(ALL_AVATAR_POOL)
+  if (gender === 'male') {
+    return (
+      pickOne(AVATAR_MALE_I_COOL) ||
+      pickOne(AVATAR_MALE_E_SUNNY) ||
+      pickOne(AVATAR_ABSTRACT_UNISEX) ||
+      pickOne(ALL_AVATAR_POOL)
+    )
+  }
+  if (gender === 'female') {
+    return pickOne(AVATAR_FEMALE_COOL) || pickOne(AVATAR_FEMALE_CUTE) || pickOne(ALL_AVATAR_POOL)
+  }
   return pickOne(ALL_AVATAR_POOL)
 }
 
@@ -263,6 +316,31 @@ function normalizeNameKey(raw: unknown): string {
     .trim()
     .replace(/\s+/g, '')
     .toLowerCase()
+}
+
+/**
+ * 人脉 NPC 的 name 须户籍式全名；拦截「阿木」「徐姐」等小名/称呼当姓名。
+ * （称呼应落在 fromCallsTo / theyCallYou，不进 name。）
+ */
+export function isIncompleteNpcLegalName(name: unknown): boolean {
+  const n = String(name ?? '').trim()
+  if (!n) return true
+  if (n.length < 2) return true
+  if (/^[阿小][\u4e00-\u9fff]{1,2}$/u.test(n)) return true
+  if (/^[\u4e00-\u9fff]{1,2}(?:姐|哥|叔|婶|姨|总|婆|公)$/u.test(n)) return true
+  if (
+    /^(?:老师|女士|先生|经理|同学|阿姨|叔叔|学长|学姐|班主任|保安|店长|医生|前台|姐|哥|叔|婶|姨)$/u.test(
+      n,
+    )
+  ) {
+    return true
+  }
+  if (
+    /^[\u4e00-\u9fff]{1,2}(?:老师|女士|先生|经理|主任|医生|同学|学长|学姐|老板)$/u.test(n)
+  ) {
+    return true
+  }
+  return false
 }
 
 /** 将 AI 返回的月日规范为 MM-DD，非法则返回空串 */
@@ -385,7 +463,7 @@ ${NPC_NETWORK_AI_AGE_AND_BIRTHDAY_RULES}
 
 每个 npc 对象字段（缺一不可）：
 - name, gender（male/female/other 或 男/女）, age（数字）, height（身高字符串）, weight（体重字符串）, motto（座右铭，<=15字）, birthdayMD（"MM-DD"）, occupation（职业）,
-- avatarCategory（必须从以下枚举中选择且只能选一个：["40岁以上长辈头像男","40岁以上长辈头像女","微信头像男E型阳光","微信头像女清冷和御姐","抽象搞笑男女通用","微信头像女可爱活泼"]）,
+- avatarCategory（必须从以下枚举中选择且只能选一个：["40岁以上长辈头像男","40岁以上长辈头像女","微信头像男E型阳光","微信头像男I型清冷","微信头像女清冷和御姐","抽象搞笑男女通用","微信头像女可爱活泼"]；按该 NPC 性别/年龄/气质选：男清冷内向→男I型清冷，男阳光外向→男E型阳光，女御姐清冷→女清冷和御姐，女元气可爱→女可爱活泼，40+长辈→对应长辈池，沙雕梗头像→抽象搞笑）,
 - interests（字符串数组，恰好3个）, painPoints（字符串数组，恰好2个）,
 - mbti（四字母大写）,
 - bio（约100字中文第三人称简介）：凡提及绑定档案主角（根人设），须用「${mainRootPh}」，**禁止**出现汉字姓名「${main.name}」。
@@ -399,11 +477,14 @@ NPC 人设异质性（最高优先级，与姓名铁律并列）：
 - 自检：若某 NPC 与主角档案重叠度过高，须重写该 NPC 直至合格再输出 JSON。
 
 姓名铁律（最高优先级，必须严格遵守）：
-- 所有 NPC 的 name 必须是「真实姓名样式」，默认 2~4 个中文汉字；须按人设与场景现编，**禁止**复用提示词里的示范名或固定套路名。
+- 所有 NPC 的 name 必须是**可独立建档的户籍式全名**（姓+名），默认 **2～4 个中文汉字**（外文名须完整姓+名，勿只给名或只给姓）；须按人设与场景现编，**禁止**复用提示词里的示范名或固定套路名。
+- **禁止小名/昵称/外号当 name**：如「阿木」「阿强」「小美」「二狗」；「阿×」「小×」一律不合格。
+- **禁止亲昵/辈分称呼当 name**：如「徐姐」「王哥」「李叔」「张姨」「陈总」；「姓+姐/哥/叔/婶/姨/总」一律不合格。
 - 严禁把称呼/头衔/关系词当姓名（老师、女士、经理、同学、阿姨、叔叔、学长、班主任、保安、店长、医生、前台，以及「姓+头衔」而无完整名）。
 - 严禁使用泛化占位名（某某、路人甲、神秘人、同事A、老师B、甲乙丙）。
 - **禁止**在输出中照抄常见偷懒名或本提示曾用过的示例姓名；每次生成应彼此区分、贴合年龄与地域感。
-- 若需要表达称呼，可写在 relation / 设定文案里，但 name 字段本身必须是可独立使用的真实姓名。
+- 若需要表达当面怎么叫，只写在 fromCallsTo / theyCallYou / relation 文案里；**name 字段本身必须是全名**，禁止把称呼习惯写进 name。
+- 自检：若某 name 读起来像外号、小名或「姓+称呼」而非户籍全名，必须先改成全名再输出最终 JSON。
 - 若输出中出现任何不合规姓名，必须先自我修正再输出最终 JSON。
 
 ${NPC_AI_HEIGHT_WEIGHT_MOTTO_RULES_CORE}
@@ -526,8 +607,14 @@ ${input.playerIdentity?.worldBooks?.length ? `所有世界书条目：${(() => {
   const usedAvatarUrls = new Set<string>()
   const mainNameKey = normalizeNameKey(main.name)
   const seenNpcNameKeys = new Set<string>()
+  const incompleteNames: string[] = []
   for (const n of payload.npcs) {
-    const npcNameKey = normalizeNameKey((n as AiNpcJson)?.name)
+    const rawName = String((n as AiNpcJson)?.name ?? '').trim()
+    if (rawName && isIncompleteNpcLegalName(rawName)) {
+      incompleteNames.push(rawName)
+      continue
+    }
+    const npcNameKey = normalizeNameKey(rawName)
     if (!npcNameKey) continue
     // AI 偶发把主角重复生成为 NPC：在落库前直接过滤。
     if (mainNameKey && npcNameKey === mainNameKey) continue
@@ -537,6 +624,14 @@ ${input.playerIdentity?.worldBooks?.length ? `所有世界书条目：${(() => {
     const ch = characterFromAiNpc(scrubNpcAnchorsForMain(n as AiNpcJson, main), main, usedAvatarUrls)
     characters.push(ch)
     nameToCharacter.set(ch.name, ch)
+  }
+  if (incompleteNames.length > 0) {
+    throw new Error(
+      `人脉 NPC 姓名须为户籍式全名（姓+名），禁止小名/称呼当姓名。不合规：${incompleteNames.join('、')}。请重新生成。`,
+    )
+  }
+  if (characters.length === 0) {
+    throw new Error('人脉 NPC 生成结果为空或姓名全部不合规，请重新生成。')
   }
   if (!nameToCharacter.has(main.name)) {
     // 主角不在 npc列表，手动加入映射

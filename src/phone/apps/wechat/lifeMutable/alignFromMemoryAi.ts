@@ -29,6 +29,7 @@ import { formatPrivateLineUnsummarized } from '../wechatMemoryPromptBlocks'
 import {
   alignLifeSheetToTimeline,
   formatLifePromptBlock,
+  mergeLifeListFieldsFromAi,
   normalizeLifeMutableSheet,
   resolveLifeClock,
   resolveLifeSnapshot,
@@ -39,8 +40,12 @@ import {
   buildSharedSocialCircleConsistencyRule,
   formatCounterpartSocialCircleBlock,
 } from './sharedSocialCircle'
-import { ALIGN_TEXT_FORMAT_BLOCK, parseAlignText, parsePairAlignText } from './alignTextFormat'
+import { ALIGN_TEXT_FORMAT_BLOCK, formatLifeSheetAsPlainLedgerText, parseAlignText, parsePairAlignText } from './alignTextFormat'
 import { appendLifeChangeHistory } from './lifeChangeHistory'
+import {
+  buildLifeRelationAlignHardRule,
+  collectTowardUserRelationEvidence,
+} from './lifeRelationSync'
 import type { LifeMutableSheet, LifeStorySpan } from './types'
 
 export type LifeAlignSubject = 'character' | 'player'
@@ -109,11 +114,12 @@ function mergeSheetFromAiObject(prev: LifeMutableSheet, obj: Record<string, unkn
     if (keys.has(k)) (next as unknown as Record<string, unknown>)[k] = parsed[k]
   }
   if (keys.has('educationGradeAtStart')) next.educationGradeAtStart = parsed.educationGradeAtStart
-  if (keys.has('realEstates')) next.realEstates = parsed.realEstates
-  if (keys.has('vehicles')) next.vehicles = parsed.vehicles
-  if (keys.has('family')) next.family = parsed.family
-  if (keys.has('socialCircle')) next.socialCircle = parsed.socialCircle
-  if (keys.has('pets')) next.pets = parsed.pets
+  const lists = mergeLifeListFieldsFromAi(prev, parsed, keys)
+  next.realEstates = lists.realEstates
+  next.vehicles = lists.vehicles
+  next.family = lists.family
+  next.socialCircle = lists.socialCircle
+  next.pets = lists.pets
   if (keys.has('storyStartDay') && parsed.storyStartDay.trim()) next.storyStartDay = parsed.storyStartDay
   if (keys.has('ageAtStart') && parsed.ageAtStart != null) next.ageAtStart = parsed.ageAtStart
   return next
@@ -144,11 +150,40 @@ function finalizeAlignedSheet(sheet: LifeMutableSheet, span: LifeStorySpan): Lif
   )
 }
 
+function finishAlignResult(params: {
+  before: LifeMutableSheet
+  after: LifeMutableSheet
+  hasObviousVague: boolean
+}): LifeAlignFromMemoryResult {
+  const { before, after, hasObviousVague } = params
+  const changed = describeSheetDiff(before, after)
+  if (!changed.length) {
+    if (hasObviousVague || sheetHasVagueLifePlaces(after)) {
+      return { status: 'no_change', sheet: after }
+    }
+    return { status: 'no_change', sheet: before }
+  }
+  return {
+    status: 'updated',
+    sheet: appendLifeChangeHistory(after, {
+      before,
+      summary: `按记忆对齐 · ${changed.join('、')}`,
+      source: 'align',
+    }),
+    changed,
+  }
+}
+
 function applyAlignFromAiObject(params: {
   sheet: LifeMutableSheet
   obj: Record<string, unknown>
   span: LifeStorySpan
   subjectCard: Character | PlayerIdentity
+  perspective: LifeAlignSubject
+  character: Character
+  boundPlayer: PlayerIdentity | null | undefined
+  towardUserText: string
+  nearEndText: string
 }): LifeAlignFromMemoryResult {
   const { sheet, obj, span, subjectCard } = params
   const needsBlankFill = sheetNeedsBlankFill(sheet)
@@ -156,22 +191,18 @@ function applyAlignFromAiObject(params: {
   // 模型说无变化，但账本仍空或缺项：忽略 noChange，继续走补齐（禁止因「某」字硬失败）
   const ignoreNoChange = needsBlankFill || hasObviousVague
 
+  // 感情状态完全以模型输出为准，不再本地 enforce 覆盖
+  const finish = (after: LifeMutableSheet) =>
+    finishAlignResult({
+      before: sheet,
+      after,
+      hasObviousVague,
+    })
+
   if (truthyNoChange(obj.noChange) && !ignoreNoChange) {
     const filledOnly = ensureAlignMinimumFills(sheet, span)
     const clockSynced = finalizeAlignedSheet(filledOnly, span)
-    const filledDiff = describeSheetDiff(sheet, clockSynced)
-    if (filledDiff.length) {
-      return {
-        status: 'updated',
-        sheet: appendLifeChangeHistory(clockSynced, {
-          before: sheet,
-          summary: `按记忆对齐 · ${filledDiff.join('、')}`,
-          source: 'align',
-        }),
-        changed: filledDiff,
-      }
-    }
-    return { status: 'no_change', sheet }
+    return finish(clockSynced)
   }
 
   let next =
@@ -201,26 +232,7 @@ function applyAlignFromAiObject(params: {
 
   next = ensureAlignMinimumFills(next, span)
   next = finalizeAlignedSheet(next, span)
-  const changed = describeSheetDiff(sheet, next)
-  if (!changed.length) {
-    // 仍有明显「某大学」等占位时，提示可再试，但不要标失败卡住
-    if (hasObviousVague || sheetHasVagueLifePlaces(next)) {
-      return {
-        status: 'no_change',
-        sheet: next,
-      }
-    }
-    return { status: 'no_change', sheet }
-  }
-  return {
-    status: 'updated',
-    sheet: appendLifeChangeHistory(next, {
-      before: sheet,
-      summary: `按记忆对齐 · ${changed.join('、')}`,
-      source: 'align',
-    }),
-    changed,
-  }
+  return finish(next)
 }
 
 async function requestAlignModelRaw(
@@ -561,6 +573,9 @@ export async function runLifeAlignFromMemory(params: {
     if (signal.aborted) return { status: 'failed', reason: '已取消或超时（加载近端上下文阶段）' }
     report('load_memory', onlinePack.msgHint)
 
+    const towardUserEvidence = collectTowardUserRelationEvidence(character)
+    const nearEndBundle = [onlineRecent, offlineRecent].filter(Boolean).join('\n\n')
+
     const snapshot = resolveLifeSnapshot({
       cardName: subjectCard.name,
       cardAge: subjectCard.age,
@@ -597,7 +612,7 @@ export async function runLifeAlignFromMemory(params: {
       params.subject === 'player'
         ? `
 【玩家账本 · 证据优先级（硬 · 防对不上）】
-- **近端线上/线下「现在」事实优先于旧账本**：感情状态、存款、住址/同住/搬家、分手或在一起、明确升学年级、转专业、换工作等——近端有写就必须改账本；禁止用旧账本压近端，也禁止因身份卡没写细就 noChange。
+- **近端线上/线下「现在」事实优先于旧账本**：感情状态、存款、住址/同住/搬家、分手或在一起、明确升学年级、转专业、换工作，以及**新具名家人/朋友同事、新可去住所、新车、新宠物**——近端有写就必须改账本（**允许在已有列表上追加**，禁止因「列表已有几条」就 noChange）；禁止用旧账本压近端，也禁止因身份卡没写细就 noChange。
 - **身份卡/世界书 = 背景基线**：近端完全没提学校/专业/主业时，用身份卡补齐空白或校正明显过时项。
 - **仅当身份卡已修订、且近端仍在复读修订前旧校名/旧专业**时，才以身份卡压过近端旧表述；近端若明确「现在已经…」则以近端为准。
 - **禁止**把整段线上近端当成可忽略的旧残留——对不上信息的常见原因就是漏读线上。
@@ -621,13 +636,13 @@ ${playerIdentityPriorityRule}
         : `人设世界书与建档卡=开篇/人设锚点；近端线上/线下 ${ALIGN_RECENT_ROUNDS} 轮=「现在」证据。建档卡年龄/职业视为开篇，可能已过时（剧情推进后以近端为准）。`
     }
 2. 账本填剧情「现在」：职业、存款、感情、可去住所、车产、家庭、社交圈、宠物、当前姓名性别。
-3. **补齐空白（硬）**：当前账本某字段为空、或列表为空时，须根据人设/世界书/近端推断填出**至少一点可用内容**，不要省略该键让空白继续空着。已有合理内容且与**更高优先级证据**一致的字段可省略；与身份卡冲突的旧内容必须改，不可省略。
-4. **可去住所 realEstates**：列出本人**所有可住/可去**的地点（可多项），不是只写一个「现居」。学生常见：学校宿舍 + 自家住所；上班族可有租房 + 老家等。每条须含：label（称呼，如「学校宿舍」）、placeKind（home|dorm|rent|family|work|other）、location（**虚构市+区+具体校名或路门牌+楼栋+房间号**；**禁止**「某高校/某大学/某小区」及任何含「某」的地址；**勿套用固定示范城市**，按人设/世界书自行新编）、ownedBySubject（产权是否归本人名下，布尔）、isPrimary（是否当前主居，通常仅一条 true）、tenure（own|rent|""）、valueWan（估值，单位万元，数字字符串，如「280」；宿舍/租住可空或写月租相关估值）。面积户型不明可空。宿舍/家人处一般 ownedBySubject=false；自购商品房 true。
-5. **车产 vehicles**：有车写**完整品牌车型**（如奥迪A6L）并填 valueWan（估值，单位万元，如「45」）；**禁止**空 model。新车追加条目并写清车型与价值。明确无车或完全无依据时，须输出 1 条且 model 为「无」（note 可写「无车产」，valueWan 可空），禁止空数组。
-6. **家庭 family**：世界书有父母/兄弟姐妹等则照写。**若世界书几乎没写家庭**：须合理补全 2～4 名核心亲属（通常含父母，可按年龄段补兄弟姐妹），贴合角色年龄阶层与背景，勿离谱网文设定。每位必须含：name（**真实姓名**，禁止「X父/X母/爸爸/妈妈」）、relation（父亲/母亲/继父…）、gender、ageAtStart（开篇岁数）、age（**剧情现在**岁数）、birthdayMD（月日，如「3月12日」或「03-12」）、occupationOrSchool、alive、residence（须具体到虚构城市+路门牌+楼栋房间，勿只写「重组家庭住所」或「某小区」）、livesWithSubject。健康可简写。
+3. **补齐空白与允许新增（硬）**：字段或列表为空时须填出可用内容。**列表已有内容时仍须追加**：近端/世界书出现账本里还没有的具名家人、朋友同事、可去住所、车辆、宠物 → 必须写入对应列表（旧条目保留，新条目追加）；禁止把「列表非空」当成冻结。已有内容与更高优先级证据一致、且近端无新人新房新车时该字段可省略；与身份卡冲突的旧内容必须改。
+4. **可去住所 realEstates**：列出本人**所有可住/可去**的地点（可多项），不是只写一个「现居」。学生常见：学校宿舍 + 自家住所；上班族可有租房 + 老家等。近端新提到的合租/常去处须**追加**。每条须含：label（称呼，如「学校宿舍」）、placeKind（home|dorm|rent|family|work|other）、location（**虚构市+区+具体校名或路门牌+楼栋+房间号**；**禁止**「某高校/某大学/某小区」及任何含「某」的地址；**勿套用固定示范城市**，按人设/世界书自行新编）、ownedBySubject（产权是否归本人名下，布尔）、isPrimary（是否当前主居，通常仅一条 true）、tenure（own|rent|""）、valueWan（估值，单位万元，数字字符串，如「280」；宿舍/租住可空或写月租相关估值）。面积户型不明可空。宿舍/家人处一般 ownedBySubject=false；自购商品房 true。
+5. **车产 vehicles**：有车写**完整品牌车型**（如奥迪A6L）并填 valueWan（估值，单位万元，如「45」）；**禁止**空 model。近端买车/换车 → **追加或更新**并写清车型与价值。明确无车或完全无依据时，须输出 1 条且 model 为「无」（note 可写「无车产」，valueWan 可空），禁止空数组。
+6. **家庭 family**：世界书有父母/兄弟姐妹等则照写。**若世界书几乎没写家庭**：须合理补全 2～4 名核心亲属（通常含父母，可按年龄段补兄弟姐妹），贴合角色年龄阶层与背景，勿离谱网文设定。近端新出现的具名亲属 → **必须追加**。每位必须含：name（**真实姓名**，禁止「X父/X母/爸爸/妈妈」）、relation（父亲/母亲/继父…）、gender、ageAtStart（开篇岁数）、age（**剧情现在**岁数）、birthdayMD（月日，如「3月12日」或「03-12」）、occupationOrSchool、alive、residence（须具体到虚构城市+路门牌+楼栋房间，勿只写「重组家庭住所」或「某小区」）、livesWithSubject。健康可简写。
    - **职业须具体**：禁止「普通职工/上班族/职员/务工/工作/自由职业」等空话。须写到行业+岗位（如中学语文老师、社区护士、物流仓管、个体店主、银行柜员等口径，**自行编具体单位名与虚构城市**，勿复用提示词样板地名）。学生写「具体虚构校名 + 当前年级 · 专业」（年级须与剧情日一致；学校/专业须与主体身份设定一致；**禁止「某大学」「××大学」**）。
    - **年龄须对齐现在**：若主体开篇 19、现已 21，同学/同龄亲友不得仍写 19；age=现在，ageAtStart=开篇。禁止整表停在开篇岁数。
-6b. **社交圈 socialCircle**：同学/同事/朋友/前任等（非核心家属）。世界书有周边 NPC/人脉则照写；几乎没有时合理补 2～5 人，贴合身份场景。每位须含：name、relation、gender、ageAtStart、age（现在）、birthdayMD、occupationOrSchool（具体岗位/专业年级，禁「某」）、residence（具体虚构地址含门牌）、attitude、note。禁止与 family 重复。同学同龄人年龄必须随主体一起长过的年数推进。
+6b. **社交圈 socialCircle**：同学/同事/朋友/前任等（非核心家属）。世界书有周边 NPC/人脉则照写；几乎没有时合理补 2～5 人，贴合身份场景。近端新出现的具名同学/同事/朋友/前任 → **必须追加**。每位须含：name、relation、gender、ageAtStart、age（现在）、birthdayMD、occupationOrSchool（具体岗位/专业年级，禁「某」）、residence（具体虚构地址含门牌）、attitude、note。禁止与 family 重复。同学同龄人年龄必须随主体一起长过的年数推进。
    - **共同好友硬一致**：若对方账本社交圈已有同名之人，本账本该人的性别/年龄/生日/学校或职业/住址必须与对方完全一致；仅 relation/attitude/note 可不同。禁止同人不同校。
    - **relation**：短关系称呼（≤8字），如「恋人」「大学同学」「前任」「酒吧老板」；复合可用「恋人/同学」。禁止把整句性格/态度写进 relation。
    - **attitude**：关系补充（态度/亲疏/相处现状），可写完整句子；勿把 attitude 当作短标签。
@@ -636,15 +651,17 @@ ${playerIdentityPriorityRule}
 8. storyStartDay / 主体 ageAtStart 默认勿动。近端明确「现在几岁」可另输出 currentAge。
 9. 证据矛盾：${
       params.subject === 'player'
-        ? '近端线上/线下已写明的「现在」事实（感情、存款、住址、升学/换工作、明确的新校名新专业）优先；身份卡仅在近端未提及时作背景基线。仅当身份卡已修订而近端仍复读旧校名时，才以身份卡压过近端旧表述。'
-        : '年级「现在」口径 → 近端明示与剧情日优先于世界书开篇；其余取更近更具体；职业感情等有依据才改。'
+        ? '近端线上/线下已写明的「现在」事实（感情、存款、住址、升学/换工作、明确的新校名新专业、新人脉/新家人）优先；身份卡仅在近端未提及时作背景基线。仅当身份卡已修订而近端仍复读旧校名时，才以身份卡压过近端旧表述。'
+        : '年级「现在」口径 → 近端明示与剧情日优先于世界书开篇；其余取更近更具体；职业感情等有依据才改；新人脉/新家人/新住所有依据必须追加。'
     }空白补齐允许轻度合理推断。共同社交对象客观事实以「对方账本社交圈锚点」为准，不得另编一套学校。
-10. 仅当账本**已无空白且**与证据完全一致、且**地址/校名无「某」等模糊占位**、且**共同好友客观事实与对方账本一致**、且**occupation/学历年级已是「现在」而非停在开篇**、且**未漏掉近端已写明的感情/住址/升学等动态**时才写 status：无变化。仍有空住所/空车产/空家庭/空社交圈、或家庭/社交圈年龄仍停在开篇、或职业仍是空话、或住所/家庭地址仍笼统/含「某」、或宿舍缺楼栋房间号、或共同好友学校与对方不一致、或**近端已写大四/大二而账本仍大三/大一**、或**近端已写分手/同居等而账本未改**时**禁止**无变化。
+10. 仅当账本**已无空白且**与证据完全一致、且**地址/校名无「某」等模糊占位**、且**共同好友客观事实与对方账本一致**、且**occupation/学历年级已是「现在」而非停在开篇**、且**未漏掉近端已写明的感情/住址/升学/新人脉新家人新住所新车等动态**时才写 status：无变化。仍有空住所/空车产/空家庭/空社交圈、或家庭/社交圈年龄仍停在开篇、或职业仍是空话、或住所/家庭地址仍笼统/含「某」、或宿舍缺楼栋房间号、或共同好友学校与对方不一致、或**近端已写大四/大二而账本仍大三/大一**、或**近端已写分手/同居等而账本未改**、或**近端已具名新人/新房/新车而账本未追加**时**禁止**无变化。
 11. 只输出 LIFE_ALIGN 纯文本块（见用户消息格式说明），不要 JSON、不要 Markdown、不要聊天。
 
 ${buildSharedSocialCircleConsistencyRule()}
 
-${buildLifeLedgerAddressAndAcademicRules()}`
+${buildLifeLedgerAddressAndAcademicRules()}
+
+${buildLifeRelationAlignHardRule()}`
 
     const cardHeader =
       params.subject === 'player'
@@ -663,7 +680,7 @@ ${ledgerBlock}
 主体现在年龄：${snapshot.currentAge ?? '未知'}
 → 家庭/社交圈的 age 必须是「现在」；若主体已长大 N 岁，同龄人不得仍停在开篇岁数。
 
-【当前账本 JSON】
+【当前账本（纯文本 · 请按同格式增改；禁止输出 JSON）】
 ${
   params.subject === 'player'
     ? '（若与近端「现在」事实冲突，以近端为准改写；近端未提及时再用身份卡补空白）\n'
@@ -672,10 +689,13 @@ ${
   sheetHasVagueLifePlaces(params.sheet)
     ? '（⚠ 当前含「某／某某／某大学」等模糊地址或缺宿舍门牌：本轮必须全部改写成具体虚构校名+楼栋房间号，禁止 noChange）\n'
     : ''
-}${JSON.stringify(params.sheet)}
+}${formatLifeSheetAsPlainLedgerText(params.sheet)}
 
 【人设世界书】
 ${clip(charWorldBook, 6000) || '（无人设世界书）'}
+
+【关系锚点 · 「对你的看法和态度」（硬 · 可能因总世界书截断而单独附上）】
+${towardUserEvidence || '（无该条目；请仍根据人设世界书中对玩家的态度判断，禁止无依据写成普通熟人）'}
 
 【玩家身份设定】
 ${
@@ -726,6 +746,11 @@ ${ALIGN_TEXT_FORMAT_BLOCK}`
       obj,
       span: params.span,
       subjectCard,
+      perspective: params.subject,
+      character,
+      boundPlayer,
+      towardUserText: towardUserEvidence,
+      nearEndText: nearEndBundle,
     })
     if (applied.status === 'updated') {
       report('done', `已更新 ${applied.changed.length} 项`)
@@ -821,6 +846,9 @@ export async function runLifeAlignPairFromMemory(params: {
     if (signal.aborted) return failBoth('已取消或超时（加载近端上下文阶段）')
     report('load_memory', onlinePack.msgHint)
 
+    const towardUserEvidence = collectTowardUserRelationEvidence(character)
+    const nearEndBundle = [onlineRecent, offlineRecent].filter(Boolean).join('\n\n')
+
     const charSnapshot = resolveLifeSnapshot({
       cardName: character.name,
       cardAge: character.age,
@@ -863,7 +891,7 @@ export async function runLifeAlignPairFromMemory(params: {
 - 玩家「${playerName}」在本角色线上的人生账本：只改玩家当前事实；不是角色本人。
 
 【证据优先级（硬 · 防对不上）】
-- **近端线上/线下「现在」事实优先于旧账本**（两边都适用）：感情、存款、住址/同住/搬家、分手或在一起、明确升学年级、转专业、换工作——近端有写就必须改对应主体账本。
+- **近端线上/线下「现在」事实优先于旧账本**（两边都适用）：感情、存款、住址/同住/搬家、分手或在一起、明确升学年级、转专业、换工作，以及**新具名家人/朋友同事、新可去住所、新车、新宠物**——近端有写就必须改对应主体账本（**允许在已有列表上追加**，禁止因「列表已有几条」就 noChange）。
 - **玩家身份卡 = 背景基线**：近端完全没提学校/专业/主业时，用身份卡补齐玩家空白；仅当身份卡已修订而近端仍复读旧校名时，才以身份卡压过近端旧表述。
 - **禁止**把整段线上近端当成可忽略的旧残留。
 - 角色账本：玩家身份设定只作关系对照，勿把玩家学校/专业写进角色主业。
@@ -873,42 +901,44 @@ export async function runLifeAlignPairFromMemory(params: {
 规则（两边共用，按主体适用）：
 1. 角色：人设世界书与建档卡=开篇锚点；近端线上/线下=「现在」证据。玩家：近端=「现在」动态第一证据；身份卡=近端未提及时的背景基线。
 2. 账本填剧情「现在」：职业、存款、感情、可去住所、车产、家庭、社交圈、宠物、当前姓名性别。
-3. **补齐空白（硬）**：字段或列表为空时须推断填出至少一点可用内容。
-4. **可去住所 realEstates**：列齐可住/可去地点；location 须虚构市+区+具体校名或路门牌+楼栋房间；禁止含「某」；有产权/可估时填 valueWan（万元）。
+3. **补齐空白与允许新增（硬）**：字段或列表为空时须推断填出可用内容。列表已有内容时，近端新具名家人/人脉/住所/车产/宠物仍须**追加**；禁止把非空列表当成冻结。
+4. **可去住所 realEstates**：列齐可住/可去地点；近端新地点须追加；location 须虚构市+区+具体校名或路门牌+楼栋房间；禁止含「某」；有产权/可估时填 valueWan（万元）。
 5. **车产 vehicles**：有车写完整品牌车型与 valueWan（万元）；禁止空 model；新车追加并写清车型。无车须 1 条 model「无」，禁止空数组。
-6. **家庭 family** / **社交圈 socialCircle**：须具体职业/校名；age=现在岁，ageAtStart=开篇岁；同龄人随主体过年数推进。
+6. **家庭 family** / **社交圈 socialCircle**：须具体职业/校名；age=现在岁，ageAtStart=开篇岁；同龄人随主体过年数推进；近端新具名人必须追加。
 7. **共同好友硬一致（硬）**：两边社交圈同名之人，性别/年龄/生日/学校或职业/住址必须完全一致；仅 relation/attitude/note 可不同。
 8. educationTrack/educationGradeAtStart 是开篇学年；现在年级写在 educationNote 与 occupationMain；近端与剧情日优先于世界书开篇年级。
 9. storyStartDay / ageAtStart 默认勿动；近端明确现在几岁可输出 currentAge。
-10. 某侧账本已无空白、与证据一致、地址无「某」、共同好友与对方一致、年级已是「现在」、且未漏掉近端已写明动态时，该侧写 status：无变化；否则禁止无变化。
+10. 某侧账本已无空白、与证据一致、地址无「某」、共同好友与对方一致、年级已是「现在」、且未漏掉近端已写明动态（含新人/新房/新车）时，该侧写 status：无变化；否则禁止无变化。
 11. 只输出 LIFE_ALIGN 纯文本块：同一 <<<LIFE_ALIGN>>> 包络内连续两个 [LIFE_ALIGN]（subject 分别为 character 与 player），不要 JSON、不要 Markdown、不要聊天。
 
 ${buildSharedSocialCircleConsistencyRule()}
 
-${buildLifeLedgerAddressAndAcademicRules()}`
+${buildLifeLedgerAddressAndAcademicRules()}
+
+${buildLifeRelationAlignHardRule()}`
 
     const userTask = `【角色 · 建档卡（年龄/职业可能随剧情推进过时，仅作开篇对照）】
 ${cardFactLine(character)}
 
 ${charLedgerBlock}
 
-【角色 · 当前账本 JSON】${
+【角色 · 当前账本（纯文本 · 请按同格式增改；禁止输出 JSON）】${
       sheetHasVagueLifePlaces(params.characterSheet)
         ? '\n（⚠ 含模糊地址：本轮必须改写成具体虚构校名+楼栋房间号，禁止 noChange）\n'
-        : ''
-    }${JSON.stringify(params.characterSheet)}
+        : '\n'
+    }${formatLifeSheetAsPlainLedgerText(params.characterSheet)}
 
 【玩家 · 建档卡 · 背景基线（近端未提及时补齐；近端已有「现在」事实时勿压过近端）】
 ${cardFactLine(boundPlayer)}
 
 ${playerLedgerBlock}
 
-【玩家 · 当前账本 JSON】
+【玩家 · 当前账本（纯文本 · 请按同格式增改；禁止输出 JSON）】
 （若与近端「现在」事实冲突，以近端为准；近端未提及时再用身份卡补空白）${
       sheetHasVagueLifePlaces(params.playerSheet)
         ? '\n（⚠ 含模糊地址：本轮必须改写成具体虚构校名+楼栋房间号，禁止 noChange）\n'
-        : ''
-    }${JSON.stringify(params.playerSheet)}
+        : '\n'
+    }${formatLifeSheetAsPlainLedgerText(params.playerSheet)}
 
 【剧情时钟（年龄对齐硬依据 · 两边共用）】
 开篇日：${charSnapshot.startDay || '未知'}
@@ -919,6 +949,9 @@ ${playerLedgerBlock}
 
 【人设世界书（角色）】
 ${clip(charWorldBook, 6000) || '（无人设世界书）'}
+
+【关系锚点 · 「对你的看法和态度」（硬 · 可能因总世界书截断而单独附上）】
+${towardUserEvidence || '（无该条目；请仍根据人设世界书中对玩家的态度判断，禁止无依据写成普通熟人）'}
 
 【玩家身份设定（背景基线）】
 ${clip(playerIdentityBlock, 5000) || '（未绑定玩家身份）'}
@@ -955,12 +988,22 @@ ${ALIGN_TEXT_FORMAT_BLOCK}`
       obj: pairObj.character,
       span: params.span,
       subjectCard: character,
+      perspective: 'character',
+      character,
+      boundPlayer,
+      towardUserText: towardUserEvidence,
+      nearEndText: nearEndBundle,
     })
     const playerResult = applyAlignFromAiObject({
       sheet: params.playerSheet,
       obj: pairObj.player,
       span: params.span,
       subjectCard: boundPlayer,
+      perspective: 'player',
+      character,
+      boundPlayer,
+      towardUserText: towardUserEvidence,
+      nearEndText: nearEndBundle,
     })
     report('done', '角色与玩家对齐完成')
     return { character: characterResult, player: playerResult }

@@ -17,11 +17,7 @@ import { WorldBooksEditor } from '../newFriendsPersona/WorldBooksEditor'
 import type { ScheduleTable } from '../newFriendsPersona/types'
 import { ScheduleEditorScreen } from '../schedule/ScheduleEditorScreen'
 import {
-  buildMbtiPersonalityWorldBook,
-  buildMbtiPersonalityWorldBookItems,
-  getMbtiPersonalityWorldBookName,
   isMbtiPersonalityWorldBookName,
-  normalizeMbti,
 } from '../mbtiPersonalityWorldBook'
 import {
   isLargeMbtiAvatar,
@@ -779,31 +775,11 @@ function IdentityEditPage({
 
   const syncMbtiPersonalityWorldBooks = (prev: PlayerIdentity, nextMbti: string): PlayerIdentity => {
     const now = Date.now()
-    const k = normalizeMbti(nextMbti)
-    const targetName = k ? getMbtiPersonalityWorldBookName(k) : ''
     const prevBooks = Array.isArray(prev.worldBooks) ? prev.worldBooks : []
-
-    let foundTarget = false
-    const nextBooks = prevBooks.map((w) => {
-      if (!isMbtiPersonalityWorldBookName(w.name)) return w
-      if (k && w.name === targetName) {
-        foundTarget = true
-        const hasEnabledContent = (w.items ?? []).some((it) => Boolean(it.enabled) && String(it.content || '').trim())
-        if (!hasEnabledContent) {
-          return {
-            ...w,
-            enabled: true,
-            collapsed: true,
-            items: buildMbtiPersonalityWorldBookItems(k, now),
-          }
-        }
-        return { ...w, enabled: true }
-      }
-      // 非当前 MBTI 的“人格设定”册默认关闭，避免页面/提示词里混入多种人格。
-      return { ...w, enabled: false }
-    })
-
-    const books = k && !foundTarget ? [buildMbtiPersonalityWorldBook(k, now), ...nextBooks] : nextBooks
+    // 不再自动创建/启用人格设定长文；聊天只认身份上的 MBTI 弱偏向。
+    const books = prevBooks.map((w) =>
+      isMbtiPersonalityWorldBookName(w.name) ? { ...w, enabled: false } : w,
+    )
     return { ...prev, mbti: nextMbti, worldBooks: books, updatedAt: now }
   }
 

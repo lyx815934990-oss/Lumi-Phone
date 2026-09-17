@@ -7,9 +7,9 @@ import {
 } from '../anonymousQa/buildAnonymousQaPersonaContext'
 import { assertMomentsChatApiConfigured } from './momentsChatApiReady'
 import {
-  parseMomentsModelJsonPayload,
-  requestMomentsModelJsonText,
-  throwIfMomentModelJsonInvalid,
+  parseMomentsModelPayload,
+  requestMomentsModelStableText,
+  throwIfMomentModelDraftInvalid,
 } from './momentsChatJsonAi'
 import {
   buildCharacterLocationPromptBlock,
@@ -26,18 +26,15 @@ import { MOMENT_IMAGE_COUNT_PROMPT } from './momentContentLimits'
 import { MOMENT_TEXT_OUTPUT_HINT } from './momentTextSanitize'
 import {
   buildCharacterMomentPrivacyPromptSection,
-  CHARACTER_MOMENT_PRIVACY_JSON_HINT,
   CHARACTER_MOMENT_PRIVACY_RULES,
 } from './momentCharacterPrivacyAi'
 import type { CharacterMomentPostType } from './momentCharacterPublishTypes'
 import {
   normalizeCharacterMomentAiDraft,
-  PUBLISHER_SELF_COMMENT_JSON_HINT,
   PUBLISHER_SELF_COMMENT_PROMPT_RULES,
   type CharacterMomentAiDraft,
 } from './momentCharacterPublishTypes'
 import {
-  CHARACTER_MOMENT_MUSIC_POST_JSON_HINT,
   CHARACTER_MOMENT_MUSIC_POST_PROMPT,
   CHARACTER_MOMENT_MUSIC_LOCALE_HINT,
 } from './momentAttachedMusic'
@@ -50,6 +47,7 @@ import {
   buildPriorHistoricalSummariesBlock,
   formatHistoricalMomentContext,
 } from './momentHistoricalGenUtils'
+import { MOMENT_POST_STABLE_FORMAT_HINT } from './momentStableFormat'
 
 const HISTORICAL_MOMENT_TASK_APPENDIX = `
 ---
@@ -62,20 +60,19 @@ const HISTORICAL_MOMENT_TASK_APPENDIX = `
 2. **与已生成列表区分**：本批次已生成的动态主题/措辞/情绪不得重复。
 3. **拒绝「人机味」与日记体**：真人朋友圈多为短句、留白、一两句吐槽；不是流水账汇报，**禁止**条条写成长段抒情。
 4. **字数须服从用户给定的本条目标**；宁可短，不要超标。
-5. 配图 prompt 只写画面内容（英文 SD/MJ 风格），**禁止写风格词**；每张描述不同局部/角度。
+5. 配图只写画面内容（英文 SD/MJ 风格），**禁止写风格词**；每张描述不同局部/角度。
 
 {{IMAGE_DESCRIPTION_RULES}}
 
 ${MOMENT_IMAGE_COUNT_PROMPT}
 
-# Post Types
-- mixed：文字+图片（images 数组 1~9 张均可）
+# Post Types（类型｜）
+- mixed：文字+图片（配图可多行，1~9 张）
 - text：纯文字
-- image：纯图片（content 留空）
-- music：分享歌曲（必填 attachedMusic；content 可选配文；禁止 images）
+- image：纯图片（正文写无）
+- music：分享歌曲（必填歌名/歌手；正文可选配文；禁止配图）
 
-# Output Format (严格返回 JSON，严禁 Markdown 与额外解释)
-{"postType":"text"|"image"|"mixed"|"music","content":"...","location":null,"images":["prompt1","prompt2"],${CHARACTER_MOMENT_MUSIC_POST_JSON_HINT},${PUBLISHER_SELF_COMMENT_JSON_HINT},${CHARACTER_MOMENT_PRIVACY_JSON_HINT}}
+${MOMENT_POST_STABLE_FORMAT_HINT}
 
 ${CHARACTER_MOMENT_MUSIC_POST_PROMPT}
 
@@ -198,16 +195,16 @@ export async function generateHistoricalCharacterMomentPost(params: {
   const userTask = [
     '# Context',
     `- 假定发帖时刻：${formatHistoricalMomentContext(params.timestampMs)}（须严格按该时刻的生活状态与情绪撰写）`,
-    `- 与用户的关系/近期私聊摘要（**仅作人设与语气参考**；勿把私聊另起话题写进正文或 publisherSelfComments，除非本条朋友圈就是在说同一件事；勿写穿越未来信息）：${truncateNotes(pack.unsummarizedPrivateNotes)}`,
+    `- 与用户的关系/近期私聊摘要（**仅作人设与语气参考**；勿把私聊另起话题写进正文或自评，除非本条朋友圈就是在说同一件事；勿写穿越未来信息）：${truncateNotes(pack.unsummarizedPrivateNotes)}`,
     `- 用户称呼：${params.wechatCtx.playerDisplayName.trim() || '朋友'}`,
     '',
     locationPromptBlock,
     '',
     privacyPrompt,
     '',
-    `【载体形式 · 必须遵循】本条 postType 必须为 "${forcedPostType}"（text=纯文字，mixed=图文，image=纯图片，music=分享歌曲）。`,
+    `【载体形式 · 必须遵循】本条「类型｜」必须为 "${forcedPostType}"（text=纯文字，mixed=图文，image=纯图片，music=分享歌曲）。`,
     forcedPostType === 'music'
-      ? `【分享歌曲】必填 attachedMusic（网易云真实歌名+歌手）；content 可选配文；禁止 images/imagePrompts。\n${CHARACTER_MOMENT_MUSIC_LOCALE_HINT}`
+      ? `【分享歌曲】必填歌名/歌手（网易云真实曲目）；正文可选配文；禁止配图。\n${CHARACTER_MOMENT_MUSIC_LOCALE_HINT}`
       : '',
     contentTypeBlock,
     textLengthHint,
@@ -215,10 +212,10 @@ export async function generateHistoricalCharacterMomentPost(params: {
     '【本批次已生成动态（勿重复主题/措辞）】',
     priorBlock,
     '',
-    '请根据上述假定时刻，以你的角色身份发一条历史朋友圈。是否附带 location 由你自行决定，非必要填 null；若附带须自拟符合世界观的真实地名，且遵守上方市级锚点规则。只输出一个 JSON 对象。',
+    '请根据上述假定时刻，以你的角色身份发一条历史朋友圈。是否附带地点由你自行决定，非必要写「无」；若附带须自拟符合世界观的真实地名，且遵守上方市级锚点规则。只输出稳定字段行，不要 JSON。',
   ].join('\n')
 
-  const raw = await requestMomentsModelJsonText(
+  const raw = await requestMomentsModelStableText(
     cfg as ApiConfig,
     [
       {
@@ -232,9 +229,9 @@ export async function generateHistoricalCharacterMomentPost(params: {
     ],
     { temperature: 0.9 },
   )
-  const payload = parseMomentsModelJsonPayload(raw)
+  const payload = parseMomentsModelPayload(raw)
   const draft = normalizeCharacterMomentAiDraft(payload, params.characterId)
-  throwIfMomentModelJsonInvalid(raw, draft)
+  throwIfMomentModelDraftInvalid(raw, draft)
 
   const normalizedPostType: CharacterMomentPostType = forcedPostType
   let postType = draft.postType

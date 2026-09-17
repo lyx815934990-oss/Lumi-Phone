@@ -49,7 +49,7 @@ export function Dock({
           {Array.from({ length: DOCK_COUNT }, (_, index) => {
             const app = apps[index] ?? null
             const longPressHandlers = useLongPress({
-              delay: 500,
+              delay: 700,
               moveTolerance: 10,
               onLongPress: () => {
                 if (app) onRequestEditMode?.(app.id)

@@ -237,6 +237,9 @@ function normalizeChatThemePatch(raw: unknown): ChatThemePatch | undefined {
   if (typeof ibRaw.buttonColor === 'string') inputBar.buttonColor = ibRaw.buttonColor
   if (typeof ibRaw.backgroundColor === 'string') inputBar.backgroundColor = ibRaw.backgroundColor
   if (layout) inputBar.layout = layout
+  if (ibRaw.wechatSendMode === 'button' || ibRaw.wechatSendMode === 'enter') {
+    inputBar.wechatSendMode = ibRaw.wechatSendMode
+  }
   if (typeof ibRaw.sendButtonColor === 'string' && ibRaw.sendButtonColor.trim()) {
     inputBar.sendButtonColor = ibRaw.sendButtonColor.trim()
   }

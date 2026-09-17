@@ -3,6 +3,8 @@ import { ChevronDown, Phone, PhoneOff } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { Pressable } from '../../../components/Pressable'
+import { unlockVoiceCallAudio } from './callAudioBridge'
+import { VoiceCallPortal } from './VoiceCallPortal'
 import { VC, VC_UI_FONT, vcLiquidGlassDark } from './voiceCallTheme'
 
 export function IncomingCallScreen({
@@ -30,6 +32,7 @@ export function IncomingCallScreen({
   if (!open || minimized) return null
 
   return (
+    <VoiceCallPortal>
     <AnimatePresence>
       <motion.div
         key="incoming-call-screen"
@@ -37,7 +40,7 @@ export function IncomingCallScreen({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="fixed inset-0 z-[286] flex h-full w-full flex-col overflow-hidden"
+        className="absolute inset-0 z-[286] flex h-full w-full flex-col overflow-hidden"
         style={{ background: VC.ink, fontFamily: VC_UI_FONT }}
       >
         <div className="absolute inset-0 overflow-hidden" aria-hidden>
@@ -118,9 +121,12 @@ export function IncomingCallScreen({
             <Pressable
               type="button"
               aria-label="接听"
-              onClick={onAccept}
+              onClick={() => {
+                unlockVoiceCallAudio()
+                onAccept()
+              }}
               className="flex h-16 w-16 items-center justify-center rounded-full text-white active:scale-[0.96]"
-              style={{ background: VC.callGreen, boxShadow: '0 8px 24px rgba(52,199,89,0.35)' }}
+              style={{ background: '#34C759', boxShadow: '0 8px 24px rgba(52,199,89,0.4)' }}
             >
               <Phone className="size-7" />
             </Pressable>
@@ -135,5 +141,6 @@ export function IncomingCallScreen({
         `}</style>
       </motion.div>
     </AnimatePresence>
+    </VoiceCallPortal>
   )
 }

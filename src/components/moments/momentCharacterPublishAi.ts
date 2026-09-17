@@ -7,9 +7,9 @@ import {
 } from '../anonymousQa/buildAnonymousQaPersonaContext'
 import { assertMomentsChatApiConfigured } from './momentsChatApiReady'
 import {
-  parseMomentsModelJsonPayload,
-  requestMomentsModelJsonText,
-  throwIfMomentModelJsonInvalid,
+  parseMomentsModelPayload,
+  requestMomentsModelStableText,
+  throwIfMomentModelDraftInvalid,
 } from './momentsChatJsonAi'
 import {
   buildCharacterLocationPromptBlock,
@@ -20,7 +20,6 @@ import {
 } from './momentCharacterLocationAnchor'
 import {
   buildCharacterMomentMusicPostPrompt,
-  CHARACTER_MOMENT_MUSIC_POST_JSON_HINT,
 } from './momentAttachedMusic'
 import { MOMENT_BODY_LENGTH_HINT, MOMENT_IMAGE_COUNT_PROMPT } from './momentContentLimits'
 import { MOMENT_LOCATION_PROMPT_HINT } from './momentLocationUtils'
@@ -29,16 +28,15 @@ import { characterHasAppearanceReference } from '../../phone/apps/wechat/charact
 import { MOMENT_TEXT_OUTPUT_HINT } from './momentTextSanitize'
 import {
   buildCharacterMomentPrivacyPromptSection,
-  CHARACTER_MOMENT_PRIVACY_JSON_HINT,
   CHARACTER_MOMENT_PRIVACY_RULES,
 } from './momentCharacterPrivacyAi'
 import type { MomentContactRef } from './newMomentTypes'
 import {
   normalizeCharacterMomentAiDraft,
-  PUBLISHER_SELF_COMMENT_JSON_HINT,
   PUBLISHER_SELF_COMMENT_PROMPT_RULES,
   type CharacterMomentAiDraft,
 } from './momentCharacterPublishTypes'
+import { MOMENT_POST_STABLE_FORMAT_HINT } from './momentStableFormat'
 
 const CHARACTER_MOMENT_TASK_APPENDIX_BASE = `
 ---
@@ -48,38 +46,37 @@ const CHARACTER_MOMENT_TASK_APPENDIX_BASE = `
 
 # Content Rules (绝对的活人感准则)
 1. **拒绝「人机味」与日记体**：不要写「今天我做了什么，我感到很高兴」。真人发朋友圈是情绪的瞬间宣泄。
-2. **符合人设语气**：傲娇/高冷型日常可短；公告、小作文、爆瓜类可写长（须分段换行）。
+2. **符合人设语气**：傲娇/高冷型日常可短；公告、小作文、爆瓜类可写长（须分段换行，正文内用 \\n）。
 3. **隐晦的情感拉扯**：若与用户暧昧或冷战，可夹带私货、指桑骂槐，写只有你们俩能看懂的暗语。
-4. 配图 prompt 只写画面内容（英文 SD/MJ 风格），**禁止写风格词**；每张描述不同局部/角度。
+4. 配图只写画面内容（英文 SD/MJ 风格），**禁止写风格词**；每张描述不同局部/角度。
 
 {{IMAGE_DESCRIPTION_RULES}}
 
 ${MOMENT_IMAGE_COUNT_PROMPT}
 
-# Post Types
-- mixed：文字+图片（images 数组 1~9 张均可）
+# Post Types（类型｜）
+- mixed：文字+图片（配图可多行，1~9 张）
 - text：纯文字
-- image：纯图片（content 留空）
-- music：分享歌曲（必填 attachedMusic；content 可选配文）
+- image：纯图片（正文写无）
+- music：分享歌曲（必填歌名/歌手；正文可选配文）
 
-# Output Format (严格返回 JSON，严禁 Markdown 与额外解释)
-{"postType":"text"|"image"|"mixed"|"music","content":"...","location":null,"images":["prompt1","prompt2"],"isPinned":false,${CHARACTER_MOMENT_MUSIC_POST_JSON_HINT},${PUBLISHER_SELF_COMMENT_JSON_HINT},${CHARACTER_MOMENT_PRIVACY_JSON_HINT}}
+${MOMENT_POST_STABLE_FORMAT_HINT}
 
 {{MUSIC_POST_PROMPT}}
 
 ${PUBLISHER_SELF_COMMENT_PROMPT_RULES}
 
-# Pin Decision (isPinned · 角色自行决定)
-可选字段 isPinned（布尔）：是否把本条设为朋友圈置顶。
-- 默认 false；日常碎碎念、随手拍、情绪发泄、无关紧要的内容**不要**置顶。
-- 仅当本条对你而言**特别重要、有纪念意义、代表人设内核、里程碑、郑重声明、精选代表作**等，且贴合你这个人会「愿意挂在主页给别人看」的心态时，才设为 true。
+# Pin Decision（置顶 · 角色自行决定）
+可选「置顶｜是/否」。
+- 默认否；日常碎碎念、随手拍、情绪发泄、无关紧要的内容**不要**置顶。
+- 仅当本条对你而言**特别重要、有纪念意义、代表人设内核、里程碑、郑重声明、精选代表作**等，且贴合你这个人会「愿意挂在主页给别人看」的心态时，才写「是」。
 - 是否置顶完全取决于你的人设与性格：有的人几乎从不置顶，有的人爱把得意之作置顶；傲娇型可能嘴上随便但私下置顶了重磅内容。
 - 用户没有要求置顶时，你也应**自行判断**；**禁止**每条都置顶。
 
-# Mention User（mentionUser · 默认 false）
-- mentionUser 默认 false；**禁止**日常发文、主动发文、only_user 钓鱼动态设为 true。
-- 仅当用户私聊明确要求 @你 / 提醒你看，或本条是极少数必须立刻引起用户注意的重磅动态时才 true。
-- only_user 与 mentionUser 不要同时使用。
+# 提醒用户（默认否）
+- 提醒用户默认否；**禁止**日常发文、主动发文、only_user 钓鱼动态写「是」。
+- 仅当用户私聊明确要求 @你 / 提醒你看，或本条是极少数必须立刻引起用户注意的重磅动态时才「是」。
+- only_user 与提醒用户不要同时使用。
 
 ${MOMENT_LOCATION_PROMPT_HINT}
 
@@ -206,9 +203,9 @@ export async function generateCharacterMomentPost(params: {
           ? `- 用户本轮的要求/方向：${chatHint}`
           : '- 用户刚在私聊中请你发一条朋友圈；结合本轮对话语境与你的人设意愿撰写。',
         '- 先已在私聊里口语回应；本条是实际要发布的动态正文。',
-        '- 是否置顶由你根据内容重要性与人设自行决定（见 isPinned 规则），用户未要求置顶。',
-        '- 若用户明确要求「提醒你看 / @你 / 让你看这条」，将 mentionUser 设为 true；否则 mentionUser 必须为 false。',
-        '- only_user（仅用户可见）与 mentionUser（@提醒）是两套机制：仅你可见的动态不要设 mentionUser。',
+        '- 是否置顶由你根据内容重要性与人设自行决定（见置顶规则），用户未要求置顶。',
+        '- 若用户明确要求「提醒你看 / @你 / 让你看这条」，将「提醒用户｜是」；否则必须「提醒用户｜否」。',
+        '- only_user（仅用户可见）与提醒用户（@提醒）是两套机制：仅你可见的动态不要提醒用户。',
       ].join('\n')
     : chatHint
       ? `【发文方向提示】${chatHint}`
@@ -217,7 +214,7 @@ export async function generateCharacterMomentPost(params: {
   const userTask = [
     '# Context',
     `- 当前时间与天气：${formatCurrentMomentContext()}（可自拟天气，贴合情绪即可）`,
-    `- 与用户的关系/近期私聊摘要（**仅作人设与语气参考**；勿把私聊另起话题写进正文或 publisherSelfComments，除非本条朋友圈就是在说同一件事）：${truncateNotes(pack.unsummarizedPrivateNotes)}`,
+    `- 与用户的关系/近期私聊摘要（**仅作人设与语气参考**；勿把私聊另起话题写进正文或自评，除非本条朋友圈就是在说同一件事）：${truncateNotes(pack.unsummarizedPrivateNotes)}`,
     `- 用户称呼：${params.wechatCtx.playerDisplayName.trim() || '朋友'}`,
     '',
     locationPromptBlock,
@@ -225,7 +222,7 @@ export async function generateCharacterMomentPost(params: {
     privacyPrompt,
     '',
     ...(requestBlock ? [requestBlock, ''] : []),
-    '请根据当下心情，以你的角色身份发一条朋友圈。是否附带 location 由你自行决定，非必要填 null；若附带须自拟符合世界观的真实地名，且遵守上方市级锚点规则。只输出一个 JSON 对象。',
+    '请根据当下心情，以你的角色身份发一条朋友圈。是否附带地点由你自行决定，非必要写「无」；若附带须自拟符合世界观的真实地名，且遵守上方市级锚点规则。只输出稳定字段行，不要 JSON。',
   ].join('\n')
 
   const proactiveMusicShareLocaleHint = [
@@ -235,7 +232,7 @@ export async function generateCharacterMomentPost(params: {
     .filter(Boolean)
     .join('\n\n')
 
-  const raw = await requestMomentsModelJsonText(
+  const raw = await requestMomentsModelStableText(
     cfg as ApiConfig,
     [
       {
@@ -249,9 +246,9 @@ export async function generateCharacterMomentPost(params: {
     ],
     { temperature: 0.92 },
   )
-  const payload = parseMomentsModelJsonPayload(raw)
+  const payload = parseMomentsModelPayload(raw)
   const draft = normalizeCharacterMomentAiDraft(payload, params.characterId)
-  throwIfMomentModelJsonInvalid(raw, draft)
+  throwIfMomentModelDraftInvalid(raw, draft)
   return {
     ...draft,
     location: enforceCharacterLocationConsistency({

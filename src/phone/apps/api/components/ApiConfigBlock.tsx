@@ -471,6 +471,47 @@ export function ApiConfigBlock({
                   </span>
                 </span>
               </div>
+              <div className="mt-3 rounded-xl bg-white px-3 py-3 ring-1 ring-black/5">
+                <p className="text-[13px] font-medium" style={{ color: apiTheme.text }}>
+                  聊天识图（带图请求）
+                </p>
+                <p className="mt-0.5 text-[11px] leading-relaxed" style={{ color: apiTheme.subText }}>
+                  不支持识图的模型若强行带上头像/背景/记忆配图，容易 400。默认自动判断并跳过。
+                </p>
+                <div className="mt-2.5 flex gap-1.5">
+                  {(
+                    [
+                      { id: undefined, label: '自动' },
+                      { id: 'on' as const, label: '强制开' },
+                      { id: 'off' as const, label: '关闭' },
+                    ] as const
+                  ).map((opt) => {
+                    const active =
+                      opt.id === undefined
+                        ? config.visionInput !== 'on' && config.visionInput !== 'off'
+                        : config.visionInput === opt.id
+                    return (
+                      <button
+                        key={opt.label}
+                        type="button"
+                        onClick={() => {
+                          const next: ApiConfig = { ...config }
+                          if (opt.id === undefined) delete next.visionInput
+                          else next.visionInput = opt.id
+                          onChange(next)
+                        }}
+                        className="flex-1 rounded-lg px-2 py-2 text-[12px] font-medium transition-colors"
+                        style={{
+                          background: active ? apiTheme.accent : '#f5f5f5',
+                          color: active ? '#fff' : apiTheme.text,
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           </>
         ) : (

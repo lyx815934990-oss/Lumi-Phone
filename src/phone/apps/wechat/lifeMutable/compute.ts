@@ -8,11 +8,16 @@ import {
 } from '../memory/storyTimelineTypes'
 import type {
   LifeEducationTrack,
+  LifeFamilyMember,
   LifeMutableSheet,
   LifePayKind,
+  LifePet,
   LifePlaceKind,
+  LifeRealEstate,
   LifeResolvedSnapshot,
+  LifeSocialContact,
   LifeStorySpan,
+  LifeVehicle,
 } from './types'
 import { normalizeLifeChangeHistory } from './lifeChangeHistory'
 
@@ -752,6 +757,96 @@ export function overlayFromSnapshot(s: LifeResolvedSnapshot): {
 
 function asStr(v: unknown, max = 400): string {
   return typeof v === 'string' ? v.trim().slice(0, max) : ''
+}
+
+function normListKey(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, '')
+}
+
+function unionMergeByKey<T extends { id: string }>(
+  prev: T[],
+  incoming: T[],
+  keyFn: (item: T) => string,
+): T[] {
+  if (!incoming.length) return prev
+  const out: T[] = []
+  const indexByKey = new Map<string, number>()
+  for (const item of prev) {
+    const k = keyFn(item)
+    if (k) indexByKey.set(k, out.length)
+    out.push(item)
+  }
+  for (const item of incoming) {
+    const k = keyFn(item)
+    if (k && indexByKey.has(k)) {
+      const i = indexByKey.get(k)!
+      const old = out[i]!
+      out[i] = {
+        ...old,
+        ...item,
+        id: item.id?.trim() ? item.id : old.id,
+      }
+    } else {
+      if (k) indexByKey.set(k, out.length)
+      out.push(item)
+    }
+  }
+  return out
+}
+
+/**
+ * 合并 AI 返回的列表：默认「旧条目保留 + 同名更新 + 新名追加」。
+ * 避免模型只交本轮新出现的人/房/车时把整表冲掉；也避免「列表已有内容就不肯新增」。
+ */
+export function mergeLifeListFieldsFromAi(
+  prev: LifeMutableSheet,
+  parsed: LifeMutableSheet,
+  keys: Set<string>,
+): Pick<LifeMutableSheet, 'realEstates' | 'vehicles' | 'family' | 'socialCircle' | 'pets'> {
+  const realEstates = keys.has('realEstates')
+    ? unionMergeByKey(prev.realEstates, parsed.realEstates, (h: LifeRealEstate) =>
+        normListKey(h.location || h.label),
+      )
+    : prev.realEstates
+
+  let vehicles = prev.vehicles
+  if (keys.has('vehicles')) {
+    const incomingReal = parsed.vehicles.filter((v) => {
+      const m = v.model.trim()
+      return m && m !== '无'
+    })
+    const incomingOnlyNone =
+      parsed.vehicles.length > 0 &&
+      parsed.vehicles.every((v) => {
+        const m = v.model.trim()
+        return !m || m === '无'
+      })
+    if (incomingReal.length) {
+      const base = prev.vehicles.filter((v) => {
+        const m = v.model.trim()
+        return m && m !== '无'
+      })
+      vehicles = unionMergeByKey(base, incomingReal, (v: LifeVehicle) => normListKey(v.model))
+    } else if (incomingOnlyNone) {
+      vehicles = parsed.vehicles
+    }
+  }
+
+  const family = keys.has('family')
+    ? unionMergeByKey(prev.family, parsed.family, (f: LifeFamilyMember) => normListKey(f.name))
+    : prev.family
+
+  const socialCircle = keys.has('socialCircle')
+    ? unionMergeByKey(prev.socialCircle, parsed.socialCircle, (c: LifeSocialContact) =>
+        normListKey(c.name),
+      )
+    : prev.socialCircle
+
+  const pets = keys.has('pets')
+    ? unionMergeByKey(prev.pets, parsed.pets, (p: LifePet) => normListKey(p.name || p.species))
+    : prev.pets
+
+  return { realEstates, vehicles, family, socialCircle, pets }
 }
 
 export function normalizeLifeMutableSheet(raw: unknown): LifeMutableSheet {

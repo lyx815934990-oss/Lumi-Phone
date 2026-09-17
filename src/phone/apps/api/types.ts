@@ -51,6 +51,13 @@ export type ApiConfig = {
    * Gemini 原生 generateContent 忽略此项。
    */
   streamEnabled?: boolean
+  /**
+   * 聊天识图：是否把头像/朋友圈背景/记忆配图等塞进请求。
+   * - auto（默认）：按模型名判断；不确认或纯文本则跳过，避免 400
+   * - on：强制带图
+   * - off：从不带图
+   */
+  visionInput?: 'auto' | 'on' | 'off'
 }
 
 /** 聊天/摘要 API 最小字段（无 modelList，dating/摘要 fallback 常用） */

@@ -8,7 +8,6 @@ import type {
   MemoryTraceStoryTimelineInjectRow,
 } from './memoryTraceTypes'
 import { lineRelationUiLabel } from './wechatMemoryLineScope'
-import { MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS } from './memory/memorySummaryRetention'
 import { parseStoryTimelineInjectBodyForTrace } from './memory/storyTimelineTypes'
 import { stripUnsummarizedOnlineTimestampsForDisplay, sanitizeMemoryTraceDisplayText, parsePersonaWorldBookForTraceDisplay } from './memoryTraceDisplaySanitize'
 import { listArchiveWorldbookTracePills } from '../../worldbook/buildWorldbookContext'
@@ -89,6 +88,7 @@ type AccordionId =
   | 'm5'
   | 'm6'
   | 'm7'
+  | 'm8'
   | 'personaWb'
   | 'globalWb'
   | 'persona'
@@ -113,16 +113,26 @@ function InjectionOverview(props: {
   counts: {
     state: number
     vectorPlot: number
-    recentSummary: number
-    offlineFull: number
-    unsChat: number
     ltmVector: number
+    contextOffline: number
+    contextOnline: number
+    nearOffline: number
+    nearOnline: number
+    ltmAlways: number
     ltmKeyword: number
     lifeLedger: boolean
     personaWb: boolean
     globalWb: boolean
     wbAfter: boolean
   }
+  /** 本轮主模式：线下 / 线上各自互斥 */
+  offlineMode: 'full_text' | 'summary'
+  onlineMode: 'full_text' | 'near_rounds'
+  /** 近端轮数（summary / near_rounds 标签用） */
+  nearRoundsLabel?: string
+  onlineNearRoundsLabel?: string
+  /** 本轮注入模式说明（一行） */
+  modeHint?: string
 }) {
   const chip = (label: string, on: boolean) => (
     <span
@@ -136,18 +146,27 @@ function InjectionOverview(props: {
     </span>
   )
   const c = props.counts
+  const nearLabel = props.nearRoundsLabel?.trim() || '近端轮'
+  const onlineNearLabel = props.onlineNearRoundsLabel?.trim() || '近端轮'
   return (
     <div className="rounded-2xl border border-neutral-100/90 bg-gradient-to-b from-[#FBF8F1] to-white p-4 shadow-sm">
       <p className="text-[10px] font-medium uppercase tracking-[0.28em] text-neutral-400">本轮参考</p>
       <p className="mt-1 text-[13px] font-semibold text-neutral-800">记忆注入 · 档案账本 · 世界书</p>
+      {props.modeHint?.trim() ? (
+        <p className="mt-2 text-[12px] leading-relaxed text-neutral-500">{props.modeHint.trim()}</p>
+      ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        {chip(`① 当前状态`, c.state > 0)}
-        {chip(`② 历史摘要 ${c.vectorPlot}`, c.vectorPlot > 0)}
-        {chip(`③ 线下摘要 ${c.recentSummary}`, c.recentSummary > 0)}
-        {chip(`④ 线下原文 ${c.offlineFull}`, c.offlineFull > 0)}
-        {chip(`⑤ 线上近端 ${c.unsChat}`, c.unsChat > 0)}
-        {chip(`⑥ 长期向量 ${c.ltmVector}`, c.ltmVector > 0)}
-        {chip(`⑦ 关键词 ${c.ltmKeyword}`, c.ltmKeyword > 0)}
+        {chip('当前状态', c.state > 0)}
+        {chip(`向量 · 线下 ${c.vectorPlot}`, c.vectorPlot > 0)}
+        {chip(`向量 · 线上 ${c.ltmVector}`, c.ltmVector > 0)}
+        {props.offlineMode === 'full_text'
+          ? chip(`上下文原文 · 线下 ${c.contextOffline}`, c.contextOffline > 0)
+          : chip(`${nearLabel} · 线下 ${c.nearOffline}`, c.nearOffline > 0)}
+        {props.onlineMode === 'full_text'
+          ? chip(`上下文原文 · 线上 ${c.contextOnline}`, c.contextOnline > 0)
+          : chip(`${onlineNearLabel} · 线上 ${c.nearOnline}`, c.nearOnline > 0)}
+        {chip(`长期记忆 · 始终 ${c.ltmAlways}`, c.ltmAlways > 0)}
+        {chip(`长期记忆 · 关键词 ${c.ltmKeyword}`, c.ltmKeyword > 0)}
         {chip('人生账本', c.lifeLedger)}
         {chip('人设世界书', c.personaWb)}
         {chip('档案室世界书', c.globalWb)}
@@ -300,6 +319,35 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
     [timelineRows],
   )
 
+  const plotContextBlock = useMemo(() => {
+    const raw = String(matrix?.recentContext.plotContextBlock ?? '').trim()
+    return raw ? sanitizeMemoryTraceDisplayText(raw) || raw : ''
+  }, [matrix?.recentContext.plotContextBlock])
+
+  /** 线下 / 线上主模式各自互斥（溯源按勾选只展对应一块） */
+  const plotContextMode = matrix?.recentContext.plotContextInjectMode === 'summary' ? 'summary' : 'full_text'
+  const showOfflineContextOriginal = plotContextMode === 'full_text'
+  const onlineContextMode =
+    matrix?.recentContext.onlineContextInjectMode === 'full_text' ? 'full_text' : 'near_rounds'
+  const showOnlineContextOriginal = onlineContextMode === 'full_text'
+  const summaryRounds =
+    typeof matrix?.recentContext.plotSummaryInjectRounds === 'number' &&
+    Number.isFinite(matrix.recentContext.plotSummaryInjectRounds)
+      ? Math.max(1, Math.round(matrix.recentContext.plotSummaryInjectRounds))
+      : 5
+  const onlineRounds =
+    typeof matrix?.recentContext.onlineRecentInjectRounds === 'number' &&
+    Number.isFinite(matrix.recentContext.onlineRecentInjectRounds)
+      ? Math.max(0, Math.round(matrix.recentContext.onlineRecentInjectRounds))
+      : null
+  const onlineTokensRaw = matrix?.recentContext.onlineRecentInjectMaxTokens
+  const onlineTokens =
+    onlineTokensRaw === null
+      ? null
+      : typeof onlineTokensRaw === 'number' && Number.isFinite(onlineTokensRaw)
+        ? Math.round(onlineTokensRaw)
+        : undefined
+
   const offlineFullRows = useMemo(
     () => (matrix?.recentContext.unsummarizedOfflinePlots ?? []).filter((row) => traceText(row.snippet)),
     [matrix?.recentContext.unsummarizedOfflinePlots],
@@ -314,6 +362,35 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
       }))
       .filter((row) => row.body)
   }, [matrix?.recentContext.unsummarizedChats])
+
+  /** 上下文原文 · 线下：优先整块装填正文，否则用摘录行 */
+  const contextOfflineCount = plotContextBlock ? 1 : offlineFullRows.length
+  const nearOfflineCount = recentSummaryRows.length
+  const onlineContextCount = unsChatRows.length
+
+  const contextOfflineHint = '按最大字数上限自最新往历史装填线下剧情原文。'
+  const contextOnlineHint =
+    onlineTokens != null
+      ? `自最新往历史装填；字数上限约 ${onlineTokens.toLocaleString()}；跨日更早不当「刚刚」。`
+      : '自最新往历史装填线上原文（未单独设上限时用默认预算）；跨日更早不当「刚刚」。'
+  const nearOfflineHint = `近端 ${summaryRounds} 轮剧情摘要（角色回复轮计数；用户轮夹在中间一并带上）。`
+  const nearOnlineHint =
+    onlineRounds === 0
+      ? '本会话近端轮数已关；本轮未按「最近 X 轮」带线上原文。'
+      : onlineRounds != null
+        ? `最近 ${onlineRounds} 轮线上输出（角色回复轮计数；用户轮夹在中间一并带上）。`
+        : '最近若干轮线上输出（角色回复轮计数；用户轮夹在中间一并带上）。'
+
+  const injectModeHint = [
+    showOfflineContextOriginal ? '线下：上下文原文' : `线下：近端 ${summaryRounds} 轮摘要`,
+    showOnlineContextOriginal
+      ? onlineTokens != null
+        ? `线上：上下文原文（约 ${onlineTokens.toLocaleString()}）`
+        : '线上：上下文原文'
+      : onlineRounds != null && onlineRounds > 0
+        ? `线上：近端 ${onlineRounds} 轮`
+        : '线上：近端轮数',
+  ].join(' · ')
 
   const ltmVectorRows = useMemo(() => {
     return (matrix?.deepMemory.vectorRetrievals ?? [])
@@ -342,6 +419,24 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
       }))
       .filter((row) => row.body)
   }, [matrix?.deepMemory.keywordHits])
+
+  /** 关键词块里「始终 / 本轮注入」与真正关键词命中拆开展示 */
+  const ltmAlwaysRows = useMemo(
+    () =>
+      ltmKeywordRows.filter((row) => {
+        const k = String(row.keyword ?? '').trim()
+        return !k || k === '本轮注入' || k === '始终触发' || k === '始终'
+      }),
+    [ltmKeywordRows],
+  )
+  const ltmKeywordOnlyRows = useMemo(
+    () =>
+      ltmKeywordRows.filter((row) => {
+        const k = String(row.keyword ?? '').trim()
+        return k && k !== '本轮注入' && k !== '始终触发' && k !== '始终'
+      }),
+    [ltmKeywordRows],
+  )
 
   const personaWbText = traceText(matrix?.baseDirectives.characterWorldBook)
   const personaWbBooks = useMemo(
@@ -392,11 +487,13 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
   const overviewCounts = {
     state: stateRows.length || (matrix?.storyTimeline?.injected && !timelineRows.length ? 1 : 0),
     vectorPlot: vectorPlotRows.length,
-    recentSummary: recentSummaryRows.length,
-    offlineFull: offlineFullRows.length,
-    unsChat: unsChatRows.length,
     ltmVector: ltmVectorRows.length,
-    ltmKeyword: ltmKeywordRows.length,
+    contextOffline: contextOfflineCount,
+    contextOnline: onlineContextCount,
+    nearOffline: nearOfflineCount,
+    nearOnline: onlineContextCount,
+    ltmAlways: ltmAlwaysRows.length,
+    ltmKeyword: ltmKeywordOnlyRows.length,
     lifeLedger: hasLifeLedger,
     personaWb: hasPersonaWb,
     globalWb: hasGlobalWb,
@@ -412,9 +509,11 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
       }
       const prefer: AccordionId[] = []
       if (overviewCounts.state > 0) prefer.push('m1')
-      else if (overviewCounts.unsChat > 0) prefer.push('m5')
-      else if (overviewCounts.offlineFull > 0) prefer.push('m4')
-      else prefer.push('m1', 'm5')
+      if (showOfflineContextOriginal && overviewCounts.contextOffline > 0) prefer.push('m4')
+      else if (!showOfflineContextOriginal && overviewCounts.nearOffline > 0) prefer.push('m3')
+      if (showOnlineContextOriginal && overviewCounts.contextOnline > 0) prefer.push('m5')
+      else if (!showOnlineContextOriginal && overviewCounts.nearOnline > 0) prefer.push('m5')
+      if (prefer.length === 0) prefer.push('m1')
       if (hasLifeLedger || personaDetailText) prefer.push('persona')
       setExpanded(new Set(prefer))
     }, 0)
@@ -586,7 +685,19 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                   className="flex flex-col gap-5 pt-3"
                 >
                   <motion.div variants={itemVariants}>
-                    <InjectionOverview summary={data.injectionSummary} counts={overviewCounts} />
+                    <InjectionOverview
+                      summary={data.injectionSummary}
+                      counts={overviewCounts}
+                      offlineMode={showOfflineContextOriginal ? 'full_text' : 'summary'}
+                      onlineMode={showOnlineContextOriginal ? 'full_text' : 'near_rounds'}
+                      nearRoundsLabel={`近端 ${summaryRounds} 轮`}
+                      onlineNearRoundsLabel={
+                        onlineRounds != null && onlineRounds > 0
+                          ? `近端 ${onlineRounds} 轮`
+                          : '近端轮'
+                      }
+                      modeHint={injectModeHint}
+                    />
                   </motion.div>
 
                   <motion.div
@@ -595,9 +706,11 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                   >
                     <div className="border-b border-neutral-50 bg-neutral-50/60 px-4 py-2.5">
                       <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-neutral-400">
-                        Memory · ①–⑦
+                        Memory
                       </p>
-                      <p className="mt-0.5 text-[13px] font-semibold text-neutral-700">七板块记忆注入</p>
+                      <p className="mt-0.5 text-[13px] font-semibold text-neutral-700">
+                        记忆注入 · 线下 / 线上各自勾选，互不混显
+                      </p>
                     </div>
 
                     <AccordionRow
@@ -624,8 +737,8 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                     </AccordionRow>
 
                     <AccordionRow
-                      titleEn="② VECTOR · PLOT"
-                      titleZh="向量召回 · 历史剧情摘要"
+                      titleEn="② VECTOR · OFFLINE"
+                      titleZh="向量召回 · 线下摘要"
                       expanded={isExpanded('m2')}
                       onToggle={() => toggleAccordion('m2')}
                       badge={<CountBadge n={vectorPlotRows.length} />}
@@ -633,90 +746,13 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                       {vectorPlotRows.length ? (
                         renderTimelineRows(vectorPlotRows, 'green')
                       ) : (
-                        <EmptyHint text="本轮无向量命中的历史剧情摘要（至多 5 条）。" />
+                        <EmptyHint text="本轮无向量命中的线下历史剧情摘要（至多 5 条）。" />
                       )}
                     </AccordionRow>
 
                     <AccordionRow
-                      titleEn="③ NEAR · SUMMARY"
-                      titleZh="近端 · 更早线下摘要"
-                      expanded={isExpanded('m3')}
-                      onToggle={() => toggleAccordion('m3')}
-                      badge={<CountBadge n={recentSummaryRows.length} />}
-                    >
-                      {recentSummaryRows.length ? (
-                        renderTimelineRows(recentSummaryRows, 'amber')
-                      ) : (
-                        <EmptyHint text="本轮无更早轮次的线下剧情摘要（不含已用全文注入的最近 2 轮）。" />
-                      )}
-                    </AccordionRow>
-
-                    <AccordionRow
-                      titleEn="④ NEAR · FULL TEXT"
-                      titleZh={`近端 · 最近 ${MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS} 轮线下原文`}
-                      expanded={isExpanded('m4')}
-                      onToggle={() => toggleAccordion('m4')}
-                      badge={<CountBadge n={offlineFullRows.length} />}
-                    >
-                      {offlineFullRows.length ? (
-                        <ul className="space-y-2.5 px-1">
-                          {offlineFullRows.map((row, i) => (
-                            <li key={i}>
-                              <TraceCard>
-                                <p className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">
-                                  {row.date}
-                                </p>
-                                <TraceBody text={row.snippet} maxClass="max-h-[min(36vh,320px)]" />
-                              </TraceCard>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <EmptyHint text="本轮未注入最近线下剧情原文。" />
-                      )}
-                    </AccordionRow>
-
-                    <AccordionRow
-                      titleEn="⑤ ONLINE NEAR"
-                      titleZh="未总结 / 固定近端 · 线上私聊"
-                      expanded={isExpanded('m5')}
-                      onToggle={() => toggleAccordion('m5')}
-                      badge={<CountBadge n={unsChatRows.length} />}
-                    >
-                      {unsChatRows.length ? (
-                        <ul className="space-y-2.5 px-1">
-                          {unsChatRows.map((row, i) => (
-                            <li key={i}>
-                              <TraceCard tone="gold">
-                                <LineScopeBadge
-                                  sourceLineLabel={row.sourceLineLabel}
-                                  lineRelation={row.lineRelation}
-                                />
-                                <p className="text-[11px] font-semibold tracking-wide text-neutral-700">
-                                  {row.type === 'group' ? `群聊 · ${row.source}` : row.source || '私聊'}
-                                </p>
-                                <pre className="mt-2 whitespace-pre-wrap font-sans text-[13px] leading-[1.65] text-neutral-800">
-                                  {row.body}
-                                </pre>
-                              </TraceCard>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <EmptyHint text="本轮无未总结 / 固定近端线上原文。" />
-                      )}
-                      {(matrix?.recentContext.recentRoundRefs ?? []).some(
-                        (r) => r.channel === 'private' && r.omittedBecauseUnsummarized,
-                      ) ? (
-                        <p className="mt-2 px-1 text-[12px] leading-relaxed text-neutral-500">
-                          固定近端窗已与未总结重合，本轮只注入一份（未重复占用 token）。
-                        </p>
-                      ) : null}
-                    </AccordionRow>
-
-                    <AccordionRow
-                      titleEn="⑥ LTM · VECTOR"
-                      titleZh="向量召回 · 线上长期记忆"
+                      titleEn="③ VECTOR · ONLINE"
+                      titleZh="向量召回 · 线上记忆"
                       expanded={isExpanded('m6')}
                       onToggle={() => toggleAccordion('m6')}
                       badge={<CountBadge n={ltmVectorRows.length} />}
@@ -744,20 +780,193 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                           ))}
                         </ul>
                       ) : (
-                        <EmptyHint text="本轮无线上长期记忆向量召回（短 query + 词面增强后仍未达门槛；至多 5 条）。若⑦很多而⑥为空，多半是记忆尚未补齐 embedding。" />
+                        <EmptyHint text="本轮无线上记忆向量召回（至多 5 条）。若关键词很多而这里为空，多半是记忆尚未补齐向量。" />
+                      )}
+                    </AccordionRow>
+
+                    {showOfflineContextOriginal ? (
+                      <AccordionRow
+                        titleEn="④ CONTEXT · OFFLINE"
+                        titleZh="上下文原文 · 线下"
+                        expanded={isExpanded('m4')}
+                        onToggle={() => toggleAccordion('m4')}
+                        badge={<CountBadge n={contextOfflineCount} />}
+                      >
+                        {plotContextBlock ? (
+                          <div className="px-1">
+                            <TraceCard tone="amber">
+                              <p className="mb-1.5 text-[11px] leading-relaxed text-neutral-500">
+                                {contextOfflineHint}
+                              </p>
+                              <TraceBody
+                                text={plotContextBlock}
+                                maxClass="max-h-[min(40vh,400px)]"
+                              />
+                            </TraceCard>
+                          </div>
+                        ) : offlineFullRows.length ? (
+                          <>
+                            <p className="mb-2 px-1 text-[11px] leading-relaxed text-neutral-500">
+                              {contextOfflineHint}
+                            </p>
+                            <ul className="space-y-2.5 px-1">
+                              {offlineFullRows.map((row, i) => (
+                                <li key={i}>
+                                  <TraceCard>
+                                    <p className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">
+                                      {row.date}
+                                    </p>
+                                    <TraceBody text={row.snippet} maxClass="max-h-[min(36vh,320px)]" />
+                                  </TraceCard>
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        ) : (
+                          <EmptyHint text="本轮未带上线下上下文原文。" />
+                        )}
+                      </AccordionRow>
+                    ) : (
+                      <AccordionRow
+                        titleEn="④ NEAR · OFFLINE"
+                        titleZh={`近端 ${summaryRounds} 轮 · 线下`}
+                        expanded={isExpanded('m3')}
+                        onToggle={() => toggleAccordion('m3')}
+                        badge={<CountBadge n={nearOfflineCount} />}
+                      >
+                        {recentSummaryRows.length ? (
+                          <>
+                            <p className="mb-2 px-1 text-[11px] leading-relaxed text-neutral-500">
+                              {nearOfflineHint}
+                            </p>
+                            {renderTimelineRows(recentSummaryRows, 'amber')}
+                          </>
+                        ) : (
+                          <EmptyHint text={`本轮无近端 ${summaryRounds} 轮线下摘要。`} />
+                        )}
+                      </AccordionRow>
+                    )}
+
+                    {showOnlineContextOriginal ? (
+                      <AccordionRow
+                        titleEn="⑤ CONTEXT · ONLINE"
+                        titleZh="上下文原文 · 线上"
+                        expanded={isExpanded('m5')}
+                        onToggle={() => toggleAccordion('m5')}
+                        badge={<CountBadge n={onlineContextCount} />}
+                      >
+                        <p className="mb-2 px-1 text-[11px] leading-relaxed text-neutral-500">
+                          {contextOnlineHint}
+                        </p>
+                        {unsChatRows.length ? (
+                          <ul className="space-y-2.5 px-1">
+                            {unsChatRows.map((row, i) => (
+                              <li key={i}>
+                                <TraceCard tone="gold">
+                                  <LineScopeBadge
+                                    sourceLineLabel={row.sourceLineLabel}
+                                    lineRelation={row.lineRelation}
+                                  />
+                                  <p className="text-[11px] font-semibold tracking-wide text-neutral-700">
+                                    {row.type === 'group' ? `群聊 · ${row.source}` : row.source || '私聊'}
+                                  </p>
+                                  <pre className="mt-2 whitespace-pre-wrap font-sans text-[13px] leading-[1.65] text-neutral-800">
+                                    {row.body}
+                                  </pre>
+                                </TraceCard>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <EmptyHint text="本轮未带上线上上下文原文。" />
+                        )}
+                        {(matrix?.recentContext.recentRoundRefs ?? []).some(
+                          (r) => r.channel === 'private' && r.omittedBecauseUnsummarized,
+                        ) ? (
+                          <p className="mt-2 px-1 text-[12px] leading-relaxed text-neutral-500">
+                            近端窗与未总结重合时只带一份，不重复占字数。
+                          </p>
+                        ) : null}
+                      </AccordionRow>
+                    ) : (
+                      <AccordionRow
+                        titleEn="⑤ NEAR · ONLINE"
+                        titleZh={
+                          onlineRounds != null && onlineRounds > 0
+                            ? `近端 ${onlineRounds} 轮 · 线上`
+                            : '近端 X 轮 · 线上'
+                        }
+                        expanded={isExpanded('m5')}
+                        onToggle={() => toggleAccordion('m5')}
+                        badge={<CountBadge n={onlineContextCount} />}
+                      >
+                        <p className="mb-2 px-1 text-[11px] leading-relaxed text-neutral-500">
+                          {nearOnlineHint}
+                        </p>
+                        {unsChatRows.length ? (
+                          <ul className="space-y-2.5 px-1">
+                            {unsChatRows.map((row, i) => (
+                              <li key={i}>
+                                <TraceCard tone="gold">
+                                  <LineScopeBadge
+                                    sourceLineLabel={row.sourceLineLabel}
+                                    lineRelation={row.lineRelation}
+                                  />
+                                  <p className="text-[11px] font-semibold tracking-wide text-neutral-700">
+                                    {row.type === 'group' ? `群聊 · ${row.source}` : row.source || '私聊'}
+                                  </p>
+                                  <pre className="mt-2 whitespace-pre-wrap font-sans text-[13px] leading-[1.65] text-neutral-800">
+                                    {row.body}
+                                  </pre>
+                                </TraceCard>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <EmptyHint text="本轮无近端线上输出。" />
+                        )}
+                      </AccordionRow>
+                    )}
+
+                    <AccordionRow
+                      titleEn="⑥ LTM · ALWAYS"
+                      titleZh="线上长期记忆 · 始终带上"
+                      expanded={isExpanded('m7')}
+                      onToggle={() => toggleAccordion('m7')}
+                      badge={<CountBadge n={ltmAlwaysRows.length} />}
+                    >
+                      {ltmAlwaysRows.length ? (
+                        <ul className="space-y-2.5 px-1">
+                          {ltmAlwaysRows.map((row, i) => (
+                            <li key={i}>
+                              <TraceCard tone="gold">
+                                <div className="min-w-0 flex-1">
+                                  <LineScopeBadge
+                                    sourceLineLabel={row.sourceLineLabel}
+                                    lineRelation={row.lineRelation}
+                                    memoryBucket={row.memoryBucket}
+                                  />
+                                  <p className="text-[13px] leading-[1.65] text-neutral-800">{row.body}</p>
+                                </div>
+                              </TraceCard>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <EmptyHint text="本轮无「始终带上」的线上长期记忆。" />
                       )}
                     </AccordionRow>
 
                     <AccordionRow
                       titleEn="⑦ LTM · KEYWORD"
-                      titleZh="关键词命中 · 线上长期记忆"
-                      expanded={isExpanded('m7')}
-                      onToggle={() => toggleAccordion('m7')}
-                      badge={<CountBadge n={ltmKeywordRows.length} />}
+                      titleZh="线上长期记忆 · 关键词命中"
+                      expanded={isExpanded('m8')}
+                      onToggle={() => toggleAccordion('m8')}
+                      badge={<CountBadge n={ltmKeywordOnlyRows.length} />}
                     >
-                      {ltmKeywordRows.length ? (
+                      {ltmKeywordOnlyRows.length ? (
                         <ul className="space-y-2.5 px-1">
-                          {ltmKeywordRows.map((row, i) => (
+                          {ltmKeywordOnlyRows.map((row, i) => (
                             <li key={i}>
                               <TraceCard tone="gold">
                                 <div className="flex items-start justify-between gap-3">

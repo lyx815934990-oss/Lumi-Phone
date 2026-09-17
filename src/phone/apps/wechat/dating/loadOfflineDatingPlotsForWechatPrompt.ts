@@ -6,6 +6,7 @@ import {
   MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS,
   selectRecentDatingPlotsAiRoundWindow,
 } from '../memory/memorySummaryRetention'
+import { loadDatingPlotInjectPrefs } from './datingInjectPrefs'
 import {
   collectCharacterMentionSearchTokens,
   resolveOfflineDatingArchiveContext,
@@ -322,15 +323,21 @@ export async function buildUnsummarizedOfflineDatingText(
 /**
  * 线上私聊固定注入：最近 N 轮线下 AI 剧情正文（含其间玩家输入）。
  * 不依赖 plot 总结游标——线下每轮已自动写摘要，游标后常为空；仍须全文承接近端线下事实。
+ * @param retainAiRounds 传较大值（如 48）+ maxChars 时，按字数自最新往历史装填。
  */
 export async function buildRecentOfflinePlotInjectBody(
   characterId: string | null | undefined,
   peerDisplayName?: string | null,
   retainAiRounds: number = MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS,
+  maxChars?: number,
 ): Promise<string> {
   const cid = characterId?.trim()
   if (!cid) return ''
-  const rounds = Math.max(1, Math.min(8, Math.floor(retainAiRounds)))
+  const rounds = Math.max(1, Math.min(80, Math.floor(retainAiRounds)))
+  const charCap =
+    typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars > 0
+      ? Math.floor(maxChars)
+      : DATING_AI_OFFLINE_UNSUMMARIZED_CHAR_CAP
   try {
     const ctx = await resolveOfflineDatingArchiveContext(cid)
     if (!ctx) return ''
@@ -350,7 +357,7 @@ export async function buildRecentOfflinePlotInjectBody(
           ? (_plot, body) =>
               offlinePlotBodyRelevantToNpcForLinkedExcerpt(body, ctx.perspective, tokens)
           : undefined,
-      maxChars: DATING_AI_OFFLINE_UNSUMMARIZED_CHAR_CAP,
+      maxChars: charCap,
       retainAiRounds: rounds,
     })
   } catch {
@@ -466,16 +473,32 @@ export function buildOnlineOfflineSpatialContinuityAppendix(
   return lines.join('\n')
 }
 
-/** 微信与其它线上 completion：固定注入最近 N 轮线下剧情正文（与线下每轮摘要并存，不依赖游标空窗）。 */
+/** 微信与其它线上 completion：按角色线下「近端剧情注入」偏好装填线下上下文（与约会页设置互通）。 */
 export async function loadOfflineDatingPlotsPromptBlock(
   characterId: string | null | undefined,
   characterDisplayName?: string | null,
   opts?: OnlineOfflineSpatialContinuityOpts,
 ): Promise<string> {
   const cid = characterId?.trim()
-  const rounds = MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS
-  const body = await buildRecentOfflinePlotInjectBody(cid, characterDisplayName, rounds)
+  const prefs = await loadDatingPlotInjectPrefs(cid)
+  const continuityRounds = MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS
+  /** 摘要模式：只保留最近若干轮全文供空间承接；更早由近端摘要 / 向量补全 */
+  const rounds =
+    prefs.mode === 'summary'
+      ? continuityRounds
+      : Math.max(continuityRounds, 48)
+  const maxChars =
+    prefs.mode === 'summary'
+      ? DATING_AI_OFFLINE_UNSUMMARIZED_CHAR_CAP
+      : prefs.historyCharCap
+  const body = await buildRecentOfflinePlotInjectBody(
+    cid,
+    characterDisplayName,
+    rounds,
+    maxChars,
+  )
   if (!body.trim()) return ''
+  const clippedBody = body
 
   const ctx = cid ? await resolveOfflineDatingArchiveContext(cid) : null
   const borrowed = !!(ctx && ctx.perspectiveCharacterId !== ctx.archiveCharacterId)
@@ -494,7 +517,7 @@ export async function loadOfflineDatingPlotsPromptBlock(
     }
   }
 
-  const tail = extractLatestOfflinePlotSpatialAnchor(body)
+  const tail = extractLatestOfflinePlotSpatialAnchor(clippedBody)
   const offlineLast = tail ? extractStoryCalendarFromPromptBracket(tail) : null
   const calendarAdvanced = isStoryNowCalendarAfterOfflineLast(storyNowLabel, offlineLast)
 
@@ -503,33 +526,42 @@ export async function loadOfflineDatingPlotsPromptBlock(
   const staleHint = calendarAdvanced
     ? `故事「现在」已到 **${storyNowLabel}**，晚于末条 **${offlineLast}**：下列视为**往事实录**，**禁止**当当前现场（酒店/旅游地点等仅可回溯）。`
     : `须全文承接近端事实；**禁止**明显矛盾或假装未发生末条事件（若故事「现在」已晚于末条公历日，则改按往事读，地点以剧情轴当前为准）。`
+  const modeHint =
+    prefs.mode === 'summary'
+      ? `本块为摘要模式的**近端全文锚点**（最近 ${continuityRounds} 轮）；更早由【板块·近端·线下摘要】（近端 ${prefs.summaryRounds} 轮）与向量召回补全。`
+      : `本块按约会页「最大上下文 Token=${prefs.maxContextTokens.toLocaleString()}」自最新往历史装填原文；越新越优先。`
   const header = borrowed
-    ? `【板块·近端·最近 ${rounds} 轮线下剧情原文】（关联主角；必注全文）` +
-      `你与「${(ctx?.archiveOwner?.name ?? '').trim() || '主角'}」同属一条时间线；下列为约会页**时间/落库最新**的 ${rounds} 轮 AI 剧情及其间玩家输入（${timeHint}）。${staleHint}更早段由【板块·近端·线下摘要】/向量召回/长期记忆补全。`
-    : `【板块·近端·最近 ${rounds} 轮线下剧情原文】（必注全文）` +
-      `与当前会话为**同一角色、同一时间线**；下列为约会页**时间/落库最新**的 ${rounds} 轮 AI 剧情及其间玩家输入（${timeHint}）。${staleHint}更早段由【板块·近端·线下摘要】/向量召回/长期记忆补全。`
+    ? `【板块·近端·线下剧情原文】（关联主角；必注）` +
+      `你与「${(ctx?.archiveOwner?.name ?? '').trim() || '主角'}」同属一条时间线；下列为约会页时间线材料（${timeHint}）。${staleHint}${modeHint}`
+    : `【板块·近端·线下剧情原文】（必注）` +
+      `与当前会话为**同一角色、同一时间线**；下列为约会页时间线材料（${timeHint}）。${staleHint}${modeHint}`
 
-  const spatialRule = buildOnlineOfflineSpatialContinuityAppendix(body, characterDisplayName, {
+  const spatialRule = buildOnlineOfflineSpatialContinuityAppendix(clippedBody, characterDisplayName, {
     storyNowLabel,
   })
-  return `${header}\n\n${body}\n\n---\n${spatialRule}`
+  return `${header}\n\n${clippedBody}\n\n---\n${spatialRule}`
 }
 
 /** 模型注入块里的「最近线下剧情 / 尚未总结·线下」说明段（单行，后接空行再是正文）。 */
 const OFFLINE_PLOT_INJECT_HEADER_RE =
-  /【(?:板块·近端·最近\s*\d+\s*轮线下剧情原文[^】]*|最近线下剧情[^】]*|最新线下剧情·承接锚点[^】]*|尚未总结·(?:关联主角线下剧情（节选）|线下剧情（约会页 plot 总结游标之后）))】[^\n]*\n\n/g
+  /【(?:板块·近端·(?:最近\s*\d+\s*轮)?线下剧情原文[^】]*|最近线下剧情[^】]*|最新线下剧情·承接锚点[^】]*|尚未总结·(?:关联主角线下剧情（节选）|线下剧情（约会页 plot 总结游标之后）))】[^\n]*\n\n/g
 
-/** 思维溯源 ACTIVE CONTEXT：与 prompt 注入同源，最近 N 轮 AI 线下剧情（仅 AI 条）。 */
+/** 思维溯源 ACTIVE CONTEXT：与 prompt 注入同源的线下剧情（仅 AI 条）。 */
 export async function listInjectedOfflinePlotTraceRowsForMemoryTrace(
   characterId: string | null | undefined,
   peerDisplayName?: string | null,
 ): Promise<Array<{ date: string; snippet: string }>> {
+  const prefs = await loadDatingPlotInjectPrefs(characterId)
+  const rounds =
+    prefs.mode === 'summary'
+      ? MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS
+      : Math.max(MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS, 48)
   return listUnsummarizedOfflinePlotTraceItems(characterId, peerDisplayName, {
-    retainAiRounds: MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS,
+    retainAiRounds: rounds,
     /** 与线上固定注入一致：忽略总结游标，取全档最近 N 轮 */
     ignorePlotSummaryCursor: true,
     aiOnly: true,
-    maxItems: MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS,
+    maxItems: rounds,
     fullSnippet: true,
   })
 }

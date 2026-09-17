@@ -26,8 +26,14 @@ export type DatingWritingPresetMeta = {
   defaultOn: boolean
 }
 
-/** 列表 / 注入顺序 */
+/** 列表 / 注入顺序：禁词表靠前，避免被长文埋没 */
 export const DATING_WRITING_PRESETS: DatingWritingPresetMeta[] = [
+  {
+    id: 'proseForbidden',
+    title: '写作禁词表',
+    description: '线下/VN 文风与完整程序扫描词表、抽象隐喻黑名单、唯二范文句法（全场景硬禁）。',
+    defaultOn: true,
+  },
   {
     id: 'channelAlign',
     title: '通道对齐·人际核心',
@@ -38,12 +44,6 @@ export const DATING_WRITING_PRESETS: DatingWritingPresetMeta[] = [
     id: 'expressionDemeanor',
     title: '神态与情绪外化',
     description: '可见神态/微反应、Show don’t tell、内心 OS 篇幅与平等铁律。',
-    defaultOn: true,
-  },
-  {
-    id: 'proseForbidden',
-    title: '写作禁词表',
-    description: '线下/VN 文风与完整程序扫描词表、抽象隐喻黑名单、唯二范文句法。',
     defaultOn: true,
   },
   {

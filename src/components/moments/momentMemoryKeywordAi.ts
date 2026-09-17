@@ -1,13 +1,17 @@
 import type { ApiConfig } from '../../phone/apps/api/types'
 import { openAiCompatibleChatLenient } from '../../phone/apps/wechat/newFriendsPersona/ai'
 import { parseModelJsonPayload } from '../anonymousQa/qnaDirectedJsonParse'
+import {
+  MOMENT_KEYWORDS_STABLE_FORMAT_HINT,
+  parseKeywordsFromStableText,
+} from './momentStableFormat'
 
 const KEYWORD_TASK = `
 【系统任务：朋友圈记忆关键词提取】
 仅根据朋友圈正文与地点，提取 3~5 个核心「触发关键词」（物品、情绪、事件、地点等），供未来聊天命中唤醒。
 不要总结、不要改写评论区内容。
-只返回纯 JSON，严禁 Markdown：
-{"keywords":["关键词1","关键词2","关键词3"]}
+禁止 JSON；只输出稳定字段行：
+${MOMENT_KEYWORDS_STABLE_FORMAT_HINT}
 `.trim()
 
 function clampKeywords(raw: unknown): string[] {
@@ -48,6 +52,7 @@ export async function extractMomentMemoryKeywords(params: {
   const userBlock = [
     `朋友圈正文：${params.momentText || '（无文字）'}`,
     `地点：${params.location || '无'}`,
+    '请只输出稳定字段行，不要 JSON。',
   ].join('\n')
 
   if (hasApi && cfg) {
@@ -60,6 +65,9 @@ export async function extractMomentMemoryKeywords(params: {
         ],
         { temperature: 0.35, max_tokens: 200 },
       )
+      const fromStable = parseKeywordsFromStableText(raw)
+      if (fromStable.length) return fromStable
+
       const payload = parseModelJsonPayload(raw)
       if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
         const kws = clampKeywords((payload as Record<string, unknown>).keywords)

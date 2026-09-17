@@ -60,14 +60,14 @@ export const WECHAT_APP_CLASSIC_BUBBLE_PRESET: WeChatBubblePreset = {
   wechatThemePatch: {
     chatRoomDefaultBg: { mode: 'solid', color: '#F3F3F3' },
     chatInputBg: '#F7F7F7',
-    chatInputBorder: 'rgba(0, 0, 0, 0.06)',
+    chatInputBorder: 'rgba(0, 0, 0, 0.04)',
   },
   chatThemePatch: {
     inputBar: {
       layout: 'wechat',
       borderRadius: 6,
-      borderColor: 'rgba(0, 0, 0, 0.06)',
-      backgroundColor: '#F7F7F7',
+      borderColor: 'transparent',
+      backgroundColor: '#FFFFFF',
       buttonColor: '#191919',
       buttonSize: 22,
     },
@@ -91,14 +91,14 @@ export const WECHAT_APP_CLASSIC_NIGHT_BUBBLE_PRESET: WeChatBubblePreset = {
   wechatThemePatch: {
     chatRoomDefaultBg: { mode: 'solid', color: '#111111' },
     chatInputBg: '#1E1E1E',
-    chatInputBorder: 'rgba(255,255,255,0.08)',
+    chatInputBorder: 'rgba(255,255,255,0.06)',
   },
   chatThemePatch: {
     inputBar: {
       layout: 'wechat',
       borderRadius: 6,
-      borderColor: 'rgba(255,255,255,0.08)',
-      backgroundColor: '#1E1E1E',
+      borderColor: 'transparent',
+      backgroundColor: '#2C2C2C',
       buttonColor: '#FFFFFF',
       buttonSize: 22,
     },

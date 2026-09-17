@@ -12,21 +12,20 @@ export const WECHAT_SIGNATURE_CHANGE_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000
 /** 人设 JSON 生成允许的上限（展示前仍会 clamp） */
 export const WECHAT_SIGNATURE_GENERATE_MAX = 28
 
-/** 离线/缺省兜底池：口语、留白，禁止从长档案截断 */
+/** 离线/缺省兜底池：与 STYLE_EXAMPLES 错开，避免「抄示例→换兜底」又撞回同句 */
 export const WECHAT_SIGNATURE_FALLBACK_POOL = [
-  '会好 迟早',
-  '随心即满分',
-  '答案在明天',
-  '不计划太多反而能勇敢冒险',
-  '听喜欢的歌 吹傍晚的风',
-  '人生嘛 捂住耳朵做自己才快乐',
-  '慢热 熟了会好聊很多',
-  '橙黄橘绿时',
-  '零碎的岛屿终会遇到海',
+  '先把这周过完',
+  '天气好就出门',
+  '慢一点也没关系',
+  '有空再聊细节',
+  '别急着下结论',
+  '先把自己安顿好',
+  '今天先到这儿',
+  '收件箱会回的',
+  '出门记得带伞',
 ] as const
 
 const STYLE_EXAMPLES = [
-  '橙黄橘绿时',
   '会好 迟早',
   '随心即满分',
   '答案在明天',
@@ -44,6 +43,10 @@ const STYLE_EXAMPLES = [
   '妈野 人生是矿工',
 ] as const
 
+/** 示例原句 + 曾被成片抄烂的签名：命中则换兜底，禁止多人同款 */
+const BANNED_COPIED_SIGNATURES = new Set(
+  ['橙黄橘绿时', ...STYLE_EXAMPLES].map((s) => s.replace(/\s+/g, ' ').trim()),
+)
 const ANTI_PATTERNS = [
   '打工人/职场模板：下班了别找我、勿扰、搬砖、摸鱼、加班中、消息晚点回、已读不回、打工牛马',
   '鸡汤口号：热爱生活 / 做最好的自己 / 温柔且坚定 / 向阳而生 / 未来可期 / 今天也要加油',
@@ -136,10 +139,27 @@ export function coerceWechatSignature(
 ): string {
   const t = String(raw ?? '').replace(/\s+/g, ' ').trim()
   const clipped = t.length > maxChars ? t.slice(0, maxChars) : t
-  if (!clipped || looksLikeTemplateWechatSignature(clipped)) {
-    return pickWechatSignatureFallback(seed).slice(0, maxChars)
+  const copiedExample = Boolean(clipped) && BANNED_COPIED_SIGNATURES.has(clipped)
+  if (!clipped || looksLikeTemplateWechatSignature(clipped) || copiedExample) {
+    // seed 加盐，避免多人撞同一兜底句
+    return pickWechatSignatureFallback(`${seed}\0sig`).slice(0, maxChars)
   }
   return clipped
+}
+
+/**
+ * 读档清洗：把已落库的示例照抄签名（如「橙黄橘绿时」）换成按角色区分的兜底句。
+ * 未命中则原样返回。
+ */
+export function sanitizeStoredWechatSignature(
+  raw: string | null | undefined,
+  seed: string,
+  maxChars = WECHAT_SIGNATURE_DISPLAY_MAX,
+): string {
+  const t = String(raw ?? '').replace(/\s+/g, ' ').trim()
+  if (!t) return ''
+  if (!BANNED_COPIED_SIGNATURES.has(t) && t !== '橙黄橘绿时') return t.slice(0, maxChars)
+  return pickWechatSignatureFallback(`${seed}\0sig`).slice(0, maxChars)
 }
 
 export function buildWechatSignatureAiRulesBlock(options?: {
@@ -159,7 +179,8 @@ export function buildWechatSignatureAiRulesBlock(options?: {
 - **气质**：可含蓄、留白、意象、古诗一句、中英短碎片；像会长期挂在主页上的签名，**不是**每几天就换的碎碎念。
 - **贴合人设**：须与年龄、性格一致；可含蓄折射身份，但**禁止**打工模板与对特定人放狠话。
 - **禁止**：${ANTI_PATTERNS.join('；')}。
-- **风格参考（只学气质，照搬任一句视为严重违规，必须原创）**：${examples}。`
+- **风格参考（只学气质与长度；照搬任一句或照搬古诗/歌词原句视为严重违规，必须原创）**：${examples}。
+- **严禁**输出「橙黄橘绿时」及上方任一示例原句；每人签名须彼此不同。`
 }
 
 /** 批量「贴人设」微信资料生成器用的 signature 字段说明（JSON 键名为 signature） */

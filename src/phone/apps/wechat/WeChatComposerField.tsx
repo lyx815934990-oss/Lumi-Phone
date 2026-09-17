@@ -36,10 +36,15 @@ function syncComposerCaretScroll(el: HTMLElement) {
 
 function syncComposerSize(el: HTMLElement) {
   el.style.maxHeight = `${WECHAT_COMPOSER_MAX_HEIGHT_PX}px`
+  const minFromStyle = Number.parseFloat(el.style.minHeight || '')
+  const minH =
+    Number.isFinite(minFromStyle) && minFromStyle > 0
+      ? minFromStyle
+      : WECHAT_COMPOSER_MIN_HEIGHT_PX
   el.style.height = '0px'
   const next = Math.min(
     WECHAT_COMPOSER_MAX_HEIGHT_PX,
-    Math.max(WECHAT_COMPOSER_MIN_HEIGHT_PX, el.scrollHeight),
+    Math.max(minH, el.scrollHeight),
   )
   el.style.height = `${next}px`
   syncComposerCaretScroll(el)

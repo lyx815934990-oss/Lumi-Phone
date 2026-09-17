@@ -357,11 +357,10 @@ export function isMemoryVectorRecallEnabled(settings: MemorySettingsRow, opts?: 
   return isMemoryEmbeddingAvailable(settings, opts?.apiConfig ?? null)
 }
 
-export function resolveMemoryEmbeddingModelId(settings: MemorySettingsRow, opts?: MemoryVectorRecallOpts | null): string {
-  const o = opts?.embeddingModelId?.trim()
-  if (o) return o
-  const s = settings.memoryEmbeddingModelId?.trim()
-  if (s) return s
+export function resolveMemoryEmbeddingModelId(
+  _settings: MemorySettingsRow,
+  _opts?: MemoryVectorRecallOpts | null,
+): string {
   return DEFAULT_MEMORY_EMBEDDING_MODEL
 }
 

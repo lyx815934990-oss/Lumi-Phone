@@ -6,8 +6,8 @@ import { datingAdvancedControlTutorialBody } from './datingAdvancedControlTutori
 export const DATING_ADVANCED_CONTROL_COACH_TARGET_ATTR = 'data-ac-coach'
 export const DATING_ADVANCED_CONTROL_COACH_ROOT_ATTR = 'data-ac-coach-root'
 export const DATING_ADVANCED_CONTROL_COACH_SCOPE = 'dating-advanced-control'
-/** v2：补齐面板内 data-ac-coach 锚点与「高亮引导」按钮 */
-export const DATING_ADVANCED_CONTROL_COACH_SEEN_KEY = 'dating-advanced-control-coach-completed-v2'
+/** v3：补「最大上下文 Token」锚点 */
+export const DATING_ADVANCED_CONTROL_COACH_SEEN_KEY = 'dating-advanced-control-coach-completed-v3'
 
 export const DATING_ADVANCED_CONTROL_COACH_STEPS: MemoryCoachStep[] = [
   {
@@ -32,6 +32,12 @@ export const DATING_ADVANCED_CONTROL_COACH_STEPS: MemoryCoachStep[] = [
     target: 'ac-length',
     title: '目标字数',
     body: datingAdvancedControlTutorialBody('目标字数'),
+    cardPlacement: 'below',
+  },
+  {
+    target: 'ac-context-tokens',
+    title: '近端剧情注入',
+    body: datingAdvancedControlTutorialBody('近端剧情注入'),
     cardPlacement: 'below',
   },
   {

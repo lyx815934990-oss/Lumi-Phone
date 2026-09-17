@@ -12,7 +12,7 @@ subject：character
 status：无变化
 <<<END_LIFE_ALIGN>>>
 
-有更新示例（空白项须尽量补齐；列表用 @@段名 + 以“-”开头的条目行，字段用 键=值，分号分隔）：
+有更新示例（空白项须尽量补齐；近端新具名人/房/车须追加；列表用 @@段名 + 以“-”开头的条目行，字段用 键=值，分号分隔）：
 <<<LIFE_ALIGN>>>
 [LIFE_ALIGN]
 subject：character
@@ -140,7 +140,7 @@ function mapItemAliases(raw: Record<string, string>): Record<string, unknown> {
 }
 
 function parseAlignSectionList(block: string, section: string): Record<string, unknown>[] {
-  const re = new RegExp(`@@${section}\\b[\\s\\S]*?(?=\\n@@|\\n\\[LIFE_ALIGN\\]|$)`, 'i')
+  const re = new RegExp(`@@${section}\\b[\\s\\S]*?(?=\\n@@|\\n\\[LIFE_ALIGN\\]|\\n\\[LIFE_LEDGER_PATCH\\]|$)`, 'i')
   const m = re.exec(block)
   if (!m) return []
   const body = m[0].replace(new RegExp(`^@@${section}\\s*`, 'i'), '')
@@ -153,6 +153,120 @@ function parseAlignSectionList(block: string, section: string): Record<string, u
     if (Object.keys(mapped).length) items.push(mapped)
   }
   return items
+}
+
+/** 从任意补丁/对齐块中解析 @@住所/车产/家庭/社交圈/宠物 列表（纯文本，非 JSON） */
+export function parseLifeListSectionsFromText(block: string): Partial<{
+  realEstates: Record<string, unknown>[]
+  vehicles: Record<string, unknown>[]
+  family: Record<string, unknown>[]
+  socialCircle: Record<string, unknown>[]
+  pets: Record<string, unknown>[]
+}> {
+  const pick = (...names: string[]) => {
+    for (const n of names) {
+      const items = parseAlignSectionList(block, n)
+      if (items.length) return items
+    }
+    return [] as Record<string, unknown>[]
+  }
+  const out: ReturnType<typeof parseLifeListSectionsFromText> = {}
+  const realEstates = pick('realEstates', '住所', '房产')
+  const vehicles = pick('vehicles', '车产', '车辆')
+  const family = pick('family', '家庭')
+  const socialCircle = pick('socialCircle', '社交圈', '人脉')
+  const pets = pick('pets', '宠物')
+  if (realEstates.length) out.realEstates = realEstates
+  if (vehicles.length) out.vehicles = vehicles
+  if (family.length) out.family = family
+  if (socialCircle.length) out.socialCircle = socialCircle
+  if (pets.length) out.pets = pets
+  return out
+}
+
+/** 把当前账本打成与模型输出一致的纯文本，供对齐时对照（禁止喂 JSON） */
+export function formatLifeSheetAsPlainLedgerText(sheet: {
+  name?: string
+  gender?: string
+  genderChangeNote?: string
+  occupationMain?: string
+  occupationSide?: string
+  savings?: string
+  relationshipStatus?: string
+  educationTrack?: string
+  educationGradeAtStart?: number | null
+  educationNote?: string
+  extraNote?: string
+  storyStartDay?: string
+  ageAtStart?: number | null
+  realEstates?: Array<Record<string, unknown>>
+  vehicles?: Array<Record<string, unknown>>
+  family?: Array<Record<string, unknown>>
+  socialCircle?: Array<Record<string, unknown>>
+  pets?: Array<Record<string, unknown>>
+}): string {
+  const yn = (v: unknown) => (v === true ? '是' : v === false ? '否' : '')
+  const lines: string[] = []
+  const push = (k: string, v: unknown) => {
+    const s = v == null ? '' : String(v).trim()
+    if (s) lines.push(`${k}：${s}`)
+  }
+  push('name', sheet.name)
+  push('gender', sheet.gender)
+  push('genderChangeNote', sheet.genderChangeNote)
+  push('occupationMain', sheet.occupationMain)
+  push('occupationSide', sheet.occupationSide)
+  push('savings', sheet.savings)
+  push('relationshipStatus', sheet.relationshipStatus)
+  push('educationTrack', sheet.educationTrack)
+  if (sheet.educationGradeAtStart != null) push('educationGradeAtStart', sheet.educationGradeAtStart)
+  push('educationNote', sheet.educationNote)
+  push('extraNote', sheet.extraNote)
+  push('storyStartDay', sheet.storyStartDay)
+  if (sheet.ageAtStart != null) push('ageAtStart', sheet.ageAtStart)
+
+  const estates = sheet.realEstates ?? []
+  if (estates.length) {
+    lines.push('@@realEstates')
+    for (const h of estates) {
+      lines.push(
+        `- label=${h.label ?? ''}；placeKind=${h.placeKind ?? ''}；location=${h.location ?? ''}；ownedBySubject=${yn(h.ownedBySubject)}；isPrimary=${yn(h.isPrimary)}；tenure=${h.tenure ?? ''}；valueWan=${h.valueWan ?? ''}；note=${h.note ?? ''}`,
+      )
+    }
+  }
+  const vehicles = sheet.vehicles ?? []
+  if (vehicles.length) {
+    lines.push('@@vehicles')
+    for (const v of vehicles) {
+      lines.push(`- model=${v.model ?? ''}；valueWan=${v.valueWan ?? ''}；note=${v.note ?? ''}`)
+    }
+  }
+  const family = sheet.family ?? []
+  if (family.length) {
+    lines.push('@@family')
+    for (const f of family) {
+      lines.push(
+        `- name=${f.name ?? ''}；relation=${f.relation ?? ''}；gender=${f.gender ?? ''}；age=${f.age ?? ''}；ageAtStart=${f.ageAtStart ?? ''}；birthdayMD=${f.birthdayMD ?? ''}；alive=${yn(f.alive)}；occupationOrSchool=${f.occupationOrSchool ?? ''}；residence=${f.residence ?? ''}；livesWithSubject=${yn(f.livesWithSubject)}`,
+      )
+    }
+  }
+  const social = sheet.socialCircle ?? []
+  if (social.length) {
+    lines.push('@@socialCircle')
+    for (const c of social) {
+      lines.push(
+        `- name=${c.name ?? ''}；relation=${c.relation ?? ''}；gender=${c.gender ?? ''}；age=${c.age ?? ''}；ageAtStart=${c.ageAtStart ?? ''}；birthdayMD=${c.birthdayMD ?? ''}；occupationOrSchool=${c.occupationOrSchool ?? ''}；residence=${c.residence ?? ''}；attitude=${c.attitude ?? ''}；note=${c.note ?? ''}`,
+      )
+    }
+  }
+  const pets = sheet.pets ?? []
+  if (pets.length) {
+    lines.push('@@pets')
+    for (const p of pets) {
+      lines.push(`- name=${p.name ?? ''}；species=${p.species ?? ''}；age=${p.age ?? ''}；note=${p.note ?? ''}`)
+    }
+  }
+  return lines.join('\n') || '（账本为空）'
 }
 
 const ALIGN_FIELD_ALIASES: Record<string, string> = {
@@ -214,23 +328,12 @@ function parseAlignBlockToObject(block: string): Record<string, unknown> {
     }
     obj[canon] = val
   }
-  const pick = (...names: string[]) => {
-    for (const n of names) {
-      const items = parseAlignSectionList(block, n)
-      if (items.length) return items
-    }
-    return [] as Record<string, unknown>[]
-  }
-  const realEstates = pick('realEstates', '住所', '房产')
-  const vehicles = pick('vehicles', '车产', '车辆')
-  const family = pick('family', '家庭')
-  const socialCircle = pick('socialCircle', '社交圈', '人脉')
-  const pets = pick('pets', '宠物')
-  if (realEstates.length) obj.realEstates = realEstates
-  if (vehicles.length) obj.vehicles = vehicles
-  if (family.length) obj.family = family
-  if (socialCircle.length) obj.socialCircle = socialCircle
-  if (pets.length) obj.pets = pets
+  const lists = parseLifeListSectionsFromText(block)
+  if (lists.realEstates) obj.realEstates = lists.realEstates
+  if (lists.vehicles) obj.vehicles = lists.vehicles
+  if (lists.family) obj.family = lists.family
+  if (lists.socialCircle) obj.socialCircle = lists.socialCircle
+  if (lists.pets) obj.pets = lists.pets
   return obj
 }
 

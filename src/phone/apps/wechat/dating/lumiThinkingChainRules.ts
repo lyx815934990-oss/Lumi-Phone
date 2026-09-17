@@ -22,6 +22,8 @@ import { REALISTIC_AUTONOMY_APPENDIX } from '../../../worldbook/realisticAutonom
 import { GENTLE_OLDER_BROTHER_APPENDIX } from '../../../worldbook/gentleOlderBrotherAppendix'
 import { AUTONOMOUS_SOCIAL_LIFE_APPENDIX } from '../../../worldbook/autonomousSocialLifeAppendix'
 import { SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX } from '../../../worldbook/schoolCampusCommonKnowledgeAppendix'
+import { BODY_SCENT_PERFUME_APPENDIX } from '../../../worldbook/bodyScentPerfumeAppendix'
+import { DAILY_LIFE_COMMON_SENSE_APPENDIX } from '../../../worldbook/dailyLifeCommonSenseAppendix'
 
 /** @deprecated 请用 buildOfflineDatingThinkingChainBooksPrompt */
 export function buildLumiThinkingChainBooksPrompt(
@@ -100,6 +102,16 @@ export function buildDatingStyleSystemPrompt(
       ? `\n\n【档案室预设·校园与升学常识·已开启】涉校园/艺考/高考/大学时按常识锚点写（纪律处分、艺考集训招录、查分志愿、课表实习；详见思维链【校园与升学常识】）。`
       : `\n\n【档案室预设·校园与升学常识·已开启】\n${SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX}`
     : ''
+  const bodyScentPresetNote = resolved.bodyScentPerfume
+    ? thinkingChainEnabled
+      ? `\n\n【档案室预设·别再全员牛奶香·已开启】体香通常固定承接，香水可换、勿场场同一支；禁「淡淡清香/牛奶香」空词；{{char}} 与 {{user}} 气味须可区分（详见思维链【别再全员牛奶香】）。`
+      : `\n\n【档案室预设·别再全员牛奶香·已开启】\n${BODY_SCENT_PERFUME_APPENDIX}`
+    : ''
+  const dailyLifePresetNote = resolved.dailyLifeCommonSense
+    ? thinkingChainEnabled
+      ? `\n\n【档案室预设·有点生活常识·已开启】进屋换拖鞋；进对方家须钥匙/开门/敲门；公共场合亲密默认最多牵手拥抱与轻碰唇；没床处禁安稳睡；早晚洗漱；睡衣/裸睡（详见思维链【有点生活常识】）。`
+      : `\n\n【档案室预设·有点生活常识·已开启】\n${DAILY_LIFE_COMMON_SENSE_APPENDIX}`
+    : ''
   const core = buildOfflineDatingMustInjectCore({
     thinkingChainEnabled,
     toggles,
@@ -110,7 +122,7 @@ export function buildDatingStyleSystemPrompt(
   if (usingCustom) return core
   return (
     core +
-    `${innerOsPresetNote}${fashionPresetNote}${intimacyPosePresetNote}${cuisinePresetNote}${directAnswerPresetNote}${passionateDirectPresetNote}${realisticConflictPresetNote}${realisticAutonomyPresetNote}${gentleBrotherPresetNote}${autonomousLifePresetNote}${schoolCampusPresetNote}`
+    `${innerOsPresetNote}${fashionPresetNote}${intimacyPosePresetNote}${cuisinePresetNote}${directAnswerPresetNote}${passionateDirectPresetNote}${realisticConflictPresetNote}${realisticAutonomyPresetNote}${gentleBrotherPresetNote}${autonomousLifePresetNote}${schoolCampusPresetNote}${bodyScentPresetNote}${dailyLifePresetNote}`
   )
 }
 

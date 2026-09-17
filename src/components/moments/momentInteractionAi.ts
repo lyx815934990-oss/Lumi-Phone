@@ -24,6 +24,10 @@ import { MOMENT_TEXT_OUTPUT_HINT, sanitizeMomentText } from './momentTextSanitiz
 import type { AllowedMomentCharacter } from './momentPrivacyAudience'
 import { MOMENT_SONG_SHARE_AI_COMMENT_RULES } from './momentAttachedMusic'
 import { runMomentsVisionChat } from './momentVisionChat'
+import {
+  MOMENT_BATCH_INTERACT_STABLE_FORMAT_HINT,
+  parseBatchInteractionsFromStableText,
+} from './momentStableFormat'
 
 function extractInteractionsArray(payload: unknown): unknown[] | null {
   if (Array.isArray(payload)) return payload
@@ -73,14 +77,13 @@ function buildSystemPrompt(
   engagementRules?: ResolvedUserMomentEngagementRules,
 ): string {
   const roster = allowed.map((c) => `${c.charId}（${c.displayName}）`).join('、')
-  const typeUnion = '"like"|"comment"'
   const mentionBlock = mentioned.length
     ? `\n\n【提醒谁看 · 被 @ 的角色】
 ${mentioned.map((c) => `- ${c.displayName}（${c.charId}）`).join('\n')}
 这些角色**一定知道**用户这条朋友圈提到了自己（会刷到/收到提醒感）。
 **禁止**因被 @ 就强行点赞/评论；须结合人设、与用户当前关系、是否在冷战/赌气/闹矛盾等。
-关系冷淡/冷战/赌气时：仅 type=viewed（若允许）或不输出该角色任何互动，**不要**违心点赞评论。
-关系正常/亲密时：可 like/comment，仍须符合性格。`
+关系冷淡/冷战/赌气时：可不输出该角色任何互动，**不要**违心点赞评论。
+关系正常/亲密时：可点赞/评论，仍须符合性格。`
     : ''
 
   const engagementBlock = engagementRules
@@ -88,22 +91,21 @@ ${mentioned.map((c) => `- ${c.displayName}（${c.charId}）`).join('\n')}
     : ''
 
   return `你是虚拟社交网络中的「朋友圈互动编排器」。
-必须仅输出一个 JSON 对象，不要 Markdown，不要解释。
-JSON 结构：
-{"interactions":[{"charId":"角色ID","type":${typeUnion},"content":"仅评论需要","delaySeconds":数字,"dwellSeconds":"仅viewed","replyToCharId":"可选，回复某角色的 comment 时填其 charId"}]}
+禁止 JSON；只输出稳定字段行。
+${MOMENT_BATCH_INTERACT_STABLE_FORMAT_HINT}
 
 规则：
 1. charId 必须来自允许名单，严禁编造 ID 或名字。
 2. 不需要每个角色都互动；**关系熟、常聊天的角色**多半会点赞或随手评；关系一般者见内容特别有意思/有意义/有争议时也可能互动；明显冷淡或敌对者可仅浏览不留言。
-3. delaySeconds 为「刷到朋友圈后」的秒数，范围约 ${15}～${MOMENT_INTERACTION_DELAY_MAX_SECONDS}（10 分钟内），**须错落有致**（如 18 秒、52 秒、2 分 10 秒、6 分钟），勿整分钟或等差递增；同一角色须连贯：先 like（或 viewed），comment 仅比同角色 like 大 8～15 秒（模拟打字），禁止同角色 like 与 comment 相差超过 30 秒。
+3. 延迟为「刷到朋友圈后」的秒数，范围约 ${15}～${MOMENT_INTERACTION_DELAY_MAX_SECONDS}（10 分钟内），**须错落有致**（如 18 秒、52 秒、2 分 10 秒、6 分钟），勿整分钟或等差递增；同一角色须连贯：先点赞，评论仅比同角色点赞大 8～15 秒（模拟打字），禁止同角色点赞与评论相差超过 30 秒。
 4. 评论须符合各角色性格（傲娇、高冷、温柔等），简短自然；禁止写出 MBTI 四字母或「快乐修勾」「INFJ 清冷感」等类型学套话。
-5. **评区可多级接话**：comment 可以是一级（直接评用户朋友圈），也可以是二级回复（replyToCharId 填被回复角色的 charId，对方须在同批 interactions 里已有 comment）。角色之间可互怼、接话、补充，像真实朋友圈评区。**一级评论默认对用户说**，文中「你/给你/您」指发朋友圈的用户；回复某角色时勿把其对用户的「给你」误解为在说你。
+5. **评区可多级接话**：评论可以是一级（直接评用户朋友圈），也可以是楼中楼（填 replyToCharId，对方须在同批已有评论）。角色之间可互怼、接话、补充，像真实朋友圈评区。**一级评论默认对用户说**，文中「你/给你/您」指发朋友圈的用户；回复某角色时勿把其对用户的「给你」误解为在说你。
 6. **分享歌曲**：若正文含「分享单曲」及歌词节选，评论须基于该曲名、歌手与已给出的歌词；禁止编造歌词或乱评。
 ${MOMENT_SONG_SHARE_AI_COMMENT_RULES}
 7. **互称规则**：若下方提供了角色人脉关系，回复/提及其他角色时必须使用其中的「当面称呼」；禁止与关系矛盾的称谓（母子不可互称学姐学长等）。${
     withCharacterContexts
-      ? '\n8. 下方各角色区块含与该用户的**近期私聊与长期记忆**：评论须据此反应，像真人刷到熟人朋友圈，可接梗、关心、吐槽或暧昧，勿写与人设/关系无关的客套。\n9. 若某角色标注「私聊未回但发朋友圈」，可在 comment 中自然调侃（如有空发朋友圈没空回消息）；须贴合人设，勿机械模板；关系冷淡或严肃时可略过。\n10. 严禁在 JSON 里写 displayName，只写 charId。'
-      : '\n8. 严禁在 JSON 里写 displayName，只写 charId。'
+      ? '\n8. 下方各角色区块含与该用户的**近期私聊与长期记忆**：评论须据此反应，像真人刷到熟人朋友圈，可接梗、关心、吐槽或暧昧，勿写与人设/关系无关的客套。\n9. 若某角色标注「私聊未回但发朋友圈」，可在评论中自然调侃（如有空发朋友圈没空回消息）；须贴合人设，勿机械模板；关系冷淡或严肃时可略过。\n10. 严禁写 displayName，只写 charId。'
+      : '\n8. 严禁写 displayName，只写 charId。'
   }${mentionBlock}
 
 ${relationshipBlock ? `\n${relationshipBlock}\n` : ''}${engagementBlock}${MOMENT_TEXT_OUTPUT_HINT}`
@@ -167,7 +169,7 @@ async function generateBatchOrchestratorMomentInteractions(params: {
     `配图数：${params.imageCount}`,
     `能看到这条动态的角色：${params.allowedCharacters.map((c) => c.displayName).join('、')}${mentionLines}`,
     characterContextPrompt,
-    '请模拟点赞/评论，返回 JSON。评论可以是一级，也可用 replyToCharId 回复其他角色的 comment 形成接话。被 @ 的角色须知晓被提及；关系熟的角色多半会互动，关系一般者见特别有意思/有意义的内容也会点赞或短评。',
+    '请模拟点赞/评论，只输出稳定字段行，不要 JSON。评论可以是一级，也可用楼中楼回复其他角色形成接话。被 @ 的角色须知晓被提及；关系熟的角色多半会互动，关系一般者见特别有意思/有意义的内容也会点赞或短评。',
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -185,8 +187,12 @@ async function generateBatchOrchestratorMomentInteractions(params: {
     temperature: 0.78,
     max_tokens: 1200,
   })
-  const payload = parseModelJsonPayload(raw)
-  const rows = extractInteractionsArray(payload)
+
+  const fromStable = parseBatchInteractionsFromStableText(raw)
+  const rows =
+    fromStable.length > 0
+      ? fromStable
+      : extractInteractionsArray(parseModelJsonPayload(raw)) ?? []
   if (!rows?.length) return []
 
   const out: AiMomentInteractionDraft[] = []

@@ -23,6 +23,7 @@ import {
   summarizeWorldBookUserPlaceholdersOnCharacter,
 } from '../worldBookUserPlaceholderBindings'
 import { WorldBookItemGenLengthModal } from './WorldBookItemGenLengthModal'
+import { WorldBookOptimizePanel } from './WorldBookOptimizePanel'
 import {
   consolidateMeetCharacterWorldBooks,
   meetWorldbooksNeedConsolidation,
@@ -639,6 +640,20 @@ export function WorldBooksEditor({
           )}
         </AnimatePresence>
       </div>
+
+      <WorldBookOptimizePanel
+        apiConfig={apiConfig}
+        character={character}
+        forPlayerIdentity={forPlayerIdentity}
+        worldBackgroundPrompt={worldBackgroundPrompt}
+        identityContext={identityContext}
+        linkedNpcsContext={linkedNpcsContext}
+        onApplyWorldBooks={(next, summary) => {
+          setWorldBooks(next)
+          setAlignUserToast(summary)
+          window.setTimeout(() => setAlignUserToast(null), 5200)
+        }}
+      />
 
       <div className="space-y-4 px-4">
         {worldBooks.length === 0 ? (

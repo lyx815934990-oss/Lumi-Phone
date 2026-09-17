@@ -94,7 +94,7 @@ import {
 } from '../../types'
 import { resolvePublicImageUrl } from '../../../publicAssetUrl'
 import { wechatChatRoomBgFallbackColor, wechatChatRoomBgToStyle } from './wechatChatRoomBg'
-import { migrateMislabeledLumiDefaultBubble, resolveEffectiveChatInputBarForBubble, isTwitterXNightMode, isTwitterXPresetActive, isWechatClassicNightMode } from './wechatBubblePresets'
+import { migrateMislabeledLumiDefaultBubble, resolveEffectiveChatInputBarForBubble, isTwitterXNightMode, isTwitterXPresetActive, isWechatClassicNightMode, isWechatClassicPresetActive } from './wechatBubblePresets'
 import {
   formatTwitterCenteredTimestamp,
   formatTwitterDmTime,
@@ -104,6 +104,8 @@ import {
   useTwitterTapTimeReveal,
 } from './wechatBubbleTwitterUi'
 import { CallStatusBubble } from './voiceCall/CallStatusBubble'
+import { VoiceCallSessionDetail } from './voiceCall/VoiceCallSessionDetail'
+import { persistVoiceCallSession } from './voiceCall/persistVoiceCallSession'
 import { isLiquidGlassMinimalPackActive, LIQUID_GLASS_MINIMAL_SCOPED_CSS } from './bubblePack/liquidGlassMinimalPack'
 import { chatDisplayFontCssVars, resolveChatDisplayFontFamily } from './wechatBubbleTemplateFonts'
 import {
@@ -164,6 +166,11 @@ import {
 } from '../lumiMeet/meetUserProfileSnapshot'
 import { loadMeetEncounterMemoriesPromptBlock } from '../lumiMeet/meetWechatSyncOnFriendLinked'
 import { formatCharacterMemoriesForPromptInjectionPack } from './memory/formatCharacterMemoriesForPromptInjection'
+import {
+  emptyMemoryVectorRecallStatus,
+  formatMemoryVectorRecallConsoleLine,
+  type MemoryVectorRecallRoundStatus,
+} from './memory/memoryVectorRecallStatus'
 import { loadStoryTimelinePromptBlock } from './memory/storyTimelinePersist'
 import { composeStoryTimelineCalendarAnchorLabel } from './memory/storyTimelineTypes'
 import { syncStoryTimelineNowFromOnlineClock, parseStoryAnchorLabelToMs } from './time/applyOnlineChatTimeFusion'
@@ -351,7 +358,8 @@ import {
   listUnsummarizedPrivateChatMessages,
   MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
   MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
-  resolveRecentPrivateInjectAiRounds,
+  resolveRecentPrivateInjectEffectiveMaxChars,
+  resolveRecentPrivateInjectEffectiveRounds,
 } from './wechatMemoryPromptBlocks'
 import {
   dedupeUnsummarizedVsRecentAiRounds,
@@ -366,6 +374,7 @@ import {
 } from './groupChatMultiIdentityPrompt'
 import { buildGroupChatSelfAuditPromptSection } from './groupChatSelfAuditPrompt'
 import { loadOfflineDatingPlotsPromptBlock } from './dating/loadOfflineDatingPlotsForWechatPrompt'
+import { loadDatingPlotInjectPrefs } from './dating/datingInjectPrefs'
 import { buildOnlineChatCrossChannelTimelineRule, resolveLastOfflineAiPlotTimestampMs } from './wechatCrossChannelTimeline'
 import { publishWeChatGroupMemoryTrace, publishWeChatPrivatePersonaMemoryTrace } from './memoryTracePublisher'
 import {
@@ -637,9 +646,11 @@ import {
   writeNotifiedSet,
 } from './wechatLocalNotifySet'
 import { CallingScreen } from './voiceCall/CallingScreen'
-import { FloatingVoiceCallBubble } from './voiceCall/FloatingVoiceCallBubble'
+import { unlockVoiceCallAudio } from './voiceCall/callAudioBridge'
 import { formatCallStatusLabel } from './voiceCall/callStatusLabel'
+import { formatVoiceCallTranscriptForContext, voiceCallMessagesToChatTurns } from './voiceCall/voiceCallHangup'
 import { IncomingCallScreen } from './voiceCall/IncomingCallScreen'
+import { useGlobalVoiceCallFloatStore } from './voiceCall/useGlobalVoiceCallFloatStore'
 import { VoiceCallActionSheet } from './voiceCall/VoiceCallActionSheet'
 import { VoiceCallPanel } from './voiceCall/VoiceCallPanel'
 import { requestSiliconflowTranscription } from './voiceCall/siliconflowAsr'
@@ -750,7 +761,6 @@ function clearWeChatDmBulletsKv(conversationKey: string): void {
   void personaDb.setPhoneKv(`${WECHAT_DM_BULLETS_KV_PREFIX}:${conversationKey}`, { v: 1, bullets: [] })
 }
 /** 群聊：每名角色单次「出场」最多落几条气泡再交给下一名，避免一人连刷一长串 */
-const hasSpeechRecognitionApi = true
 const VOICE_HOLD_START_MS = 180
 const VOICE_TAP_MOVE_THRESHOLD_PX = 12
 import {
@@ -850,6 +860,15 @@ function itemsToTranscript(items: ChatItem[], opts?: { groupSpeakerLabel?: (m: C
       if (m.isRecalled) {
         const who = m.from === 'self' ? '用户' : speakerLabel || '对方'
         return { id: m.id, from: m.from, text: `（${who}撤回了一条消息）`, speakerLabel }
+      }
+      if (m.callStatus) {
+        const dig = String(m.callStatus.transcriptText ?? '').trim()
+        return {
+          id: m.id,
+          from: m.from,
+          text: dig || '[通话]',
+          speakerLabel,
+        }
       }
       if (m.isGroupEventStrip && m.text?.trim()) {
         return { id: m.id, from: m.from, text: `（系统）${m.text.trim()}`, speakerLabel }
@@ -1787,9 +1806,22 @@ function parseVoiceCallDirective(raw: string): AiVoiceCallDirective | null {
   const line = String(raw ?? '').trim()
   const space = matchAnyDirectiveName(line, [WxCmd.voiceCall])
   if (space) {
-    const opening =
-      pickNamed(space, ['开场', 'opening', 'openingLine', 'firstLine']) ||
-      space.positional.join(' ').trim()
+    // 开场白常含空格（如「您好呀，我是 小明」）；方案甲按空格拆 token 会把「开场=…」截断。
+    // 优先：整段 rest 以开场键开头时，等号后全部保留；否则再拼 named + 残余位置参。
+    const OPENING_KEYS = ['开场', 'opening', 'openingLine', 'firstLine'] as const
+    let opening = ''
+    const restFull = String(space.rest ?? '').trim()
+    const restEq = /^(?:开场|opening|openingLine|firstLine)\s*=\s*(.*)$/is.exec(restFull)
+    if (restEq) {
+      opening = String(restEq[1] ?? '')
+        .trim()
+        .replace(/^"(.*)"$/s, '$1')
+        .trim()
+    } else {
+      const named = pickNamed(space, OPENING_KEYS)
+      const tail = space.positional.join(' ').trim()
+      opening = named ? (tail ? `${named} ${tail}` : named) : tail
+    }
     return { type: 'start', openingLine: opening ? opening.slice(0, 120) : undefined }
   }
   const m =
@@ -1977,7 +2009,13 @@ type ChatMsg = {
   imageGenPrompt?: string
   redPacket?: WeChatRedPacketPayload
   transfer?: WeChatTransferPayload
-  callStatus?: { status: 'rejected' | 'no_answer' | 'duration'; durationSec?: number }
+  callStatus?: {
+    status: 'rejected' | 'no_answer' | 'duration'
+    durationSec?: number
+    sessionId?: string
+    transcriptText?: string
+    endedBy?: 'user' | 'character'
+  }
   voice?: {
     durationSec: number
     emotionAnalyzed?: boolean
@@ -2147,27 +2185,30 @@ type ChatMsgProps = {
   bubbleSelected?: boolean
 }
 
-/** 连续同侧：X 风格 4px / 默认 8px；交替：X 12px / 默认 16px；Telegram 更紧 */
+/** 连续同侧：X 风格 4px / 默认 8px / 微信 App 16px；交替：X 12px / 默认 16px / 微信 App 28px；Telegram 更紧 */
 function messageBlockSpacing(
   items: ChatItem[],
   index: number,
   compactMessenger?: boolean,
   twitterDm?: boolean,
+  wechatClassic?: boolean,
 ): string {
   if (index <= 0) return ''
   const cur = items[index]
   const prev = items[index - 1]
-  if (cur.kind === 'time' || cur.kind === 'fr-verify-banner') return 'mt-4'
-  if (prev.kind === 'time' || prev.kind === 'fr-verify-banner') return 'mt-4'
+  if (cur.kind === 'time' || cur.kind === 'fr-verify-banner') return wechatClassic ? 'mt-6' : 'mt-4'
+  if (prev.kind === 'time' || prev.kind === 'fr-verify-banner') return wechatClassic ? 'mt-6' : 'mt-4'
   if (cur.kind === 'msg' && prev.kind === 'msg') {
     if (cur.from === prev.from) {
       if (twitterDm) return 'mt-1' // 4px
+      if (wechatClassic) return 'mt-4' // 16px：头像+气泡行距
       return compactMessenger ? 'mt-0.5' : 'mt-2'
     }
     if (twitterDm) return 'mt-3' // 12px
+    if (wechatClassic) return 'mt-7' // 28px：换侧再拉开
     return compactMessenger ? 'mt-2' : 'mt-4'
   }
-  return 'mt-4'
+  return wechatClassic ? 'mt-6' : 'mt-4'
 }
 
 /** 与上一条是否为连续同侧（对方合并：首条显头像） */
@@ -2644,7 +2685,7 @@ export function ChatRoomInner({
   profileImageChangeEnabled = false,
   /** 会话设置：网络玩梗轻量词库（默认关） */
   internetMemeLexiconEnabled = false,
-  /** 会话设置：语感同化 / 夫妻相（默认关） */
+  /** 会话设置：语气同化（默认关） */
   mimicUserSpeakingStyleEnabled = false,
   /** 群聊：是否在对方消息头像右侧显示发送者群昵称 */
   showGroupMemberNicknameInChat = true,
@@ -2671,6 +2712,8 @@ export function ChatRoomInner({
   onCheckPhoneOpenChange,
   onMiniGameOverlayOpenChange,
   onVoiceCallOverlayOpenChange,
+  /** 悬浮球展开时：切回该会话聊天页，避免通话层被停靠 ChatRoom 的 opacity-0 挡住 */
+  onRequestShowForVoiceCall,
   /** 当前是否在聊天页前台（消息列表/子页为 false）：false 时暂停逐条露出计时，回聊天页后续跑 */
   chatRouteVisible = true,
   embedMode,
@@ -2764,6 +2807,8 @@ export function ChatRoomInner({
   onMiniGameOverlayOpenChange?: (open: boolean) => void
   /** 语音通话全屏（拨打/来电/通话中）时隐藏微信聊天顶栏 */
   onVoiceCallOverlayOpenChange?: (open: boolean) => void
+  /** 点击悬浮通话球：请求上层打开对应会话聊天页 */
+  onRequestShowForVoiceCall?: () => void
   /** 当前是否在聊天页前台（消息列表/子页为 false）：false 时暂停逐条露出计时，回聊天页后续跑 */
   chatRouteVisible?: boolean
   /** 隐藏 UI，仅保留发送与 AI 管线（全局快捷回复引擎） */
@@ -2791,8 +2836,6 @@ export function ChatRoomInner({
   const apiConfig = useCurrentApiConfig('chatCard')
   const { currentAccountId, accounts } = useWechatStore()
   const danmakuApiConfig = useCurrentApiConfig('danmaku')
-  const voiceAsrApiConfig = useCurrentApiConfig('voiceAsr')
-  const voiceAsrEnabled = useIsSubApiEnabled('voiceAsr')
   /** API 设置「翻译」副接口开启：同步翻译走服务商，模型勿写 [译] */
   const translationDedicatedApi = useIsSubApiEnabled('translation')
   const translationDedicatedApiRef = useRef(translationDedicatedApi)
@@ -3193,6 +3236,7 @@ export function ChatRoomInner({
           crossChannelTimeline: '',
           traceCrossAccountPrivate: '',
           traceCurrentLinePrivate: '',
+          vectorRecall: emptyMemoryVectorRecallStatus({ detail: '非私聊人设回合' }),
         }
       }
       const pc = personaCharacterId?.trim()
@@ -3210,6 +3254,7 @@ export function ChatRoomInner({
           crossChannelTimeline: '',
           traceCrossAccountPrivate: '',
           traceCurrentLinePrivate: '',
+          vectorRecall: emptyMemoryVectorRecallStatus({ detail: '无人设角色' }),
         }
       }
       const pid = playerIdentityId.trim()
@@ -3275,9 +3320,10 @@ export function ChatRoomInner({
       } catch {
         lastOfflineAiPlotTs = null
       }
-      const recentInjectRounds = resolveRecentPrivateInjectAiRounds(
-        await personaDb.getChatConversationSettings(conversationKey),
-      )
+      const chatConvSettings = await personaDb.getChatConversationSettings(conversationKey)
+      const recentInjectRounds = resolveRecentPrivateInjectEffectiveRounds(chatConvSettings)
+      const recentInjectMaxChars = resolveRecentPrivateInjectEffectiveMaxChars(chatConvSettings)
+      const datingInjectPrefs = await loadDatingPlotInjectPrefs(pc)
       const [unsPrivateRaw0, unsGroup, unsMeet, crossChannelTimeline, unsInjectMsgs, recentInjectMsgs] =
         await Promise.all([
           formatUnsummarizedPrivateChatBlock({
@@ -3388,6 +3434,7 @@ export function ChatRoomInner({
             await buildRecentPrivateChatRoundsWithTimeBlock({
               conversationKey,
               retainAiRounds: recentInjectRounds,
+              maxChars: recentInjectMaxChars,
               minStoryCalendarMs: storyNowMsEarly,
             })
           ).trim()
@@ -3415,6 +3462,9 @@ export function ChatRoomInner({
             storyCalendarAnchor,
             apiConfig: timelineApiConfig,
             conversationKey,
+            // 与约会页「近端剧情注入」互通：原文模式不注近端摘要；摘要模式注 N 轮
+            omitRecentSummaryRows: datingInjectPrefs.mode === 'full_text',
+            recentSummaryRowCount: datingInjectPrefs.summaryRounds,
           })
         ).trim()
       } catch {
@@ -3422,6 +3472,7 @@ export function ChatRoomInner({
       }
       let memory = ''
       let momentImageUrls: string[] = []
+      let vectorRecall: MemoryVectorRecallRoundStatus = emptyMemoryVectorRecallStatus()
       try {
         const pack = await formatCharacterMemoriesForPromptInjectionPack(pc, hay, {
           apiConfig: apiConfig?.apiUrl?.trim() && apiConfig?.apiKey?.trim() ? apiConfig : null,
@@ -3430,9 +3481,16 @@ export function ChatRoomInner({
         })
         memory = pack.text.trim()
         momentImageUrls = pack.momentImageUrls
-      } catch {
+        vectorRecall = pack.vectorRecall
+      } catch (e) {
         memory = ''
         momentImageUrls = []
+        vectorRecall = emptyMemoryVectorRecallStatus({
+          enabled: true,
+          attempted: true,
+          ok: false,
+          detail: e instanceof Error ? e.message : String(e),
+        })
       }
       if (memory && isolateStrangerLine && !memory.includes('分线阅读')) {
         memory = wrapStrangerContactLongTermMemoryBlock(memory)
@@ -3454,6 +3512,7 @@ export function ChatRoomInner({
         dedupePrivateRecentOmitted,
         dedupeMeetRecentOmitted: false,
         dedupeOfflineRecentOmitted: false,
+        vectorRecall,
       }
     },
     [
@@ -4712,11 +4771,17 @@ export function ChatRoomInner({
 
   const appendCallStatusBubble = useCallback(
     async (
-      payload: { status: 'rejected' | 'no_answer' | 'duration'; durationSec?: number },
+      payload: {
+        status: 'rejected' | 'no_answer' | 'duration'
+        durationSec?: number
+        sessionId?: string
+        transcriptText?: string
+        endedBy?: 'user' | 'character'
+      },
       initiator: 'self' | 'other' = 'self',
     ) => {
       const ts = getCurrentTimeMs()
-      const dedupKey = `${initiator}:${payload.status}:${payload.durationSec ?? 0}`
+      const dedupKey = `${initiator}:${payload.status}:${payload.durationSec ?? 0}:${payload.sessionId ?? ''}`
       const last = callBubbleDedupRef.current
       if (last && last.key === dedupKey && ts - last.ts < 1200) return
       callBubbleDedupRef.current = { key: dedupKey, ts }
@@ -4724,6 +4789,13 @@ export function ChatRoomInner({
       const content = '[通话]'
       const msgType = initiator === 'self' ? 'player' : 'character'
       const from = initiator === 'self' ? 'self' : 'other'
+      const callStatus = {
+        status: payload.status,
+        ...(typeof payload.durationSec === 'number' ? { durationSec: payload.durationSec } : {}),
+        ...(payload.sessionId?.trim() ? { sessionId: payload.sessionId.trim() } : {}),
+        ...(payload.transcriptText?.trim() ? { transcriptText: payload.transcriptText.trim() } : {}),
+        ...(payload.endedBy ? { endedBy: payload.endedBy } : {}),
+      }
       try {
         await personaDb.appendWeChatChatMessage({
           id,
@@ -4731,7 +4803,7 @@ export function ChatRoomInner({
           playerIdentityId,
           type: msgType,
           content,
-          callStatus: payload,
+          callStatus,
           timestamp: ts,
           isRead: true,
           conversationKey,
@@ -4746,7 +4818,7 @@ export function ChatRoomInner({
         text: content,
         timestamp: ts,
         status: 'sent',
-        callStatus: payload,
+        callStatus,
         selfAnimated: from === 'self' ? true : undefined,
         otherAnimated: from === 'other' ? true : undefined,
       }
@@ -5510,8 +5582,6 @@ export function ChatRoomInner({
   const [voiceThumbOrigin, setVoiceThumbOrigin] = useState<{ x: number; y: number } | null>(null)
   const [mockVoiceInputOpen, setMockVoiceInputOpen] = useState(false)
   const [mockVoiceInputDraft, setMockVoiceInputDraft] = useState('')
-  const [voiceConfigAlertOpen, setVoiceConfigAlertOpen] = useState(false)
-  const [voiceConfigAlertMessage, setVoiceConfigAlertMessage] = useState('未配置语音识别 API Key')
   const [stubPanel, setStubPanel] = useState<null | 'emoji'>(null)
   const stubPanelRef = useRef<null | 'emoji'>(null)
   stubPanelRef.current = stubPanel
@@ -5692,9 +5762,10 @@ export function ChatRoomInner({
   const [voiceCallOpen, setVoiceCallOpen] = useState(false)
   /** 通话挂起：全屏页隐藏，保留会话并显示可拖动悬浮球 */
   const [callMinimized, setCallMinimized] = useState(false)
+  const [voiceCallDetailSessionId, setVoiceCallDetailSessionId] = useState<string | null>(null)
   const [activeCallInitiator, setActiveCallInitiator] = useState<'self' | 'other' | null>(null)
-  const [incomingCallOpeningLine, setIncomingCallOpeningLine] = useState<string>('')
-  const [outgoingCallOpeningLine, setOutgoingCallOpeningLine] = useState<string>('')
+  const [, setIncomingCallOpeningLine] = useState<string>('')
+  const [, setOutgoingCallOpeningLine] = useState<string>('')
   const incomingRejectLockRef = useRef(false)
   const callBubbleDedupRef = useRef<{ key: string; ts: number } | null>(null)
   /** 拆红包全屏层：仅「领取对方发来的未拆红包」时打开；自己发出的红包不可自领 */
@@ -6041,6 +6112,10 @@ export function ChatRoomInner({
         if (liquid) {
           bar.style.paddingBottom = '0px'
           bar.style.bottom = 'max(18px, calc(env(safe-area-inset-bottom, 0px) + 10px))'
+        } else if (bar.hasAttribute('data-wx-wechat-input')) {
+          /** 微信主题：在 safe-area 之上再抬一截，避免贴 Home 指示条 */
+          bar.style.paddingBottom = 'max(18px, calc(env(safe-area-inset-bottom, 0px) + 10px))'
+          bar.style.bottom = ''
         } else {
           bar.style.paddingBottom = 'max(12px, env(safe-area-inset-bottom, 0px))'
           bar.style.bottom = ''
@@ -6132,6 +6207,39 @@ export function ChatRoomInner({
   useEffect(() => {
     if (!voiceCallSessionActive && callMinimized) setCallMinimized(false)
   }, [voiceCallSessionActive, callMinimized])
+
+  // 全局悬浮通话球：最小化后在桌面 / 其他 App 仍可见；点开时取消最小化并回到本会话
+  useEffect(() => {
+    useGlobalVoiceCallFloatStore.getState().registerExpandInChat(() => {
+      setCallMinimized(false)
+      onRequestShowForVoiceCall?.()
+    })
+    return () => {
+      useGlobalVoiceCallFloatStore.getState().registerExpandInChat(null)
+      useGlobalVoiceCallFloatStore.getState().clearFloat()
+    }
+  }, [onRequestShowForVoiceCall])
+
+  useEffect(() => {
+    const store = useGlobalVoiceCallFloatStore.getState()
+    if (!(callMinimized && voiceCallSessionActive)) {
+      store.syncFloat({ visible: false })
+      return
+    }
+    store.syncFloat({
+      visible: true,
+      peerAvatarUrl: peerAvatarResolved,
+      peerRemarkName: peerNotifyTitle.trim() || '对方',
+      phase: voiceCallOpen ? 'connected' : incomingCallOpen ? 'incoming' : 'calling',
+    })
+  }, [
+    callMinimized,
+    voiceCallSessionActive,
+    voiceCallOpen,
+    incomingCallOpen,
+    peerAvatarResolved,
+    peerNotifyTitle,
+  ])
 
   useEffect(() => {
     return () => onVoiceCallOverlayOpenChange?.(false)
@@ -9125,7 +9233,7 @@ export function ChatRoomInner({
               : ''
             const mimicStyleBias = includeMimicUserSpeakingStyle
               ? [
-                  '【语感同化·本轮必守】本会话已开启「模仿用户说话风格」。',
+                  '【语气同化·本轮必守】本会话已开启「语气同化」。',
                   '优先对齐私藏侧写「口头禅 / 语言风格」（非尚不清楚时）；再按当前关系浓度贴近近端气泡的断句与语气词。',
                   '人设与口语习惯仍优先，禁止变成对方本人或整句复读；冷战/真倾诉时收同化。',
                 ].join('\n')
@@ -9337,9 +9445,18 @@ export function ChatRoomInner({
                 if (pack.offlineUnsummarizedForPrompt?.trim()) {
                   offlineDatingPlotsContext = pack.offlineUnsummarizedForPrompt
                 }
+                if (pack.vectorRecall) {
+                  logConsole('ai', formatMemoryVectorRecallConsoleLine(pack.vectorRecall))
+                }
               } catch (memErr) {
                 if (memErr instanceof Error && memErr.message === 'memory_inject_timeout') {
                   logger.log('error', '记忆注入超时，已跳过向量召回并继续请求回复模型')
+                  logConsole('ai', '[向量记忆] 本轮调用失败 · 记忆注入超时')
+                } else {
+                  logConsole(
+                    'ai',
+                    `[向量记忆] 本轮调用失败 · ${memErr instanceof Error ? memErr.message : String(memErr)}`,
+                  )
                 }
                 memoryRound = ''
                 memoryMomentImagesRound = []
@@ -9737,8 +9854,16 @@ export function ChatRoomInner({
                   })
                   memNotes = pack.text.trim()
                   if (pack.momentImageUrls.length) groupMemoryMomentImageLists.push(pack.momentImageUrls)
-                } catch {
+                  logConsole(
+                    'ai',
+                    `${formatMemoryVectorRecallConsoleLine(pack.vectorRecall)} · 群成员 ${m.groupNickname || m.charId}`,
+                  )
+                } catch (e) {
                   memNotes = ''
+                  logConsole(
+                    'ai',
+                    `[向量记忆] 本轮调用失败 · 群成员 ${m.groupNickname || m.charId} · ${e instanceof Error ? e.message : String(e)}`,
+                  )
                 }
                 const boundPid = ch?.playerIdentityId?.trim()
                 let boundRels: Relationship[] | undefined
@@ -10263,6 +10388,7 @@ export function ChatRoomInner({
           const msg = e instanceof Error ? e.message : '未知错误'
           aiRequestFailed = true
           logger.log('error', `AI请求失败: ${msg}`)
+          logConsole('ai', `AI请求失败（摘要）: ${msg.slice(0, 400)}`)
           aiFailureCooldownUntilRef.current = Date.now() + 8000
           setFlushPending(0)
           aiCallingRef.current = false
@@ -10275,7 +10401,7 @@ export function ChatRoomInner({
           const nowToast = Date.now()
           if (nowToast - aiLastErrorToastMsRef.current > 3000) {
             aiLastErrorToastMsRef.current = nowToast
-            showComposerToast(`AI请求失败：${msg.slice(0, 120)}`)
+            showComposerToast(`AI请求失败：${msg.slice(0, 160)}`)
           }
         }
 
@@ -11782,6 +11908,37 @@ export function ChatRoomInner({
             },
           ])
         }
+        /** 语音来电：等本轮文字气泡全部揭示后再延迟弹出，避免边发消息边响铃 */
+        let pendingIncomingVoiceCall: { openingLine: string } | null = null
+        const enqueuePendingIncomingVoiceCallJob = () => {
+          if (!pendingIncomingVoiceCall) return
+          const openingLine = pendingIncomingVoiceCall.openingLine
+          pendingIncomingVoiceCall = null
+          const delayMs = 3000 + Math.floor(Math.random() * 2001)
+          enqueueOpponentMessagesSequential([
+            {
+              forConversationKey: revealConvKey,
+              msg: {
+                id: `wxm-${getCurrentTimeMs()}-voice-call-incoming`,
+                kind: 'msg',
+                from: 'other',
+                text: '',
+                timestamp: getCurrentTimeMs(),
+              },
+              persist: () => {},
+              revealCallbackOnly: true,
+              revealCallbackDelayMs: delayMs,
+              afterReveal: () => {
+                if (conversationKeyLiveRef.current.trim() !== revealConvKey) return
+                setActiveCallInitiator('other')
+                setIncomingCallOpeningLine(openingLine)
+                incomingRejectLockRef.current = false
+                setCallMinimized(false)
+                setIncomingCallOpen(true)
+              },
+            },
+          ])
+        }
         /** 群助手 botViolation 禁言：落库前再判一次，避免同轮模型仍分配该角色台词 */
         const skipBubbleForGroupMute = async (): Promise<boolean> => {
           if (roomType !== 'group' || !groupId?.trim()) return false
@@ -12854,11 +13011,9 @@ export function ChatRoomInner({
               const ts = getCurrentTimeMs()
               const mid = `wxm-${ts}-o-${i}-${Math.random().toString(36).slice(2, 6)}`
               if (vcDirective?.type === 'start') {
-                setActiveCallInitiator('other')
-                setIncomingCallOpeningLine(vcDirective.openingLine ?? '')
-                incomingRejectLockRef.current = false
-                setCallMinimized(false)
-                setIncomingCallOpen(true)
+                pendingIncomingVoiceCall = {
+                  openingLine: vcDirective.openingLine ?? '',
+                }
                 continue
               }
               if (rpDirective) {
@@ -13375,6 +13530,7 @@ export function ChatRoomInner({
         ) {
           enqueueMusicSyncRoundCompletionJob()
         }
+        enqueuePendingIncomingVoiceCallJob()
         } finally {
           deferBubbleRevealEnqueueRef.current = false
           flushDeferredBubbleRevealJobs()
@@ -13960,6 +14116,22 @@ export function ChatRoomInner({
       scrollToBottomSmooth,
       showComposerToast,
     ],
+  )
+
+  /** 大富翁调试：跳过邀约卡，本地直接开局 */
+  const handlePlayGameDirect = useCallback(
+    (gameType: MiniGameType) => {
+      if (!isGameAvailable(gameType)) {
+        showComposerToast('该游戏尚在开发中')
+        return
+      }
+      setGameLobbyOpen(false)
+      setMiniGameSession({
+        gameType,
+        inviteId: `local-direct-${gameType}-${Date.now()}`,
+      })
+    },
+    [showComposerToast],
   )
 
   const busyExpireHandledEndRef = useRef(0)
@@ -15038,21 +15210,9 @@ export function ChatRoomInner({
     sendBusy,
   ])
 
-  const openApiSettings = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('phone:open-app', { detail: { id: 'api' } }))
-  }, [])
-
   const startVoiceRecordingOrWarn = useCallback(
     (origin: { x: number; y: number }) => {
       voiceLongPressAttemptedRef.current = true
-      const hasSenseVoiceSmallKey = Boolean(voiceAsrEnabled && voiceAsrApiConfig?.apiKey?.trim())
-      if (!hasSpeechRecognitionApi || !hasSenseVoiceSmallKey) {
-        setVoiceConfigAlertMessage(
-          '当前未配置 SenseVoiceSmall 的 API Key，无法使用录音语音功能。请先前往 API 设置完成配置。你也可以单击“按住说话”按钮，改为语音内容的纯文字输入。',
-        )
-        setVoiceConfigAlertOpen(true)
-        return
-      }
       setVoicePressing(true)
       setVoiceOverlayOpen(true)
       setVoiceGestureZone('send')
@@ -15077,7 +15237,7 @@ export function ChatRoomInner({
         }
       })()
     },
-    [showComposerToast, voiceAsrApiConfig?.apiKey, voiceAsrEnabled],
+    [showComposerToast],
   )
 
   const resolveVoiceZone = useCallback((clientX: number, clientY: number): VoiceGestureZone => {
@@ -15194,7 +15354,7 @@ export function ChatRoomInner({
               showComposerToast('录音为空，请重试')
               return
             }
-            const asr = await requestSiliconflowTranscription(voiceAsrApiConfig, audioBlob)
+            const asr = await requestSiliconflowTranscription(null, audioBlob)
             const text = asr.text.trim() || `（语音转文字）${durationSec}秒录音未识别到清晰文本`
             setDraft(text)
             setInputMode('text')
@@ -15215,7 +15375,7 @@ export function ChatRoomInner({
           let transcriptText = ''
           let emotion = ''
           try {
-            const asr = await requestSiliconflowTranscription(voiceAsrApiConfig, audioBlob)
+            const asr = await requestSiliconflowTranscription(null, audioBlob)
             transcriptText = asr.text.trim()
             emotion = asr.emotion || ''
           } catch {
@@ -15227,7 +15387,7 @@ export function ChatRoomInner({
         }
       })()
     },
-    [appendVoiceMessage, resolveVoiceZone, showComposerToast, voiceAsrApiConfig, voicePressing, voiceSessionStartMs],
+    [appendVoiceMessage, resolveVoiceZone, showComposerToast, voicePressing, voiceSessionStartMs],
   )
 
   const runRetryReply = useCallback(
@@ -16368,7 +16528,13 @@ export function ChatRoomInner({
       return null
     }
     return visibleItems.map((m, i) => {
-      const gap = messageBlockSpacing(visibleItems, i, compactMessengerSpacing, twitterDmActive)
+      const gap = messageBlockSpacing(
+        visibleItems,
+        i,
+        compactMessengerSpacing,
+        twitterDmActive,
+        bubbleTailStyle === 'wechat' || isWechatClassicPresetActive(wechatTheme),
+      )
       const withPrevForAvatar = consecutiveSameSpeaker(visibleItems, i, roomType === 'group')
       const withNextForAvatar = sameSpeakerAsNext(visibleItems, i, roomType === 'group')
       const rowBubbleCluster: 'single' | 'first' | 'middle' | 'last' =
@@ -17475,16 +17641,30 @@ export function ChatRoomInner({
 
       if (m.callStatus) {
         const cs = m.callStatus
+        const callSessionId = typeof cs.sessionId === 'string' ? cs.sessionId.trim() : ''
+        const openCallDetail =
+          cs.status === 'duration' && callSessionId
+            ? () => setVoiceCallDetailSessionId(callSessionId)
+            : undefined
         const data =
           cs.status === 'duration'
-            ? ({ status: 'duration', durationSec: cs.durationSec ?? 0 } as const)
+            ? ({
+                status: 'duration',
+                durationSec: cs.durationSec ?? 0,
+                ...(callSessionId ? { sessionId: callSessionId } : {}),
+              } as const)
             : cs.status === 'rejected'
               ? ({ status: 'rejected' } as const)
               : ({ status: 'no_answer' } as const)
         if (twitterDmActive) {
           const rowInner = (
             <div className="flex w-full justify-center px-6">
-              <CallStatusBubble data={data} initiatedBySelf={isSelf} twitterStyle />
+              <CallStatusBubble
+                data={data}
+                initiatedBySelf={isSelf}
+                twitterStyle
+                onClickDuration={openCallDetail}
+              />
             </div>
           )
           return wrap(rowInner, renderDetachedReply(m, isSelf))
@@ -17513,6 +17693,7 @@ export function ChatRoomInner({
             groupRankShowBesideNickname={sharedMsgProps.groupRankShowBesideNickname}
             multiSelectAvatar={msAvatar}
             onBubbleLongPress={specialCardLongPress}
+            onBubbleTap={openCallDetail}
           />
         )
         const rowWrapped =
@@ -17814,6 +17995,7 @@ export function ChatRoomInner({
   const imessageComposer = inputBarLayout === 'imessage'
   const telegramComposer = inputBarLayout === 'telegram'
   const talkmakerComposer = inputBarLayout === 'talkmaker'
+  const wechatComposer = inputBarLayout === 'wechat'
 
   useEffect(() => {
     void ensureWeChatBubbleSideFontsLoaded(bubble)
@@ -18030,6 +18212,7 @@ export function ChatRoomInner({
             ref={inputBarRef}
             data-wx-chat-input-bar
             data-wx-liquid-input={liquidGlassChrome ? '' : undefined}
+            data-wx-wechat-input={wechatComposer ? '' : undefined}
             className={
               liquidGlassChrome
                 ? 'pointer-events-none absolute inset-x-0 z-20 w-full max-w-full'
@@ -18074,10 +18257,12 @@ export function ChatRoomInner({
                           ? '#E5E5E5'
                           : 'var(--wx-chat-input-bar-border, #e5e5e5)',
                     boxShadow: telegramComposer ? '0 -1px 4px rgba(0, 0, 0, 0.06)' : undefined,
-                    paddingLeft: talkmakerComposer ? 0 : 12,
-                    paddingRight: talkmakerComposer ? 0 : 12,
-                    paddingTop: talkmakerComposer ? 0 : 12,
-                    paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))',
+                    paddingLeft: talkmakerComposer ? 0 : wechatComposer ? 10 : 12,
+                    paddingRight: talkmakerComposer ? 0 : wechatComposer ? 10 : 12,
+                    paddingTop: talkmakerComposer ? 0 : wechatComposer ? 8 : 12,
+                    paddingBottom: wechatComposer
+                      ? 'max(18px, calc(env(safe-area-inset-bottom, 0px) + 10px))'
+                      : 'max(12px, env(safe-area-inset-bottom, 0px))',
                     transition: 'transform 220ms ease-out',
                   }
             }
@@ -18244,6 +18429,7 @@ export function ChatRoomInner({
           btnPx={btnPx}
           btnColor={btnColor}
           layout={inputBarLayout}
+          wechatSendMode={effectiveInputBar.wechatSendMode}
           sendButtonColor={effectiveInputBar.sendButtonColor}
           borderRadius={effectiveInputBar.borderRadius}
           borderColor={effectiveInputBar.borderColor}
@@ -18420,6 +18606,7 @@ export function ChatRoomInner({
         open={callSheetOpen}
         onClose={() => setCallSheetOpen(false)}
         onChooseVoice={() => {
+          unlockVoiceCallAudio()
           setActiveCallInitiator('self')
           setIncomingCallOpeningLine('')
           setOutgoingCallOpeningLine('')
@@ -18587,8 +18774,8 @@ export function ChatRoomInner({
             globalWechatPlate: roomType === 'group' ? 'group_chat' : 'private_chat',
           })
           if (res.decision === 'ACCEPT') {
-            const opening = String(res.opening ?? '').trim()
-            setOutgoingCallOpeningLine(opening)
+            // 接通后首轮开口改由通话通道模型生成，不再使用决策 JSON 里的本地 opening
+            setOutgoingCallOpeningLine('')
           }
           return res.decision
         }}
@@ -18611,6 +18798,7 @@ export function ChatRoomInner({
           setOutgoingCallOpeningLine('')
         }}
         onAccept={() => {
+          unlockVoiceCallAudio()
           incomingRejectLockRef.current = false
           setIncomingCallOpen(false)
           setVoiceCallOpen(true)
@@ -18623,14 +18811,11 @@ export function ChatRoomInner({
         peerAvatarUrl={peerAvatarResolved}
         // 预留：从“我的 -> 设置 -> 通话背景”读取并传入
         backgroundImage={undefined}
-        callInitiator={activeCallInitiator}
-        initialAiText={
-          activeCallInitiator === 'other'
-            ? incomingCallOpeningLine
-            : activeCallInitiator === 'self'
-              ? outgoingCallOpeningLine
-              : ''
+        voiceCharacterId={
+          (personaCharacterId?.trim() || conversationCharacterId.trim()) || ''
         }
+        callInitiator={activeCallInitiator}
+        initialAiText=""
         onMinimize={() => setCallMinimized(true)}
         onClose={() => {
           setVoiceCallOpen(false)
@@ -18639,12 +18824,60 @@ export function ChatRoomInner({
           setIncomingCallOpeningLine('')
           setOutgoingCallOpeningLine('')
         }}
-        onHangup={(durationSec) => {
-          void appendCallStatusBubble({ status: 'duration', durationSec }, activeCallInitiator ?? 'self')
+        onHangup={(payload) => {
+          void (async () => {
+            const initiator = activeCallInitiator ?? 'self'
+            const endedBy = payload.endedBy === 'character' ? 'character' : 'user'
+            let sessionId = payload.sessionId
+            try {
+              const cid =
+                (personaCharacterId?.trim() || conversationCharacterId.trim()) || conversationCharacterId
+              sessionId = await persistVoiceCallSession({
+                sessionId: payload.sessionId,
+                characterId: cid,
+                accountId: currentAccountId || '',
+                playerIdentityId,
+                peerName: peerNotifyTitle.trim() || '对方',
+                peerAvatarUrl: peerAvatarResolved,
+                initiator,
+                startedAt: payload.startedAt,
+                durationSec: payload.durationSec,
+                messages: payload.messages,
+              })
+            } catch {
+              /* 落库失败仍写时长气泡 */
+            }
+            const transcriptText = formatVoiceCallTranscriptForContext({
+              messages: payload.messages,
+              durationSec: payload.durationSec,
+              endedBy,
+              initiator,
+            })
+            // 时长气泡只落在拨出方（initiator），被叫侧不写第二条
+            await appendCallStatusBubble(
+              {
+                status: 'duration',
+                durationSec: payload.durationSec,
+                sessionId,
+                ...(transcriptText ? { transcriptText } : {}),
+                endedBy,
+              },
+              initiator,
+            )
+          })()
           setCallMinimized(false)
           setActiveCallInitiator(null)
           setIncomingCallOpeningLine('')
           setOutgoingCallOpeningLine('')
+        }}
+        onSynthesizeCharacterVoice={async (text, emotion) => {
+          const cid =
+            (personaCharacterId?.trim() || conversationCharacterId.trim()) || ''
+          if (!cid) return ''
+          // 始终走声纹库角色绑定音色（lookupBoundVoiceIdForCharacter）
+          const voiceId = await lookupBoundVoiceIdForCharacter(cid)
+          if (!voiceId) return ''
+          return await synthCharacterVoiceAudioUrl(cid, text, emotion, voiceId)
         }}
         onRequestAiReply={async (text, opts) => {
           let character: Character | null = null
@@ -18688,18 +18921,55 @@ export function ChatRoomInner({
               ? await loadOfflineDatingPlotsPromptBlock(pcid, character?.name ?? null)
               : ''
 
+          const isConnectedOpening = opts?.callEvent === 'connected_opening'
+          const initiator =
+            opts?.callInitiator === 'self' || opts?.callInitiator === 'other'
+              ? opts.callInitiator
+              : activeCallInitiator
+          const connectedOpeningPrompt =
+            initiator === 'other'
+              ? [
+                  '【系统事件·通话接通｜你打给对方，对方刚接听】',
+                  '请立刻开口，像真电话接通那样自然说话。',
+                  '可连说多句：用换行拆成多条短语音条（建议 2～6 行台词，可夹环境音/语气括号行）。',
+                  '可急着说事、吐槽对方终于接了、先寒暄再切入正题等，贴合人设与近期私聊上下文。',
+                  '禁止只吐一句空洞开场白；禁止半截自我介绍；禁止输出「语音通话 开场=」指令行。',
+                  '除非你此刻真想结束，否则不要输出「语音通话 挂断」。',
+                ].join('\n')
+              : [
+                  '【系统事件·通话接通｜对方打给你，你刚接起】',
+                  '请立刻开口，像真电话接通那样自然说话。',
+                  '可连说多句：用换行拆成多条短语音条（建议 2～6 行台词，可夹环境音/语气括号行）。',
+                  '例如先「喂」再点名/说明自己刚忙完或在干什么，再问对方突然打电话有什么事；按人设与上下文变化，勿套模板。',
+                  '禁止只回一句机械「喂」；禁止半截自我介绍；禁止输出「语音通话 开场=」指令行。',
+                  '除非你此刻真想结束，否则不要输出「语音通话 挂断」。',
+                ].join('\n')
+
+          const callTurns = voiceCallMessagesToChatTurns(opts?.callMessages ?? [])
           const transcript: ChatTranscriptTurn[] = [
             ...itemsToTranscript(buildChatItemsForAiTranscript()),
-            {
-              from: 'self',
-              text:
-                opts?.fromVoice && opts.voiceEmotion
-                  ? `（这是一条用户语音转写；识别到的情绪倾向：${opts.voiceEmotion}。请先按该情绪理解用户状态，再给出有情绪承接的回复。）\n${text}`
-                  : text,
-            },
+            ...(isConnectedOpening
+              ? [{ from: 'self' as const, text: connectedOpeningPrompt }]
+              : callTurns.length
+                ? callTurns
+                : [
+                    {
+                      from: 'self' as const,
+                      text:
+                        opts?.fromVoice && opts.voiceEmotion
+                          ? `（这是一条用户语音转写；识别到的情绪倾向：${opts.voiceEmotion}。请先按该情绪理解用户状态，再给出有情绪承接的回复。）\n${text}`
+                          : text,
+                    },
+                  ]),
           ]
           const groupRef = await loadPrivateGroupChatsRecentReference()
-          const vMem = await buildPrivateMemoryInjectionForAi(transcript, text)
+          const vMem = await buildPrivateMemoryInjectionForAi(
+            transcript,
+            isConnectedOpening ? connectedOpeningPrompt : text,
+          )
+          if (vMem.vectorRecall) {
+            logConsole('ai', `${formatMemoryVectorRecallConsoleLine(vMem.vectorRecall)} · 语音通话`)
+          }
           let worldBookPlaceholderIdMapVc: Record<string, string> | undefined
           if (character?.generatedForCharacterId?.trim()) {
             try {
@@ -18733,26 +19003,27 @@ export function ChatRoomInner({
             timePerceptionEnabled: roomType === 'private' ? timePerceptionEnabled : true,
             globalWechatPlate: roomType === 'group' ? 'group_chat' : 'private_chat',
             worldBookPlaceholderIdMap: worldBookPlaceholderIdMapVc,
+            allowSynthToneTokens: opts?.allowSynthToneTokens === true,
+            allowSynthEmotion: opts?.allowSynthEmotion === true,
           })
         }}
         onTranscribeAudio={async (audioBlob) => {
-          if (!voiceAsrEnabled) {
-            throw new Error('语音识别已关闭，无法使用')
-          }
-          const cfg = voiceAsrApiConfig
-          if (!cfg?.apiKey?.trim()) {
-            throw new Error('未配置语音识别api，无法使用')
-          }
-          return await requestSiliconflowTranscription(cfg, audioBlob)
+          return await requestSiliconflowTranscription(null, audioBlob)
         }}
       />
 
-      <FloatingVoiceCallBubble
-        visible={callMinimized && voiceCallSessionActive}
-        peerAvatarUrl={peerAvatarResolved}
-        peerRemarkName={peerNotifyTitle.trim() || '对方'}
-        phase={voiceCallOpen ? 'connected' : incomingCallOpen ? 'incoming' : 'calling'}
-        onExpand={() => setCallMinimized(false)}
+      <VoiceCallSessionDetail
+        open={!!voiceCallDetailSessionId}
+        sessionId={voiceCallDetailSessionId}
+        onClose={() => setVoiceCallDetailSessionId(null)}
+        onSynthesizeCharacterVoice={async (text, emotion) => {
+          const cid =
+            (personaCharacterId?.trim() || conversationCharacterId.trim()) || ''
+          if (!cid) return ''
+          const voiceId = await lookupBoundVoiceIdForCharacter(cid)
+          if (!voiceId) return ''
+          return await synthCharacterVoiceAudioUrl(cid, text, emotion, voiceId)
+        }}
       />
 
       {roomType === 'private' ? (
@@ -19257,7 +19528,7 @@ export function ChatRoomInner({
       ) : null}
       {messageEditModal ? (
         <div
-          className="fixed inset-0 z-[1225] flex items-center justify-center bg-black/60 px-4"
+          className="fixed inset-0 z-[1225] flex items-center justify-center bg-black/50 px-4"
           role="presentation"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget && !messageEditSaving) {
@@ -19270,29 +19541,31 @@ export function ChatRoomInner({
             role="dialog"
             aria-modal="true"
             aria-label="编辑消息"
-            className="w-full max-w-[min(400px,calc(100vw-32px))] overflow-hidden rounded-[16px] border border-neutral-900 bg-white shadow-[0_16px_48px_rgba(0,0,0,0.35)]"
+            className="w-full max-w-[360px] overflow-hidden rounded-[16px] bg-white shadow-lg"
             onMouseDown={(ev) => ev.stopPropagation()}
           >
-            <div className="border-b border-neutral-200 bg-white px-4 py-3 text-center">
-              <div className="text-[16px] font-semibold text-neutral-950">编辑消息</div>
-              <div className="mt-1 text-[12px] text-neutral-500">
-                {messageEditModal.isSelf ? '你发送的文本（保存后覆盖该气泡）' : '对方发送的文本（保存后覆盖该气泡）'}
+            <div className="px-5 pb-3 pt-5 text-center">
+              <div className="text-[16px] font-semibold text-[#111]">编辑消息</div>
+              <div className="mt-2 text-[13px] leading-relaxed text-[#666]">
+                {messageEditModal.isSelf
+                  ? '你发送的文本（保存后覆盖该气泡）'
+                  : '对方发送的文本（保存后覆盖该气泡）'}
               </div>
             </div>
-            <div className="border-b border-neutral-200 bg-neutral-100 p-4">
+            <div className="px-4 pb-4">
               <textarea
                 ref={messageEditTextareaRef}
                 value={messageEditDraft}
                 onChange={(e) => setMessageEditDraft(e.target.value)}
-                className="min-h-[140px] w-full resize-y rounded-[12px] border border-neutral-300 bg-white px-3 py-2 text-[15px] leading-relaxed text-neutral-950 outline-none placeholder:text-neutral-400 focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 disabled:opacity-60"
+                className="min-h-[140px] w-full resize-y rounded-[10px] border border-[#e5e5e5] bg-[#f7f7f7] px-3 py-2.5 text-[15px] leading-relaxed text-[#111] outline-none placeholder:text-[#b0b0b0] focus:border-[#cfcfcf] focus:bg-white disabled:opacity-60"
                 placeholder="编辑正文…"
                 disabled={messageEditSaving}
               />
             </div>
-            <div className="grid grid-cols-2 overflow-hidden bg-white">
+            <div className="grid grid-cols-2 border-t border-[#e5e5e5]">
               <Pressable
                 type="button"
-                className="h-[48px] border-r border-neutral-200 bg-white text-[15px] text-neutral-800 active:bg-neutral-100 disabled:opacity-50"
+                className="h-[48px] text-[15px] text-[#111] active:bg-[#f5f5f5] disabled:opacity-50"
                 disabled={messageEditSaving}
                 onClick={() => {
                   setMessageEditModal(null)
@@ -19303,7 +19576,7 @@ export function ChatRoomInner({
               </Pressable>
               <Pressable
                 type="button"
-                className="h-[48px] bg-neutral-950 text-[15px] font-medium text-white active:bg-neutral-800 disabled:opacity-50"
+                className="h-[48px] border-l border-[#e5e5e5] text-[15px] font-medium text-[#576b95] active:bg-[#f5f5f5] disabled:opacity-50"
                 disabled={messageEditSaving}
                 onClick={() => void commitMessageEdit()}
               >
@@ -19313,18 +19586,6 @@ export function ChatRoomInner({
           </div>
         </div>
       ) : null}
-      <WeChatConfirmDialog
-        open={voiceConfigAlertOpen}
-        title="语音录音不可用"
-        description={voiceConfigAlertMessage}
-        cancelText="知道了"
-        confirmText="去配置"
-        onCancel={() => setVoiceConfigAlertOpen(false)}
-        onConfirm={() => {
-          setVoiceConfigAlertOpen(false)
-          openApiSettings()
-        }}
-      />
       <WeChatConfirmDialog
         open={confirmDeleteOpen}
         title="删除消息"
@@ -19411,9 +19672,11 @@ export function ChatRoomInner({
         charName={peerNotifyTitle.trim() || '对方'}
         avatarUrl={peerAvatarResolved}
         playerAvatarUrl={playerAvatarResolved}
+        playerIdentityId={playerIdentityId}
         conversationKey={conversationKey}
         onCloseLobby={() => setGameLobbyOpen(false)}
         onSendInvite={handleSendGameInvite}
+        onPlayDirect={handlePlayGameDirect}
         onCloseGame={() => setMiniGameSession(null)}
         onGameFinished={handleMiniGameFinished}
       />

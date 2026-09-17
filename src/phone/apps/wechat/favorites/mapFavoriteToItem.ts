@@ -30,7 +30,8 @@ export function mapFavoriteToItem(
   nameByCharId: Map<string, string>,
   avatarByCharId: Map<string, string>,
 ): FavoriteItem {
-  const isPlayerMessage = msg?.type === 'player'
+  const isPlayerMessage =
+    msg?.type === 'player' || fav.characterId.trim() === SHARED_RECORD_PLAYER_ORIGIN_ID
   const sourceSenderKind: FavoriteItem['sourceSenderKind'] = isPlayerMessage ? 'player' : 'character'
   const sourceCharacterId = isPlayerMessage
     ? SHARED_RECORD_PLAYER_ORIGIN_ID

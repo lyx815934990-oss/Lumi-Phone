@@ -4,6 +4,7 @@ import { rebuildStoryTimelineFromDatingPlots } from '../memory/storyTimelinePers
 import { personaDb } from '../newFriendsPersona/idb'
 import { rebuildWorldBookAfterFromDatingPlotList } from '../newFriendsPersona/worldBookAfterPatch'
 import { rebuildObservationNotesFromDatingPlotList } from '../observationNotes/plotRevert'
+import { rebuildLifeLedgerFromDatingPlotList } from '../lifeMutable/plotRevert'
 import type { PlotItem } from './types'
 import { resolveOfflineDatingArchiveContext } from './offlineDatingArchiveResolve'
 
@@ -94,7 +95,7 @@ export type DatingPlotListMutationSideEffectsParams = {
 }
 
 /**
- * 约会剧情列表缩短后：清关联记忆、删被删轮的线下摘要、重建剩余摘要表，并将尾声延展回退到剩余轮次对应快照。
+ * 约会剧情列表缩短后：清关联记忆、删被删轮的线下摘要、重建剩余摘要表，并将尾声延展 / 私藏侧写 / 人生账本回退到剩余轮次对应快照。
  */
 export async function finalizeDatingPlotListMutationSideEffects(
   params: DatingPlotListMutationSideEffectsParams,
@@ -154,6 +155,16 @@ export async function finalizeDatingPlotListMutationSideEffects(
       }
     } catch (e) {
       console.warn('[dating] observation notes rollback after plot mutation failed', e)
+    }
+
+    try {
+      await rebuildLifeLedgerFromDatingPlotList({
+        characterId: charId,
+        prevPlots: params.prevPlots,
+        nextPlots: params.nextPlots,
+      })
+    } catch (e) {
+      console.warn('[dating] life ledger rollback after plot mutation failed', e)
     }
   }
 }

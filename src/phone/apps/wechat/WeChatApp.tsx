@@ -2721,6 +2721,48 @@ function ThemePanel({
                         onWechatNightChange={setWechatClassicNightMode}
                       />
                     </div>
+                    {(previewInputBar.layout ?? 'lumi') === 'wechat' ? (
+                      <div
+                        className="mt-3 rounded-[14px] border px-3 py-2.5"
+                        style={{ borderColor: 'var(--wx-border)', background: 'rgba(0,0,0,0.02)' }}
+                      >
+                        <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
+                          输入栏触发方式
+                        </p>
+                        <p className="mt-0.5 text-[11px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
+                          仅微信模版生效：回车发送/催回复，或再加右侧按钮。
+                        </p>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {(
+                            [
+                              { id: 'enter' as const, title: '仅回车', desc: '无发送钮' },
+                              { id: 'button' as const, title: '回车 + 按钮', desc: '有发送/回复钮' },
+                            ] as const
+                          ).map((opt) => {
+                            const active = (chatTheme.inputBar.wechatSendMode ?? 'enter') === opt.id
+                            return (
+                              <Pressable
+                                key={opt.id}
+                                type="button"
+                                onClick={() => updateChatTheme({ inputBar: { wechatSendMode: opt.id } })}
+                                className="rounded-[12px] border px-3 py-2 text-left transition-colors"
+                                style={{
+                                  borderColor: active ? 'var(--wx-primary)' : 'var(--wx-border)',
+                                  background: active ? 'rgba(0,0,0,0.04)' : 'transparent',
+                                }}
+                              >
+                                <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
+                                  {opt.title}
+                                </p>
+                                <p className="mt-0.5 text-[10px] leading-snug" style={{ color: 'var(--wx-text-muted)' }}>
+                                  {opt.desc}
+                                </p>
+                              </Pressable>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div
@@ -4622,6 +4664,13 @@ function WeChatAppInner({ onBack }: Props) {
     setRoute({ name: 'chat', chat })
   }, [])
 
+  /** 悬浮通话球展开：切回停靠会话的聊天页（通话 UI 已 portal 出壳，仍需路由对齐） */
+  const focusChatForActiveVoiceCall = useCallback(() => {
+    const chat = wxDockChatRef.current
+    if (!chat) return
+    setRoute({ name: 'chat', chat })
+  }, [])
+
   // 转发：选择聊天页当前待转发消息（单条/多条）
   const [forwardPendingMessages, setForwardPendingMessages] = useState<WeChatChatMessage[] | null>(null)
   const [forwardPendingMode, setForwardPendingMode] = useState<WeChatForwardMode>('single')
@@ -6469,6 +6518,7 @@ function WeChatAppInner({ onBack }: Props) {
                 onCheckPhoneOpenChange={setChatCheckPhoneOpen}
                 onMiniGameOverlayOpenChange={setChatMiniGameOverlayOpen}
                 onVoiceCallOverlayOpenChange={setChatVoiceCallOverlayOpen}
+                onRequestShowForVoiceCall={focusChatForActiveVoiceCall}
                 chatRouteVisible={route.name === 'chat'}
               />
             )}

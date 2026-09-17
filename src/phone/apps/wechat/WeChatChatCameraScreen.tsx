@@ -373,7 +373,7 @@ export function WeChatChatCameraScreen({
         )}
       </div>
 
-      <div className="relative z-0 min-h-0 flex-1 overflow-hidden bg-black">
+      <div className="relative z-0 min-h-0 flex-1 overflow-hidden bg-[#111]">
         {stage === 'camera' ? (
           <video
             ref={videoRef}
@@ -386,7 +386,7 @@ export function WeChatChatCameraScreen({
             }}
           />
         ) : previewUrl ? (
-          <img src={previewUrl} alt="" className="h-full w-full object-contain" />
+          <img src={previewUrl} alt="" className="h-full w-full object-contain bg-white" />
         ) : null}
       </div>
 

@@ -2,7 +2,11 @@
  * 用户自定义「续写方向」chip（全局，所有角色共用）。
  */
 
-import type { ContinueProbeCategoryId, ContinueProbePreset } from './datingContinueProbePresets'
+import {
+  normalizeContinueProbeCategoryId,
+  type ContinueProbeCategoryId,
+  type ContinueProbePreset,
+} from './datingContinueProbePresets'
 
 export type UserContinueProbe = {
   id: string
@@ -33,26 +37,11 @@ export function loadUserContinueProbes(): UserContinueProbe[] {
       const label = String(o.label ?? '').trim()
       const probe = String(o.probe ?? '').trim()
       if (!id || !label || !probe) continue
-      const cat = o.category
       out.push({
         id,
         label: label.slice(0, 12),
         probe: probe.slice(0, 160),
-        category:
-          cat === 'relation' ||
-          cat === 'event' ||
-          cat === 'scene' ||
-          cat === 'intimate' ||
-          cat === 'nsfw_foreplay' ||
-          cat === 'nsfw_act' ||
-          cat === 'nsfw_after' ||
-          cat === 'mood' ||
-          cat === 'atmosphere' ||
-          cat === 'daily'
-            ? cat
-            : cat === 'nsfw'
-              ? 'nsfw_foreplay'
-              : undefined,
+        category: normalizeContinueProbeCategoryId(String(o.category ?? '')),
       })
     }
     return out.slice(0, MAX_CUSTOM)
@@ -99,7 +88,7 @@ export function removeUserContinueProbe(id: string): void {
 export function userProbeToPreset(u: UserContinueProbe): ContinueProbePreset {
   return {
     id: `custom:${u.id}`,
-    category: u.category ?? 'relation',
+    category: normalizeContinueProbeCategoryId(u.category) ?? 'relation',
     label: u.label,
     hint: u.probe.length > 28 ? `${u.probe.slice(0, 28)}…` : u.probe,
     probe: u.probe,

@@ -5,6 +5,7 @@ import { MAX_MOMENT_IMAGES } from './momentContentLimits'
 import { normalizeMomentLocation } from './momentLocationUtils'
 import { parseCharacterMomentSongDraftFromAi, type CharacterMomentSongDraft } from './momentAttachedMusic'
 import { sanitizeMomentBodyText } from './momentTextSanitize'
+import { PUBLISHER_SELF_COMMENT_STABLE_HINT } from './momentStableFormat'
 
 export type CharacterMomentPostType = 'text' | 'image' | 'mixed' | 'music'
 
@@ -36,12 +37,12 @@ export type CharacterMomentAiDraft = {
   attachedMusicDraft?: CharacterMomentSongDraft
 }
 
-export const PUBLISHER_SELF_COMMENT_JSON_HINT =
-  '"publisherSelfComments":[{"content":"追评补充说明","delaySeconds":60}]'
+/** @deprecated 使用稳定行：自评｜…｜秒 */
+export const PUBLISHER_SELF_COMMENT_JSON_HINT = PUBLISHER_SELF_COMMENT_STABLE_HINT
 
 export const PUBLISHER_SELF_COMMENT_PROMPT_RULES = `
-# Publisher Self-Comments (publisherSelfComments · 评论区自评补充)
-可选字段 publisherSelfComments：数组，0~3 条。模拟真人在发完朋友圈后又在评论区「追评 / 补充说明 / 续写吐槽」。
+# Publisher Self-Comments（自评 · 评论区自评补充）
+可选字段行「自评｜追评正文｜延迟秒数」，0~3 条。模拟真人在发完朋友圈后又在评论区「追评 / 补充说明 / 续写吐槽」。
 - **必须与本条朋友圈正文/配图/地点同一主题**：是对本条动态的续写、补刀、澄清或展开细节；正文隐晦时，追评可用全新措辞，但读者仍应感到是在说**同一条**动态。
 - **严禁**把私聊里另起话题的内容搬进评论区（如私聊约饭、送糖水、处理别的事、聊天梗等），除非本条朋友圈**正文里已经写到**同一件事。
 - 近期私聊摘要仅作人设与语气参考，**不是**评论区素材库；读者没看过私聊，只看这条朋友圈，自评必须能独立读通、不突兀。
@@ -50,7 +51,7 @@ export const PUBLISHER_SELF_COMMENT_PROMPT_RULES = `
 - 反例：正文讲占有欲/头像/配图 → 自评「糖水在门口趁热喝」「昨天的花我处理掉了」——与正文无关，**禁止**。
 - 这是**自己对自己**的补充，不是回复别人；不要写「回复 XXX」。
 - 多数动态 0 条即可；只有正文意犹未尽、需要补刀或澄清时才写 1~2 条，禁止每条都追评。
-- 每条可有 delaySeconds（30~180，略晚于发文），表示发完正文隔一会再追评。
+- 延迟秒数建议 30~180（略晚于发文），表示发完正文隔一会再追评。
 `.trim()
 
 export function normalizeCharacterMomentPostType(raw: unknown): CharacterMomentPostType {

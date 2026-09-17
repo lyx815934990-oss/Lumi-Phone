@@ -37,10 +37,16 @@ import { finalizeWorldBookAfterAutoSummaryPhase, finalizeWorldBookAfterPerAiRoun
 import {
   buildMemoryRelevanceHaystack,
   buildNpcGroupChatsUnsummarizedDigestForPrivatePrompt,
+  buildRecentPrivateChatRoundsWithTimeBlock,
   formatDatingUnsummarizedPrivateChatSplit,
   MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
   MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
+  resolveRecentPrivateInjectEffectiveMaxChars,
+  resolveRecentPrivateInjectEffectiveRounds,
 } from '../wechatMemoryPromptBlocks'
+import {
+  dedupeUnsummarizedVsRecentAiRounds,
+} from '../memory/memoryInjectionDedupe'
 import {
   buildCrossChannelStoryTimeSyncRule,
   buildOfflineCalendarAdvancedHandoffRule,
@@ -90,6 +96,7 @@ import {
 } from '../time/applyOnlineChatTimeFusion'
 import { normalizeWeChatTimeConfig, resolveWeChatCurrentTimeMs } from '../time/wechatTimeUtils'
 import { isOfflineDatingRowPerRoundMode, isLinkedMemoryAutoSummaryEnabled } from '../memory/memoryRowPerRoundMode'
+import { MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS } from '../memory/memorySummaryRetention'
 import {
   clearOfflinePlotContextVectorsForCharacter,
   finalizeDatingPlotListMutationSideEffects,
@@ -124,11 +131,16 @@ import {
 } from './datingPlotImagePersist'
 import {
   clampDatingLengthTargetChars,
+  clampDatingMaxContextTokens,
+  clampDatingPlotSummaryInjectRounds,
+  datingContextCharBudgetsFromTokens,
+  normalizeDatingPlotContextInjectMode,
   parsePlotDimensionLengthTarget,
-  DATING_AI_HISTORY_PROMPT_MAX,
-  DATING_AI_OFFLINE_UNSUMMARIZED_CHAR_CAP,
-  DATING_AI_REFERENCE_SECTION_CHAR_CAP,
+  DATING_AI_DEFAULT_CONTEXT_TOKENS,
   DATING_PLOT_COMPLETION_TIMEOUT_MS,
+  DATING_PLOT_CONTEXT_INJECT_MODE_DEFAULT,
+  DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT,
+  type DatingPlotContextInjectMode,
 } from './types'
 import { extractTimelineDeltaFromMemoryJsonText, extractTimelineSnapshotTextFromAiTextRaw } from './datingPlotTimelineSnapshot'
 import {
@@ -143,6 +155,7 @@ import { datingPlotBodyForPromptInjection, splitDatingAssistantOutput, resolveDa
 import { MBTI_OUTPUT_BAN_RULE } from '../mbtiOutputBan'
 import { buildDatingStyleSystemPrompt } from './lumiThinkingChainRules'
 import { buildOfflineDatingSlimMustInjectBody } from './offlineDatingMustInjectPrompts'
+import { PROSE_FORBIDDEN_TOP_PRIORITY_PIN } from '../proseForbiddenLexiconPrompt'
 import { getActiveCustomWritingInjectBody } from './datingWritingPresetStore'
 import { getLoreArchiveBuiltinPresetTogglesSnapshot } from '../../../worldbook/worldbookLoreStore'
 import {
@@ -194,7 +207,7 @@ import {
   type DatingStoryAppearance,
 } from './datingStoryAppearance'
 import { generateDatingBranchesAi } from './datingBranchesAi'
-import { generateDatingPlotDimensionAi, buildDimensionLanguageSettingsFromArchive, finalizeDatingDimensionTranslations } from './datingPlotDimensionAi'
+import { generateDatingPlotDimensionAi, buildDimensionLanguageSettingsFromArchive, finalizeDatingDimensionTranslations, loadDatingPlotDimensionLifeContext } from './datingPlotDimensionAi'
 import { buildVnBackgroundPromptBlock } from './vnBackgroundCatalog'
 import { buildVnAtmospherePromptBlock } from './vnAtmospherePromptBlock'
 import { buildVnBgmPromptBlock } from './vnBgmCatalog'
@@ -222,6 +235,10 @@ import {
 } from '../observationNotes'
 import { loadObservationNotesPromptBlock } from '../observationNotes/promptBlock'
 import { rebuildObservationNotesFromDatingPlotList } from '../observationNotes/plotRevert'
+import {
+  rebuildLifeLedgerFromDatingPlotList,
+  sanitizeLifeLedgerPlotRevert,
+} from '../lifeMutable/plotRevert'
 import {
   DATING_MIMIC_USER_SPEAKING_STYLE_APPENDIX,
 } from '../wechatMimicUserSpeakingStyle'
@@ -287,6 +304,8 @@ type DatingAiGenResult = {
   worldBookEpilogueJudged?: boolean
   /** 本轮成功写入私藏侧写时的回滚快照 */
   observationNotesRevert?: import('../observationNotes/plotRevert').ObservationNotesPlotRevert
+  /** 本轮成功写入人生账本时的回滚快照 */
+  lifeLedgerRevert?: import('../lifeMutable/plotRevert').LifeLedgerPlotRevert
 }
 
 const STORAGE_KEY = 'wechat-dating-archives-v1'
@@ -296,9 +315,7 @@ const CHARACTERS_KEY = 'wechat-dating-characters-v1'
 export function vnRollbackJumpStorageKey(characterId: string): string {
   return `wechat-dating-vn-rollback-jump:${String(characterId || '').trim()}`
 }
-/** 约会续写请求里「最近剧情 / 场景人物线索」取自剧情历史的末尾条数 */
-const DATING_AI_PLOT_HISTORY_MAX = 5
-/** 单条剧情写入 prompt 的正文上限（去思维链后） */
+/** 单条剧情写入 prompt 的正文上限（去思维链后；末条 AI 另有防洗稿短截） */
 const DATING_AI_HISTORY_PER_PLOT_CAP = 12_000
 /** 分支续写上下文（尾部剧情摘录） */
 const DATING_AI_BRANCH_TAIL_MAX = 40_000
@@ -380,27 +397,49 @@ function stripPlotBodyForPrompt(plot: PlotItem): string {
   return datingPlotBodyForPromptInjection(String(plot.content || ''), plot.type)
 }
 
-function formatRecentPlotsForPrompt(history: PlotItem[], characterRealName: string, maxTotalChars: number): string {
-  const tail = history.slice(-DATING_AI_PLOT_HISTORY_MAX)
+/**
+ * 按最大上下文汉字预算，自最新剧情往历史装填（越新越优先纳入）。
+ * 时间序仍由旧到新输出，末尾为最新；超预算时丢弃更早条目（必要时再裁末条尾部）。
+ * @param maxAiRounds 若给出，仅保留末尾至多 N 条 AI 剧情（含其间玩家输入），再按预算装填。
+ */
+function formatRecentPlotsForPrompt(
+  history: PlotItem[],
+  characterRealName: string,
+  maxTotalChars: number,
+  opts?: { maxAiRounds?: number },
+): string {
+  if (!history.length || maxTotalChars <= 0) return ''
+
+  let slice = history
+  const maxAi = opts?.maxAiRounds
+  if (maxAi != null && Number.isFinite(maxAi) && maxAi > 0) {
+    let aiLeft = Math.floor(maxAi)
+    let start = history.length
+    for (let i = history.length - 1; i >= 0; i--) {
+      start = i
+      if (history[i]?.type === 'ai') {
+        aiLeft -= 1
+        if (aiLeft <= 0) break
+      }
+    }
+    slice = history.slice(start)
+  }
+
   const lastAiIdx = (() => {
-    for (let i = tail.length - 1; i >= 0; i--) {
-      if (tail[i]?.type === 'ai') return i
+    for (let i = slice.length - 1; i >= 0; i--) {
+      if (slice[i]?.type === 'ai') return i
     }
     return -1
   })()
-  const parts: string[] = []
+
+  const lines: string[] = []
   let lastStoryCalendar: string | null = null
-  for (let i = 0; i < tail.length; i++) {
-    const x = tail[i]!
+  for (let i = 0; i < slice.length; i++) {
+    const x = slice[i]!
     let body = stripPlotBodyForPrompt(x)
     // 末条 AI：只留末尾供承接现场，砍掉前半文风模板，降低洗稿雷同
-    // 更早 AI：短截，只保留事实线索
     const perCap =
-      x.type === 'ai'
-        ? i === lastAiIdx
-          ? 1_600
-          : 720
-        : DATING_AI_HISTORY_PER_PLOT_CAP
+      x.type === 'ai' && i === lastAiIdx ? 1_600 : DATING_AI_HISTORY_PER_PLOT_CAP
     if (body.length > perCap) {
       body =
         x.type === 'ai' && i === lastAiIdx
@@ -413,13 +452,35 @@ function formatRecentPlotsForPrompt(history: PlotItem[], characterRealName: stri
       lastStoryCalendar = bracket.replace(/^\[|\]$/g, '').replace(/·落库$/, '') || null
     }
     const prefix = `${formatPlotPromptTimeBracket(x, { storyCalendarFallback: lastStoryCalendar, markSystemFallback: true })} `
-    parts.push(`${prefix}${label}：${body}`)
+    lines.push(`${prefix}${label}：${body}`)
   }
-  const joined = parts.join('\n')
-  if (joined.length <= maxTotalChars) return joined
+
   const marker = '…【上下文过长：以下保留最近剧情末尾，更早部分已省略】\n'
-  const budget = Math.max(480, maxTotalChars - marker.length)
-  return marker + joined.slice(-budget)
+  let start = lines.length
+  let used = 0
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!
+    const extra = used > 0 ? 1 : 0
+    const need = line.length + extra
+    if (used + need <= maxTotalChars) {
+      used += need
+      start = i
+      continue
+    }
+    if (used === 0) {
+      const budget = Math.max(480, maxTotalChars - marker.length)
+      return marker + line.slice(-budget)
+    }
+    break
+  }
+
+  const joined = lines.slice(start).join('\n')
+  if (start > 0) {
+    const budget = Math.max(480, maxTotalChars - marker.length)
+    if (joined.length <= budget) return marker + joined
+    return marker + joined.slice(-budget)
+  }
+  return joined
 }
 
 /** 参考资料段落防爆裁剪：默认保留末尾（适用于「按时间拼接、越后越新」的摘录） */
@@ -481,6 +542,11 @@ type Ctx = {
   setOfflineDanmakuEnabled: (enabled: boolean) => void
   /** 持久化当前角色的剧情生成目标字数（与 DatingStoryPage 输入框同步） */
   setDatingLengthTargetChars: (chars: number) => void
+  /** 持久化当前角色的最大上下文 token 注入预算 */
+  setDatingMaxContextTokens: (tokens: number) => void
+  /** 近端剧情：上下文原文 / 近端摘要 */
+  setDatingPlotContextInjectMode: (mode: DatingPlotContextInjectMode) => void
+  setDatingPlotSummaryInjectRounds: (rounds: number) => void
   /** 剧情配图开关与张数 */
   patchPlotImageSettings: (patch: {
     plotImageGenEnabled?: boolean
@@ -918,6 +984,26 @@ function mergeArchives(chars: CharacterInfo[], parsed: unknown | null): Archives
           if (typeof raw !== 'number' || !Number.isFinite(raw)) return merged[c.id].datingLengthTargetChars
           return clampDatingLengthTargetChars(raw)
         })(),
+        datingMaxContextTokens: (() => {
+          const raw = (saved as { datingMaxContextTokens?: unknown }).datingMaxContextTokens
+          if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+            return merged[c.id].datingMaxContextTokens ?? DATING_AI_DEFAULT_CONTEXT_TOKENS
+          }
+          return clampDatingMaxContextTokens(raw)
+        })(),
+        datingPlotContextInjectMode: normalizeDatingPlotContextInjectMode(
+          (saved as { datingPlotContextInjectMode?: unknown }).datingPlotContextInjectMode ??
+            merged[c.id].datingPlotContextInjectMode,
+        ),
+        datingPlotSummaryInjectRounds: (() => {
+          const raw = (saved as { datingPlotSummaryInjectRounds?: unknown }).datingPlotSummaryInjectRounds
+          if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+            return (
+              merged[c.id].datingPlotSummaryInjectRounds ?? DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT
+            )
+          }
+          return clampDatingPlotSummaryInjectRounds(raw)
+        })(),
         generateParallelOnSend:
           typeof (saved as { generateParallelOnSend?: unknown }).generateParallelOnSend === 'boolean'
             ? (saved as { generateParallelOnSend: boolean }).generateParallelOnSend
@@ -1331,6 +1417,9 @@ function createDefaultArchive(character: CharacterInfo): CharacterArchive {
     lastDateAt: null,
     pendingBranches: [],
     branchNodeHistory: [],
+    datingMaxContextTokens: DATING_AI_DEFAULT_CONTEXT_TOKENS,
+    datingPlotContextInjectMode: DATING_PLOT_CONTEXT_INJECT_MODE_DEFAULT,
+    datingPlotSummaryInjectRounds: DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT,
   }
 }
 
@@ -1416,6 +1505,11 @@ async function enrichAiPlotWithOptionalDimensions(params: {
   const referenceSnippet =
     styleFromGen.referenceSnippet || styleFromStore.referenceSnippet.trim() || undefined
 
+  const lifeContext = await loadDatingPlotDimensionLifeContext({
+    character: params.char,
+    playerIdentity,
+  }).catch(() => null)
+
   let plot = params.aiPlot
   const genBase = {
     character: params.char,
@@ -1433,6 +1527,7 @@ async function enrichAiPlotWithOptionalDimensions(params: {
     languageSettings,
     stylePrompt,
     referenceSnippet,
+    lifeContext: lifeContext ?? undefined,
   }
 
   if (wantParallel) {
@@ -2049,7 +2144,21 @@ ${body}`
         : null,
     translationDedicatedApi: opts.translationDedicatedApi === true,
   })
-  const historyBlock = formatRecentPlotsForPrompt(history, character.realName, DATING_AI_HISTORY_PROMPT_MAX)
+  const ctxBudgets = datingContextCharBudgetsFromTokens(
+    Number(genOptions?.maxContextTokens ?? DATING_AI_DEFAULT_CONTEXT_TOKENS),
+  )
+  const plotContextInjectMode = normalizeDatingPlotContextInjectMode(genOptions?.plotContextInjectMode)
+  const plotSummaryInjectRounds = clampDatingPlotSummaryInjectRounds(
+    Number(genOptions?.plotSummaryInjectRounds ?? DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT),
+  )
+  const historyBlock = formatRecentPlotsForPrompt(
+    history,
+    character.realName,
+    ctxBudgets.historyPrompt,
+    plotContextInjectMode === 'summary'
+      ? { maxAiRounds: MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS }
+      : undefined,
+  )
   const aiPlotCount = countAiPlotsInDatingHistory(history)
   const earlyDatingRound = isEarlyDatingPlotRound(history)
   const progressHint =
@@ -2275,7 +2384,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
           ? `本轮正文须承接「现在」时空，禁止无因果把场景清零成另一套日常；亦禁止无视跳时仍钉死末条旅途。`
           : `本轮正文必须**直接承接**末条锚点，禁止无因果的「状态清零」。`) +
       `禁止无过渡的瞬移（例如上文已关灯就寝，下文突然户外路边）；若必须换场，至少用一行旁白交代「间隔多久 / 为何出门 / 如何抵达」。` +
-      `禁止在近 ${DATING_AI_PLOT_HISTORY_MAX} 条已发生剧情中，把**同一核心桥段**改头换面再演一遍（重复接吻拉扯、同梗吃醋质问、亲密同拍复读、已收束的回忆又当新情节）；须推进**新的**动作、对白信息或矛盾。` +
+      `禁止在已注入的「最近剧情」中，把**同一核心桥段**改头换面再演一遍（重复接吻拉扯、同梗吃醋质问、亲密同拍复读、已收束的回忆又当新情节）；须推进**新的**动作、对白信息或矛盾。` +
       `【末条禁洗稿】承接末条的**场所/姿态/衣物/已发生事实**即可；**禁止**模仿末条句式节奏（省略号连珠、结巴对白模板）、禁止复读末条同一亲密动作链（如咬耳→疼→舔哄、薄茧摸同处、同一淫语问句换皮）。本轮须至少写出 **2 个与末条不同的新动作或新信息点**。\n`
     : ''
   const isRegenerateTurn = datingExtras?.regeneratingWorldBookBaseline === true
@@ -2340,7 +2449,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   const unsGrpBlock = onlineCtx?.unsummarizedGroupBlock?.trim()
   const unsOffBlock = onlineCtx?.unsummarizedOfflineBlock?.trim()
   const storyTimelineBlock = onlineCtx?.storyTimelineBlock?.trim()
-  const refCap = DATING_AI_REFERENCE_SECTION_CHAR_CAP
+  const refCap = ctxBudgets.referenceSection
   const longMemClipped = clipDatingReferenceHead(longMem ?? '', refCap, '长期记忆')
   const storyTimelineClipped = clipStoryTimelinePromptBlock(storyTimelineBlock ?? '', refCap)
   const { currentState: storyTimelineCurrentState, recallAndNear: storyTimelineRecallAndNear } =
@@ -2447,7 +2556,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     : ''
   const storyTimelineTemporalRule =
     storyTimelineCurrentState || storyTimelineRecallAndNear
-      ? `【剧情时间轴·时效铁律】当前故事内「现在」以【剧情时间轴·当前状态】的【当前锚点】为准（勿用手机日期或系统落库时刻）。「语义召回」「近端摘要」若带【时效·已发生】且锚点公历日**早于**当前剧情日，为**往事**——须用回溯语气；**未收动机伏笔仅以当前状态为准**。\n`
+      ? `【剧情时间轴·时效铁律】当前故事内「现在」以【剧情时间轴·当前状态】的【当前锚点】为准（勿用手机日期或系统落库时刻）。「语义召回」若带【时效·已发生】且锚点公历日**早于**当前剧情日，为**往事**——须用回溯语气；**未收动机伏笔仅以当前状态为准**。\n`
       : ''
   const onlinePrivBoundaryReminder =
     wechatUnsummarizedRefLen > 8
@@ -2692,7 +2801,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   const charUserDirective = buildDatingCharUserPerspectiveDirective(charUserNames.charName, charUserNames.userName)
   unsOffClipped = clipDatingReferenceTail(
     unsOffBlock ?? '',
-    DATING_AI_OFFLINE_UNSUMMARIZED_CHAR_CAP,
+    ctxBudgets.offlineUnsummarized,
     '尚未总结·线下剧情',
   )
   const worldBookRoleLockReminder =
@@ -2725,7 +2834,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
    * 续写：界面生成设置（人称/上帝/侧幕/导演/字数/时间推进）> 格式硬约束 > 玩家身份 >
    *       人设档案/世界书 = 全局档案室 > NPC/尾声·关系 >
    *       文风禁词与内置恋爱参考（同级硬底线）> 时间轴·当前状态 > 尚未总结=最近剧情 >
-   *       语义召回/近端 > 向量长期记忆；人设与全局冲突取更具体硬约束。
+   *       语义召回 > 向量长期记忆；人设与全局冲突取更具体硬约束。
    * 重新生成：本次生成偏向为内容最高优先（场面如何重写），界面生成设置与格式仍守。
    */
   const perspectiveLabelZh =
@@ -2749,6 +2858,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `冲突时：先服从本块与下方【输出格式硬约束】中的同名规则，再承接近端事实与玩家/导演意图。\n\n`
   const systemPromptRaw =
     `${charUserDirective}\n${MBTI_OUTPUT_BAN_RULE}\n\n` +
+    `${PROSE_FORBIDDEN_TOP_PRIORITY_PIN}\n\n` +
     `${buildDatingStyleSystemPrompt(getLoreArchiveBuiltinPresetTogglesSnapshot(), {
       thinkingChainEnabled,
       customWritingPrompt: getActiveCustomWritingInjectBody(),
@@ -2785,21 +2895,23 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     : calendarAdvanced
       ? `【效力层级·续写】本轮在已定事实之上推进剧情：` +
         `**【界面生成设置】**（人称、上帝/侧幕、导演模式、目标字数、剧情时间推进）为当轮**最高优先级硬约束** > ` +
+        `**写作禁词硬钉/完整禁词表（全场景，压过旧稿文风）** > ` +
         `输出格式硬约束 > 玩家身份铁律 > **\`<CharUserEqualityOverride>\` / 通道对齐·平等条约（对白·旁白·OS 同效，禁幼化贬低与病态占有）** > ` +
         `**约会对象·档案与私藏侧写与可变人生账本与人设世界书 = 全局档案室世界书**` +
         `（同级最高设定；侧写规范 char 如何看待/称呼/对待 user，账本规范本线当前年龄/身份/资产等剧情事实）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
         `文风禁词与内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
-        `剧情时间轴·当前状态 = 尚未总结·私聊/群聊（末尾最新） > **最近剧情（跳时后作往事，不得压过当前地点）** > 时间轴语义召回/近端摘要 > 向量长期记忆。` +
+        `剧情时间轴·当前状态 = 尚未总结·私聊/群聊（末尾最新） > **最近剧情（跳时后作往事，不得压过当前地点）** > 时间轴语义召回 > 向量长期记忆。` +
         `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；玩家输入决定当轮方向，**不得**改写已定事实；角色在边界内可自主行动。` +
         `**私藏侧写例外**：侧写是 char 对玩家的**当前了解**（会变）；与玩家本轮反应冲突时以玩家当前反应为准，可承认旧印象并更新（含亲密偏好），答卷覆盖对应字段，禁止用过时侧写抬杠。` +
         `若时间推进已锁定：不得因旧稿节奏或笼统「禁跳时」而缩小/取消跨度；须「间隔带过→主事件落点」。\n\n`
       : `【效力层级·续写】本轮在已定事实之上推进剧情：` +
         `**【界面生成设置】**（人称、上帝/侧幕、导演模式、目标字数、剧情时间推进）为当轮**最高优先级硬约束** > ` +
+        `**写作禁词硬钉/完整禁词表（全场景，压过旧稿文风）** > ` +
         `输出格式硬约束 > 玩家身份铁律 > **\`<CharUserEqualityOverride>\` / 通道对齐·平等条约（对白·旁白·OS 同效，禁幼化贬低与病态占有）** > ` +
         `**约会对象·档案与私藏侧写与可变人生账本与人设世界书 = 全局档案室世界书**` +
         `（同级最高设定；侧写规范 char 如何看待/称呼/对待 user，账本规范本线当前年龄/身份/资产等剧情事实）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
         `文风禁词与内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
-        `剧情时间轴·当前状态 > 尚未总结·私聊/群聊（末尾最新）=最近剧情（末尾最新） > 时间轴语义召回/近端摘要 > 向量长期记忆。` +
+        `剧情时间轴·当前状态 > 尚未总结·私聊/群聊（末尾最新）=最近剧情（末尾最新） > 时间轴语义召回 > 向量长期记忆。` +
         `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；玩家输入决定当轮方向，**不得**改写已定事实；角色在边界内可自主行动。` +
         `**私藏侧写例外**：侧写是 char 对玩家的**当前了解**（会变）；与玩家本轮反应冲突时以玩家当前反应为准，可承认旧印象并更新（含亲密偏好），答卷覆盖对应字段，禁止用过时侧写抬杠。` +
         `若时间推进已锁定：不得因旧稿节奏或笼统「禁跳时」而缩小/取消跨度；须「间隔带过→主事件落点」。\n\n`
@@ -2926,11 +3038,18 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `${mainCharacterOffstageHistoryNote}` +
     `${sideStageKnowledgeIsolationNote}` +
     (calendarAdvanced
-      ? `最近剧情（最近 ${DATING_AI_PLOT_HISTORY_MAX} 条，**含本轮玩家输入**；末条公历已早于「现在」= **${storyNowLabel}** → **整段视作往事实录**，场所/旅途不可当本轮开场；超长时保留末尾；正文已去思维链）：\n`
-      : `最近剧情（最近 ${DATING_AI_PLOT_HISTORY_MAX} 条，**含本轮玩家输入**；**末尾最新**；超长时保留末尾；正文已去思维链）：\n`) +
+      ? plotContextInjectMode === 'summary'
+        ? `最近剧情（摘要模式：仅保留最近 ${MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS} 轮 AI 原文供承接；更早由近端 ${plotSummaryInjectRounds} 轮摘要覆盖；末条公历已早于「现在」= **${storyNowLabel}** → **整段视作往事实录**；正文已去思维链）：\n`
+        : `最近剧情（按最大上下文自最新往历史装填，**含本轮玩家输入**；末条公历已早于「现在」= **${storyNowLabel}** → **整段视作往事实录**，场所/旅途不可当本轮开场；超预算时丢弃更早条目并保留末尾；正文已去思维链）：\n`
+      : plotContextInjectMode === 'summary'
+        ? `最近剧情（摘要模式：仅保留最近 ${MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS} 轮 AI 原文供承接；更早由近端 ${plotSummaryInjectRounds} 轮摘要覆盖；**末尾最新**；正文已去思维链）：\n`
+        : `最近剧情（按最大上下文自最新往历史装填，**含本轮玩家输入**；**末尾最新**；超预算时丢弃更早条目并保留末尾；正文已去思维链）：\n`) +
     `${historyClipped || '（暂无历史）'}\n\n` +
     `${storyTimelineVectorRecallRule}` +
-    `【剧情时间轴·语义召回/近端摘要】（往事补全；**不得**覆盖上方当前状态与未总结/最近剧情末尾）：\n${
+    (plotContextInjectMode === 'summary'
+      ? `【剧情时间轴·语义召回/近端摘要】（含近端 ${plotSummaryInjectRounds} 轮摘要；**不得**覆盖上方当前状态与未总结/最近剧情末尾）：\n`
+      : `【剧情时间轴·语义召回】（往事补全；**不得**覆盖上方当前状态与未总结/最近剧情末尾）：\n`) +
+    `${
       storyTimelineRecallAndNear || '（暂无）'
     }\n\n` +
     `已总结·长期记忆（关键词 + 向量召回；**已写入记忆库的总结**；与上方未总结原文冲突时以未总结末尾为准）：\n` +
@@ -3105,6 +3224,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   } catch {
     /* 约会剧情：私藏侧写补丁写库失败不影响正文落档 */
   }
+  let lifeLedgerRevert: DatingAiGenResult['lifeLedgerRevert']
   try {
     const pid = playerIdentity?.id?.trim()
     if (
@@ -3119,6 +3239,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
         patches: lifeExtract.patches,
       })
       if (lifeResult.applied) {
+        if (lifeResult.revert) lifeLedgerRevert = lifeResult.revert
         window.dispatchEvent(
           new CustomEvent(LIFE_LEDGER_PATCH_UPDATED_EVENT, {
             detail: {
@@ -3170,6 +3291,9 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       unsPrivateBlock: unsPrivClipped,
       unsGroupBlock: unsGrpClipped,
       unsOfflineBlock: unsOffClipped,
+      plotContextBlock: historyClipped,
+      plotContextInjectMode,
+      plotSummaryInjectRounds,
       storyTimelineNotes: (storyTimelineBlock ?? '').trim() || storyTimelineClipped,
       longTermMemoryNotes: longMemClipped,
       conversationKey: onlineCtx?.conversationKey,
@@ -3185,6 +3309,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     worldBookAfterRevertEntries,
     worldBookEpilogueJudged: wbExtract.judged === true,
     observationNotesRevert,
+    lifeLedgerRevert,
   }
 }
 
@@ -3457,6 +3582,10 @@ export function DatingProvider({ children }: { children: ReactNode }) {
          * 重新生成 / 发送前传入：与本轮 plot 列表同源，避免 KV 异步或待重写旧稿进入注入块。
          */
         offlineUnsummarizedPlotSnapshot?: DatingPlotSnapshotItem[]
+        /** 上下文 token 预算 → 群聊等段汉字软上限 */
+        maxContextTokens?: number
+        plotContextInjectMode?: DatingPlotContextInjectMode
+        plotSummaryInjectRounds?: number
       },
     ): Promise<{
       recentMessages: string
@@ -3471,6 +3600,9 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       storyNowLabel?: string
     }> => {
       const cid = characterId.trim()
+      const ctxBudgets = datingContextCharBudgetsFromTokens(
+        Number(relevance?.maxContextTokens ?? DATING_AI_DEFAULT_CONTEXT_TOKENS),
+      )
       const { chRow, sessionPid, conversationKey: convKey, wechatAccountId } =
         await resolveDatingWeChatConversationScope(cid, relevance?.sessionPlayerIdentityId)
 
@@ -3653,25 +3785,55 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       let unsummarizedGroupBlock = ''
       let onlineInjectScope: DatingOnlineInjectScopeMeta | undefined
       const privateCk = convKey && !convKey.startsWith('wxgrp:') ? convKey : ''
-      // 与聊天室一致：未总结线上私聊全部纳入；元数据失败不得清空正文
+      // 与聊天室互通：未总结 + 会话「固定近端 N 轮 / Token」；按故事「现在」拆近端/往事，禁止把跨日更早当成刚刚
       let privateBody = ''
       let privateCount = 0
+      let recentPrivateAiRoundsNotes = ''
       try {
+        const chatSettings = privateCk
+          ? await personaDb.getChatConversationSettings(privateCk)
+          : null
+        const recentRounds = resolveRecentPrivateInjectEffectiveRounds(chatSettings)
+        const recentMaxChars = resolveRecentPrivateInjectEffectiveMaxChars(chatSettings)
+        const privateCap = Math.min(
+          MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
+          Math.max(ctxBudgets.referenceSection, recentMaxChars),
+        )
         const split = await formatDatingUnsummarizedPrivateChatSplit({
           conversationKey: privateCk,
           characterId: cid,
           wechatAccountId,
           maxMessages: MEMORY_UNSUMMARIZED_GATHER_MESSAGE_LIMIT,
-          maxChars: MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP,
+          maxChars: privateCap,
           storyNowMs,
           lastOfflineAiPlotTs,
         })
         privateBody = [split.nearBlock, split.pastBlock].filter(Boolean).join('\n\n')
         privateCount = split.nearCount + split.pastCount
+
+        if (privateCk && recentRounds > 0) {
+          recentPrivateAiRoundsNotes = (
+            await buildRecentPrivateChatRoundsWithTimeBlock({
+              conversationKey: privateCk,
+              retainAiRounds: recentRounds,
+              maxChars: recentMaxChars,
+              // 故事「现在」跨日过滤：同日较早仍保留，跨日更早不进近端窗
+              minStoryCalendarMs: storyNowMs,
+              // 墙钟：上一轮线下 AI 之后，避免把数日前「要离开」当近端
+              minMessageTimestamp: lastOfflineAiPlotTs,
+            })
+          ).trim()
+          const deduped = dedupeUnsummarizedVsRecentAiRounds({
+            unsummarized: privateBody,
+            recentAiRounds: recentPrivateAiRoundsNotes,
+          })
+          privateBody = deduped.unsummarized
+          recentPrivateAiRoundsNotes = deduped.recentAiRounds
+        }
       } catch (err) {
         console.warn('[dating] private unsummarized inject failed', err)
       }
-      if (privateCount > 0 && privateBody) {
+      if ((privateCount > 0 && privateBody) || recentPrivateAiRoundsNotes) {
         let onlineBounds: { count: number; minTs: number | null; maxTs: number | null } = {
           count: privateCount,
           minTs: null,
@@ -3703,6 +3865,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         unsummarizedPrivateBlock = [
           storySync,
           privateBody,
+          recentPrivateAiRoundsNotes,
           formatDatingOnlineInjectScopeFooter({
             ...onlineInjectScope,
             privateMessageCount: privateCount,
@@ -3722,7 +3885,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           boundPlayerIdentityId: chRow?.playerIdentityId,
           anchorGroupId,
           maxMessagesPerGroup: 60,
-          charCap: DATING_AI_REFERENCE_SECTION_CHAR_CAP,
+          charCap: ctxBudgets.referenceSection,
           includeMessageTimestamps: true,
         })
         const grpBody = stripUnsummarizedBlockFooter(grpRaw)
@@ -3787,6 +3950,14 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             storyCalendarAnchor: storyNowLabel || storyCalendarAnchor || undefined,
             apiConfig: apiConfig?.apiUrl?.trim() && apiConfig?.apiKey?.trim() ? apiConfig : null,
             conversationKey: convKey || undefined,
+            // full_text：近端摘要改由「最近剧情」按最大上下文装填；summary：注入近端 N 轮摘要
+            omitRecentSummaryRows:
+              normalizeDatingPlotContextInjectMode(relevance?.plotContextInjectMode) === 'full_text',
+            recentSummaryRowCount: clampDatingPlotSummaryInjectRounds(
+              Number(
+                relevance?.plotSummaryInjectRounds ?? DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT,
+              ),
+            ),
           })
         ).trim()
       } catch {
@@ -3843,8 +4014,9 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       patchArchive(charId, (p) => ({
         ...p,
         godPerspective: v,
-        // 上帝视角与抢话互斥：开启时强制关掉，避免提示词冲突
-        ...(v ? { mainCharacterOffstage: false, autoUserReaction: false } : {}),
+        // 上帝与抢话提示词互斥：仅本轮生效上锁，不改写用户的抢话偏好；
+        // 关闭上帝后若 autoUserReaction 仍为 true，界面与生成会自动恢复抢话。
+        ...(v ? { mainCharacterOffstage: false } : {}),
       }))
       if (archivesRef.current[charId]?.branchEnabled) {
         queueMicrotask(() => enqueueRegenerateBranches(charId))
@@ -3952,6 +4124,38 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       const n = clampDatingLengthTargetChars(Number(chars))
       if (!Number.isFinite(n)) return
       patchArchive(charId, (p) => ({ ...p, datingLengthTargetChars: n }))
+    },
+    [currentCharacter.id, patchArchive],
+  )
+
+  const setDatingMaxContextTokens = useCallback(
+    (tokens: number) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      const n = clampDatingMaxContextTokens(Number(tokens))
+      patchArchive(charId, (p) => ({ ...p, datingMaxContextTokens: n }))
+    },
+    [currentCharacter.id, patchArchive],
+  )
+
+  const setDatingPlotContextInjectMode = useCallback(
+    (mode: DatingPlotContextInjectMode) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      patchArchive(charId, (p) => ({
+        ...p,
+        datingPlotContextInjectMode: normalizeDatingPlotContextInjectMode(mode),
+      }))
+    },
+    [currentCharacter.id, patchArchive],
+  )
+
+  const setDatingPlotSummaryInjectRounds = useCallback(
+    (rounds: number) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      const n = clampDatingPlotSummaryInjectRounds(Number(rounds))
+      patchArchive(charId, (p) => ({ ...p, datingPlotSummaryInjectRounds: n }))
     },
     [currentCharacter.id, patchArchive],
   )
@@ -4083,6 +4287,9 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           plotTail,
           sessionPlayerIdentityId: memCtx.sessionPlayerIdentityId,
           offlineUnsummarizedPlotSnapshot: plotItemsToSnapshots(arch.plots),
+          maxContextTokens: arch.datingMaxContextTokens,
+          plotContextInjectMode: arch.datingPlotContextInjectMode,
+          plotSummaryInjectRounds: arch.datingPlotSummaryInjectRounds,
         })
         const offlineDatingPlotsContext = await loadOfflineDatingPlotsPromptBlock(pid, char.realName)
         const transcript = plotsToDanmakuTranscript(arch.plots, char.realName)
@@ -4155,6 +4362,23 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       }
       if (mergedGenPreview.thinkingChainEnabled == null) {
         mergedGenPreview.thinkingChainEnabled = archiveSnap.thinkingChainEnabled !== false
+      }
+      if (mergedGenPreview.maxContextTokens == null) {
+        mergedGenPreview.maxContextTokens = clampDatingMaxContextTokens(
+          archiveSnap.datingMaxContextTokens ?? DATING_AI_DEFAULT_CONTEXT_TOKENS,
+        )
+      }
+      if (mergedGenPreview.plotContextInjectMode == null) {
+        mergedGenPreview.plotContextInjectMode = normalizeDatingPlotContextInjectMode(
+          archiveSnap.datingPlotContextInjectMode,
+        )
+      }
+      if (mergedGenPreview.plotSummaryInjectRounds == null) {
+        mergedGenPreview.plotSummaryInjectRounds = clampDatingPlotSummaryInjectRounds(
+          Number(
+            archiveSnap.datingPlotSummaryInjectRounds ?? DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT,
+          ),
+        )
       }
       const activeControlTags = buildDatingPlayerControlTags({
         perspective,
@@ -4238,6 +4462,11 @@ export function DatingProvider({ children }: { children: ReactNode }) {
               plotTail,
               sessionPlayerIdentityId: memCtx.sessionPlayerIdentityId,
               offlineUnsummarizedPlotSnapshot: plotItemsToSnapshots(plotsForModel),
+              maxContextTokens: mergedGen?.maxContextTokens ?? archiveSnap.datingMaxContextTokens,
+              plotContextInjectMode:
+                mergedGen?.plotContextInjectMode ?? archiveSnap.datingPlotContextInjectMode,
+              plotSummaryInjectRounds:
+                mergedGen?.plotSummaryInjectRounds ?? archiveSnap.datingPlotSummaryInjectRounds,
             }),
             buildDatingTurnModelExtras({
               char,
@@ -4383,6 +4612,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             ...storyFields,
             worldBookAfterRevertEntries: wbRevertNew.length ? wbRevertNew : undefined,
             observationNotesRevert: aiGen.observationNotesRevert,
+            lifeLedgerRevert: sanitizeLifeLedgerPlotRevert(aiGen.lifeLedgerRevert) ?? undefined,
           }
           // 评论 / 小剧场与正文隔离：缺块则另开短请求补齐（不计入正文字数）
           if (apiConfig && (commentModeOn || plotArtifactOn)) {
@@ -4930,6 +5160,23 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           ) {
             o.lengthTargetChars = archive.datingLengthTargetChars
           }
+          if (o.maxContextTokens == null) {
+            o.maxContextTokens = clampDatingMaxContextTokens(
+              archive.datingMaxContextTokens ?? DATING_AI_DEFAULT_CONTEXT_TOKENS,
+            )
+          }
+          if (o.plotContextInjectMode == null) {
+            o.plotContextInjectMode = normalizeDatingPlotContextInjectMode(
+              archive.datingPlotContextInjectMode,
+            )
+          }
+          if (o.plotSummaryInjectRounds == null) {
+            o.plotSummaryInjectRounds = clampDatingPlotSummaryInjectRounds(
+              Number(
+                archive.datingPlotSummaryInjectRounds ?? DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT,
+              ),
+            )
+          }
           if (o.plotArtifactVisualEnabled == null) {
             o.plotArtifactVisualEnabled = archive.plotArtifactVisualEnabled !== false
           }
@@ -4999,6 +5246,15 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         } catch (obsRevertErr) {
           console.warn('[dating] observation notes revert before regenerate failed', obsRevertErr)
         }
+        try {
+          await rebuildLifeLedgerFromDatingPlotList({
+            characterId: char.id,
+            prevPlots: archive.plots,
+            nextPlots: before,
+          })
+        } catch (lifeRevertErr) {
+          console.warn('[dating] life ledger revert before regenerate failed', lifeRevertErr)
+        }
         await clearOfflinePlotContextVectorsForCharacter(char.id)
         const [{ datingExtras: turnExtras, memoryGather }, onlineCtx] = await Promise.all([
           buildDatingTurnModelExtras({
@@ -5015,6 +5271,11 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             plotTail,
             sessionPlayerIdentityId: memCtx.sessionPlayerIdentityId,
             offlineUnsummarizedPlotSnapshot: plotItemsToSnapshots(before),
+            maxContextTokens: mergedRegenOpts?.maxContextTokens ?? archive.datingMaxContextTokens,
+            plotContextInjectMode:
+              mergedRegenOpts?.plotContextInjectMode ?? archive.datingPlotContextInjectMode,
+            plotSummaryInjectRounds:
+              mergedRegenOpts?.plotSummaryInjectRounds ?? archive.datingPlotSummaryInjectRounds,
           }),
         ])
         const aiGenRegen = await generateDatingAi(
@@ -5156,6 +5417,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           ...regenStory,
           worldBookAfterRevertEntries: nextRevert.length ? nextRevert : undefined,
           observationNotesRevert: aiGenRegen.observationNotesRevert,
+          lifeLedgerRevert: sanitizeLifeLedgerPlotRevert(aiGenRegen.lifeLedgerRevert) ?? undefined,
         }
         if (apiConfig && (commentModeOnRegen || plotArtifactOnRegen)) {
           try {
@@ -5330,6 +5592,10 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       const apiCfg =
         apiConfig?.apiUrl?.trim() && apiConfig?.apiKey?.trim() ? apiConfig : null
       const styleTuning = loadDatingStyleTuning(charId)
+      const lifeContext = await loadDatingPlotDimensionLifeContext({
+        character: char,
+        playerIdentity,
+      }).catch(() => null)
       const rawContent = await generateDatingPlotDimensionAi({
         kind,
         character: char,
@@ -5347,6 +5613,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         languageSettings,
         stylePrompt: styleTuning.stylePrompt.trim() || undefined,
         referenceSnippet: styleTuning.referenceSnippet.trim() || undefined,
+        lifeContext: lifeContext ?? undefined,
       })
       const finalized = await finalizeDatingDimensionTranslations({
         content: rawContent,
@@ -5433,6 +5700,9 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     setGenerateIfLineOnSend,
     setOfflineDanmakuEnabled,
     setDatingLengthTargetChars,
+    setDatingMaxContextTokens,
+    setDatingPlotContextInjectMode,
+    setDatingPlotSummaryInjectRounds,
     patchPlotImageSettings,
     patchDatingLanguageSettings,
     patchDatingPlotFontSettings,

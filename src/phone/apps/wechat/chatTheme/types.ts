@@ -10,6 +10,12 @@ export interface ChatTheme {
     backgroundColor: string
     /** 输入栏布局：lumi 为项目默认；wechat 为微信 App 模版；其余为 Messenger 高仿 */
     layout?: 'lumi' | 'wechat' | 'imessage' | 'telegram' | 'talkmaker' | 'twitter'
+    /**
+     * 微信模版触发方式（仅 layout=wechat 生效）：
+     * - enter：仅回车发送/催回复（默认，贴近当前行为）
+     * - button：回车 + 右侧发送/回复按钮均可触发
+     */
+    wechatSendMode?: 'enter' | 'button'
     /** iMessage 发送钮背景色 */
     sendButtonColor?: string
   }
@@ -71,6 +77,7 @@ export function normalizeChatTheme(raw: unknown): ChatTheme {
         ib.layout === 'twitter'
           ? ib.layout
           : 'lumi',
+      wechatSendMode: ib.wechatSendMode === 'button' ? 'button' : 'enter',
       sendButtonColor:
         typeof ib.sendButtonColor === 'string' && ib.sendButtonColor.trim()
           ? ib.sendButtonColor

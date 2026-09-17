@@ -24,7 +24,16 @@ import {
   MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS,
   MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX,
   resolveRecentPrivateInjectAiRounds,
+  resolveRecentPrivateInjectMaxContextTokens,
+  resolveRecentPrivateInjectMode,
+  privateInjectCharCapFromMaxContextTokens,
 } from '../wechatMemoryPromptBlocks'
+import {
+  clampDatingMaxContextTokens,
+  DATING_AI_DEFAULT_CONTEXT_TOKENS,
+  DATING_AI_MAX_CONTEXT_TOKENS,
+  DATING_AI_MIN_CONTEXT_TOKENS,
+} from '../dating/types'
 import {
   drawProactiveVariableIntervalSeconds,
   formatProactiveVariableIntervalRangeLabel,
@@ -493,6 +502,8 @@ export function ChatSettingsScreen({
           | 'proactiveMessageVariableIntervalMaxSeconds'
           | 'proactiveMessageNextIntervalSeconds'
           | 'recentPrivateInjectAiRounds'
+          | 'recentPrivateInjectMode'
+          | 'recentPrivateInjectMaxContextTokens'
         >
       > & {
         clearStickerRoundTriggerPercent?: boolean
@@ -506,6 +517,7 @@ export function ChatSettingsScreen({
         clearProactiveMessageIntervalSeconds?: boolean
         clearProactiveMessageVariableIntervalBounds?: boolean
         clearProactiveMessageSchedule?: boolean
+        clearRecentPrivateInjectMaxContextTokens?: boolean
       },
     ) => {
       await personaDb.upsertChatConversationSettings({
@@ -527,6 +539,14 @@ export function ChatSettingsScreen({
   useEffect(() => {
     setRecentInjectRoundsDraft(recentInjectRoundsCommitted)
   }, [recentInjectRoundsCommitted])
+  const recentInjectMode = resolveRecentPrivateInjectMode(effective)
+  const recentInjectTokensCommitted =
+    resolveRecentPrivateInjectMaxContextTokens(effective) ?? DATING_AI_DEFAULT_CONTEXT_TOKENS
+  const recentInjectTokensExplicit = resolveRecentPrivateInjectMaxContextTokens(effective) != null
+  const [recentInjectTokensDraft, setRecentInjectTokensDraft] = useState(recentInjectTokensCommitted)
+  useEffect(() => {
+    setRecentInjectTokensDraft(recentInjectTokensCommitted)
+  }, [recentInjectTokensCommitted])
   const proactiveEnabled = effective.proactiveMessageEnabled ?? false
   const proactiveVariableEnabled = isProactiveVariableIntervalEnabled(effective)
   const proactiveIntervalSeconds = resolveProactiveMessageIntervalSeconds(effective)
@@ -1281,55 +1301,147 @@ export function ChatSettingsScreen({
           </ListRow>
           <ListRow stacked borderBottom>
             <div className="w-full">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <span className="text-[16px] text-black">固定注入近端原文</span>
-                  <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
-                    主回复必注最近 N 轮对方回复原文（含其间用户消息），不依赖总结游标；每条带剧情时间。同一轮连发多气泡仍计 1 轮。总结后也能接上原话。
-                    <span style={phoneNumStyle}>0</span> = 关闭。
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
-                  <span className="text-[14px] text-[#576b95]">
-                    <span style={phoneNumStyle}>{recentInjectRoundsDraft}</span> 轮
-                  </span>
-                  {typeof effective.recentPrivateInjectAiRounds === 'number' &&
-                  effective.recentPrivateInjectAiRounds !== MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS ? (
-                    <button
-                      type="button"
-                      className="text-[12px] text-[#576b95]"
-                      onClick={() =>
-                        void patch({
-                          recentPrivateInjectAiRounds: MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS,
-                        })
-                      }
-                    >
-                      恢复默认
-                    </button>
-                  ) : null}
-                </div>
+              <div className="mb-2">
+                <span className="text-[16px] text-black">线上近端注入</span>
+                <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                  二选一：按字数上限装填「上下文原文」，或只带最近 N 轮原文。线下约会互注线上时共用本会话设置。
+                </p>
               </div>
-              <CommitOnReleaseRangeInput
-                min={0}
-                max={MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX}
-                step={1}
-                value={recentInjectRoundsCommitted}
-                onDraftChange={setRecentInjectRoundsDraft}
-                onCommit={(n) => void patch({ recentPrivateInjectAiRounds: n })}
-                className="mt-2 w-full accent-black"
-                aria-label="固定注入近端原文轮数"
-              />
-              <div className="mt-1 flex justify-between text-[11px] text-[#8e8e8e]">
-                <span>
-                  <span style={phoneNumStyle}>0</span> 关闭
-                </span>
-                <span>
-                  默认 <span style={phoneNumStyle}>{MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS}</span>
-                </span>
-                <span>
-                  <span style={phoneNumStyle}>{MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX}</span> 最大
-                </span>
+              <div className="mb-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void patch({ recentPrivateInjectMode: 'full_text' })}
+                  className={`rounded-lg border px-2.5 py-1.5 text-[13px] ${
+                    recentInjectMode === 'full_text'
+                      ? 'border-black bg-black text-white'
+                      : 'border-[#e5e5e5] bg-white text-[#525252]'
+                  }`}
+                >
+                  上下文原文
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void patch({ recentPrivateInjectMode: 'near_rounds' })}
+                  className={`rounded-lg border px-2.5 py-1.5 text-[13px] ${
+                    recentInjectMode === 'near_rounds'
+                      ? 'border-black bg-black text-white'
+                      : 'border-[#e5e5e5] bg-white text-[#525252]'
+                  }`}
+                >
+                  近端轮数
+                </button>
               </div>
+              {recentInjectMode === 'near_rounds' ? (
+                <>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[14px] text-black">最近 N 轮原文</span>
+                      <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                        必注最近 N 轮对方回复原文（含其间用户消息），不依赖总结游标。同一轮连发多气泡仍计 1 轮。
+                        <span style={phoneNumStyle}>0</span> = 关闭。
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
+                      <span className="text-[14px] text-[#576b95]">
+                        <span style={phoneNumStyle}>{recentInjectRoundsDraft}</span> 轮
+                      </span>
+                      {typeof effective.recentPrivateInjectAiRounds === 'number' &&
+                      effective.recentPrivateInjectAiRounds !== MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS ? (
+                        <button
+                          type="button"
+                          className="text-[12px] text-[#576b95]"
+                          onClick={() =>
+                            void patch({
+                              recentPrivateInjectAiRounds: MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS,
+                            })
+                          }
+                        >
+                          恢复默认
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <CommitOnReleaseRangeInput
+                    min={0}
+                    max={MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX}
+                    step={1}
+                    value={recentInjectRoundsCommitted}
+                    onDraftChange={setRecentInjectRoundsDraft}
+                    onCommit={(n) => void patch({ recentPrivateInjectAiRounds: n })}
+                    className="mt-2 w-full accent-black"
+                    aria-label="近端原文轮数"
+                  />
+                  <div className="mt-1 flex justify-between text-[11px] text-[#8e8e8e]">
+                    <span>
+                      <span style={phoneNumStyle}>0</span> 关闭
+                    </span>
+                    <span>
+                      默认 <span style={phoneNumStyle}>{MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS}</span>
+                    </span>
+                    <span>
+                      <span style={phoneNumStyle}>{MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX}</span> 最大
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[14px] text-black">最大上下文 Token</span>
+                      <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                        自最新往历史装填线上原文，按字数预算截断。与约会页线下上下文设置互通。
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
+                      <span className="text-[14px] text-[#576b95]">
+                        <span style={phoneNumStyle}>{recentInjectTokensDraft.toLocaleString()}</span>
+                      </span>
+                      {recentInjectTokensExplicit ? (
+                        <button
+                          type="button"
+                          className="text-[12px] text-[#576b95]"
+                          onClick={() =>
+                            void patch({ clearRecentPrivateInjectMaxContextTokens: true })
+                          }
+                        >
+                          恢复默认档
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-[#8e8e8e]">默认档</span>
+                      )}
+                    </div>
+                  </div>
+                  <CommitOnReleaseRangeInput
+                    min={DATING_AI_MIN_CONTEXT_TOKENS}
+                    max={DATING_AI_MAX_CONTEXT_TOKENS}
+                    step={1000}
+                    value={recentInjectTokensCommitted}
+                    onDraftChange={setRecentInjectTokensDraft}
+                    onCommit={(n) =>
+                      void patch({
+                        recentPrivateInjectMaxContextTokens: clampDatingMaxContextTokens(n),
+                      })
+                    }
+                    className="mt-2 w-full accent-black"
+                    aria-label="线上上下文最大 Token"
+                  />
+                  <div className="mt-1 flex justify-between text-[11px] text-[#8e8e8e]">
+                    <span>
+                      <span style={phoneNumStyle}>{DATING_AI_MIN_CONTEXT_TOKENS.toLocaleString()}</span>
+                    </span>
+                    <span>
+                      约{' '}
+                      <span style={phoneNumStyle}>
+                        {privateInjectCharCapFromMaxContextTokens(recentInjectTokensDraft).toLocaleString()}
+                      </span>{' '}
+                      字
+                    </span>
+                    <span>
+                      <span style={phoneNumStyle}>{DATING_AI_MAX_CONTEXT_TOKENS.toLocaleString()}</span>
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </ListRow>
           <ListRow borderBottom>
@@ -1382,7 +1494,7 @@ export function ChatSettingsScreen({
           </ListRow>
           <ListRow>
             <div className="min-w-0 flex-1">
-              <span className="text-[16px] text-black">模仿用户说话风格</span>
+              <span className="text-[16px] text-black">语气同化</span>
               <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
                 线上私聊与线下约会均生效；优先对齐私藏侧写里的口头禅与语言风格，关系越近越可能下意识贴近；人设不变
               </p>

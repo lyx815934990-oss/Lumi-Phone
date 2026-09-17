@@ -28,6 +28,7 @@ import { auditCliqueIdentityBinding, type CliqueIdentityBindingAudit } from './p
 import { markCliqueIdentitySyncAck } from './personaIdentitySyncAck'
 import { persistCliqueCharacterUpdates, runIdentityCliqueSyncWithAi } from './personaIdentityCliqueSync'
 import { isCharacterCanonicalPreservedOnOtherWechatAccounts } from '../wechatContactRemoval'
+import { expandLinkedMemoryPlaceholders } from '../charUserPlaceholders'
 
 /** 关系偏向：语义去重（职场含同事向、家族含亲属向、宿敌含对立向），避免胶囊列表冗长 */
 const REL_BIAS_OPTIONS = ['职场', '家族', '暗恋', '宿敌', '朋友', '同学', '恋人', '陌生人', '合作伙伴'] as const
@@ -38,6 +39,26 @@ const GRAPH_H = Math.round(520 * (2 / 3))
 
 /** 关系图中操作者节点虚拟 id（不对应 Character 表） */
 const PLAYER_GRAPH_NODE_ID = '__graph_you__'
+
+/** 只读展示：把 {{id:…}} / {{char}} / {{user}} / {{archive_char}} 展开成姓名（入库仍保留表达式） */
+function expandNetworkPersonaDisplayText(
+  text: string,
+  params: {
+    idToDisplayName: Readonly<Record<string, string>>
+    charName?: string
+    userName?: string
+    archiveCharName?: string
+  },
+): string {
+  const raw = String(text ?? '')
+  if (!raw.includes('{{')) return raw
+  return expandLinkedMemoryPlaceholders(raw, {
+    charName: String(params.charName ?? '').trim() || '对方',
+    userName: String(params.userName ?? '').trim() || '你',
+    archiveCharName: String(params.archiveCharName ?? '').trim() || '主角',
+    idToDisplayName: params.idToDisplayName,
+  })
+}
 
 /** 手动编辑关系图弹窗：黑白灰排版 */
 const GE = {
@@ -473,6 +494,31 @@ export function PersonaNetworkSection({ main, apiConfig, onApiMissing, onOpenNpc
     for (const lr of linkedRoots) m.set(lr.id, (lr.name || '未命名').trim() || '未命名')
     return m
   }, [main.id, main.name, npcs, linkedRoots])
+
+  const networkIdDisplayNameMap = useMemo(() => {
+    const o: Record<string, string> = {}
+    for (const [id, name] of characterIdToName) {
+      if (id === PLAYER_GRAPH_NODE_ID) continue
+      o[id] = name
+    }
+    return o
+  }, [characterIdToName])
+
+  const networkUserDisplayName = useMemo(
+    () => String(state.profile.displayName ?? '').trim() || '你',
+    [state.profile.displayName],
+  )
+
+  const expandNetText = useCallback(
+    (text: string, viewCharName?: string) =>
+      expandNetworkPersonaDisplayText(text, {
+        idToDisplayName: networkIdDisplayNameMap,
+        charName: viewCharName,
+        userName: networkUserDisplayName,
+        archiveCharName: (main.name || '').trim() || '主角',
+      }),
+    [networkIdDisplayNameMap, networkUserDisplayName, main.name],
+  )
 
   const networkCharIds = useMemo(
     () => [main.id, ...npcs.map((n) => n.id), ...linkedRoots.map((x) => x.id)],
@@ -1337,7 +1383,10 @@ export function PersonaNetworkSection({ main, apiConfig, onApiMissing, onOpenNpc
                     </>
                   ) : (
                     (() => {
-                      const d = (s: string) => (String(s || '').trim() ? String(s).trim() : '—')
+                      const d = (s: string) => {
+                        const t = expandNetText(String(s || ''), charNameForYou).trim()
+                        return t || '—'
+                      }
                       return (
                         <div
                           className="mt-4 space-y-3 rounded-xl border px-3 py-3 text-[13px] leading-relaxed"
@@ -1483,7 +1532,10 @@ export function PersonaNetworkSection({ main, apiConfig, onApiMissing, onOpenNpc
                   </p>
                 ) : null}
                 {(() => {
-                  const d = (s: string) => (String(s || '').trim() ? String(s).trim() : '—')
+                  const d = (s: string, viewChar?: string) => {
+                    const t = expandNetText(String(s || ''), viewChar).trim()
+                    return t || '—'
+                  }
                   return edgeCharFormUnlocked ? (
                     <>
                       {draftCharAb && edgeDetail.ab ? (
@@ -1592,15 +1644,15 @@ export function PersonaNetworkSection({ main, apiConfig, onApiMissing, onOpenNpc
                             <span className="text-[11px] font-medium text-[#737373]">
                               {fromName} 称呼 {toName}
                             </span>{' '}
-                            {d(draftCharAb.fromCallsTo)}
+                            {d(draftCharAb.fromCallsTo, fromName)}
                           </p>
                           <p className="text-[12px]">
                             <span className="text-[11px] font-medium text-[#737373]">【{fromName}看{toName}】</span>
-                            <span className="mt-0.5 block whitespace-pre-wrap">{d(draftCharAb.fromPerspective)}</span>
+                            <span className="mt-0.5 block whitespace-pre-wrap">{d(draftCharAb.fromPerspective, fromName)}</span>
                           </p>
                           <p className="text-[12px]">
                             <span className="text-[11px] font-medium text-[#737373]">【{toName}看{fromName}】</span>
-                            <span className="mt-0.5 block whitespace-pre-wrap">{d(draftCharAb.toPerspective)}</span>
+                            <span className="mt-0.5 block whitespace-pre-wrap">{d(draftCharAb.toPerspective, toName)}</span>
                           </p>
                         </div>
                       ) : null}
@@ -1617,15 +1669,15 @@ export function PersonaNetworkSection({ main, apiConfig, onApiMissing, onOpenNpc
                             <span className="text-[11px] font-medium text-[#737373]">
                               {toName} 称呼 {fromName}
                             </span>{' '}
-                            {d(draftCharBa.fromCallsTo)}
+                            {d(draftCharBa.fromCallsTo, toName)}
                           </p>
                           <p className="text-[12px]">
                             <span className="text-[11px] font-medium text-[#737373]">【{toName}看{fromName}】</span>
-                            <span className="mt-0.5 block whitespace-pre-wrap">{d(draftCharBa.fromPerspective)}</span>
+                            <span className="mt-0.5 block whitespace-pre-wrap">{d(draftCharBa.fromPerspective, toName)}</span>
                           </p>
                           <p className="text-[12px]">
                             <span className="text-[11px] font-medium text-[#737373]">【{fromName}看{toName}】</span>
-                            <span className="mt-0.5 block whitespace-pre-wrap">{d(draftCharBa.toPerspective)}</span>
+                            <span className="mt-0.5 block whitespace-pre-wrap">{d(draftCharBa.toPerspective, fromName)}</span>
                           </p>
                         </div>
                       ) : null}
@@ -1858,7 +1910,10 @@ export function PersonaNetworkSection({ main, apiConfig, onApiMissing, onOpenNpc
                     {draftPlayerLinks.map((link) => {
                       const nm = characterIdToName.get(link.characterId) ?? link.characterId
                       const rowEdit = editingGraphPlayerLinkId === link.id
-                      const dash = (s: string) => (String(s || '').trim() ? String(s).trim() : '—')
+                      const dash = (s: string) => {
+                        const t = expandNetText(String(s || ''), nm).trim()
+                        return t || '—'
+                      }
                       return (
                         <div
                           key={link.id}
@@ -2190,9 +2245,12 @@ export function PersonaNetworkSection({ main, apiConfig, onApiMissing, onOpenNpc
                     <div className="space-y-3">
                       {draftRels.map((r) => {
                         const rowEdit = editingGraphRelId === r.id
-                        const dash = (s: string) => (String(s || '').trim() ? String(s).trim() : '—')
                         const fromNm = characterIdToName.get(r.fromCharacterId) ?? r.fromCharacterId
                         const toNm = characterIdToName.get(r.toCharacterId) ?? r.toCharacterId
+                        const dash = (s: string, viewChar?: string) => {
+                          const t = expandNetText(String(s || ''), viewChar).trim()
+                          return t || '—'
+                        }
                         return (
                           <div
                             key={r.id}
@@ -2302,19 +2360,19 @@ export function PersonaNetworkSection({ main, apiConfig, onApiMissing, onOpenNpc
                                   <span className="text-[11px] font-medium" style={{ color: GE.sub }}>
                                     {fromNm} 称呼 {toNm}
                                   </span>{' '}
-                                  {dash(r.fromCallsTo ?? '')}
+                                  {dash(r.fromCallsTo ?? '', fromNm)}
                                 </p>
                                 <p className="text-[12px]">
                                   <span className="text-[11px] font-medium" style={{ color: GE.sub }}>
                                     【{fromNm}看{toNm}】
                                   </span>
-                                  <span className="mt-0.5 block whitespace-pre-wrap">{dash(r.fromPerspective)}</span>
+                                  <span className="mt-0.5 block whitespace-pre-wrap">{dash(r.fromPerspective, fromNm)}</span>
                                 </p>
                                 <p className="text-[12px]">
                                   <span className="text-[11px] font-medium" style={{ color: GE.sub }}>
                                     【{toNm}看{fromNm}】
                                   </span>
-                                  <span className="mt-0.5 block whitespace-pre-wrap">{dash(r.toPerspective)}</span>
+                                  <span className="mt-0.5 block whitespace-pre-wrap">{dash(r.toPerspective, toNm)}</span>
                                 </p>
                               </div>
                             )}

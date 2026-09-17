@@ -18,14 +18,19 @@ import {
   resolveLoreArchiveBuiltinPresetToggles,
 } from '../../../worldbook/loreArchiveBuiltinPresets'
 import {
+  getLoreArchiveBuiltinPresetPriorityTiersSnapshot,
   getLoreArchiveBuiltinPresetTogglesSnapshot,
   getWorldbookLoreEntriesSnapshot,
 } from '../../../worldbook/worldbookLoreStore'
-import { PROSE_FORBIDDEN_LEXICON_PROMPT } from '../proseForbiddenLexiconPrompt'
+import { PROSE_FORBIDDEN_LEXICON_PROMPT, PROSE_FORBIDDEN_TOP_PRIORITY_PIN } from '../proseForbiddenLexiconPrompt'
 import { MBTI_OUTPUT_BAN_RULE } from '../mbtiOutputBan'
 import { splitDatingAssistantOutput } from './plotCoT'
 import { buildDatingStyleSystemAppend } from './datingStylePrompt'
-import { OFFLINE_DATING_CREATIVE_RULES } from './offlineDatingMustInjectPrompts'
+import {
+  buildOfflineDatingSlimMustInjectBody,
+  OFFLINE_DATING_CREATIVE_RULES_TITLE,
+} from './offlineDatingMustInjectPrompts'
+import { getActiveCustomWritingInjectBody } from './datingWritingPresetStore'
 import { DATING_MIMIC_USER_SPEAKING_STYLE_APPENDIX } from '../wechatMimicUserSpeakingStyle'
 import { loadMimicUserSpeakingStyleEnabled } from '../mimicUserSpeakingStyleSettings'
 import { OFFLINE_DATING_RICH_INNER_OS_APPENDIX } from './offlineDatingRichInnerOsAppendix'
@@ -244,11 +249,14 @@ function buildDimensionSystemPrompt(
     relationHint: langSettings?.relationHint,
     characterPersonaBrief: langSettings?.characterPersonaBrief,
   })
-  const worldbookDuty = `【档案室效力】上列世界书/档案室规范对本段「${PLOT_DIMENSION_LABELS[kind]}」**同样生效**（含关系阶段、亲密分寸、禁止项等）；不得因是旁支切片或假设线而绕过。
-【内置预设·同等生效】档案室若已开启「纯爱克制 / Lumi 高质量爱情观 / 情感破冰与告白」等内置预设，对本段**与主线约会同等效力**：亲密分寸、关系阶段闸门、禁止强制爱不得因是 IF 分支或平行切片而放宽；气质仍服从人设，但边界硬底线不可破。`
   const toggles = getLoreArchiveBuiltinPresetTogglesSnapshot()
-  const romanceBuiltinBlock = buildWechatReplyRomanceSections(toggles).trim()
+  const romanceBuiltinBlock = buildWechatReplyRomanceSections(
+    toggles,
+    getLoreArchiveBuiltinPresetPriorityTiersSnapshot(),
+  ).trim()
   const resolvedPresets = resolveLoreArchiveBuiltinPresetToggles(toggles)
+  const worldbookDuty = `【档案室效力】上列世界书/档案室规范对本段「${PLOT_DIMENSION_LABELS[kind]}」**同样生效**（含关系阶段、亲密分寸、禁止项等）；不得因是旁支切片或假设线而绕过。档案室档1高于人设、档2同级冲突跟全局、档3次于人设。
+【内置预设·同等生效】档案室若已开启「纯爱克制 / Lumi 高质量爱情观 / 情感破冰与告白」等内置预设，对本段**与主线约会同等效力**：亲密分寸、关系阶段闸门、禁止强制爱不得因是 IF 分支或平行切片而放宽；气质仍服从人设，但边界硬底线不可破。`
   const richOsBlock = resolvedPresets.offlineRichInnerOs
     ? `【档案室预设·多内心 OS·已开启】本段线下旁支同样适用（覆盖默认 OS 过短敷衍）：\n${OFFLINE_DATING_RICH_INNER_OS_APPENDIX}`
     : ''
@@ -280,7 +288,22 @@ function buildDimensionSystemPrompt(
       ? `【可变人生账本·同等效力】下方「角色/玩家可变人生」记录本线**当前**姓名、年龄、职业、资产等事实，与角色档案、人设世界书、全局档案室**同级**；冲突时当前生理/资产/学历以账本为准，**禁止**再写建档卡或开篇固定人设里的旧年龄/旧身份。\n`
       : ''
 
+  /** 与主线同一套「扮演核心 + 默认写作板块」（含通道对齐·禁小混蛋、神态/OS 平等铁律等）；自定义写作预设时仅注入用户正文 */
+  const customWritingPrompt = getActiveCustomWritingInjectBody()
+  const slimMustInject = buildOfflineDatingSlimMustInjectBody({
+    customWritingPrompt,
+  })
+  const usingCustomWriting = typeof customWritingPrompt === 'string'
+  // 系统默认时 slim 已含写作禁词表；自定义时仍附带禁词底线，避免旁支完全失约束
+  const proseTail = usingCustomWriting
+    ? `\n\n${PROSE_FORBIDDEN_TOP_PRIORITY_PIN}\n\n${PROSE_FORBIDDEN_LEXICON_PROMPT}`
+    : ''
+
   const metaBan = `【禁止元叙事出戏】正文中禁止出现：IF线、假设线、平行宇宙、主线、正史、OOC、CP、设定、人设卡、以及英文 meta 词（如 canon / AU / OC / IC）。禁止用「细碎的电流」「化掉的雪」「唯一的锚点」等网文滥抒情收束。`
+  const equalityHard =
+    kind === 'if'
+      ? `【IF·称呼与平等硬补】对白/旁白/内心 OS **一律禁止**「小混蛋 / 小没良心的 / 小家伙 / 小朋友 / 小野猫 / 小妖精 / 小祖宗」等幼化贬低宠溺称；须与主线「${OFFLINE_DATING_CREATIVE_RULES_TITLE}」及通道对齐同效，不得因是假设分支放宽。`
+      : ''
 
   const raw = `${cuDirective}${MBTI_OUTPUT_BAN_RULE}
 
@@ -291,7 +314,9 @@ ${fashionBlock ? `\n\n${fashionBlock}` : ''}
 ${intimacyPoseBlock ? `\n\n${intimacyPoseBlock}` : ''}
 
 你是线下约会「${PLOT_DIMENSION_LABELS[kind]}」写手：与主线约会**同一文风管线、同一档案室约束**，不是另一套模板腔助手。
-${OFFLINE_DATING_CREATIVE_RULES}
+
+${slimMustInject}
+${equalityHard ? `\n${equalityHard}\n` : ''}
 ${modeNote}
 ${styleDuty}
 ${perspectiveRule}
@@ -299,9 +324,7 @@ ${languageRule}
 ${languageAppendix ? `\n${languageAppendix}\n` : ''}
 ${taskBlock}
 ${metaBan}
-${styleAppend}${mimicAppend}
-
-${PROSE_FORBIDDEN_LEXICON_PROMPT}
+${styleAppend}${mimicAppend}${proseTail}
 
 【输出铁律】
 - **禁止**输出 \`<thinking>\`、思维链、JSON、Markdown 围栏或任何解释性前后缀。
@@ -506,6 +529,7 @@ export async function generateDatingPlotDimensionAi(params: {
 2. 用一两句点出「若当时……」的分歧，再写当面动作与对白推进；禁空泛抒情收束。
 3. 正文禁止出现 MBTI、canon、IF线、主线/正史等出戏词。
 4. 若档案室已开「纯爱克制」等：亲密分寸与主线一致；未确立情侣禁止越级亲密，禁止强制爱。
+5. **禁止**「小混蛋 / 小家伙 / 小朋友 / 小野猫」等幼化宠溺称（对白与内心 OS 同禁）；称呼跟锚点与人设，勿突然升格油腻。
 
 `
         : ''

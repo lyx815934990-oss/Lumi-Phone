@@ -23,6 +23,7 @@ function newEmptyEntry(): LoreEntry {
     enabled: true,
     plateScope: { mode: 'all' },
     characterScope: { mode: 'all' },
+    priorityTier: 2,
     updatedAt: Date.now(),
   }
 }
@@ -37,7 +38,9 @@ export function LoreArchiveApp({ onBack }: Props) {
     removeTag,
     hydrated,
     builtinPresets,
+    builtinPresetPriorityTiers,
     setBuiltinPresetEnabled,
+    setBuiltinPresetPriorityTier,
   } = useWorldbookStore()
 
   const [segment, setSegment] = useState<LoreHomeSegment>('all')
@@ -296,10 +299,17 @@ export function LoreArchiveApp({ onBack }: Props) {
         open={Boolean(systemDetail)}
         preset={systemDetail}
         enabled={systemDetail ? builtinPresets[systemDetail.id] === true : false}
+        priorityTier={
+          systemDetail ? (builtinPresetPriorityTiers[systemDetail.id] ?? 2) : 2
+        }
         onClose={() => setSystemDetail(null)}
         onToggle={(enabled) => {
           if (!systemDetail) return
           setBuiltinPresetEnabled(systemDetail.id, enabled)
+        }}
+        onPriorityTierChange={(tier) => {
+          if (!systemDetail) return
+          setBuiltinPresetPriorityTier(systemDetail.id, tier)
         }}
       />
     </div>

@@ -114,4 +114,43 @@ export async function lookupBoundVoiceIdForCharacter(characterId: string): Promi
   return ''
 }
 
+/** 为角色绑定音色（写入 canonical id，便于聊天 / 通话统一查找） */
+export async function bindCharacterVoiceId(characterId: string, voiceId: string): Promise<string> {
+  const rawId = characterId.trim()
+  const vid = voiceId.trim()
+  if (!rawId || !vid) return ''
+  const canon = (await resolveCanonicalCharacterId(rawId)) || rawId
+  const map = { ...readCharacterVoiceMapFromStorage() }
+  // 清掉同角色别名键，只保留 canonical
+  for (const key of Object.keys(map)) {
+    if (key === canon) continue
+    const keyCanon = (await resolveCanonicalCharacterId(key)) || key.trim()
+    if (keyCanon === canon) delete map[key]
+  }
+  map[canon] = vid
+  writeCharacterVoiceMapToStorage(map)
+  return canon
+}
+
+export async function clearBoundCharacterVoiceId(characterId: string): Promise<void> {
+  const rawId = characterId.trim()
+  if (!rawId) return
+  const canon = (await resolveCanonicalCharacterId(rawId)) || rawId
+  const map = { ...readCharacterVoiceMapFromStorage() }
+  let changed = false
+  for (const key of Object.keys(map)) {
+    if (key === rawId || key === canon) {
+      delete map[key]
+      changed = true
+      continue
+    }
+    const keyCanon = (await resolveCanonicalCharacterId(key)) || key.trim()
+    if (keyCanon === canon) {
+      delete map[key]
+      changed = true
+    }
+  }
+  if (changed) writeCharacterVoiceMapToStorage(map)
+}
+
 export { CHARACTER_VOICE_MAP_LS_KEY }

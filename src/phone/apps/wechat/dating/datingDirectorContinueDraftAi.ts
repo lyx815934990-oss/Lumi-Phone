@@ -15,6 +15,7 @@ import {
   buildWechatReplyRomanceSections,
 } from '../../../worldbook/loreArchiveBuiltinPresets'
 import {
+  getLoreArchiveBuiltinPresetPriorityTiersSnapshot,
   getLoreArchiveBuiltinPresetTogglesSnapshot,
   getWorldbookLoreEntriesSnapshot,
 } from '../../../worldbook/worldbookLoreStore'
@@ -291,10 +292,13 @@ export async function requestDatingDirectorContinueDrafts(params: {
     plate,
   ).trim()
   const toggles = getLoreArchiveBuiltinPresetTogglesSnapshot()
-  const romanceBuiltinBlock = buildWechatReplyRomanceSections(toggles).trim()
-  const worldbookDuty = `【档案室效力｜续写同等生效】上列全局世界书/档案室条目（含用户自定义）对本批「导演续写」**同样生效**：关系阶段、亲密分寸、纯爱克制、高质量爱情观、禁止项与气质边界等，不得因是「续写草稿」而绕过或放宽。
+  const romanceBuiltinBlock = buildWechatReplyRomanceSections(
+    toggles,
+    getLoreArchiveBuiltinPresetPriorityTiersSnapshot(),
+  ).trim()
+  const worldbookDuty = `【档案室效力｜续写同等生效】上列全局世界书/档案室条目（含用户自定义）对本批「导演续写」**同样生效**：关系阶段、亲密分寸、纯爱克制、高质量爱情观、禁止项与气质边界等，不得因是「续写草稿」而绕过或放宽。档案室档1高于人设、档2同级冲突跟全局、档3次于人设。
 【内置预设】若已开启「纯爱克制 / Lumi 高质量爱情观 / 情感破冰与告白」等：续写指导的偏向与情节幅度必须服从；未确立情侣禁止越级亲密；禁止强制爱、油腻霸总跳戏；气质可跟人设，硬底线不可破。
-【与偏向的关系】「续写偏向」只能在档案室允许的范围内调戏核与节奏；若偏向与生效世界书冲突，以世界书为准。`
+【与偏向的关系】「续写偏向」只能在档案室允许的范围内调戏核与节奏；若偏向与生效世界书冲突，按各条目标注的档次效力处理。`
 
   const actionFocusBlock =
     actionFocus === 'char'

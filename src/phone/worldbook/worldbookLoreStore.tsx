@@ -5,6 +5,7 @@ import {
   normalizeLoreArchiveTag,
   normalizeLoreArchiveTagCatalog,
   normalizeTagIds,
+  type ArchiveWorldbookPriorityTier,
   type LoreArchiveStoreShapeV2,
   type LoreArchiveStoreShapeV3,
   type LoreArchiveTag,
@@ -15,7 +16,9 @@ import {
 } from './loreArchiveTypes'
 import {
   type LoreArchiveBuiltinPresetId,
+  type LoreArchiveBuiltinPresetPriorityTiers,
   type LoreArchiveBuiltinPresetToggles,
+  resolveLoreArchiveBuiltinPresetPriorityTiers,
   resolveLoreArchiveBuiltinPresetToggles,
 } from './loreArchiveBuiltinPresets'
 import { personaDb, pullPhoneKvWithLocalStorageLegacy } from '../apps/wechat/newFriendsPersona/idb'
@@ -27,6 +30,7 @@ type Snap = {
   tags: LoreArchiveTag[]
   hydrated: boolean
   builtinPresets: Record<LoreArchiveBuiltinPresetId, boolean>
+  builtinPresetPriorityTiers: Record<LoreArchiveBuiltinPresetId, ArchiveWorldbookPriorityTier>
 }
 
 let snap: Snap = {
@@ -34,6 +38,7 @@ let snap: Snap = {
   tags: [],
   hydrated: false,
   builtinPresets: resolveLoreArchiveBuiltinPresetToggles(null),
+  builtinPresetPriorityTiers: resolveLoreArchiveBuiltinPresetPriorityTiers(null),
 }
 const listeners = new Set<() => void>()
 let persistTimer: ReturnType<typeof setTimeout> | null = null
@@ -49,6 +54,9 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null
       tags: parsed.tags,
       hydrated: false,
       builtinPresets: resolveLoreArchiveBuiltinPresetToggles(parsed.builtinPresets),
+      builtinPresetPriorityTiers: resolveLoreArchiveBuiltinPresetPriorityTiers(
+        parsed.builtinPresetPriorityTiers,
+      ),
     }
   } catch {
     // ignore corrupt bootstrap
@@ -149,15 +157,20 @@ function parseStore(raw: unknown): {
   entries: LoreEntry[]
   tags: LoreArchiveTag[]
   builtinPresets: LoreArchiveBuiltinPresetToggles
+  builtinPresetPriorityTiers: LoreArchiveBuiltinPresetPriorityTiers
 } {
   if (!raw || typeof raw !== 'object') {
-    return { entries: [], tags: [], builtinPresets: {} }
+    return { entries: [], tags: [], builtinPresets: {}, builtinPresetPriorityTiers: {} }
   }
   const rec = raw as Record<string, unknown>
   const ver = rec.version
   const builtinPresets =
     rec.builtinPresets && typeof rec.builtinPresets === 'object'
       ? (rec.builtinPresets as LoreArchiveBuiltinPresetToggles)
+      : {}
+  const builtinPresetPriorityTiers =
+    rec.builtinPresetPriorityTiers && typeof rec.builtinPresetPriorityTiers === 'object'
+      ? (rec.builtinPresetPriorityTiers as LoreArchiveBuiltinPresetPriorityTiers)
       : {}
   const tags = normalizeLoreArchiveTagCatalog(rec.tags)
   const validTagIds = new Set(tags.map((t) => t.id))
@@ -168,6 +181,7 @@ function parseStore(raw: unknown): {
       entries: pruneEntryTagIds(parseArchiveEntriesArray(v3.entries), validTagIds),
       tags,
       builtinPresets,
+      builtinPresetPriorityTiers: v3.builtinPresetPriorityTiers ?? builtinPresetPriorityTiers,
     }
   }
 
@@ -176,10 +190,11 @@ function parseStore(raw: unknown): {
       entries: migrateV2ToUnified(rec as unknown as LoreArchiveStoreShapeV2),
       tags,
       builtinPresets,
+      builtinPresetPriorityTiers,
     }
   }
 
-  return { entries: parseLegacyLoreFlat(raw), tags, builtinPresets }
+  return { entries: parseLegacyLoreFlat(raw), tags, builtinPresets, builtinPresetPriorityTiers }
 }
 
 function schedulePersist() {
@@ -205,7 +220,10 @@ function schedulePersist() {
         gentleOlderBrother: snap.builtinPresets.gentleOlderBrother,
         autonomousSocialLife: snap.builtinPresets.autonomousSocialLife,
         schoolCampusCommonKnowledge: snap.builtinPresets.schoolCampusCommonKnowledge,
+        bodyScentPerfume: snap.builtinPresets.bodyScentPerfume,
+        dailyLifeCommonSense: snap.builtinPresets.dailyLifeCommonSense,
       },
+      builtinPresetPriorityTiers: { ...snap.builtinPresetPriorityTiers },
       weibo: { _reserved: true },
     }
     void personaDb.setPhoneKv(LUMI_LORE_ARCHIVE_KV_KEY, payload).catch(() => {})
@@ -245,6 +263,7 @@ export function upsertLoreEntry(entry: LoreEntry) {
       enabled: entry.enabled !== false,
       plateScope: entry.plateScope,
       characterScope: entry.characterScope,
+      priorityTier: entry.priorityTier,
       tagIds,
       updatedAt: entry.updatedAt,
     }) ?? entry
@@ -347,6 +366,28 @@ export function setLoreArchiveBuiltinPresetEnabled(id: LoreArchiveBuiltinPresetI
   schedulePersist()
 }
 
+export function getLoreArchiveBuiltinPresetPriorityTiersSnapshot(): Record<
+  LoreArchiveBuiltinPresetId,
+  ArchiveWorldbookPriorityTier
+> {
+  return { ...snap.builtinPresetPriorityTiers }
+}
+
+export function setLoreArchiveBuiltinPresetPriorityTier(
+  id: LoreArchiveBuiltinPresetId,
+  tier: ArchiveWorldbookPriorityTier,
+) {
+  snap = {
+    ...snap,
+    builtinPresetPriorityTiers: {
+      ...snap.builtinPresetPriorityTiers,
+      [id]: tier,
+    },
+  }
+  emit()
+  schedulePersist()
+}
+
 /** 微信深度注销：清空档案室内存并删除持久化键（由 {@link LUMI_LORE_ARCHIVE_KV_KEY} 承载） */
 export function resetWorldbookLoreArchiveAfterWeChatErase(): void {
   snap = {
@@ -354,6 +395,7 @@ export function resetWorldbookLoreArchiveAfterWeChatErase(): void {
     tags: [],
     hydrated: true,
     builtinPresets: resolveLoreArchiveBuiltinPresetToggles(null),
+    builtinPresetPriorityTiers: resolveLoreArchiveBuiltinPresetPriorityTiers(null),
   }
   emit()
   void personaDb.deletePhoneKv(LUMI_LORE_ARCHIVE_KV_KEY).catch(() => {})
@@ -377,6 +419,9 @@ export function WorldbookLoreProvider({ children }: { children: ReactNode }) {
           tags: parsed.tags,
           hydrated: true,
           builtinPresets: resolveLoreArchiveBuiltinPresetToggles(parsed.builtinPresets),
+          builtinPresetPriorityTiers: resolveLoreArchiveBuiltinPresetPriorityTiers(
+            parsed.builtinPresetPriorityTiers,
+          ),
         }
         emit()
         schedulePersist()
@@ -402,12 +447,14 @@ export function useWorldbookStore() {
       entries: state.entries,
       tags: state.tags,
       builtinPresets: state.builtinPresets,
+      builtinPresetPriorityTiers: state.builtinPresetPriorityTiers,
       upsertEntry: upsertLoreEntry,
       removeEntry: removeLoreEntry,
       upsertTag: upsertLoreArchiveTag,
       removeTag: removeLoreArchiveTag,
       setBuiltinPresetEnabled: setLoreArchiveBuiltinPresetEnabled,
+      setBuiltinPresetPriorityTier: setLoreArchiveBuiltinPresetPriorityTier,
     }),
-    [state.entries, state.tags, state.hydrated, state.builtinPresets],
+    [state.entries, state.tags, state.hydrated, state.builtinPresets, state.builtinPresetPriorityTiers],
   )
 }

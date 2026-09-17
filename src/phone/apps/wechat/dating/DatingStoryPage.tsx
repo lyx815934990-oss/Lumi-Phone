@@ -60,8 +60,17 @@ import { DatingWritingPresetsSheet } from './DatingWritingPresetsSheet'
 import { loadDatingStyleTuning, type DatingStyleTuning } from './styleTuningStorage'
 import {
   clampDatingLengthTargetChars,
+  clampDatingMaxContextTokens,
+  clampDatingPlotSummaryInjectRounds,
+  DATING_AI_DEFAULT_CONTEXT_TOKENS,
   DATING_AI_LENGTH_TARGET_MAX,
   DATING_AI_LENGTH_TARGET_MIN,
+  DATING_AI_MAX_CONTEXT_TOKENS,
+  DATING_AI_MIN_CONTEXT_TOKENS,
+  DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT,
+  DATING_PLOT_SUMMARY_INJECT_ROUNDS_MAX,
+  DATING_PLOT_SUMMARY_INJECT_ROUNDS_MIN,
+  normalizeDatingPlotContextInjectMode,
 } from './types'
 import type { BranchOption, DatingCardStyle, NarrativePerspective } from './types'
 import { DirectorModeHelpButton, DirectorModeHelpPanel } from './DirectorModeHelp'
@@ -667,6 +676,9 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     setGenerateParallelOnSend,
     setGenerateIfLineOnSend,
     setDatingLengthTargetChars,
+    setDatingMaxContextTokens,
+    setDatingPlotContextInjectMode,
+    setDatingPlotSummaryInjectRounds,
     patchPlotImageSettings,
     patchDatingLanguageSettings,
     patchDatingPlotFontSettings,
@@ -709,6 +721,35 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
   const [editOpen, setEditOpen] = useState(false)
   const [perspective, setPerspective] = useState<NarrativePerspective>('second')
   const [lengthTargetChars, setLengthTargetChars] = useState('500')
+  const maxContextTokens = clampDatingMaxContextTokens(
+    currentArchive.datingMaxContextTokens ?? DATING_AI_DEFAULT_CONTEXT_TOKENS,
+  )
+  const setMaxContextTokens = useCallback(
+    (tokens: number) => {
+      setDatingMaxContextTokens(clampDatingMaxContextTokens(tokens))
+    },
+    [setDatingMaxContextTokens],
+  )
+  const plotContextInjectMode = normalizeDatingPlotContextInjectMode(
+    currentArchive.datingPlotContextInjectMode,
+  )
+  const plotSummaryInjectRounds = clampDatingPlotSummaryInjectRounds(
+    Number(
+      currentArchive.datingPlotSummaryInjectRounds ?? DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT,
+    ),
+  )
+  const setPlotContextInjectMode = useCallback(
+    (mode: Parameters<typeof setDatingPlotContextInjectMode>[0]) => {
+      setDatingPlotContextInjectMode(mode)
+    },
+    [setDatingPlotContextInjectMode],
+  )
+  const setPlotSummaryInjectRounds = useCallback(
+    (rounds: number) => {
+      setDatingPlotSummaryInjectRounds(clampDatingPlotSummaryInjectRounds(rounds))
+    },
+    [setDatingPlotSummaryInjectRounds],
+  )
 
   const plotPace = useMemo(
     () => normalizeDatingPlotPaceSettings(currentArchive.plotPace),
@@ -1688,17 +1729,11 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     }
   }, [isVn])
 
-  useEffect(() => {
-    if (isVn || keyboardInsetPx <= 0) return
-    if (document.activeElement !== inputRef.current) return
-    const scroll = normalScrollRef.current
-    if (!scroll) return
-    requestAnimationFrame(() => {
-      scroll.scrollTo({ top: scroll.scrollHeight, behavior: 'smooth' })
-    })
-  }, [keyboardInsetPx, isVn])
+  // 键盘顶起 / loading 结束时不要强行滚到底：用户可能停在本轮输入卡往下读；
+  // 尤其生成结束 loading→false 时若再滚，会把刚锚定的位置拽到文末剧透。
 
-  // 进入线下剧情页时默认滚到底部（与聊天室一致：展示最新进度，而不是顶部）
+  // 进入线下剧情页：滚到最新进度（底部），不要停在顶部；
+  // 本轮「钉住用户输入卡」由 StoryFeed 在发送后单独处理，不会在冷启动时把 scrollTop=0 锁死。
   useEffect(() => {
     if (isVn) return
     const key = `${currentCharacter.id}:${currentArchive.modePreference}`
@@ -1706,23 +1741,23 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     didAutoScrollBottomRef.current = key
     const el = normalScrollRef.current
     if (!el) return
+    const scrollBottom = () => {
+      const node = normalScrollRef.current
+      if (!node) return
+      node.scrollTo({ top: node.scrollHeight, behavior: 'auto' })
+    }
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const node = normalScrollRef.current
-        if (!node) return
-        node.scrollTo({ top: node.scrollHeight, behavior: 'auto' })
+        scrollBottom()
+        // 布局偶发晚一拍（字体/图片），再补一次，避免停在顶部
+        window.setTimeout(scrollBottom, 80)
       })
     })
   }, [currentArchive.modePreference, currentCharacter.id, isVn])
 
-  /** 聚焦输入：展开底栏并滚列表，但禁止 scrollIntoView，避免 iOS 把整页（含顶栏）顶出可视区 */
+  /** 聚焦输入：只展开底栏，不拽动剧情列表（保持当前阅读位置） */
   const onComposerFocus = useCallback(() => {
     persistComposerCollapsed(false)
-    const scroll = normalScrollRef.current
-    if (!scroll) return
-    requestAnimationFrame(() => {
-      scroll.scrollTo({ top: scroll.scrollHeight, behavior: 'smooth' })
-    })
   }, [persistComposerCollapsed])
 
   useEffect(() => {
@@ -3040,6 +3075,9 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
   const narrativeGenOptions = useMemo(
     () => ({
       lengthTargetChars: lengthTargetNum,
+      maxContextTokens,
+      plotContextInjectMode,
+      plotSummaryInjectRounds,
       autoUserReaction: godLocksNoInterrupt ? false : autoUserReaction,
       directorMode: !!currentArchive.directorMode,
       generateParallelOnSend: !!currentArchive.generateParallelOnSend,
@@ -3054,6 +3092,9 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     }),
     [
       lengthTargetNum,
+      maxContextTokens,
+      plotContextInjectMode,
+      plotSummaryInjectRounds,
       autoUserReaction,
       godLocksNoInterrupt,
       currentArchive.directorMode,
@@ -3249,6 +3290,12 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     lengthTargetChars,
     setLengthTargetChars,
     blurPersistLengthTarget,
+    maxContextTokens,
+    setMaxContextTokens,
+    plotContextInjectMode,
+    setPlotContextInjectMode,
+    plotSummaryInjectRounds,
+    setPlotSummaryInjectRounds,
     plotPace,
     toggleThinkingChain,
     thinkingChainEnabled,
@@ -3323,6 +3370,12 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     composerPlaceholder,
     currentArchive,
     currentCharacter,
+    maxContextTokens,
+    setMaxContextTokens,
+    plotContextInjectMode,
+    setPlotContextInjectMode,
+    plotSummaryInjectRounds,
+    setPlotSummaryInjectRounds,
     deletePlotItem,
     displayAvatarUrl,
     floorsMax,
@@ -4022,6 +4075,84 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                 <p className="mt-1 text-[10px] leading-snug text-[#9a9a9a]">
                   范围 {DATING_AI_LENGTH_TARGET_MIN} - {DATING_AI_LENGTH_TARGET_MAX}；失焦后写入当前角色存档。VN 下「汉字」含各气泡标签后的对白与旁白，不含语音参数 JSON。
                 </p>
+              </div>
+              <div className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[12px] text-[#525252]">近端剧情注入</p>
+                </div>
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPlotContextInjectMode('full_text')}
+                    className={`rounded-lg border px-2.5 py-1.5 text-[12px] ${
+                      plotContextInjectMode === 'full_text'
+                        ? 'border-stone-800 bg-stone-800 text-white'
+                        : 'border-stone-200 bg-white text-[#525252]'
+                    }`}
+                  >
+                    上下文原文
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPlotContextInjectMode('summary')}
+                    className={`rounded-lg border px-2.5 py-1.5 text-[12px] ${
+                      plotContextInjectMode === 'summary'
+                        ? 'border-stone-800 bg-stone-800 text-white'
+                        : 'border-stone-200 bg-white text-[#525252]'
+                    }`}
+                  >
+                    近端摘要
+                  </button>
+                </div>
+                {plotContextInjectMode === 'summary' ? (
+                  <>
+                    <div className="mb-1 flex items-center justify-between">
+                      <p className="text-[11px] text-[#8e8e8e]">摘要轮数</p>
+                      <span className="text-[11px] tabular-nums text-[#8e8e8e]">
+                        {plotSummaryInjectRounds}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={DATING_PLOT_SUMMARY_INJECT_ROUNDS_MIN}
+                      max={DATING_PLOT_SUMMARY_INJECT_ROUNDS_MAX}
+                      step={1}
+                      value={plotSummaryInjectRounds}
+                      onChange={(e) => setPlotSummaryInjectRounds(Number(e.target.value))}
+                      className="w-full accent-stone-700"
+                      aria-label="近端摘要轮数"
+                    />
+                    <p className="mt-1 text-[10px] leading-snug text-[#9a9a9a]">
+                      思维溯源③显示「近端 · {plotSummaryInjectRounds} 轮线下摘要」。
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="mb-1 flex items-center justify-between">
+                      <p className="text-[11px] text-[#8e8e8e]">最大上下文 Token</p>
+                      <span className="text-[11px] tabular-nums text-[#8e8e8e]">
+                        {maxContextTokens.toLocaleString()}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={DATING_AI_MIN_CONTEXT_TOKENS}
+                      max={DATING_AI_MAX_CONTEXT_TOKENS}
+                      step={1000}
+                      value={maxContextTokens}
+                      onChange={(e) => setMaxContextTokens(Number(e.target.value))}
+                      className="w-full accent-stone-700"
+                      aria-label="最大上下文 Token"
+                    />
+                    <div className="mt-1 flex justify-between text-[10px] text-[#9a9a9a]">
+                      <span>{DATING_AI_MIN_CONTEXT_TOKENS.toLocaleString()}</span>
+                      <span>{DATING_AI_MAX_CONTEXT_TOKENS.toLocaleString()}</span>
+                    </div>
+                    <p className="mt-1 text-[10px] leading-snug text-[#9a9a9a]">
+                      自最新往历史装填原文；思维溯源③显示「剧情上下文」。
+                    </p>
+                  </>
+                )}
               </div>
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <DatingNetworkMentionControls

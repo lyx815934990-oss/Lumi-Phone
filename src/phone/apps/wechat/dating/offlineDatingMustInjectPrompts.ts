@@ -14,7 +14,8 @@
  *   4. 已开启的内置写作板块（通道对齐 / 神态 / 禁词 / 总规则可拆段…）
  *   5. 仅开思维链：场记包（`{{OFFLINE_ROMANCE_SECTIONS}}` 运行时填档案室恋爱分节）
  *
- * 若启用用户自定义写作预设：以上 1～5 **全部不注入**，只注入用户条目正文
+ * 若启用用户自定义写作预设：以上壳/沙盒/扮演核心/内置板块/场记包不注入，
+ * 但仍保留【写作禁词·最高优先级硬钉】+ 用户条目正文
  *（见 `datingWritingPresetStore.getActiveCustomWritingInjectBody`）。
  *
  * 不在本文件：档案室可选预设全文、人设/世界书、当轮 user、自定义文风 —— 由
@@ -23,7 +24,7 @@
 
 import type { LoreArchiveBuiltinPresetToggles } from '../../../worldbook/loreArchiveBuiltinPresets'
 import { buildOfflineRomanceThinkingChainSections } from '../../../worldbook/loreArchiveBuiltinPresets'
-import { PROSE_FORBIDDEN_LEXICON_PROMPT } from '../proseForbiddenLexiconPrompt'
+import { PROSE_FORBIDDEN_LEXICON_PROMPT, PROSE_FORBIDDEN_TOP_PRIORITY_PIN } from '../proseForbiddenLexiconPrompt'
 import { WECHAT_CORE_PROMPT } from '../wechatChatPrompt'
 import { LUMI_SYSTEM_OVERRIDE_APPENDIX } from '../wechatReplyOutputPrompt'
 import {
@@ -62,10 +63,11 @@ export const DATING_LUMI_SYSTEM_SHELL = `
 
 【规则源】除下述【硬性输出格式】与 **user** 当轮材料外，**正文文风以 system【线下剧情扮演总规则】为唯一创作核**；\`<thinking>\` 只用精简场记卡对照总规则自检，**禁止**在思维链里复述总规则全文。须先写 \`<thinking>\` 并完成【终检】，再输出正文；正文须与定稿一致。
 【硬底线·不可被思维链「概括掉」】【线下剧情扮演总规则】的平等/去八股/禁比喻/禁幼化，以及 system【写作禁词表】黑名单与完整扫描词表——**始终生效**。
+【同轮禁词自检｜不另开请求】在 \`<thinking>\` 内按【落笔】→【终检】完成：心里写完本轮正文骨架 → 对照禁词硬钉与扫描表扫一遍 → **有命中则当场改干净** → 再输出 \`</thinking>\` 外正文。正文只交**零命中定稿**；禁止把带禁词的半成品交出去再指望下一轮。thinking 内禁止贴全文草稿，只记「命中词→替换」短清单。
 
 【硬性输出格式】
 1) **先**输出 \`<thinking>...</thinking>\`：覆盖【总控】【情感协议】【主轴】【时空】【线上事实】【知情边界】【关系温度】【创作自检】【推进】【代写边界】【落笔】【终检】（档案室恋爱预设若开则另有分节）；**总汉字 ≤ 700**，各卡 1～3 句，**禁止**漫灌。
-2) **后**输出正文：紧接 **\`</thinking>\` 闭合标签之后**，**仅为**可读剧情文本；禁止用 markdown 代码块包裹全文。
+2) **后**输出正文：紧接 **\`</thinking>\` 闭合标签之后**，**仅为**可读剧情文本（已完成禁词自检的定稿）；禁止用 markdown 代码块包裹全文。
    - **闭合铁律**：必须有 **成对的** \`</thinking>\`（或网关认可的等价闭合），再开始正文；**禁止**只写 \`<thinking>\` 开头不写闭合——客户端会把后续剧情误判进思维链或导致**正文为空、字数统计为 0**。
    - **分区铁律**：对白、旁白、剧情段落**禁止**写在 \`<thinking>…</thinking>\` **内部**；思维链内只做场记与短自检，叙事正文一律在标签外。
 3) \`<thinking>\` 外：先写可读剧情正文；禁止提纲、解释、PlotDirectionOptions、选项串。**禁止把 HTML 写进正文中间**。若当轮 user/附录开启「小剧场」：须在正文（及读者评论块）之后追加 \`【小剧场】…【小剧场结束】\`（见附录格式，**禁止** JSON）；未开启则禁止任何 HTML 小剧场。若开启读者评论：文末 \`【读者评论】\` 须用 \`★|昵称|点赞|文案\` 行，**禁止** JSON 数组。附加块**禁止**写进 thinking。
@@ -92,7 +94,7 @@ export const DATING_LUMI_SYSTEM_SHELL = `
 export const DATING_LUMI_DIRECT_SHELL = `
 你是微信「约会页」剧情执行体；叙事主持为 **Lumi大人**（场记式统筹，**不是**故事内角色）。身份、沙盒与沉浸契约以紧随其后的【Lumi_System_Override】为准；与本节重复处，以该段为优先。
 
-【直出模式·已关闭思维链】界面已关闭思维链输出。**禁止**输出 \`<thinking>\` / \`<think>\` / \`<logicpass>\` / \`<reasoning>\` 或任何「先规划再正文」的思维链块。先写可读剧情正文；叙事约束以本 system【线下剧情扮演总规则】、user 当轮材料（篇幅、人称、抢话、文风、禁词等）为准，在内心自行把握即可，勿把自检过程写进回复。
+【直出模式·已关闭思维链】界面已关闭思维链输出。**禁止**输出 \`<thinking>\` / \`<think>\` / \`<logicpass>\` / \`<reasoning>\` 或任何「先规划再正文」的思维链块。仍须在**同一次回复内**完成禁词自检：心里写完 → 对照禁词硬钉与扫描表扫一遍 → 有命中当场改干净 → 只输出零命中正文。勿把自检过程写进回复。叙事约束以本 system【线下剧情扮演总规则】、user 当轮材料（篇幅、人称、抢话、文风、禁词等）为准。
 
 【硬性输出格式】
 1) **禁止**用 markdown 代码块包裹**全文剧情**；禁止输出提纲、解释、PlotDirectionOptions、选项串。**禁止把 HTML 写进正文中间**。
@@ -143,7 +145,7 @@ export const OFFLINE_DATING_CREATIVE_RULES = `
 三、呈现而非陈述（底线）
 - **直接写要发生的事**：谁做了什么、说了什么。严禁为凑字数堆抽象形容词与排比。
 - **禁陈述情绪标签**：不写「他很悲伤/尴尬/心动」；改可见动作与对白。
-- **禁自定义幼化/玩梗称号**（除非 {{user}} 当轮明确要求）：小朋友、小崽子、小笨蛋、小蠢货、小妖精、小祖宗，以及莫名其妙的「盛老板/盛主人/盛老师」等姓+职称玩梗。
+- **禁自定义幼化/玩梗称号**（除非 {{user}} 当轮明确要求）：小朋友、小崽子、小笨蛋、小蠢货、小妖精、小祖宗、**小混蛋**、小没良心的、小家伙、小野猫，以及莫名其妙的「盛老板/盛主人/盛老师」等姓+职称玩梗；内心 OS 同样禁止。
 - 禁词命中改白描（近乎、仿佛、狼狈、性感的弧度等）；完整扫描表以 system【写作禁词表】为准。
 
 四、角色为核
@@ -160,6 +162,8 @@ export const OFFLINE_DATING_CREATIVE_RULES = `
 - 只写**物理动作、触感、距离、力度**；**禁止**念出术语名（不说「公主抱/法式热吻/熊抱」）。
 - 拥抱/亲吻/贴靠：每轮择**一种**具体做法写清楚；不要菜单式堆叠。
 - 成人场面可用直白词语；**禁止**多感官散文开场、性感弧度、发狠抠痕、本能挺腰口是心非八股。写清同意与可停止；对方说停立刻停。
+- **全场景禁油腻词**：禁止霸道、狠狠、发疯、低沉、压抑、陷进、扫荡、死死、破碎、呜咽、疯狂、猛地等（日常/亲密同禁）；改具体动作与对白。
+- **亲密结束后禁止秒睡**：高潮/结束后须写余韵（缓气、清理、搂抱、枕边话、穿衣、喝水等）再换场；**禁止**一结束就翻身睡觉、直接入睡收场，除非 {{user}}/导演明确要求「睡了」。
 - 对白可喘断，但须像真人气乱，禁止整段「哈……啊哈……」表演腔。
 
 七、情感回应（仅内化，勿写成正文公式）
@@ -324,8 +328,8 @@ export const OFFLINE_DATING_THINKING_CHAIN_PROMPT = `
 - 本轮拟删的八股/禁词类型（近乎、仿佛、狼狈、性感弧度等）→ 白描替换思路。
 - 首句：动作或对白（禁景物/比喻开场）。末句：动作或对白（禁升华）。
 - 对白占比目标 ≥55%；神态少而准；群像/NPC 是否需要点一下。
-- 亲密戏：有则勾「只写动作触感+同意」；无则「无亲密」。
-- 禁词：对照 system 扫描表，列 3～6 个本轮易踩词及替换（可写「已避开」）。
+- 亲密戏：有则勾「只写动作触感+同意；全场景无霸道/狠狠/发疯/死死等油腻词；结束后不秒睡」；无则「无亲密」。
+- 禁词预扫：对照硬钉高频词（潮气/低哑/滚烫/烧红/翻涌/血液/彻底/前所未有/执着/长驱直入/几乎/近乎/红得像要滴血/撬开/极度/隐秘/紧绷的弦等）+ 扫描表，列 3～6 个本轮易踩词及替换（可写「已避开」）。
 
 【推进】
 收束点 + 新钩子；连锁动作一句 + 对白一句。导演目的地/锁定跨度须写明并抵达。OS 若写：节点 + 每条≥40 字计划。
@@ -337,19 +341,21 @@ export const OFFLINE_DATING_THINKING_CHAIN_PROMPT = `
 
 【落笔】
 目标字数区间；人称代词；正文第一句草稿（非比喻）。
+**同轮流程**：心里写完本轮正文骨架 → 立刻扫禁词硬钉与易踩词 → 命中则记下「词→白描替换」并视为已改；**禁止**把全文草稿贴进 thinking。
 
 【终检】（每项一行：通过 / 已改××）
-1 零比喻·禁词  2 总规则平等幼化油腻  3 呈现非陈述·对白≥55%
+1 零比喻·禁词硬钉全扫（潮气/低哑/滚烫/几乎/彻底/撬开/极度/隐秘/紧绷的弦/红得像要滴血等）  2 总规则平等幼化油腻  3 呈现非陈述·对白≥55%
 4 线上事实·知情  5 末句非升华  6 季节人群时段
-7 亲密同意（或无）  8 未洗稿旧八股  9 格式 thinking→正文
-末行：自检结论：通过 / 需压缩（+点）
+7 亲密同意（或无）  8 未洗稿旧八股  9 格式 thinking→正文（正文=已净化定稿）
+末行：禁词自检：通过 / 已改（列词）；自检结论：通过 / 需压缩（+点）
 `.trim()
 
 /** @deprecated 已并入 OFFLINE_DATING_THINKING_CHAIN_PROMPT【创作自检】 */
 export const OFFLINE_DATING_INTIMACY_COT_NOTE = `
 【亲密戏自检·短笺】
 仅当本轮确有亲密/成人内容时填写（1～3 句）；无则写「本轮无亲密戏」。
-正文写法以 system【线下剧情扮演总规则】为准。
+须自检：全场景无霸道/狠狠/发疯/低沉/低哑/压抑/陷进/扫荡/死死/破碎/呜咽/疯狂/猛地/滚烫/潮气/几乎等油腻词；结束后写了余韵，未秒睡。命中则在本轮改完再交。
+正文写法以 system【线下剧情扮演总规则】与【写作禁词表】为准（禁词表任何场景均生效）。
 `.trim()
 
 export function buildOfflineDatingThinkingChainBooksPrompt(
@@ -411,8 +417,11 @@ export type OfflineDatingMustInjectOptions = {
 export function buildOfflineDatingMustInjectCore(
   opts?: OfflineDatingMustInjectOptions,
 ): string {
+  // 禁词硬钉始终置顶：即使自定义写作预设替换正文，也不得被旧稿文风压过
+  const pin = PROSE_FORBIDDEN_TOP_PRIORITY_PIN
   if (typeof opts?.customWritingPrompt === 'string') {
-    return opts.customWritingPrompt.trim()
+    const custom = opts.customWritingPrompt.trim()
+    return custom ? `${pin}\n\n${custom}` : pin
   }
   const thinkingChainEnabled = opts?.thinkingChainEnabled !== false
   const shell = thinkingChainEnabled ? DATING_LUMI_SYSTEM_SHELL : DATING_LUMI_DIRECT_SHELL
@@ -422,6 +431,8 @@ export function buildOfflineDatingMustInjectCore(
       ? '\n\n' + buildOfflineDatingThinkingChainBooksPrompt(opts?.toggles)
       : ''
   return (
+    pin +
+    '\n\n' +
     shell +
     '\n\n' +
     LUMI_SYSTEM_OVERRIDE_APPENDIX +
@@ -437,9 +448,11 @@ export function buildOfflineDatingSlimMustInjectBody(opts?: {
   writingPresets?: DatingWritingPresetToggles | null
   customWritingPrompt?: string | null
 }): string {
+  const pin = PROSE_FORBIDDEN_TOP_PRIORITY_PIN
   if (typeof opts?.customWritingPrompt === 'string') {
-    return opts.customWritingPrompt.trim()
+    const custom = opts.customWritingPrompt.trim()
+    return custom ? `${pin}\n\n${custom}` : pin
   }
   const writing = buildDatingWritingPresetsPrompt(opts?.writingPresets)
-  return OFFLINE_DATING_CREATIVE_RULES + (writing ? '\n\n' + writing : '')
+  return pin + '\n\n' + OFFLINE_DATING_CREATIVE_RULES + (writing ? '\n\n' + writing : '')
 }

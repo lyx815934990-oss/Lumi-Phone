@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   clampDatingLengthTargetChars,
+  clampDatingMaxContextTokens,
+  clampDatingPlotSummaryInjectRounds,
+  DATING_AI_DEFAULT_CONTEXT_TOKENS,
   DATING_AI_LENGTH_TARGET_MAX,
   DATING_AI_LENGTH_TARGET_MIN,
+  DATING_AI_MAX_CONTEXT_TOKENS,
+  DATING_AI_MIN_CONTEXT_TOKENS,
+  DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT,
+  DATING_PLOT_SUMMARY_INJECT_ROUNDS_MAX,
+  DATING_PLOT_SUMMARY_INJECT_ROUNDS_MIN,
+  normalizeDatingPlotContextInjectMode,
 } from '../../../phone/apps/wechat/dating/types'
 import {
   DATING_PLOT_PACE_PRESET_OPTIONS,
@@ -298,6 +307,105 @@ export function AdvancedControlSheet({
           <p className="mt-1.5 text-[10px] text-[var(--sr-text-faint)]">
             {DATING_AI_LENGTH_TARGET_MIN}～{DATING_AI_LENGTH_TARGET_MAX.toLocaleString()}
           </p>
+        </BentoCard>
+
+        <BentoCard className="col-span-2" {...coachTargetProps('ac-context-tokens')}>
+          <SectionLabel>近端剧情注入</SectionLabel>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <SelectChip
+              active={normalizeDatingPlotContextInjectMode(settings.plotContextInjectMode) === 'full_text'}
+              onClick={() => patchSettings({ plotContextInjectMode: 'full_text' })}
+            >
+              上下文原文
+            </SelectChip>
+            <SelectChip
+              active={normalizeDatingPlotContextInjectMode(settings.plotContextInjectMode) === 'summary'}
+              onClick={() => patchSettings({ plotContextInjectMode: 'summary' })}
+            >
+              近端摘要
+            </SelectChip>
+          </div>
+          {normalizeDatingPlotContextInjectMode(settings.plotContextInjectMode) === 'summary' ? (
+            <>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <p className="text-[12px] text-[var(--sr-text-muted)]">注入近端摘要轮数</p>
+                <span className="font-mono text-[12px] tabular-nums text-[var(--sr-text)]">
+                  {clampDatingPlotSummaryInjectRounds(
+                    Number(settings.plotSummaryInjectRounds) || DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT,
+                  )}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={DATING_PLOT_SUMMARY_INJECT_ROUNDS_MIN}
+                max={DATING_PLOT_SUMMARY_INJECT_ROUNDS_MAX}
+                step={1}
+                value={clampDatingPlotSummaryInjectRounds(
+                  Number(settings.plotSummaryInjectRounds) || DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT,
+                )}
+                onChange={(e) =>
+                  patchSettings({
+                    plotSummaryInjectRounds: clampDatingPlotSummaryInjectRounds(Number(e.target.value)),
+                  })
+                }
+                className="w-full accent-[var(--sr-gold)]"
+                aria-label="近端摘要轮数"
+              />
+              <div className="mt-1 flex justify-between text-[10px] text-[var(--sr-text-faint)]">
+                <span>{DATING_PLOT_SUMMARY_INJECT_ROUNDS_MIN}</span>
+                <span>{DATING_PLOT_SUMMARY_INJECT_ROUNDS_MAX}</span>
+              </div>
+              <p className="mt-1.5 text-[10px] text-[var(--sr-text-faint)]">
+                写入剧情摘要表的近端行；不含已用全文覆盖的最近 2 轮。思维溯源③显示「近端摘要」。
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <p className="text-[12px] text-[var(--sr-text-muted)]">最大上下文 Token · 自最新往历史装填</p>
+                <span className="font-mono text-[12px] tabular-nums text-[var(--sr-text)]">
+                  {clampDatingMaxContextTokens(
+                    Number(settings.maxContextTokens) || DATING_AI_DEFAULT_CONTEXT_TOKENS,
+                  ).toLocaleString()}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={DATING_AI_MIN_CONTEXT_TOKENS}
+                max={DATING_AI_MAX_CONTEXT_TOKENS}
+                step={1000}
+                value={clampDatingMaxContextTokens(
+                  Number(settings.maxContextTokens) || DATING_AI_DEFAULT_CONTEXT_TOKENS,
+                )}
+                onChange={(e) =>
+                  patchSettings({
+                    maxContextTokens: clampDatingMaxContextTokens(Number(e.target.value)),
+                  })
+                }
+                className="w-full accent-[var(--sr-gold)]"
+                aria-label="最大上下文 Token"
+              />
+              <div className="mt-1 flex justify-between text-[10px] text-[var(--sr-text-faint)]">
+                <span>{DATING_AI_MIN_CONTEXT_TOKENS.toLocaleString()}</span>
+                <span>{DATING_AI_MAX_CONTEXT_TOKENS.toLocaleString()}</span>
+              </div>
+              <p className="mt-1.5 text-[10px] text-[var(--sr-text-faint)]">
+                剧情原文按预算装填；思维溯源③显示「剧情上下文」。
+              </p>
+            </>
+          )}
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-[var(--sr-border)] pt-3">
+            <div className="min-w-0">
+              <p className="text-[12px] text-[var(--sr-text)]">内容页显示浮层</p>
+              <p className="mt-0.5 text-[10px] text-[var(--sr-text-faint)]">
+                左侧常驻「注入」按钮，可拖动高度，点开快捷改方式
+              </p>
+            </div>
+            <CapsuleSwitch
+              checked={!!settings.plotInjectRailEnabled}
+              onCheckedChange={(v) => patchSettings({ plotInjectRailEnabled: v })}
+            />
+          </div>
         </BentoCard>
 
         <BentoCard {...coachTargetProps('ac-pace')}>

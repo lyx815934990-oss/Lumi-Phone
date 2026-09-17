@@ -1,28 +1,27 @@
 import { buildOpenAiEmbeddingsEndpoint } from '../../api/openAiCompatibleEndpoints'
+import {
+  BUILTIN_SILICONFLOW_API_BASE_URL,
+  BUILTIN_SILICONFLOW_API_KEY,
+} from '../../api/builtinSiliconflow'
 import type { ApiConfig } from '../../api/types'
 import type { MemorySettingsRow } from '../newFriendsPersona/types'
 
-/** 与 OpenAI 兼容接口默认对齐；可在记忆设置里覆盖 */
-export const DEFAULT_MEMORY_EMBEDDING_MODEL = 'text-embedding-3-small'
+/** 默认向量模型：BGE-M3 */
+export const DEFAULT_MEMORY_EMBEDDING_MODEL = 'BAAI/bge-m3'
+
+export const DEFAULT_MEMORY_EMBEDDING_API_URL = BUILTIN_SILICONFLOW_API_BASE_URL
 
 /**
- * 解析向量请求用的 url / key：专用副接口开启时仅走专用项，否则走聊天 `apiConfig`。
+ * 记忆向量召回固定走内置云端向量（用户无需再配主接口 / 副接口）。
  */
 export function resolveEmbeddingApiCredentials(
-  settings: MemorySettingsRow,
-  chatFallback: Pick<ApiConfig, 'apiUrl' | 'apiKey'> | null | undefined,
-): { apiUrl: string; apiKey: string } | null {
-  const useDedicated = settings.memoryEmbeddingUseDedicatedApi === true
-  if (useDedicated) {
-    const url = settings.memoryEmbeddingApiUrl?.trim() || ''
-    const key = settings.memoryEmbeddingApiKey?.trim() || ''
-    if (!url || !key) return null
-    return { apiUrl: url, apiKey: key }
+  _settings: MemorySettingsRow,
+  _chatFallback: Pick<ApiConfig, 'apiUrl' | 'apiKey'> | null | undefined,
+): { apiUrl: string; apiKey: string } {
+  return {
+    apiUrl: DEFAULT_MEMORY_EMBEDDING_API_URL,
+    apiKey: BUILTIN_SILICONFLOW_API_KEY,
   }
-  const url = chatFallback?.apiUrl?.trim() || ''
-  const key = chatFallback?.apiKey?.trim() || ''
-  if (!url || !key) return null
-  return { apiUrl: url, apiKey: key }
 }
 
 function normalizeEmbeddingArray(raw: unknown): number[] | null {
@@ -35,6 +34,9 @@ function normalizeEmbeddingArray(raw: unknown): number[] | null {
   }
   return out.length ? out : null
 }
+
+/** bge-m3 上下文约 8K token；按字符截断留余量 */
+const EMBEDDING_INPUT_CHAR_LIMIT = 8000
 
 /** 单条文本 → 向量（失败抛错，由调用方 try/catch） */
 export async function fetchEmbeddingVector(
@@ -53,7 +55,7 @@ export async function fetchEmbeddingVector(
     },
     body: JSON.stringify({
       model: modelId.trim() || DEFAULT_MEMORY_EMBEDDING_MODEL,
-      input: t.slice(0, 12000),
+      input: t.slice(0, EMBEDDING_INPUT_CHAR_LIMIT),
     }),
   })
   const data = (await resp.json()) as {
@@ -79,7 +81,7 @@ export async function fetchEmbeddingVectorsBatch(
   texts: string[],
   modelId: string,
 ): Promise<number[][]> {
-  const trimmed = texts.map((s) => String(s ?? '').trim().slice(0, 12000))
+  const trimmed = texts.map((s) => String(s ?? '').trim().slice(0, EMBEDDING_INPUT_CHAR_LIMIT))
   if (!trimmed.length) return []
   const url = buildOpenAiEmbeddingsEndpoint(cfg.apiUrl)
   const resp = await fetch(url, {

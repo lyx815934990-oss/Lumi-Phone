@@ -262,8 +262,9 @@ export function StoryNodeCard({
   const longPressEnabled = !isRegenerating && !ctxOpen && !deleteConfirmOpen
   const { bind, pressing } = useWeChatLongPress({
     enabled: longPressEnabled,
-    ms: 450,
-    moveThresholdPx: 16,
+    ms: 600,
+    moveThresholdPx: 12,
+    pressVisualDelayMs: 220,
     onLongPress: (e) => openContextMenuAt(e.clientX, e.clientY),
   })
 

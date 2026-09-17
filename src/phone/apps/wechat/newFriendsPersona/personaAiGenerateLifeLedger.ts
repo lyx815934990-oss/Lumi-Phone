@@ -477,9 +477,8 @@ export async function generatePersonaAiLifeLedgers(params: {
   const hasPlayer = Boolean(player?.id)
 
   const charSeed = seedSheetFromCard(ch, {
-    relationshipStatus: form.relationToUser.trim().includes('恋人')
-      ? '恋爱中'
-      : form.relationshipHistoryHint.trim() || '',
+    // 仅作开篇提示种子；最终感情以模型输出为准，不经本地标签映射
+    relationshipStatus: form.relationshipHistoryHint.trim() || form.relationToUser.trim() || '',
   })
   const playerSeed = player
     ? seedSheetFromCard(player, {
@@ -497,7 +496,7 @@ export async function generatePersonaAiLifeLedgers(params: {
         PERSONA_AI_RELATIONSHIP_HISTORY_ENTRY_NAME,
         '对你的看法和态度',
       ],
-      320,
+      480,
     ),
     // 相遇羁绊常写明学长/大一等开篇年级，给足篇幅，避免截断丢年级
     pickWorldBookSnippet(ch, ['相遇羁绊'], 720),
@@ -564,7 +563,8 @@ ${hasPlayer ? '\n===玩家===\n（字段与列表格式同角色；为本角色�
 3. 禁止把玩家写进角色家庭；共同社交圈同名人两侧基础信息须一致。
 4. **身份卡对齐（最高优先）**：若【玩家身份 · 家庭/社交事实】已写明妹妹/哥哥/弟弟/父母等具名或可点名亲属，===玩家===【家庭】必须写出对应条目（有姓名用原名；仅称谓则补合理真名+关系）；禁止用无关父母模板顶替而漏掉已写明的兄弟姐妹。
 5. **年级对齐（开局）**：【相遇羁绊】/名片等若写角色「大三」、玩家「大一」等，双方**开篇**主业与开篇年级必须照写；禁止因开局日在暑假就改成大二，或写成「待9月升大一/大二」。暑假仅可注明「暑假在读」，开篇年级本身不变。（剧情日后推进的「现在」年级由账本对齐/随聊更新，不在本步锁死。）
-6. 只输出标记正文，勿复述种子。
+6. **与玩家感情（模型自由判定）**：综合「与玩家」原文与「对你的看法和态度」自行写【感情】短句与【社交】里对玩家的「关系」；可用任意贴切表述，**不限**固定标签枚举。勿无视暗恋/喜欢证据压成「普通熟人」；也勿把未告白互认的亲密无脑写成热恋/正式恋人。客户端不会再用本地代码覆盖你的判定。
+7. 只输出标记正文，勿复述种子。
 
 ${buildSharedSocialCircleConsistencyRule()}
 

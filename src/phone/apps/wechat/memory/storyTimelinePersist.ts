@@ -442,11 +442,26 @@ export async function loadStoryTimelinePromptBlock(
   ])
   const datingPlotCursor = Math.max(datingPlotCursorMain ?? 0, datingPlotCursorArchive ?? 0) || null
 
-  const recentRows = selectStoryTimelineRecentInjectRows(allRows, {
-    datingPlotCursor,
-    skipUnsummarizedOfflineAiRounds: MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS,
-  })
-  const excludeIds = new Set(recentRows.map((r) => r.id))
+  const omitRecent = !!opts?.omitRecentSummaryRows
+  const recentRows = omitRecent
+    ? []
+    : selectStoryTimelineRecentInjectRows(allRows, {
+        datingPlotCursor,
+        skipUnsummarizedOfflineAiRounds: MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS,
+        recentRowCount: opts?.recentSummaryRowCount,
+      })
+  /** 近端固定摘要关闭时，仍排除已由全文覆盖的最近若干轮，避免向量与「最近剧情」原文重复 */
+  const excludeIds = new Set(
+    (
+      omitRecent
+        ? selectStoryTimelineRecentInjectRows(allRows, {
+            datingPlotCursor,
+            skipUnsummarizedOfflineAiRounds: 0,
+            recentRowCount: MEMORY_UNSUMMARIZED_OFFLINE_INJECT_AI_ROUNDS,
+          })
+        : recentRows
+    ).map((r) => r.id),
+  )
 
   const currentStoryCalendarMs = resolveStoryTimelineCurrentCalendarMs({
     state,

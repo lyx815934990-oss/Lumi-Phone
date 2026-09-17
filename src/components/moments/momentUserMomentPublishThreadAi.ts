@@ -23,17 +23,21 @@ import {
   buildUserMomentInteractionCharacterContexts,
   formatUserMomentCharacterContextsPrompt,
 } from './momentUserInteractionContext'
+import {
+  MOMENT_USER_THREAD_STABLE_FORMAT_HINT,
+  parseUserMomentThreadFromStableText,
+} from './momentStableFormat'
 
 const USER_MOMENT_THREAD_TASK = `
 【朋友圈评区接话】
 用户刚发了朋友圈，已有角色的首评。请模拟真实微信评区：角色之间可以互相回复、接话、抬杠，不必只对着用户说话。
-必须仅输出 JSON，不要 Markdown：
-{"replies":[{"charId":"角色ID","replyToCharId":"被回复者角色ID","content":"评论内容","delaySeconds":数字}, ...]}
+禁止 JSON；只输出稳定字段行。
+${MOMENT_USER_THREAD_STABLE_FORMAT_HINT}
 
 规则：
-1. charId、replyToCharId 必须来自允许名单；replyToCharId 须是已在首评里留过 comment 的角色。
-2. replies 0～5 条，按时间顺序；无合适接话可输出 {"replies":[]}。
-3. delaySeconds 为刷到朋友圈后的秒数（${30}～${MOMENT_INTERACTION_DELAY_MAX_SECONDS}），须晚于被回复者那条评论（建议 +${MOMENT_THREAD_REPLY_GAP_SECONDS}～120，留足刷圈与打字时间）。
+1. charId、replyToCharId 必须来自允许名单；replyToCharId 须是已在首评里留过评论的角色。
+2. 接话 0～5 条，按时间顺序；无合适接话写「（无）」。
+3. 延迟为刷到朋友圈后的秒数（${30}～${MOMENT_INTERACTION_DELAY_MAX_SECONDS}），须晚于被回复者那条评论（建议 +${MOMENT_THREAD_REPLY_GAP_SECONDS}～120，留足刷圈与打字时间）。
 4. 每项 1～2 句口语，符合人设与关系；禁止「看到了」「收到」等空话；禁止写出 MBTI 四字母或「快乐修勾」「INFJ 清冷感」等类型学套话。
 5. 可有多轮：A 评用户 → B 回复 A → A 再回复 B → C 插话回复 A 等。
 6. **受众识别**：【已有首评】里标注「评用户」的，是角色对**发朋友圈的用户**说话；其中「你/给你/您」指用户本人，不是围观角色。回复这类评论时应理解为围观/帮腔/调侃，**禁止**把对用户说的「给你」理解成在威胁你自己。
@@ -77,6 +81,22 @@ function parseThreadReplyDrafts(
     if (out.length >= maxReplies) break
   }
   return out
+}
+
+function parseThreadReplyDraftsFromStable(
+  raw: string,
+  allowedCharIds: Set<string>,
+  commentAuthorCharIds: Set<string>,
+  maxReplies = 6,
+): AiMomentInteractionDraft[] {
+  const rows = parseUserMomentThreadFromStableText(raw)
+  if (!rows.length) return []
+  return parseThreadReplyDrafts(
+    { replies: rows },
+    allowedCharIds,
+    commentAuthorCharIds,
+    maxReplies,
+  )
 }
 
 function buildInitialCommentCatalog(
@@ -167,7 +187,7 @@ export async function supplementUserMomentCharacterThreads(params: {
     `配图数：${params.imageCount}`,
     `说明：一级首评默认是对用户 ${userDisplayName} 说的；评区接话时须分清「你/给你」指谁。`,
     maxThreadReplies <= 1
-      ? `【频度】本动态评区接话最多 ${maxThreadReplies} 条；无合适接话请 {"replies":[]}。`
+      ? `【频度】本动态评区接话最多 ${maxThreadReplies} 条；无合适接话请写「（无）」。`
       : null,
     '',
     relationshipBlock,
@@ -186,7 +206,7 @@ export async function supplementUserMomentCharacterThreads(params: {
     '正例：司予回复顾琳：琳姐你对社长太狠了吧 😅',
     '',
     `允许名单：${roster}`,
-    '请生成 replies JSON。',
+    '请生成评区接话，只输出稳定字段行，不要 JSON。',
   ]
     .filter((line) => line !== null)
     .join('\n')
@@ -202,13 +222,21 @@ export async function supplementUserMomentCharacterThreads(params: {
     max_tokens: 1100,
   })
 
-  const payload = parseModelJsonPayload(raw)
-  const parsed = parseThreadReplyDrafts(
-    payload,
+  const parsedStable = parseThreadReplyDraftsFromStable(
+    raw,
     allowedCharIds,
     commentAuthorCharIds,
     maxThreadReplies,
   )
+  const parsed =
+    parsedStable.length > 0
+      ? parsedStable
+      : parseThreadReplyDrafts(
+          parseModelJsonPayload(raw),
+          allowedCharIds,
+          commentAuthorCharIds,
+          maxThreadReplies,
+        )
   const prior = [...params.baseDrafts]
   const anchored: AiMomentInteractionDraft[] = []
   for (const [index, draft] of parsed.entries()) {

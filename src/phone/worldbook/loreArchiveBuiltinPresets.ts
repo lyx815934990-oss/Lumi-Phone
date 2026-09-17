@@ -14,6 +14,12 @@ import { REALISTIC_AUTONOMY_APPENDIX } from './realisticAutonomyAppendix'
 import { GENTLE_OLDER_BROTHER_APPENDIX } from './gentleOlderBrotherAppendix'
 import { AUTONOMOUS_SOCIAL_LIFE_APPENDIX } from './autonomousSocialLifeAppendix'
 import { SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX } from './schoolCampusCommonKnowledgeAppendix'
+import { BODY_SCENT_PERFUME_APPENDIX } from './bodyScentPerfumeAppendix'
+import { DAILY_LIFE_COMMON_SENSE_APPENDIX } from './dailyLifeCommonSenseAppendix'
+import {
+  normalizeArchiveWorldbookPriorityTier,
+  type ArchiveWorldbookPriorityTier,
+} from './loreArchiveTypes'
 
 /** 档案室系统内置预设（仅开关，正文不对用户展示） */
 export type LoreArchiveBuiltinPresetId =
@@ -31,8 +37,14 @@ export type LoreArchiveBuiltinPresetId =
   | 'gentleOlderBrother'
   | 'autonomousSocialLife'
   | 'schoolCampusCommonKnowledge'
+  | 'bodyScentPerfume'
+  | 'dailyLifeCommonSense'
 
 export type LoreArchiveBuiltinPresetToggles = Partial<Record<LoreArchiveBuiltinPresetId, boolean>>
+
+export type LoreArchiveBuiltinPresetPriorityTiers = Partial<
+  Record<LoreArchiveBuiltinPresetId, ArchiveWorldbookPriorityTier>
+>
 
 export type LoreArchiveBuiltinPresetMeta = {
   id: LoreArchiveBuiltinPresetId
@@ -45,87 +57,100 @@ export const LORE_ARCHIVE_BUILTIN_PRESETS: LoreArchiveBuiltinPresetMeta[] = [
     id: 'lumiDoctrineOfLove',
     title: 'Lumi 高质量爱情观',
     description:
-      '系统内置：约束角色对玩家的具象付出、安全感、情绪托底与灵魂尊重；已并入「已确认恋人·专一与托底」（原男德，男性恋人时生效）。开启后注入 AI，正文不可查看或编辑。',
+      '一句话：让角色对你好得更「实在」——会照顾、给安全感、情绪上托住你，也把你当平等的灵魂，而不是宠物或附属品。已确认恋人时还会叠一层「专一与托底」（偏男德那套，男性恋人时更明显）。开了就会喂给 AI；正文是系统封存的，只能开关不能偷看。',
   },
   {
     id: 'activeConfession',
     title: '角色情感破冰与主动告白',
     description:
-      '系统内置：打破暧昧循环，在适当时机完成情感交付与告白演绎。开启后注入 AI，正文不可查看或编辑。',
+      '专治「暧昧拖成无底洞」。火候差不多时，推动角色把心意说清楚、把告白演出来，别永远卡在试探里。开了就注入；正文不可看不可改。',
   },
   {
     id: 'pureRestrainLove',
     title: '纯爱克制',
     description:
-      '系统内置：纯爱番式相处——纯情害羞、成全型喜欢（希望对方更好/1+1＞2）、循序渐进；禁速通攻略、自恋追问、刚在一起就深亲密或同居；情侣亲密须生涩征得同意。相处日久进入更深亲密戏时，可解锁纯情色气写法（直白/边做边夸等，仍禁强制爱）。开启后注入线上/线下 AI，正文不可查看或编辑。',
+      '纯爱番手感：害羞、真心希望你好、喜欢是「1+1＞2」那种成全感；关系慢慢升温，别秒通关、别刚在一起就深度亲密或同居。情侣亲密也要生涩、要征得同意。相处久了再写更深亲密时，可以有点纯情色气，但仍然禁止强制爱。线上线下都会吃到这份设定。',
   },
   {
     id: 'offlineRichInnerOs',
     title: '线下约会·多内心 OS 描写',
     description:
-      '系统内置：线下约会剧情中增加内心 OS 条数、句数与字数，并配合神态外化，减少「只会说话、没有心思」的木偶感。开启后仅注入线下约会 AI，正文不可查看或编辑。',
+      '只影响线下约会：让角色脑子里多转几圈——内心 OS 更密、更长一点，再配上神态，别整得像只会说话的木偶。线上聊天不吃这条。',
   },
   {
     id: 'offlineFashionStyling',
     title: '线下约会·穿搭造型描写',
     description:
-      '系统内置：拉开衣着描写层次（廓形、面料、剪裁、配饰与鞋履），含私密场合服装；禁止「深灰卫衣+黑运动裤+帆布鞋」等敷衍模板。开启后仅注入线下约会 AI，正文不可查看或编辑。',
+      '只影响线下约会：衣服别再「深灰卫衣+黑运动裤+帆布鞋」糊弄过去。廓形、面料、剪裁、配饰、鞋子都要拉开层次，私密场合服装也会写得更细。',
   },
   {
     id: 'offlineCoupleIntimacyPoses',
     title: '耳后三厘米经济特区',
     description:
-      '系统内置：专治「人贴在一起时只会复读三个动词」。含推拉退进、指舌调情、追吻眼神与认真吻闭眼、软直贴耳蜜语（可喘字穿插/断句对白；禁油腻小作文、禁侮辱）与细触感。开启后仅注入线下约会 AI，正文不可查看或编辑。',
+      '专治「人贴一起只会复读三个动词」。推拉、指舌、追吻眼神、认真吻闭眼、贴耳软直蜜语（可以喘、可以断句）和细触感都会更丰满。禁油腻小作文、禁侮辱。只进线下约会。',
   },
   {
     id: 'cuisineRecipeAtlas',
     title: '来吃点丰盛的好不好',
     description:
-      '系统内置：专治「随便吃点」「点了个菜」。中外菜系与甜品饮品词库，写吃饭/下厨/点菜须落具体菜名与风味。开启后注入线上私聊与线下约会 AI；寻味外卖指令仍只可用系统菜单。正文不可查看或编辑。',
+      '专治「随便吃点」「点了个菜」。中外菜系、甜品饮品词库都在里面——写吃饭、下厨、点菜要落到具体菜名和风味。线上私聊和线下约会都会用；寻味外卖还是只能点系统菜单。',
   },
   {
     id: 'directAnswerNoProbe',
     title: '别再问怎么了',
     description:
-      '系统内置：专治默认追问「怎么了」「为什么这样说」。user 已说出内容时，char 须问什么答什么、直接接住（如自我贬低就直接肯定，不要先审问原因）。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+      '专治默认追问「怎么了」「为什么这样说」。你都说清楚了，角色就该问什么答什么、直接接住——比如你自我贬低，就直接肯定你，别先审讯一遍原因。线上线下都生效。',
   },
   {
     id: 'passionateDirectBall',
     title: '别再嘴硬硬损了',
     description:
-      '系统内置：专治嘴硬硬损与「等着」「回去收拾你」式推延调情。有心动/喜欢/心疼时须热烈直球说破，硬损须同轮托住。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+      '专治嘴硬硬损，还有「等着」「回去收拾你」那种拖着调情。有心动、喜欢、心疼时要热烈直球说破；损完同一轮也得托住。线上线下都吃。',
   },
   {
     id: 'realisticConflict',
     title: '正经吵架可以的',
     description:
-      '系统内置：允许正常吵架与僵持，禁止 char 莫名其妙自我说服、一轮秒和好。适合想正经吵的场景；可能下头、冷战，请谨慎开启。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+      '允许正经吵架、僵持，别让角色自己说服自己然后一轮秒和好。想吵得真一点就开；可能会下头、冷战，自己掂量。线上线下都会注入。',
   },
   {
     id: 'realisticAutonomy',
     title: '现实一点',
     description:
-      '系统内置：互相独立的健康关系——想好好在一起，但非「非你不可」；可为现实取舍；回答按利害；可不时刻当情绪客服；可拒绝/表达疲惫/必要时吵架或提分开。拒绝须认真沟通（说清理由与下一步），禁止敷衍甩锅、逃避责任。贴人设、非故意挑事。可能下头，请谨慎开启。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+      '互相独立的健康关系：想好好在一起，但不是「非你不可」；可以为现实取舍；回答会按利害掂量；不必时刻当你的情绪客服；可以拒绝、说累，必要时吵架甚至提分开。拒绝也要说清楚理由和下一步，禁止敷衍甩锅。贴人设，不是故意找茬。可能下头，慎开。',
   },
   {
     id: 'gentleOlderBrother',
     title: '能不能温柔一点',
     description:
-      '系统内置：情绪稳定、内核强大的年上大哥哥式照顾——主动看见需要、又说又做、动作轻柔、时刻考虑对方感受，且不油腻。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+      '情绪稳、内核硬的年上大哥哥式照顾：会主动看见你的需要，又说又做，动作轻柔，时时顾及你的感受——但不油腻、不爹。线上线下都生效。',
   },
   {
     id: 'autonomousSocialLife',
     title: '我也有自己的生活',
     description:
-      '系统内置：多元化自主生活 + 群像社交。线上会主动报备日常碎片，线下也有行程与他人痕迹；避免写成没朋友、没社交、无所事事。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+      '角色也有自己的日常和社交：线上会主动报备一点生活碎片，线下也有行程、也有别人出现的痕迹。别写成没朋友、没社交、无所事事的空壳。线上线下都吃。',
   },
   {
     id: 'schoolCampusCommonKnowledge',
     title: '校园与升学常识',
     description:
-      '系统内置：高中纪律处分、艺考暑假封闭集训、联考/校考与招录比例、高考查分志愿与录取时间线、大学课表与大三下起实习等常识。适合学生/艺考生/大学生剧情。开启后注入线上私聊与线下约会 AI，正文不可查看或编辑。',
+      '补校园/升学常识：高中处分、艺考暑假封闭集训、联考校考和招录比例、高考查分志愿录取时间线、大学课表、大三下起实习这些。学生、艺考生、大学生剧情开着更不容易闹笑话。线上线下都注入。',
+  },
+  {
+    id: 'bodyScentPerfume',
+    title: '别再全员牛奶香',
+    description:
+      '体味和香水别再「淡淡清香」「牛奶香」糊弄。体香一般相对固定、可以承接；香水可以随场合换，别场场同一支；两个人的气味要分得开。线上线下都生效。',
+  },
+  {
+    id: 'dailyLifeCommonSense',
+    title: '有点生活常识',
+    description:
+      '中国大陆城市日常那点常识：进屋换拖鞋、别无中生有地暖；进对方家要钥匙/开门/敲门，别推门就进；公共场合亲密默认最多牵手拥抱、轻碰唇（你主动要求更大尺度另说）；客厅等没床的地方别亲密完直接安稳睡；早晚洗漱；睡觉穿睡衣或裸睡，别无故常服睡。人设另有习惯的，以人设为准。',
   },
 ]
+
 
 export function resolveLoreArchiveBuiltinPresetToggles(
   raw?: LoreArchiveBuiltinPresetToggles | null,
@@ -146,31 +171,127 @@ export function resolveLoreArchiveBuiltinPresetToggles(
     gentleOlderBrother: raw?.gentleOlderBrother === true,
     autonomousSocialLife: raw?.autonomousSocialLife === true,
     schoolCampusCommonKnowledge: raw?.schoolCampusCommonKnowledge === true,
+    bodyScentPerfume: raw?.bodyScentPerfume === true,
+    dailyLifeCommonSense: raw?.dailyLifeCommonSense === true,
   }
+}
+
+const ALL_BUILTIN_PRESET_IDS: LoreArchiveBuiltinPresetId[] = [
+  'lumiDoctrineOfLove',
+  'activeConfession',
+  'pureRestrainLove',
+  'offlineRichInnerOs',
+  'offlineFashionStyling',
+  'offlineCoupleIntimacyPoses',
+  'cuisineRecipeAtlas',
+  'directAnswerNoProbe',
+  'passionateDirectBall',
+  'realisticConflict',
+  'realisticAutonomy',
+  'gentleOlderBrother',
+  'autonomousSocialLife',
+  'schoolCampusCommonKnowledge',
+  'bodyScentPerfume',
+  'dailyLifeCommonSense',
+]
+
+export function resolveLoreArchiveBuiltinPresetPriorityTiers(
+  raw?: LoreArchiveBuiltinPresetPriorityTiers | null,
+): Record<LoreArchiveBuiltinPresetId, ArchiveWorldbookPriorityTier> {
+  const out = {} as Record<LoreArchiveBuiltinPresetId, ArchiveWorldbookPriorityTier>
+  for (const id of ALL_BUILTIN_PRESET_IDS) {
+    out[id] = normalizeArchiveWorldbookPriorityTier(raw?.[id])
+  }
+  return out
+}
+
+/** 线上私聊会注入正文的内置预设（线下专用三条仍走约会通道） */
+const ONLINE_ROMANCE_BUILTIN_IDS: LoreArchiveBuiltinPresetId[] = [
+  'lumiDoctrineOfLove',
+  'activeConfession',
+  'pureRestrainLove',
+  'cuisineRecipeAtlas',
+  'directAnswerNoProbe',
+  'passionateDirectBall',
+  'realisticConflict',
+  'realisticAutonomy',
+  'gentleOlderBrother',
+  'autonomousSocialLife',
+  'schoolCampusCommonKnowledge',
+  'bodyScentPerfume',
+  'dailyLifeCommonSense',
+]
+
+function appendixForBuiltinId(id: LoreArchiveBuiltinPresetId): string {
+  switch (id) {
+    case 'lumiDoctrineOfLove':
+      return LUMI_DOCTRINE_OF_LOVE_APPENDIX
+    case 'activeConfession':
+      return CHARACTER_EMOTION_CONFESSION_ENGINE_APPENDIX
+    case 'pureRestrainLove':
+      return PURE_RESTRAIN_LOVE_APPENDIX
+    case 'cuisineRecipeAtlas':
+      return CUISINE_RECIPE_WORLD_BOOK_APPENDIX
+    case 'directAnswerNoProbe':
+      return DIRECT_ANSWER_NO_PROBE_APPENDIX
+    case 'passionateDirectBall':
+      return PASSIONATE_DIRECT_BALL_APPENDIX
+    case 'realisticConflict':
+      return REALISTIC_CONFLICT_APPENDIX
+    case 'realisticAutonomy':
+      return REALISTIC_AUTONOMY_APPENDIX
+    case 'gentleOlderBrother':
+      return GENTLE_OLDER_BROTHER_APPENDIX
+    case 'autonomousSocialLife':
+      return AUTONOMOUS_SOCIAL_LIFE_APPENDIX
+    case 'schoolCampusCommonKnowledge':
+      return SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX
+    case 'bodyScentPerfume':
+      return BODY_SCENT_PERFUME_APPENDIX
+    case 'dailyLifeCommonSense':
+      return DAILY_LIFE_COMMON_SENSE_APPENDIX
+    default:
+      return ''
+  }
+}
+
+function efficacyBlurbForTier(tier: ArchiveWorldbookPriorityTier): string {
+  if (tier === 1) {
+    return '【内置档案·档1·效力】仅次于输出规范提示词，**高于**人设世界书；与人设冲突时以本段为准。气质口吻仍可贴人设表达，硬底线不可破。'
+  }
+  if (tier === 3) {
+    return '【内置档案·档3·效力】**次于**人设世界书；人设明文冲突时以人设为准。硬底线仍建议遵守，但不得覆盖人设核心性格/口癖。'
+  }
+  return '【内置档案·档2·效力】与人设世界书**同级**；有矛盾时仍**跟随本段全局档案**。气质口吻可贴人设，硬底线不可破。'
+}
+
+export function buildWechatReplyRomanceSectionsByTier(params: {
+  toggles: LoreArchiveBuiltinPresetToggles | null | undefined
+  priorityTiers?: LoreArchiveBuiltinPresetPriorityTiers | null
+}): Record<ArchiveWorldbookPriorityTier, string> {
+  const resolved = resolveLoreArchiveBuiltinPresetToggles(params.toggles)
+  const tiers = resolveLoreArchiveBuiltinPresetPriorityTiers(params.priorityTiers)
+  const buckets: Record<ArchiveWorldbookPriorityTier, string[]> = { 1: [], 2: [], 3: [] }
+  for (const id of ONLINE_ROMANCE_BUILTIN_IDS) {
+    if (!resolved[id]) continue
+    const body = appendixForBuiltinId(id).trim()
+    if (!body) continue
+    buckets[tiers[id]].push(body)
+  }
+  const out = { 1: '', 2: '', 3: '' } as Record<ArchiveWorldbookPriorityTier, string>
+  for (const tier of [1, 2, 3] as const) {
+    if (!buckets[tier].length) continue
+    out[tier] = [efficacyBlurbForTier(tier), ...buckets[tier]].join('\n\n')
+  }
+  return out
 }
 
 export function buildWechatReplyRomanceSections(
   toggles: LoreArchiveBuiltinPresetToggles | null | undefined,
+  priorityTiers?: LoreArchiveBuiltinPresetPriorityTiers | null,
 ): string {
-  const resolved = resolveLoreArchiveBuiltinPresetToggles(toggles)
-  const parts: string[] = []
-  if (resolved.lumiDoctrineOfLove || resolved.activeConfession || resolved.pureRestrainLove) {
-    parts.push(
-      '【内置恋爱参考·效力说明】下列爱情观/告白/纯爱克制引擎与**人设世界书、全局档案室同级最高设定**（线上私聊与线下剧情均生效）。气质与口吻仍按人设表达；「尊重边界、禁止强制爱、关系阶段闸门」等硬底线**不得**以人设气质为由绕过；禁止写成霸总或强势主导。',
-    )
-  }
-  if (resolved.lumiDoctrineOfLove) parts.push(LUMI_DOCTRINE_OF_LOVE_APPENDIX)
-  if (resolved.activeConfession) parts.push(CHARACTER_EMOTION_CONFESSION_ENGINE_APPENDIX)
-  if (resolved.pureRestrainLove) parts.push(PURE_RESTRAIN_LOVE_APPENDIX)
-  if (resolved.cuisineRecipeAtlas) parts.push(CUISINE_RECIPE_WORLD_BOOK_APPENDIX)
-  if (resolved.directAnswerNoProbe) parts.push(DIRECT_ANSWER_NO_PROBE_APPENDIX)
-  if (resolved.passionateDirectBall) parts.push(PASSIONATE_DIRECT_BALL_APPENDIX)
-  if (resolved.realisticConflict) parts.push(REALISTIC_CONFLICT_APPENDIX)
-  if (resolved.realisticAutonomy) parts.push(REALISTIC_AUTONOMY_APPENDIX)
-  if (resolved.gentleOlderBrother) parts.push(GENTLE_OLDER_BROTHER_APPENDIX)
-  if (resolved.autonomousSocialLife) parts.push(AUTONOMOUS_SOCIAL_LIFE_APPENDIX)
-  if (resolved.schoolCampusCommonKnowledge) parts.push(SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX)
-  return parts.filter(Boolean).join('\n\n')
+  const by = buildWechatReplyRomanceSectionsByTier({ toggles, priorityTiers })
+  return [by[1], by[2], by[3]].filter(Boolean).join('\n\n')
 }
 
 export function buildWechatThinkingChainRomanceSteps(
@@ -242,6 +363,18 @@ export function buildWechatThinkingChainRomanceSteps(
   if (resolved.schoolCampusCommonKnowledge) {
     steps.push(
       `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七'][stepNo - 5] ?? String(stepNo)}步：若本轮涉校园/艺考/高考/大学：内化「校园与升学常识」（纪律处分、艺考集训与招录、查分志愿时间线、课表与实习；条文在输出协议；禁复述）`,
+    )
+    stepNo += 1
+  }
+  if (resolved.bodyScentPerfume) {
+    steps.push(
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八'][stepNo - 5] ?? String(stepNo)}步：若本轮涉近距/提气味：内化「别再全员牛奶香」（体香固定可承接、香水可换勿场场同一支；禁清香/牛奶香空词；char与user须可区分；条文在输出协议；禁复述）`,
+    )
+    stepNo += 1
+  }
+  if (resolved.dailyLifeCommonSense) {
+    steps.push(
+      `- 第${['五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九'][stepNo - 5] ?? String(stepNo)}步：若本轮涉进门/公共亲密/过夜/赶路：内化「有点生活常识」（换拖鞋；进对方家须钥匙/开门；公场亲密≤牵手拥抱轻碰唇；没床勿安稳睡；洗漱与睡衣；条文在输出协议；禁复述）`,
     )
     stepNo += 1
   }
@@ -323,6 +456,16 @@ ${AUTONOMOUS_SOCIAL_LIFE_APPENDIX}`)
 校园/艺考/高考/大学剧情常识锚点：高中纪律与处分、艺考暑假封闭集训、联考校考与招录、查分志愿录取时间线、大学课表与实习节奏：
 ${SCHOOL_CAMPUS_COMMON_KNOWLEDGE_APPENDIX}`)
   }
+  if (resolved.bodyScentPerfume) {
+    parts.push(`【别再全员牛奶香】
+体味与香水味硬约束：体香通常固定须承接；香水可按场合更换、禁止场场复读同一支；禁「淡淡清香/牛奶香」空词；{{char}} 与 {{user}} 须可区分：
+${BODY_SCENT_PERFUME_APPENDIX}`)
+  }
+  if (resolved.dailyLifeCommonSense) {
+    parts.push(`【有点生活常识】
+城市日常常识硬约束：进屋换拖鞋；进对方家须钥匙/开门/敲门；公共场合亲密默认最多牵手拥抱与轻碰唇；禁无中生有地暖；没床处禁亲密后安稳睡；早晚洗漱；睡衣/裸睡禁常服睡：
+${DAILY_LIFE_COMMON_SENSE_APPENDIX}`)
+  }
   return parts.join('\n\n')
 }
 
@@ -339,6 +482,8 @@ const BUILTIN_PRESETS_ONLINE: LoreArchiveBuiltinPresetId[] = [
   'gentleOlderBrother',
   'autonomousSocialLife',
   'schoolCampusCommonKnowledge',
+  'bodyScentPerfume',
+  'dailyLifeCommonSense',
 ]
 
 /** 仅线下约会 / VN 额外注入的内置预设 */

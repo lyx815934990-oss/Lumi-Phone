@@ -2,6 +2,11 @@ import { Lock } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { LA, LA_FONT_CN, LA_FONT_EN, laEase } from './loreArchiveTheme'
 import type { LoreArchiveBuiltinPresetMeta } from '../../worldbook/loreArchiveBuiltinPresets'
+import type { ArchiveWorldbookPriorityTier } from '../../worldbook/loreArchiveTypes'
+import {
+  ARCHIVE_WORLDBOOK_PRIORITY_TIER_LABELS,
+  normalizeArchiveWorldbookPriorityTier,
+} from '../../worldbook/loreArchiveTypes'
 
 /** 涂黑卷宗条：纯灰阶，长短错落 */
 const REDACT_ROWS: Array<{ w: string; deep?: boolean }> = [
@@ -19,11 +24,22 @@ type Props = {
   open: boolean
   preset: LoreArchiveBuiltinPresetMeta | null
   enabled: boolean
+  priorityTier: ArchiveWorldbookPriorityTier
   onClose: () => void
   onToggle: (enabled: boolean) => void
+  onPriorityTierChange: (tier: ArchiveWorldbookPriorityTier) => void
 }
 
-export function LoreArchiveSystemDetailSheet({ open, preset, enabled, onClose, onToggle }: Props) {
+export function LoreArchiveSystemDetailSheet({
+  open,
+  preset,
+  enabled,
+  priorityTier,
+  onClose,
+  onToggle,
+  onPriorityTierChange,
+}: Props) {
+  const tier = normalizeArchiveWorldbookPriorityTier(priorityTier)
   return (
     <AnimatePresence>
       {open && preset ? (
@@ -40,7 +56,7 @@ export function LoreArchiveSystemDetailSheet({ open, preset, enabled, onClose, o
             onClick={onClose}
           />
           <motion.div
-            className="fixed inset-x-0 bottom-0 z-[41] mx-auto flex max-h-[70vh] w-full max-w-[560px] flex-col overflow-hidden rounded-t-[28px] border"
+            className="fixed inset-x-0 bottom-0 z-[41] mx-auto flex max-h-[78vh] w-full max-w-[560px] flex-col overflow-hidden rounded-t-[28px] border"
             style={{
               fontFamily: LA_FONT_CN,
               background: LA.card,
@@ -84,9 +100,48 @@ export function LoreArchiveSystemDetailSheet({ open, preset, enabled, onClose, o
                 </span>
               </div>
 
-              <p className="mt-3 text-[14px] leading-relaxed" style={{ color: LA.ink }}>
-                本卷宗由系统封存。启用后将在匹配场景自动注入；正文内容不可查看或编辑。
-              </p>
+              <div className="mt-3 space-y-2">
+                <p className="text-[11px] font-medium tracking-wide" style={{ color: LA.mist }}>
+                  这本在干嘛
+                </p>
+                <p className="text-[14px] leading-relaxed" style={{ color: LA.ink }}>
+                  {preset.description}
+                </p>
+                <p className="text-[12px] leading-relaxed" style={{ color: LA.mist }}>
+                  正文由系统封存，只能开关，不能查看或编辑；开了会在匹配场景自动注入。
+                </p>
+              </div>
+
+              <div className="mt-5 space-y-2">
+                <p className="text-[11px] font-medium tracking-wide" style={{ color: LA.mist }}>
+                  优先级档次
+                </p>
+                <div className="flex flex-col gap-2">
+                  {([1, 2, 3] as ArchiveWorldbookPriorityTier[]).map((t) => {
+                    const meta = ARCHIVE_WORLDBOOK_PRIORITY_TIER_LABELS[t]
+                    const on = tier === t
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => onPriorityTierChange(t)}
+                        className="rounded-2xl border px-3.5 py-3 text-left"
+                        style={{
+                          borderColor: on ? LA.amber : LA.hairline,
+                          background: on ? LA.amberSoft : LA.paper,
+                        }}
+                      >
+                        <p className="text-[13px] font-semibold" style={{ color: LA.ink }}>
+                          {meta.short}
+                        </p>
+                        <p className="mt-0.5 text-[11px] leading-relaxed" style={{ color: LA.mist }}>
+                          {meta.hint}
+                        </p>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
 
               <div
                 className="relative mt-6 overflow-hidden rounded-2xl border px-4 py-5"

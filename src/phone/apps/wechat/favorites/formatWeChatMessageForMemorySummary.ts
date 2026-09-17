@@ -83,6 +83,21 @@ export async function formatWeChatMessageTextForMemorySummary(
     return '（转账）'
   }
 
+  if (m.callStatus) {
+    const dig = String(m.callStatus.transcriptText ?? '').trim()
+    if (dig) return dig
+    if (m.callStatus.status === 'duration') {
+      const sec =
+        typeof m.callStatus.durationSec === 'number' && Number.isFinite(m.callStatus.durationSec)
+          ? Math.max(0, Math.floor(m.callStatus.durationSec))
+          : null
+      return sec != null ? `（语音通话，约 ${sec} 秒）` : '（语音通话）'
+    }
+    if (m.callStatus.status === 'rejected') return '（语音通话被拒绝）'
+    if (m.callStatus.status === 'no_answer') return '（语音通话未接听）'
+    return '（通话）'
+  }
+
   if (m.locationShare) {
     const ls = m.locationShare
     const place = ls.address?.trim() ? `${ls.name} — ${ls.address}` : ls.name

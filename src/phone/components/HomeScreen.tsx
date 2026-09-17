@@ -1,4 +1,4 @@
-import { AnimatePresence, animate as motionAnimate, motion, useMotionValue } from 'framer-motion'
+﻿import { AnimatePresence, animate as motionAnimate, motion, useMotionValue } from 'framer-motion'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { DESKTOP_LAYOUT_SLOT_COUNT, DESKTOP_PAGE2_APP_IDS, type AppSlot } from '../types'
 import { personaDb } from '../apps/wechat/newFriendsPersona/idb'
@@ -1032,7 +1032,7 @@ function SortableDesktopTile({
   onPointerDragStart,
 }: SortableDesktopTileProps) {
   const longPressHandlers = useLongPress({
-    delay: 500,
+    delay: 700,
     moveTolerance: 10,
     onLongPress: () => onEnterEditMode(app.id),
   })
@@ -1638,7 +1638,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
   }, [isEditMode, onOpenApp])
 
   const profileLongPressHandlers = useLongPress({
-    delay: 500,
+    delay: 700,
     moveTolerance: 10,
     onLongPress: (event) => {
       handleEnterStaticWidgetEditMode('profile')
@@ -2143,7 +2143,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
               blankLongPressTimerRef.current = null
               blankLongPressOriginRef.current = null
               enterEditModeFromBlank()
-            }, 480)
+            }, 700)
           }
 
           // 编辑态：空白按下先记点，松手且未滑动再退出（避免挡住翻页）
@@ -2355,7 +2355,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
                     >
                       <motion.div
                         ref={profileNodeRef}
-                        layout
+                        layout={isEditMode}
                         className="h-full w-full touch-none select-none"
                         style={{
                           userSelect: 'none',
@@ -2369,7 +2369,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
                           rotate: 0,
                           scale: primedStaticWidget === 'profile' ? 1.02 : 1,
                         }}
-                        transition={{ duration: 0.18, ease: 'easeOut' }}
+                        transition={{ duration: isEditMode ? 0.18 : 0, ease: 'easeOut' }}
                         onContextMenu={(event) => event.preventDefault()}
                         onPointerDown={isEditMode ? (event) => handleStaticWidgetPointerDragStart('profile', event) : profileLongPressHandlers.onPointerDown}
                         onPointerMove={!isEditMode ? profileLongPressHandlers.onPointerMove : undefined}

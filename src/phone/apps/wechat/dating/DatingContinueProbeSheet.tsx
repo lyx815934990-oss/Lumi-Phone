@@ -92,45 +92,6 @@ function ProbeChip({
   )
 }
 
-function ProbeOptionCell({
-  item,
-  active,
-  onToggle,
-  customNote,
-  onCustomNoteChange,
-  story,
-  displayLabel,
-  inputCls,
-}: {
-  item: ContinueProbePreset
-  active: boolean
-  onToggle: () => void
-  customNote: string
-  onCustomNoteChange: (value: string) => void
-  story: boolean
-  displayLabel?: string
-  inputCls: string
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <ProbeChip
-        item={item}
-        active={active}
-        onClick={onToggle}
-        story={story}
-        displayLabel={displayLabel}
-      />
-      <input
-        value={customNote}
-        onChange={(e) => onCustomNoteChange(e.target.value.slice(0, 80))}
-        placeholder="自定义补充"
-        className={`${inputCls} !h-7 px-1.5 text-[11px]`}
-        aria-label={`${displayLabel ?? item.label}自定义补充`}
-      />
-    </div>
-  )
-}
-
 function TimeChip({
   label,
   hint,
@@ -193,17 +154,17 @@ export function DatingContinueProbeSheet(props: Props) {
   const story = theme === 'story'
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  /** 各具体选项的自定义补充文案 */
-  const [optionNotes, setOptionNotes] = useState<Record<string, string>>({})
   const [userProbes, setUserProbes] = useState<UserContinueProbe[]>([])
+  /** 各大类一条补充（key = section.id） */
+  const [categoryNotes, setCategoryNotes] = useState<Record<string, string>>({})
   const [extraNote, setExtraNote] = useState('')
   const [timeAdvance, setTimeAdvance] = useState<ContinueDraftTimeAdvance>('none')
   const [timeAmount, setTimeAmount] = useState('3')
   const [timeUnit, setTimeUnit] = useState<'hour' | 'day' | 'month' | 'year'>('day')
   const [customLabel, setCustomLabel] = useState('')
   const [customProbe, setCustomProbe] = useState('')
-  const [customCategory, setCustomCategory] = useState<ContinueProbeCategoryId>('relation')
-  const [expandedSection, setExpandedSection] = useState<string>('relation')
+  const [customCategory, setCustomCategory] = useState<ContinueProbeCategoryId>('scene')
+  const [expandedSection, setExpandedSection] = useState<string>('scene')
   const [nsfwTab, setNsfwTab] = useState<ContinueProbeCategoryId>('nsfw_foreplay')
   /** 各大类当前展开的小分类 id */
   const [activeSubByCategory, setActiveSubByCategory] = useState<Partial<Record<ContinueProbeCategoryId, string>>>(
@@ -249,15 +210,13 @@ export function DatingContinueProbeSheet(props: Props) {
   )
 
   const selectedProbes = useMemo(() => {
-    const out: Array<ContinueProbePreset & { customNote?: string }> = []
+    const out: ContinueProbePreset[] = []
     for (const id of selectedIds) {
       const p = presetById.get(id)
-      if (!p) continue
-      const note = optionNotes[id]?.trim()
-      out.push(note ? { ...p, customNote: note } : p)
+      if (p) out.push(p)
     }
     return out
-  }, [selectedIds, presetById, optionNotes])
+  }, [selectedIds, presetById])
 
   const selectedCountBySection = useMemo(() => {
     const counts = new Map<string, number>()
@@ -276,6 +235,10 @@ export function DatingContinueProbeSheet(props: Props) {
 
   const composed = useMemo(() => {
     const amountRaw = Number.parseFloat(timeAmount)
+    const notesForCompose = DATING_CONTINUE_PROBE_SECTIONS.map((section) => ({
+      label: section.label,
+      note: String(categoryNotes[section.id] ?? '').trim(),
+    })).filter((x) => x.note)
     return composeContinueProbeDirectorText({
       probes: selectedProbes,
       timeAdvance,
@@ -287,8 +250,22 @@ export function DatingContinueProbeSheet(props: Props) {
             }
           : null,
       extraNote,
+      categoryNotes: notesForCompose,
     })
-  }, [selectedProbes, timeAdvance, timeAmount, timeUnit, extraNote])
+  }, [selectedProbes, timeAdvance, timeAmount, timeUnit, extraNote, categoryNotes])
+
+  const setCategoryNote = useCallback((sectionId: string, value: string) => {
+    const v = value.slice(0, 80)
+    setCategoryNotes((prev) => {
+      if (!v.trim()) {
+        if (!(sectionId in prev)) return prev
+        const next = { ...prev }
+        delete next[sectionId]
+        return next
+      }
+      return { ...prev, [sectionId]: v }
+    })
+  }, [])
 
   const togglePreset = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -297,24 +274,6 @@ export function DatingContinueProbeSheet(props: Props) {
       else next.add(id)
       return next
     })
-  }, [])
-
-  const setOptionNote = useCallback((id: string, value: string) => {
-    setOptionNotes((prev) => {
-      if (!value) {
-        if (!(id in prev)) return prev
-        const next = { ...prev }
-        delete next[id]
-        return next
-      }
-      return { ...prev, [id]: value }
-    })
-    if (value.trim()) {
-      setSelectedIds((prev) => {
-        if (prev.has(id)) return prev
-        return new Set(prev).add(id)
-      })
-    }
   }, [])
 
   const handleRandomPick = useCallback(() => {
@@ -336,7 +295,7 @@ export function DatingContinueProbeSheet(props: Props) {
 
   const handleClearSelection = useCallback(() => {
     setSelectedIds(new Set())
-    setOptionNotes({})
+    setCategoryNotes({})
   }, [])
 
   const handleAddCustom = useCallback(() => {
@@ -487,7 +446,7 @@ export function DatingContinueProbeSheet(props: Props) {
               续写方向
             </p>
             <p className={`mt-0.5 text-[11px] ${muted}`}>
-              大类 → 小类 → 具体选项；每个选项可填自定义补充
+              大类 → 小类 → 点选方向；每个大类可写一条补充
             </p>
           </div>
           {selectedProbes.length ? (
@@ -680,33 +639,27 @@ export function DatingContinueProbeSheet(props: Props) {
 
                             {activeSub ? (
                               <p className={`text-[10px] leading-snug ${muted}`}>
-                                小类「{activeSub.label}」：点选场面，下方可写自定义补充；也可只点自行发挥
+                                小类「{activeSub.label}」：点选方向即可；也可只点自行发挥
                               </p>
                             ) : null}
 
                             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                               {freePreset ? (
-                                <ProbeOptionCell
+                                <ProbeChip
                                   item={freePreset}
                                   active={selectedIds.has(freePreset.id)}
-                                  onToggle={() => togglePreset(freePreset.id)}
-                                  customNote={optionNotes[freePreset.id] ?? ''}
-                                  onCustomNoteChange={(v) => setOptionNote(freePreset.id, v)}
+                                  onClick={() => togglePreset(freePreset.id)}
                                   story={story}
                                   displayLabel="模型自行发挥"
-                                  inputCls={inputCls}
                                 />
                               ) : null}
                               {specifics.map((item) => (
-                                <ProbeOptionCell
+                                <ProbeChip
                                   key={item.id}
                                   item={item}
                                   active={selectedIds.has(item.id)}
-                                  onToggle={() => togglePreset(item.id)}
-                                  customNote={optionNotes[item.id] ?? ''}
-                                  onCustomNoteChange={(v) => setOptionNote(item.id, v)}
+                                  onClick={() => togglePreset(item.id)}
                                   story={story}
-                                  inputCls={inputCls}
                                 />
                               ))}
                             </div>
@@ -716,20 +669,28 @@ export function DatingContinueProbeSheet(props: Props) {
                                 <p className={`mb-1 text-[10px] ${muted}`}>我的自定义</p>
                                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                                   {customInCat.map((item) => (
-                                    <ProbeOptionCell
+                                    <ProbeChip
                                       key={item.id}
                                       item={item}
                                       active={selectedIds.has(item.id)}
-                                      onToggle={() => togglePreset(item.id)}
-                                      customNote={optionNotes[item.id] ?? ''}
-                                      onCustomNoteChange={(v) => setOptionNote(item.id, v)}
+                                      onClick={() => togglePreset(item.id)}
                                       story={story}
-                                      inputCls={inputCls}
                                     />
                                   ))}
                                 </div>
                               </div>
                             ) : null}
+
+                            <div className="pt-1">
+                              <p className={`mb-1 text-[10px] font-medium ${muted}`}>本类补充</p>
+                              <input
+                                value={categoryNotes[section.id] ?? ''}
+                                onChange={(e) => setCategoryNote(section.id, e.target.value)}
+                                placeholder={`补充「${section.label}」细节，可选`}
+                                className={`${inputCls} text-[12px]`}
+                                aria-label={`${section.label}补充`}
+                              />
+                            </div>
                           </div>
                         )
                       })()}

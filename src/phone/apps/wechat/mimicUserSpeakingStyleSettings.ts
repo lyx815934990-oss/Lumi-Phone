@@ -1,5 +1,5 @@
 /**
- * 语感同化开关：与私聊会话设置同一字段，线上线下共用。
+ * 语气同化开关：与私聊会话设置同一字段，线上线下共用。
  */
 import { personaDb } from './newFriendsPersona/idb'
 import {

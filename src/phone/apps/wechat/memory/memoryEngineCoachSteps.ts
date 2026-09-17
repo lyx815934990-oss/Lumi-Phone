@@ -81,19 +81,9 @@ export const MEMORY_ENGINE_COACH_STEPS: MemoryCoachStep[] = [
     body: '打开后，聊得比较长时，除了按关键词找记忆，还会按「意思相近」多捞几条相关的长期记忆；线下摘要向量召回也依赖此总开关。',
   },
   {
-    target: 'embedding-provider',
-    title: '算「意思相近」放哪算',
-    body: '「自动」：优先用手机/浏览器里本地算，不行再用服务器。「仅本地」：全程不联网算。「仅 API」：全程用下面填的服务器。选本地的话，第一次要先下载一个小模型。',
-  },
-  {
     target: 'extra-api',
-    title: '向量用的服务器',
-    body: '只有选「自动」或「仅 API」时才需要配。可以沿用聊天服务器，也可以单独填一套。填完建议先点测试能不能连上，再选模型。如果上面选了「仅本地」，这里不会出现。',
-  },
-  {
-    target: 'vector-model',
-    title: '选一个「算意思」的模型',
-    body: '从列表里选名字带「embed」或「embedding」的（是专门算相似度的，不要选平时聊天的那个模型）。纯本地模式不用在这里选；改完会自动保存。',
+    title: '向量 Key 已内置',
+    body: '语义召回已内置 BAAI/bge-m3，不用再填接口或密钥。简单说：它会看着你们最近在聊啥，从旧记忆里把意思接近的捞出来给角色。',
   },
   {
     target: 'engine-tutorial',
@@ -105,6 +95,6 @@ export const MEMORY_ENGINE_COACH_STEPS: MemoryCoachStep[] = [
     centered: true,
     isOutro: true,
     title: '好啦',
-    body: '改过的设置会保存在本机，刷新也在。你可以继续看文字说明，或者直接改上面的开关和模型。',
+    body: '改过的设置会保存在本机，刷新也在。你可以继续看文字说明，或者直接改上面的开关。',
   },
 ]

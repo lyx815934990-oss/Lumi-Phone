@@ -81,9 +81,17 @@ export function StoryFeed({
 
   const internalRef = useRef<HTMLDivElement>(null)
   const ref = scrollRef ?? internalRef
+  /** 本轮发送后钉住的用户输入卡：生成 AI 时保持该卡在视口内同一位置，避免被下文顶走 */
+  const readingPlayerAnchorIdRef = useRef<string | null>(null)
+  const readingPlayerViewportOffsetRef = useRef<number | null>(null)
+  const pinningProgrammaticRef = useRef(false)
 
   const isVn = settings.mode === 'vn'
   const latestAi = [...nodes].reverse().find((n) => n.kind === 'ai')
+  const lastNode = nodes.length ? nodes[nodes.length - 1] : null
+  const lastNodeId = lastNode?.id
+  const lastNodeKind = lastNode?.kind
+  const lastAiContentLen = lastNode?.kind === 'ai' ? lastNode.content.length : 0
 
   const followAiMap = useMemo(
     () => playerFollowAiPlotIdByPlayerId ?? new Map<string, string>(),
@@ -105,11 +113,106 @@ export function StoryFeed({
     return () => el.removeEventListener('scroll', onScroll)
   }, [onScroll, ref])
 
+  const pinReadingPlayerCard = useCallback(
+    (behavior: ScrollBehavior = 'auto') => {
+      const container = ref.current
+      const anchorId = readingPlayerAnchorIdRef.current
+      if (!container || !anchorId) return false
+      const target = document.getElementById(`dating-plot-${anchorId}`)
+      if (!target) return false
+      const containerRect = container.getBoundingClientRect()
+      const elRect = target.getBoundingClientRect()
+      const desiredOffset =
+        readingPlayerViewportOffsetRef.current != null
+          ? readingPlayerViewportOffsetRef.current
+          : 8
+      const nextTop = container.scrollTop + (elRect.top - containerRect.top) - desiredOffset
+      const clamped = Math.max(0, nextTop)
+      if (Math.abs(container.scrollTop - clamped) > 1) {
+        container.scrollTo({ top: clamped, behavior })
+      }
+      return true
+    },
+    [ref],
+  )
+
   useEffect(() => {
     const el = ref.current
     if (!el || nodes.length === 0) return
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-  }, [nodes.length, nodes[nodes.length - 1]?.id, ref])
+    const last = nodes[nodes.length - 1]
+    if (!last) return
+
+    // 本轮用户输入：滚到该卡顶部，并记下视口偏移，供后续 AI 落库时回钉
+    if (last.kind === 'player') {
+      readingPlayerAnchorIdRef.current = last.id
+      const scrollToPlayerCard = () => {
+        const container = ref.current
+        if (!container) return
+        const target = document.getElementById(`dating-plot-${last.id}`)
+        if (!target) return
+        const containerRect = container.getBoundingClientRect()
+        const elRect = target.getBoundingClientRect()
+        const desiredOffset = 8
+        readingPlayerViewportOffsetRef.current = desiredOffset
+        const targetTop = container.scrollTop + (elRect.top - containerRect.top) - desiredOffset
+        pinningProgrammaticRef.current = true
+        container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+        window.setTimeout(() => {
+          pinningProgrammaticRef.current = false
+        }, 400)
+      }
+      requestAnimationFrame(() => {
+        requestAnimationFrame(scrollToPlayerCard)
+      })
+      return
+    }
+
+    // AI 新卡 / 内容增高：有本轮阅读锚点则回钉用户输入卡，勿用裸 scrollTop（打开页时常为 0 会锁死在顶部）
+    if (last.kind === 'ai') {
+      if (!readingPlayerAnchorIdRef.current) return
+      const runPin = () => {
+        pinningProgrammaticRef.current = true
+        pinReadingPlayerCard('auto')
+        window.setTimeout(() => {
+          pinningProgrammaticRef.current = false
+        }, 50)
+      }
+      requestAnimationFrame(() => {
+        requestAnimationFrame(runPin)
+      })
+      // 配图 / 折叠展开等导致高度变化时继续钉住，直到用户手动滚动离开
+      const container = el
+      const aiEl = document.getElementById(`dating-plot-${last.id}`)
+      if (!aiEl || typeof ResizeObserver === 'undefined') return
+      let userScrolledAway = false
+      const onUserScroll = () => {
+        if (pinningProgrammaticRef.current) return
+        userScrolledAway = true
+        // 用户主动离开阅读锚点后，本轮不再强制回钉
+        readingPlayerAnchorIdRef.current = null
+        readingPlayerViewportOffsetRef.current = null
+      }
+      container.addEventListener('scroll', onUserScroll, { passive: true })
+      const ro = new ResizeObserver(() => {
+        if (userScrolledAway) return
+        if (readingPlayerAnchorIdRef.current) runPin()
+      })
+      ro.observe(aiEl)
+      return () => {
+        container.removeEventListener('scroll', onUserScroll)
+        ro.disconnect()
+      }
+    }
+
+    // 其它节点不强制滚动
+  }, [
+    nodes.length,
+    lastNodeId,
+    lastNodeKind,
+    lastAiContentLen,
+    pinReadingPlayerCard,
+    ref,
+  ])
 
   const danmaku =
     danmakuProp ??

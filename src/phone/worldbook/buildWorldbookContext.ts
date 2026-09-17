@@ -1,4 +1,8 @@
-import type { LoreEntry } from './loreArchiveTypes'
+import type { ArchiveWorldbookPriorityTier, LoreEntry } from './loreArchiveTypes'
+import {
+  ARCHIVE_WORLDBOOK_PRIORITY_TIER_LABELS,
+  normalizeArchiveWorldbookPriorityTier,
+} from './loreArchiveTypes'
 import { formatGlobalWorldBookItemLineForPrompt } from './buildGlobalWechatWorldBooksPrompt'
 import type { GlobalWechatPlate, GlobalWechatWorldBookScope } from './globalWorldBookTypes'
 import { GLOBAL_WECHAT_PLATE_LABELS, normalizeGlobalWechatWorldBookScope } from './globalWorldBookTypes'
@@ -45,6 +49,80 @@ function characterScopeLabel(entry: LoreEntry): string {
   return `限定 ${ids.length} 名角色`
 }
 
+function entryPriorityTier(entry: LoreEntry): ArchiveWorldbookPriorityTier {
+  return normalizeArchiveWorldbookPriorityTier(entry.priorityTier)
+}
+
+function efficacyLineForTier(tier: ArchiveWorldbookPriorityTier): string {
+  if (tier === 1) {
+    return '【效力·档1】仅次于输出规范提示词，**高于**人设世界书；与人设冲突时以本段全局档案为准。客户端硬格式（换行分条等）仍须遵守。'
+  }
+  if (tier === 3) {
+    return '【效力·档3】**次于**人设世界书；人设明文冲突时以人设为准。禁止用本段软参考覆盖人设核心性格/口癖。'
+  }
+  return '【效力·档2】与人设世界书**同级**；有矛盾时仍**跟随本段全局档案**。禁止以人设气质为由整段忽略本段硬规则；亦禁止用本段软参考覆盖人设明文口癖与性格。'
+}
+
+function filterOrderedCandidates(
+  currentChatMembers: string[],
+  entries: LoreEntry[],
+  plate?: GlobalWechatPlate | null,
+): LoreEntry[] {
+  const inScene = normalizeMemberSet(currentChatMembers)
+  const plateArg = plate ?? undefined
+
+  const candidates = (entries ?? []).filter((e) => {
+    if (e.enabled === false) return false
+    if (!String(e.content ?? '').trim()) return false
+    if (!entryMatchesPlate(e.plateScope, plateArg)) return false
+    const cs = e.characterScope
+    const targetedIds =
+      cs?.mode === 'characters' ? (cs.ids ?? []).map((x) => String(x ?? '').trim()).filter(Boolean) : []
+    if (!inScene.size && targetedIds.length > 0) return false
+    return entryMatchesCharacterScope(e, inScene)
+  })
+
+  const allFirst = candidates.filter((e) => e.characterScope?.mode !== 'characters')
+  const targeted = candidates.filter((e) => e.characterScope?.mode === 'characters')
+  const sortedAll = [...allFirst].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+  const sortedTargeted = [...targeted].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+  return [...sortedAll, ...sortedTargeted]
+}
+
+function renderEntriesBlock(
+  ordered: LoreEntry[],
+  tier: ArchiveWorldbookPriorityTier,
+  options?: BuildWorldbookContextOptions | null,
+): string {
+  if (!ordered.length) return ''
+  if (options?.plainUserEntriesOnly) {
+    const chunks: string[] = []
+    for (const e of ordered) {
+      const title = String(e.title ?? '').trim() || '未命名'
+      const body = String(e.content ?? '').trim()
+      chunks.push(`《${title}》\n${body}`)
+    }
+    return chunks.join('\n\n')
+  }
+  const lines: string[] = []
+  lines.push(`【档案与世界书·${ARCHIVE_WORLDBOOK_PRIORITY_TIER_LABELS[tier].short}】`)
+  lines.push(
+    '请务必在叙事与设定理解中严格遵守下列条目。条目按标注的生效板块与作用角色筛选；正文建议统一使用占位符「{{char}}」指当前人设角色本人、「{{user}}」指玩家本人（注入前已替换为姓名）。若条目限定具体角色：仅该角色在台词、心理与知情范围内受其约束；未点名的其他角色不受该条约束。',
+  )
+  lines.push(efficacyLineForTier(tier))
+  let n = 1
+  for (const e of ordered) {
+    const title = String(e.title ?? '').trim() || '未命名'
+    const plateL = plateScopeLabel(e.plateScope)
+    const charL = characterScopeLabel(e)
+    const bodyLine = formatGlobalWorldBookItemLineForPrompt(title, String(e.content).trim())
+    lines.push(`${n}. [${plateL}｜${charL}｜档${tier}]`)
+    lines.push(bodyLine)
+    n += 1
+  }
+  return lines.join('\n')
+}
+
 export type BuildWorldbookContextOptions = {
   /**
    * 为 true 时不截断总长度（仅供思维溯源 UI 等与模型 context 无关的展示）。
@@ -58,6 +136,40 @@ export type BuildWorldbookContextOptions = {
   plainUserEntriesOnly?: boolean
 }
 
+export type WorldbookContextByTier = Record<ArchiveWorldbookPriorityTier, string>
+
+/**
+ * 按优先级档次拆分档案室注入块（1/2/3）。
+ */
+export function buildWorldbookContextByTier(
+  currentChatMembers: string[],
+  entries: LoreEntry[],
+  plate?: GlobalWechatPlate | null,
+  options?: BuildWorldbookContextOptions | null,
+): WorldbookContextByTier {
+  const ordered = filterOrderedCandidates(currentChatMembers, entries, plate)
+  const buckets: Record<ArchiveWorldbookPriorityTier, LoreEntry[]> = { 1: [], 2: [], 3: [] }
+  for (const e of ordered) {
+    buckets[entryPriorityTier(e)].push(e)
+  }
+  const out = { 1: '', 2: '', 3: '' } as WorldbookContextByTier
+  let used = 0
+  for (const tier of [1, 2, 3] as const) {
+    let block = renderEntriesBlock(buckets[tier], tier, options)
+    if (!options?.skipLengthCap && block && used + block.length > MAX_LORE_INJECT_CHARS) {
+      const remain = Math.max(0, MAX_LORE_INJECT_CHARS - used)
+      if (remain < 80) {
+        block = ''
+      } else {
+        block = `${block.slice(0, remain)}\n…（档案与世界书因长度已截断）`
+      }
+    }
+    out[tier] = block
+    used += block.length
+  }
+  return out
+}
+
 /**
  * 按当前会话成员与所在微信/约会板块，从档案室统一条目组装注入块。
  * `plate === undefined` 时：仅注入「全部板块」类条目（与旧全局世界书行为一致）。
@@ -68,64 +180,11 @@ export function buildWorldbookContext(
   plate?: GlobalWechatPlate | null,
   options?: BuildWorldbookContextOptions | null,
 ): string {
-  const inScene = normalizeMemberSet(currentChatMembers)
-  const plateArg = plate ?? undefined
-
-  const candidates = (entries ?? []).filter((e) => {
-    if (e.enabled === false) return false
-    if (!String(e.content ?? '').trim()) return false
-    if (!entryMatchesPlate(e.plateScope, plateArg)) return false
-    const cs = e.characterScope
-    const targetedIds =
-      cs?.mode === 'characters' ? (cs.ids ?? []).map((x) => String(x ?? '').trim()).filter(Boolean) : []
-    // 限定了具体角色但当前场景无成员 id：无法匹配 → 跳过；空 ids 视为全部角色
-    if (!inScene.size && targetedIds.length > 0) return false
-    return entryMatchesCharacterScope(e, inScene)
+  const by = buildWorldbookContextByTier(currentChatMembers, entries, plate, {
+    ...options,
+    skipLengthCap: true,
   })
-
-  if (!candidates.length) return ''
-
-  const allFirst = candidates.filter((e) => e.characterScope?.mode !== 'characters')
-  const targeted = candidates.filter((e) => e.characterScope?.mode === 'characters')
-  const sortedAll = [...allFirst].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-  const sortedTargeted = [...targeted].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-  const ordered = [...sortedAll, ...sortedTargeted]
-
-  if (options?.plainUserEntriesOnly) {
-    const chunks: string[] = []
-    for (const e of ordered) {
-      const title = String(e.title ?? '').trim() || '未命名'
-      const body = String(e.content ?? '').trim()
-      chunks.push(`《${title}》\n${body}`)
-    }
-    let out = chunks.join('\n\n')
-    if (!options.skipLengthCap && out.length > MAX_LORE_INJECT_CHARS) {
-      out = `${out.slice(0, MAX_LORE_INJECT_CHARS)}\n…（档案与世界书因长度已截断）`
-    }
-    return out
-  }
-
-  const lines: string[] = []
-  lines.push('【档案与世界书】')
-  lines.push(
-    '请务必在叙事与设定理解中严格遵守下列条目。条目按标注的生效板块与作用角色筛选；正文建议统一使用占位符「{{char}}」指当前人设角色本人、「{{user}}」指玩家本人（注入前已替换为姓名）。若条目限定具体角色：仅该角色在台词、心理与知情范围内受其约束；未点名的其他角色不受该条约束。',
-  )
-  lines.push(
-    '【效力层级】**本段（全局档案室）与角色人设上的「世界书条目」/「约会对象·世界书」同级最高设定**，线上私聊与线下剧情均须遵守。二者冲突时：取更具体、更不可违背的约束（硬禁忌/关系阶段/禁止项优先于软气质描写），**禁止**以「人设气质」为由整段忽略本段硬规则；亦禁止用本段软参考覆盖人设明文口癖与性格。客户端硬性格式（换行对应多条气泡、禁止 JSON/Markdown 围栏等）仍须遵守。',
-  )
-
-  let n = 1
-  for (const e of ordered) {
-    const title = String(e.title ?? '').trim() || '未命名'
-    const plateL = plateScopeLabel(e.plateScope)
-    const charL = characterScopeLabel(e)
-    const bodyLine = formatGlobalWorldBookItemLineForPrompt(title, String(e.content).trim())
-    lines.push(`${n}. [${plateL}｜${charL}]`)
-    lines.push(bodyLine)
-    n += 1
-  }
-
-  let out = lines.join('\n')
+  let out = [by[1], by[2], by[3]].filter(Boolean).join('\n\n')
   if (!options?.skipLengthCap && out.length > MAX_LORE_INJECT_CHARS) {
     out = `${out.slice(0, MAX_LORE_INJECT_CHARS)}\n…（档案与世界书因长度已截断）`
   }
@@ -138,27 +197,7 @@ export function listWorldbookTracePills(
   entries: LoreEntry[],
   plate?: GlobalWechatPlate | null,
 ): Array<{ type: 'global' | 'personal'; title: string }> {
-  const inScene = normalizeMemberSet(currentChatMembers)
-  const plateArg = plate ?? undefined
-
-  const candidates = (entries ?? []).filter((e) => {
-    if (e.enabled === false) return false
-    if (!String(e.content ?? '').trim()) return false
-    if (!entryMatchesPlate(e.plateScope, plateArg)) return false
-    const cs = e.characterScope
-    const targetedIds =
-      cs?.mode === 'characters' ? (cs.ids ?? []).map((x) => String(x ?? '').trim()).filter(Boolean) : []
-    // 限定了具体角色但当前场景无成员 id：无法匹配 → 跳过；空 ids 视为全部角色
-    if (!inScene.size && targetedIds.length > 0) return false
-    return entryMatchesCharacterScope(e, inScene)
-  })
-
-  const allFirst = candidates.filter((e) => e.characterScope?.mode !== 'characters')
-  const targeted = candidates.filter((e) => e.characterScope?.mode === 'characters')
-  const sortedAll = [...allFirst].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-  const sortedTargeted = [...targeted].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-  const ordered = [...sortedAll, ...sortedTargeted]
-
+  const ordered = filterOrderedCandidates(currentChatMembers, entries, plate)
   return ordered.map((e) => ({
     type: e.characterScope?.mode === 'characters' ? ('personal' as const) : ('global' as const),
     title: String(e.title ?? '').trim() || '未命名',

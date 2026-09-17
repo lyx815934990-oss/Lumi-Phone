@@ -16,6 +16,10 @@ import {
 import { MOMENT_TEXT_OUTPUT_HINT, sanitizeMomentText } from './momentTextSanitize'
 import { MOMENT_SONG_SHARE_AI_COMMENT_RULES } from './momentAttachedMusic'
 import { runMomentsVisionChat } from './momentVisionChat'
+import {
+  MOMENT_THREAD_REPLY_STABLE_FORMAT_HINT,
+  parseThreadRepliesFromStableText,
+} from './momentStableFormat'
 
 export type ThreadReplyDraft = {
   authorCharId: string
@@ -29,8 +33,9 @@ const THREAD_REPLY_TASK = `
 角色之间若无双向绑定，则互不可见对方评论，不得替无绑定对象「接话」。
 
 输出规则：
-- 仅输出 JSON：{"replies":[{"authorCharId":"角色ID","replyToCommentId":"被回复评论的id","content":"..."}, ...]}
-- replies 按时间顺序排列，2～6 条为宜
+- 禁止 JSON；只输出稳定字段行
+${MOMENT_THREAD_REPLY_STABLE_FORMAT_HINT}
+- 按时间顺序排列，2～6 条为宜
 - 至少 1 条来自「被用户回复的角色」(target)，直接回应用户
 - 可有多条回复同一 commentId（如多人回复用户），也可角色互怼（replyToCommentId 填对方评论 id）
 - **受众识别**：目录里标注「评用户」或受众含「一级评圈」的评论，是角色对**发朋友圈的用户**说话；其中「你/给你/您」指用户本人，不是围观角色。回复这类评论时应理解为围观/帮腔/调侃「A 对用户的狠话」，**禁止**误以为 A 在威胁或训斥你自己
@@ -70,6 +75,27 @@ function parseThreadReplies(
   }
 
   return out.length ? out : null
+}
+
+function filterStableThreadReplies(
+  rows: ReturnType<typeof parseThreadRepliesFromStableText>,
+  allowedCharIds: Set<string>,
+  allowedCommentIds: Set<string>,
+): ThreadReplyDraft[] {
+  const out: ThreadReplyDraft[] = []
+  for (const r of rows) {
+    const content = sanitizeMomentText(r.content)
+    if (!content) continue
+    if (!allowedCharIds.has(r.authorCharId)) continue
+    if (!allowedCommentIds.has(r.replyToCommentId)) continue
+    out.push({
+      authorCharId: r.authorCharId,
+      replyToCommentId: r.replyToCommentId,
+      content,
+    })
+    if (out.length >= 8) break
+  }
+  return out
 }
 
 export async function generateMomentThreadReplies(params: {
@@ -158,7 +184,7 @@ export async function generateMomentThreadReplies(params: {
     '反例（禁止）：顾琳评用户「给你纹黑眼圈」是对用户说的；司予回复顾琳时不应以为「给你」指司予自己。',
     '正例：司予回复顾琳：琳姐你对社长太狠了吧 😅（调侃顾琳对用户的狠话）',
     '',
-    '请生成 replies JSON。',
+    '请生成评区接话，只输出稳定字段行，不要 JSON。',
   ]
     .filter((line) => line !== null)
     .join('\n')
@@ -170,6 +196,13 @@ export async function generateMomentThreadReplies(params: {
     temperature: 0.9,
     max_tokens: 1400,
   })
+
+  const fromStable = filterStableThreadReplies(
+    parseThreadRepliesFromStableText(raw),
+    allowedCharIds,
+    allowedCommentIds,
+  )
+  if (fromStable.length) return fromStable
 
   const payload = parseModelJsonPayload(raw)
   const parsed = parseThreadReplies(payload, allowedCharIds, allowedCommentIds)

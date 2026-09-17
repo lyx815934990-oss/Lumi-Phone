@@ -14,6 +14,7 @@ import { WechatStoryTimelinePerRoundToastHost } from '../apps/wechat/memory/Wech
 import { LinkPreviewQuotaToastHost } from '../apps/wechat/linkPreview/LinkPreviewQuotaToastHost'
 import { useCustomization } from '../CustomizationContext'
 import { FloatingShortcutBall } from './FloatingShortcutBall'
+import { GlobalFloatingVoiceCallHost } from '../apps/wechat/voiceCall/GlobalFloatingVoiceCallHost'
 
 type Props = {
   children: ReactNode
@@ -141,6 +142,7 @@ export function PhoneShell({ children }: Props) {
       <LinkPreviewQuotaToastHost />
       <FloatingShortcutBall />
       <FloatingMusicOrb />
+      <GlobalFloatingVoiceCallHost />
     </div>
   )
 

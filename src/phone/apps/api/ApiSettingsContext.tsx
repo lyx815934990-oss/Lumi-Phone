@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom'
 import { personaDb, pullPhoneKvWithLocalStorageLegacy } from '../wechat/newFriendsPersona/idb'
 import { createEmptyApiConfig, createEmptyPreset, newPresetId } from './mock'
 import { pickApiConfigSamplingFields } from './apiConfigSampling'
+import { normalizeApiVisionInputMode } from './apiModelVision'
 import { migrateLegacyImageGenIntoStore, normalizeImageGenSettings } from './imageGenPresetUtils'
 import {
   API_STORE_STORAGE_KEY,
@@ -52,6 +53,10 @@ function normalizeApiConfig(raw: unknown): ApiConfig {
           }
         : undefined,
     ...pickApiConfigSamplingFields(r),
+    ...((): Pick<ApiConfig, 'visionInput'> => {
+      const mode = normalizeApiVisionInputMode(r.visionInput)
+      return mode ? { visionInput: mode } : {}
+    })(),
   }
 }
 

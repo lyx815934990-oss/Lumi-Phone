@@ -7,6 +7,7 @@ import type { Character, PlayerIdentity } from '../newFriendsPersona/types'
 import {
   alignLifeSheetToTimeline,
   emptyLifeMutableSheet,
+  mergeLifeListFieldsFromAi,
   normalizeLifeMutableSheet,
   resolveLifeClock,
 } from './compute'
@@ -14,6 +15,8 @@ import { loadCharacterStorySpan } from './load'
 import { syncSharedSocialCircleBetweenSheets } from './sharedSocialCircle'
 import { finalizeLifeMutableSheetForStore } from './promptRules'
 import { appendLifeChangeHistory } from './lifeChangeHistory'
+import { parseLifeListSectionsFromText } from './alignTextFormat'
+import { buildLifeRelationStatusHardRule } from './lifeRelationSync'
 import type { LifeMutableSheet, LifeStorySpan } from './types'
 
 export const LIFE_LEDGER_PATCH_MARKER = '---LIFE_LEDGER_PATCH---'
@@ -162,11 +165,12 @@ function mergeSheetFromAiObject(prev: LifeMutableSheet, obj: Record<string, unkn
     if (keys.has(k)) (next as unknown as Record<string, unknown>)[k] = parsed[k as keyof LifeMutableSheet]
   }
   if (keys.has('educationGradeAtStart')) next.educationGradeAtStart = parsed.educationGradeAtStart
-  if (keys.has('realEstates')) next.realEstates = parsed.realEstates
-  if (keys.has('vehicles')) next.vehicles = parsed.vehicles
-  if (keys.has('family')) next.family = parsed.family
-  if (keys.has('socialCircle')) next.socialCircle = parsed.socialCircle
-  if (keys.has('pets')) next.pets = parsed.pets
+  const lists = mergeLifeListFieldsFromAi(prev, parsed, keys)
+  next.realEstates = lists.realEstates
+  next.vehicles = lists.vehicles
+  next.family = lists.family
+  next.socialCircle = lists.socialCircle
+  next.pets = lists.pets
   if (keys.has('storyStartDay') && parsed.storyStartDay.trim()) next.storyStartDay = parsed.storyStartDay
   if (keys.has('ageAtStart') && parsed.ageAtStart != null) next.ageAtStart = parsed.ageAtStart
   return next
@@ -233,7 +237,7 @@ export function buildLifeLedgerPatchOutputAppendix(opts?: {
 
   return `
 ---------------------
-【同一回复内必须追加：人生账本·判断标记（开关已开时每轮必交；禁止 JSON / 代码围栏）】
+【同一回复内必须追加：人生账本·判断标记（开关已开时每轮必交；禁止 JSON / 代码围栏 / Markdown）】
 写完全部可见聊天与其它补丁段后，另起一行输出（必须完全一致）：
 ${LIFE_LEDGER_PATCH_MARKER}
 
@@ -241,22 +245,34 @@ ${LIFE_LEDGER_PATCH_MARKER}
    [LIFE_LEDGER]
 status：无变化
 
-② 有更新：每个主体一块（可重复），只写**有证据要改**的字段；禁止编造。
+② 有更新：每个主体一块（可重复），只写**有证据要改或要新增**的字段；禁止无依据编造，但**有明确剧情/聊天事实时必须入库（含新增家人/人脉/住所/车产）**。
+列表用 @@段名 + 以“-”开头的条目行，字段用 键=值、分号分隔（与「按记忆对齐」同格式；**禁止 JSON 数组**）。
 [LIFE_LEDGER_PATCH]
 subject：character
 occupationMain：新主业
 savings：约50万
-relationshipStatus：热恋
+relationshipStatus：自由短句（按证据自拟，如「暗恋还没说破」）
 currentAge：28
+@@family
+- name=真实姓名；relation=父亲；gender=男；age=50；occupationOrSchool=具体岗位；residence=具体地址；livesWithSubject=否
+@@socialCircle
+- name=真实姓名；relation=大学同学；gender=女；age=21；occupationOrSchool=…；residence=…；attitude=…
+@@realEstates
+- label=学校宿舍；placeKind=dorm；location=虚构市+区+校名+楼栋房间；ownedBySubject=否；isPrimary=是；valueWan=
+@@vehicles
+- model=无；note=无车产；valueWan=
 
 字段可用英文键或中文别名：
 subject / 主体（character=角色本线，player=玩家本线）
 name/姓名，gender/性别，occupationMain/主业，occupationSide/副业，
 savings/存款，relationshipStatus/感情，educationTrack/学历轨道，educationNote/学历备注，
 extraNote/补充，currentAge/当前年龄（有「现在几岁」证据时写数字，由系统反推开篇岁数）
-住所/车产/家庭/社交圈/宠物若改，整表用一行 JSON 数组（**无把握或本轮未变则整键省略**，禁止清空、禁止用残缺条目覆盖）。
-车产项必须含 model 品牌车型全文，可含 valueWan（估值，单位万元）；社交圈/家庭项必须含 name 真实姓名。**禁止**空 model / 空 name；没看清原名就不要输出该列表键。
-住所项可含 label/placeKind/ownedBySubject/isPrimary/location/valueWan（location 须「虚构市+区+具体校名或路门牌+楼栋+房间号」；valueWan 为估值万元；**禁止**某高校/某大学/某小区及任何「某」占位；勿用现实一线省会名除非剧情已写；**勿套固定示范城市，按证据自行新编**）；家庭项可含 name(真实姓名，禁X父/X母)/relation(父亲母亲等)/age/residence（同粒度，禁「某」）；社交圈项可含 name/relation(短称呼)/age/residence/attitude(关系补充长描述)/note。
+列表段名：@@realEstates|@@住所、@@vehicles|@@车产、@@family|@@家庭、@@socialCircle|@@社交圈、@@pets|@@宠物
+- **允许且鼓励新增**：线上/线下本轮出现**明确新事实**（新具名家人、新朋友/同事、新可去住所、新车、新宠物等）时，**必须**写出对应 @@ 段并**追加**新条目；禁止因为「列表里已经有几条」就写 status：无变化。
+- **旧条目默认保留**：无证据表明搬走/删友/卖车时，不要丢掉旧人旧房；可只交「本轮新出现的条目」（系统会与旧表合并追加），也可交「旧+新」整段。
+- **禁止清空**。没看清原名就不要输出该 @@ 段。
+车产项必须含 model；社交圈/家庭项必须含 name。住所 location 须「虚构市+区+具体校名或路门牌+楼栋+房间号」；**禁止**「某」占位与无依据默认城。
+布尔写 是/否。placeKind：home|dorm|rent|family|work|other。
 **共同好友**：角色与玩家两边社交圈若出现同名人，其学校/职业/住址/年龄/生日/性别必须一致（仅 relation/attitude/note 可不同）。
 ${playerHint}
 规则：
@@ -264,7 +280,8 @@ ${playerHint}
 - 学年：每年 9 月升段；9 月前勿提前写成下一学年。occupation 年级须与学历推算及近端明示的「现在」一致；世界书开篇年级不得压过近端已更新的大四/大二等表述。校名须具体虚构专名。
 - 地址/校名/单位禁止「某／某某／××」糊弄写法；宿舍必须带楼栋号与房间号；禁止照抄提示词样板地名。
 - 共同社交对象客观事实禁止角色侧与玩家侧各写一套学校。
-- 没有证据的字段不要写；社交圈/车产/家庭未变 → 不要输出对应键（写 status：无变化 或只写确有变化的标量字段）。
+- 标量字段没有证据不要写；**列表**：本轮未出现新人/新房/新车时可省略 @@ 段；一旦出现明确新事实 → 必须输出对应 @@ 段并新增，禁止用「无变化」糊弄。
+${buildLifeRelationStatusHardRule()}
 - 本段不得进入可见聊天气泡。
 ---------------------
 `.trim()
@@ -285,27 +302,36 @@ function isNoChangeBody(src: string): boolean {
 
 function parseKvLines(block: string): Record<string, unknown> {
   const out: Record<string, unknown> = {}
+  const lists = parseLifeListSectionsFromText(block)
+  if (lists.realEstates) out.realEstates = lists.realEstates
+  if (lists.vehicles) out.vehicles = lists.vehicles
+  if (lists.family) out.family = lists.family
+  if (lists.socialCircle) out.socialCircle = lists.socialCircle
+  if (lists.pets) out.pets = lists.pets
+
   const lines = block.replace(/\r\n/g, '\n').split('\n')
   for (const line of lines) {
     const trimmed = line.trim()
-    if (!trimmed || /^\[/.test(trimmed)) continue
+    if (!trimmed || /^\[/.test(trimmed) || /^@@/.test(trimmed) || /^[-•*]/.test(trimmed)) continue
     const m = /^([^：:]+)[：:]([\s\S]*)$/.exec(trimmed)
     if (!m) continue
     const rawKey = m[1]!.trim().replace(/\s+/g, '')
     const canon = FIELD_ALIASES[rawKey] || FIELD_ALIASES[rawKey.toLowerCase()]
     if (!canon || canon === 'subject') continue
-    const val = parseMaybeJson(m[2] ?? '')
+    const rawVal = (m[2] ?? '').trim()
     if (canon === 'currentAge' || canon === 'ageAtStart' || canon === 'educationGradeAtStart') {
-      if (typeof val === 'number') out[canon] = val
-      else if (typeof val === 'string' && /^\d{1,3}$/.test(val.trim())) out[canon] = Number(val.trim())
+      if (/^\d{1,3}$/.test(rawVal)) out[canon] = Number(rawVal)
       continue
     }
     if (ARRAY_KEYS.has(canon)) {
-      out[canon] = val
+      // 列表优先走 @@ 段；仍兼容旧版「键：JSON数组」一行
+      if (out[canon]) continue
+      const val = parseMaybeJson(rawVal)
+      if (Array.isArray(val)) out[canon] = val
       continue
     }
     if (SCALAR_KEYS.has(canon) || canon === 'educationGradeAtStart' || canon === 'ageAtStart') {
-      out[canon] = val
+      out[canon] = parseMaybeJson(rawVal)
     }
   }
   return out
@@ -421,11 +447,94 @@ export function extractLifeLedgerPatchBlock(raw: string): {
   return { rest, patches, judged: ok }
 }
 
+/** 删剧情 / 重生时回滚用：本轮落库前两侧账本快照 + 本轮补丁 */
+export type LifeLedgerPlotRevert = {
+  characterId: string
+  playerIdentityId: string
+  /** 本轮补丁落库前的角色本线快照（有角色补丁时必有） */
+  characterSheetBefore?: LifeMutableSheet
+  /** 本轮补丁落库前的玩家本线快照（有玩家补丁时必有） */
+  playerSheetBefore?: LifeMutableSheet
+  patches: LifeLedgerInlinePatch[]
+}
+
+function cloneLifeSheet(sheet: LifeMutableSheet): LifeMutableSheet {
+  return JSON.parse(JSON.stringify(sheet)) as LifeMutableSheet
+}
+
+function parseCurrentAgeFromChanges(changes: Record<string, unknown>): number | null {
+  const ageRaw = changes.currentAge
+  if (typeof ageRaw === 'number' && Number.isFinite(ageRaw)) return Math.round(ageRaw)
+  if (typeof ageRaw === 'string' && /^\d{1,3}$/.test(ageRaw.trim())) return Number(ageRaw.trim())
+  return null
+}
+
+/** 纯内存合并（供写库与删改后重放共用） */
+export function mergeLifeLedgerInlinePatchesOntoSheets(params: {
+  characterSheet: LifeMutableSheet
+  playerSheet: LifeMutableSheet
+  patches: LifeLedgerInlinePatch[]
+  characterBirthdayMD?: string | null
+  playerBirthdayMD?: string | null
+  span: LifeStorySpan
+}): { characterSheet: LifeMutableSheet; playerSheet: LifeMutableSheet } {
+  let characterSheet = params.characterSheet
+  let playerSheet = params.playerSheet
+  const span = params.span
+
+  for (const p of params.patches.filter((x) => x.subject === 'character')) {
+    characterSheet = mergeSheetFromAiObject(characterSheet, p.changes)
+    const currentAge = parseCurrentAgeFromChanges(p.changes)
+    if (currentAge != null) {
+      characterSheet = applyCurrentAgeToSheet({
+        sheet: characterSheet,
+        currentAge,
+        birthdayMD: params.characterBirthdayMD,
+        span,
+      })
+    }
+  }
+  {
+    const clock = resolveLifeClock(characterSheet.storyStartDay, span)
+    characterSheet = finalizeLifeMutableSheetForStore(characterSheet, {
+      startDay: clock.startDay || span.startDay,
+      nowDay: clock.nowDay || span.nowDay,
+    })
+  }
+
+  for (const p of params.patches.filter((x) => x.subject === 'player')) {
+    playerSheet = mergeSheetFromAiObject(playerSheet, p.changes)
+    const currentAge = parseCurrentAgeFromChanges(p.changes)
+    if (currentAge != null) {
+      playerSheet = applyCurrentAgeToSheet({
+        sheet: playerSheet,
+        currentAge,
+        birthdayMD: params.playerBirthdayMD,
+        span,
+      })
+    }
+  }
+  {
+    const clock = resolveLifeClock(playerSheet.storyStartDay, span)
+    playerSheet = finalizeLifeMutableSheetForStore(playerSheet, {
+      startDay: clock.startDay || span.startDay,
+      nowDay: clock.nowDay || span.nowDay,
+    })
+  }
+
+  return { characterSheet, playerSheet }
+}
+
 export async function applyLifeLedgerInlinePatches(params: {
   character: Character
   playerIdentity: PlayerIdentity | null | undefined
   patches: LifeLedgerInlinePatch[]
-}): Promise<{ applied: boolean; changedLabels: string[]; appliedCount: number }> {
+}): Promise<{
+  applied: boolean
+  changedLabels: string[]
+  appliedCount: number
+  revert?: LifeLedgerPlotRevert
+}> {
   const character = params.character
   const cid = character.id?.trim()
   if (!cid || !params.patches.length) {
@@ -438,39 +547,29 @@ export async function applyLifeLedgerInlinePatches(params: {
 
   const charPatches = params.patches.filter((p) => p.subject === 'character')
   const playerPatches = params.patches.filter((p) => p.subject === 'player')
+  const pid = params.playerIdentity?.id?.trim() || ''
+
+  const charRowBefore = await personaDb.getCharacterLifeMutable(cid)
+  const characterSheetBefore = cloneLifeSheet(charRowBefore?.sheet ?? emptyLifeMutableSheet())
+  const playerRowBefore =
+    pid ? await personaDb.getPlayerLifeMutable(pid, cid) : null
+  const playerSheetBefore = cloneLifeSheet(playerRowBefore?.sheet ?? emptyLifeMutableSheet())
 
   let latestChar: LifeMutableSheet | null = null
   let latestPlayer: LifeMutableSheet | null = null
 
   if (charPatches.length) {
-    const row = await personaDb.getCharacterLifeMutable(cid)
-    let sheet = row?.sheet ?? emptyLifeMutableSheet()
-    const before = sheet
-    for (const p of charPatches) {
-      sheet = mergeSheetFromAiObject(sheet, p.changes)
-      const ageRaw = p.changes.currentAge
-      const currentAge =
-        typeof ageRaw === 'number' && Number.isFinite(ageRaw)
-          ? Math.round(ageRaw)
-          : typeof ageRaw === 'string' && /^\d{1,3}$/.test(ageRaw.trim())
-            ? Number(ageRaw.trim())
-            : null
-      if (currentAge != null) {
-        sheet = applyCurrentAgeToSheet({
-          sheet,
-          currentAge,
-          birthdayMD: character.birthdayMD,
-          span,
-        })
-      }
-    }
-    {
-      const clock = resolveLifeClock(sheet.storyStartDay, span)
-      sheet = finalizeLifeMutableSheetForStore(sheet, {
-        startDay: clock.startDay || span.startDay,
-        nowDay: clock.nowDay || span.nowDay,
-      })
-    }
+    const before = characterSheetBefore
+    let sheet = cloneLifeSheet(before)
+    const merged = mergeLifeLedgerInlinePatchesOntoSheets({
+      characterSheet: sheet,
+      playerSheet: playerSheetBefore,
+      patches: charPatches,
+      characterBirthdayMD: character.birthdayMD,
+      playerBirthdayMD: params.playerIdentity?.birthdayMD,
+      span,
+    })
+    sheet = merged.characterSheet
     latestChar = sheet
     const diff = describeSheetDiff(before, sheet)
     if (diff.length) {
@@ -486,36 +585,18 @@ export async function applyLifeLedgerInlinePatches(params: {
     }
   }
 
-  const pid = params.playerIdentity?.id?.trim()
   if (playerPatches.length && pid) {
-    const row = await personaDb.getPlayerLifeMutable(pid, cid)
-    let sheet = row?.sheet ?? emptyLifeMutableSheet()
-    const before = sheet
-    for (const p of playerPatches) {
-      sheet = mergeSheetFromAiObject(sheet, p.changes)
-      const ageRaw = p.changes.currentAge
-      const currentAge =
-        typeof ageRaw === 'number' && Number.isFinite(ageRaw)
-          ? Math.round(ageRaw)
-          : typeof ageRaw === 'string' && /^\d{1,3}$/.test(ageRaw.trim())
-            ? Number(ageRaw.trim())
-            : null
-      if (currentAge != null) {
-        sheet = applyCurrentAgeToSheet({
-          sheet,
-          currentAge,
-          birthdayMD: params.playerIdentity?.birthdayMD,
-          span,
-        })
-      }
-    }
-    {
-      const clock = resolveLifeClock(sheet.storyStartDay, span)
-      sheet = finalizeLifeMutableSheetForStore(sheet, {
-        startDay: clock.startDay || span.startDay,
-        nowDay: clock.nowDay || span.nowDay,
-      })
-    }
+    const before = playerSheetBefore
+    let sheet = cloneLifeSheet(before)
+    const merged = mergeLifeLedgerInlinePatchesOntoSheets({
+      characterSheet: latestChar ?? characterSheetBefore,
+      playerSheet: sheet,
+      patches: playerPatches,
+      characterBirthdayMD: character.birthdayMD,
+      playerBirthdayMD: params.playerIdentity?.birthdayMD,
+      span,
+    })
+    sheet = merged.playerSheet
     latestPlayer = sheet
     const diff = describeSheetDiff(before, sheet)
     if (diff.length) {
@@ -569,9 +650,27 @@ export async function applyLifeLedgerInlinePatches(params: {
     }
   }
 
+  const revert: LifeLedgerPlotRevert | undefined =
+    appliedCount > 0 && pid
+      ? {
+          characterId: cid,
+          playerIdentityId: pid,
+          characterSheetBefore: charPatches.length ? characterSheetBefore : undefined,
+          playerSheetBefore: playerPatches.length ? playerSheetBefore : undefined,
+          patches: params.patches.filter((p) =>
+            p.subject === 'character'
+              ? charPatches.length > 0
+              : p.subject === 'player'
+                ? playerPatches.length > 0 && !!pid
+                : false,
+          ),
+        }
+      : undefined
+
   return {
     applied: appliedCount > 0,
     changedLabels: [...new Set(changedLabels)],
     appliedCount,
+    revert,
   }
 }

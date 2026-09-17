@@ -444,7 +444,7 @@ export function buildMomentEngagementTierPromptBlock(
       .join('\n')
   }
   return [
-    '- 【关系】与用户关系一般：平淡日常可 {"interactions":[]}；',
+    '- 【关系】与用户关系一般：平淡日常可写「（无）」；',
     quietMode
       ? '- 【静悄悄】关系一般者**默认不互动**；只有内容与你强相关且人设会破例时才考虑点赞。'
       : highCommentMode

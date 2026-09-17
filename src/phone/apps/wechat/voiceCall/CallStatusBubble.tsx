@@ -8,7 +8,7 @@ import { formatCallStatusLabel, formatTwitterCallStatusLabel, type CallStatusKin
 export type CallStatusBubbleData =
   | { status: 'rejected' }
   | { status: 'no_answer' }
-  | { status: 'duration'; durationSec: number }
+  | { status: 'duration'; durationSec: number; sessionId?: string }
 
 export function CallStatusBubble({
   data,

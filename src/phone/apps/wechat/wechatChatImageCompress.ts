@@ -34,6 +34,9 @@ export async function compressChatImageToJpeg(params: {
     c.height = h
     const ctx = c.getContext('2d')
     if (!ctx) throw new Error('无法处理图片')
+    // JPEG 无透明通道：先铺白底，避免 PNG/WebP 透明区落成黑边
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, w, h)
     ctx.drawImage(source, 0, 0, w, h)
     const blob = await new Promise<Blob | null>((resolve) => c.toBlob((b) => resolve(b), 'image/jpeg', quality))
     if (!blob) throw new Error('图片编码失败')

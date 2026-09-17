@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Save, User, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Save, Upload, User, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { emitWeChatStorageChanged, personaDb } from './idb'
@@ -15,6 +15,7 @@ import { DEFAULT_WORLD_BACKGROUND_ID } from './worldBackgroundConstants'
 import type { ScheduleTable } from './types'
 import { ScheduleEditorScreen } from '../schedule/ScheduleEditorScreen'
 import { buildCharacterExportBundle, importCharacterBundle, parseCharacterImportFile, buildAddressingHintFromAudit, shouldPromptImportIdentitySync, type CharacterBundleIdentityAddressingHint } from './characterBundleIo'
+import { buildCharacterRuntimeExport, importCharacterRuntimeExport, parseCharacterRuntimeExport } from './characterRuntimeExport'
 import { auditCliqueIdentityBinding } from './personaIdentityBindingAudit'
 import { markCliqueIdentitySyncAck } from './personaIdentitySyncAck'
 import {
@@ -28,11 +29,7 @@ import type { FriendRequest } from './friendRequestTypes'
 import { NewFriendsPage } from './NewFriendsPage'
 import { RequestDetail } from './RequestDetail'
 import {
-  buildMbtiPersonalityWorldBook,
-  buildMbtiPersonalityWorldBookItems,
-  getMbtiPersonalityWorldBookName,
   isMbtiPersonalityWorldBookName,
-  normalizeMbti,
 } from '../mbtiPersonalityWorldBook'
 import { isLargeMbtiAvatar, resolvePlayerIdentityPreviewAvatar } from './mbtiProfileUi'
 import { useWechatStore } from '../useWechatStore'
@@ -1130,6 +1127,9 @@ export function NewFriendsPersonaApp({
   const [identityLoading, setIdentityLoading] = useState(false)
   const [pendingNewDraft, setPendingNewDraft] = useState<Character | null>(null)
   const [contactGenRootId, setContactGenRootId] = useState<string | null>(null)
+  const runtimeImportInputRef = useRef<HTMLInputElement | null>(null)
+  const runtimeImportTargetRootRef = useRef('')
+  const [runtimeImportPickOpen, setRuntimeImportPickOpen] = useState(false)
   const [aiGeneratingWechat, setAiGeneratingWechat] = useState(false)
   const [aiRemarkCandidates, setAiRemarkCandidates] = useState<Character[] | null>(null)
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null)
@@ -1519,6 +1519,25 @@ export function NewFriendsPersonaApp({
           <button
             type="button"
             className="flex w-full items-center justify-center gap-2 rounded-full border border-[#111827]/15 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#111827] shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out hover:bg-[#FAFAFA]"
+            onClick={() => {
+              if (!mainCharacters.length) {
+                window.alert('请先新建或导入人设包，再导入角色数据包。')
+                return
+              }
+              if (mainCharacters.length === 1) {
+                runtimeImportTargetRootRef.current = mainCharacters[0].id
+                runtimeImportInputRef.current?.click()
+                return
+              }
+              setRuntimeImportPickOpen(true)
+            }}
+          >
+            <Upload className="size-5" />
+            导入角色数据包
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center justify-center gap-2 rounded-full border border-[#111827]/15 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#111827] shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out hover:bg-[#FAFAFA]"
             onClick={() => setMainPickOpen(true)}
           >
             <Plus className="size-5" />
@@ -1575,6 +1594,89 @@ export function NewFriendsPersonaApp({
           onDirect={() => (contactGenRootId ? runDirectWechatContacts(contactGenRootId) : undefined)}
           onAi={() => (contactGenRootId ? runAiWechatContacts(contactGenRootId) : undefined)}
         />
+
+        <input
+          ref={runtimeImportInputRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(e) => {
+            const input = e.currentTarget
+            void (async () => {
+              const f = input.files?.[0]
+              const targetRoot = runtimeImportTargetRootRef.current.trim()
+              input.value = ''
+              if (!f || !targetRoot) return
+              const acc = currentAccountId?.trim()
+              if (!acc) {
+                window.alert('请先登录微信账号后再导入数据包')
+                return
+              }
+              try {
+                const raw = await f.text()
+                const parsed: unknown = JSON.parse(raw)
+                const runtime = parseCharacterRuntimeExport(parsed)
+                if (!runtime) {
+                  window.alert('无法识别：请选择本应用导出的「数据包」JSON（非人设包）。人设包请在角色编辑页导入。')
+                  return
+                }
+                const ok = window.confirm(
+                  `导入数据包到「${mainNameById[targetRoot] || '该角色'}」\n${runtime.summary || `${runtime.messages.length} 条消息 · ${runtime.memories.length} 条记忆`}\n\n将入库玩家身份并写入聊天/记忆/剧情。是否继续？`,
+                )
+                if (!ok) return
+                const result = await importCharacterRuntimeExport(runtime, {
+                  targetRootCharacterId: targetRoot,
+                  wechatAccountId: acc,
+                })
+                await refresh()
+                window.alert(
+                  result.remapped
+                    ? `数据包已导入并映射到当前人脉。\n${result.summary}`
+                    : `数据包已导入。\n${result.summary}`,
+                )
+              } catch (err) {
+                window.alert(err instanceof Error ? err.message : '导入数据包失败')
+              }
+            })()
+          }}
+        />
+
+        {runtimeImportPickOpen ? (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/35 px-4">
+            <div
+              className="w-full max-w-[420px] rounded-2xl border border-neutral-200 bg-white p-4 shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
+            >
+              <p className="text-center text-[16px] font-semibold text-[#111827]">选择写入哪个主角</p>
+              <p className="mt-2 text-center text-[13px] font-light text-[#6B7280]">
+                数据包会映射到所选人脉；原角色 id 仍在则直接覆盖写入。
+              </p>
+              <ul className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto">
+                {mainCharacters.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center rounded-xl border border-neutral-200 bg-[#FAFAFA] px-4 py-3 text-left text-[14px] font-medium text-[#111827] transition-colors hover:bg-neutral-100"
+                      onClick={() => {
+                        setRuntimeImportPickOpen(false)
+                        runtimeImportTargetRootRef.current = c.id
+                        runtimeImportInputRef.current?.click()
+                      }}
+                    >
+                      {c.name?.trim() || '未命名'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                className="mt-3 w-full rounded-xl border border-neutral-200 py-2.5 text-[13px] text-[#6B7280]"
+                onClick={() => setRuntimeImportPickOpen(false)}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <AiGeneratingOverlay open={aiGeneratingWechat} message="正在生成微信资料…" />
 
@@ -1793,6 +1895,7 @@ function PersonaEditPage({
   }
   const [editTab, setEditTab] = useState<PersonaEditTabId>('basic')
   const [ioExporting, setIoExporting] = useState(false)
+  const [runtimeExporting, setRuntimeExporting] = useState(false)
   /** JSON 只放 ref；另存为弹窗里确认文件名后再写入磁盘 */
   const [exportSaveDialog, setExportSaveDialog] = useState<{ suggested: string } | null>(null)
   const [exportFilenameDraft, setExportFilenameDraft] = useState('')
@@ -2097,31 +2200,12 @@ function PersonaEditPage({
 
   const syncMbtiPersonalityWorldBooks = (prev: Character, nextMbti: string): Character => {
     const now = Date.now()
-    const k = normalizeMbti(nextMbti)
-    const targetName = k ? getMbtiPersonalityWorldBookName(k) : ''
     const prevBooks = Array.isArray(prev.worldBooks) ? prev.worldBooks : []
-
-    let foundTarget = false
-    const nextBooks = prevBooks.map((w) => {
-      if (!isMbtiPersonalityWorldBookName(w.name)) return w
-      if (k && w.name === targetName) {
-        foundTarget = true
-        const hasEnabledContent = (w.items ?? []).some((it) => Boolean(it.enabled) && String(it.content || '').trim())
-        if (!hasEnabledContent) {
-          return {
-            ...w,
-            enabled: true,
-            collapsed: true,
-            items: buildMbtiPersonalityWorldBookItems(k, now),
-          }
-        }
-        return { ...w, enabled: true }
-      }
-      // 非当前 MBTI 的“人格设定”册默认关闭，避免页面/提示词里混入多种人格。
-      return { ...w, enabled: false }
-    })
-
-    const books = k && !foundTarget ? [buildMbtiPersonalityWorldBook(k, now), ...nextBooks] : nextBooks
+    // 不再自动创建/启用「××人格设定」长文册；聊天只认档案上的 MBTI 字段作弱偏向。
+    // 若历史上已有人格设定册，一律关闭，避免再注入与人设冲突的说明书。
+    const books = prevBooks.map((w) =>
+      isMbtiPersonalityWorldBookName(w.name) ? { ...w, enabled: false } : w,
+    )
     return { ...prev, mbti: nextMbti, worldBooks: books, updatedAt: now }
   }
 
@@ -2535,6 +2619,7 @@ function PersonaEditPage({
             {editTab === 'io' ? (
               <DataTransferTab
                 ioExporting={ioExporting}
+                runtimeExporting={runtimeExporting}
                 onExport={() => {
                   void (async () => {
                     setIoExporting(true)
@@ -2558,6 +2643,33 @@ function PersonaEditPage({
                     }
                   })()
                 }}
+                onExportRuntime={() => {
+                  void (async () => {
+                    setRuntimeExporting(true)
+                    try {
+                      await yieldToMain()
+                      const payload = await buildCharacterRuntimeExport(data)
+                      await yieldToMain()
+                      const json = serializeCharacterExportJson(payload, {
+                        forceCompact: prefersCompactExportSerialization(),
+                      })
+                      await yieldToMain()
+                      const label =
+                        payload.characterLabels.find((c) => c.id === payload.rootCharacterId)?.name ||
+                        data.name ||
+                        '未命名'
+                      const filename = `【Lumi Phone】-运行时-${safeExportNameSegment(label, '未命名')}.json`
+                      pendingExportJsonRef.current = json
+                      setExportAddTimestamp(false)
+                      setExportFilenameDraft(filename)
+                      setExportSaveDialog({ suggested: filename })
+                    } catch (e) {
+                      window.alert(e instanceof Error ? e.message : '导出已产生数据失败')
+                    } finally {
+                      setRuntimeExporting(false)
+                    }
+                  })()
+                }}
                 onImportFileChange={(e) => {
                   const input = e.currentTarget
                   void (async () => {
@@ -2574,9 +2686,17 @@ function PersonaEditPage({
                     try {
                       const raw = await f.text()
                       const parsed: unknown = JSON.parse(raw)
+
+                      if (parseCharacterRuntimeExport(parsed)) {
+                        window.alert(
+                          '数据包请在「世界线人物名册」底部「导入角色数据包」导入，避免与编辑页身份绑定冲突。',
+                        )
+                        return
+                      }
+
                       const bundles = parseCharacterImportFile(parsed)
                       if (!bundles?.length) {
-                        window.alert('无法识别：请导入本应用导出的「完整人设包」JSON（单文件）。')
+                        window.alert('无法识别：请导入本应用导出的「人设包」JSON。数据包请到名册卡片导入。')
                         return
                       }
                       if (bundles.length > 1) {

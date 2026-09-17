@@ -45,10 +45,8 @@ export type ResolvedEmbeddingVector = {
   modelId: string
 }
 
-export function resolveMemoryEmbeddingProviderMode(settings: MemorySettingsRow): MemoryEmbeddingProviderMode {
-  const raw = settings.memoryEmbeddingProviderMode
-  if (raw === 'api' || raw === 'local' || raw === 'auto') return raw
-  return 'auto'
+export function resolveMemoryEmbeddingProviderMode(_settings: MemorySettingsRow): MemoryEmbeddingProviderMode {
+  return 'api'
 }
 
 export function resolveLocalEmbeddingModelId(settings: MemorySettingsRow): string {
@@ -56,13 +54,9 @@ export function resolveLocalEmbeddingModelId(settings: MemorySettingsRow): strin
 }
 
 export function resolveApiEmbeddingModelId(
-  settings: MemorySettingsRow,
-  override?: string | null,
+  _settings: MemorySettingsRow,
+  _override?: string | null,
 ): string {
-  const o = override?.trim()
-  if (o) return o
-  const s = settings.memoryEmbeddingModelId?.trim()
-  if (s) return s
   return DEFAULT_MEMORY_EMBEDDING_MODEL
 }
 
@@ -74,7 +68,7 @@ export function isMemoryEmbeddingAvailable(
   const mode = resolveMemoryEmbeddingProviderMode(settings)
   if (mode === 'local') return true
   const cred = resolveEmbeddingApiCredentials(settings, chatFallback ?? null)
-  if (mode === 'api') return Boolean(cred?.apiUrl?.trim() && cred?.apiKey?.trim())
+  if (mode === 'api') return Boolean(cred.apiUrl.trim() && cred.apiKey.trim())
   return true
 }
 
@@ -85,9 +79,6 @@ async function embedWithApi(
   modelOverride?: string | null,
 ): Promise<ResolvedEmbeddingVector[]> {
   const cred = resolveEmbeddingApiCredentials(settings, chatFallback ?? null)
-  if (!cred?.apiUrl?.trim() || !cred.apiKey?.trim()) {
-    throw new Error('embedding_api_not_configured')
-  }
   const modelId = resolveApiEmbeddingModelId(settings, modelOverride)
   if (texts.length === 1) {
     const vec = await fetchEmbeddingVector(cred, texts[0], modelId)
@@ -179,7 +170,6 @@ export async function testMemoryEmbeddingConnectionUnified(
 
   if (mode === 'api') {
     const cred = resolveEmbeddingApiCredentials(settings, chatFallback ?? null)
-    if (!cred) return { ok: false, message: '未配置向量 API' }
     const { testMemoryEmbeddingConnection } = await import('./memoryEmbeddingApi')
     const modelId = resolveApiEmbeddingModelId(settings, modelOverride)
     const r = await testMemoryEmbeddingConnection(cred, modelId)
@@ -190,7 +180,6 @@ export async function testMemoryEmbeddingConnectionUnified(
   if (localTry.ok) return { ok: true, dimensions: localTry.dimensions, provider: 'local' }
 
   const cred = resolveEmbeddingApiCredentials(settings, chatFallback ?? null)
-  if (!cred) return localTry
   const { testMemoryEmbeddingConnection } = await import('./memoryEmbeddingApi')
   const modelId = resolveApiEmbeddingModelId(settings, modelOverride)
   const apiTry = await testMemoryEmbeddingConnection(cred, modelId)

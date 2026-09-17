@@ -19,12 +19,35 @@ import {
 import { selectRecentWeChatMessagesAiRoundWindow } from './memory/memorySummaryRetention'
 import { formatGregorianStoryDayFromMs } from './memory/storyTimelineTypes'
 import { parseStoryAnchorLabelToMs } from './time/applyOnlineChatTimeFusion'
+import {
+  clampDatingMaxContextTokens,
+  datingContextCharBudgetsFromTokens,
+  DATING_AI_DEFAULT_CONTEXT_TOKENS,
+} from './dating/types'
 
 /** 线上固定注入「最近私聊轮次」：默认最近 N 轮对方回复（含其间用户消息）；总结游标推过后仍注入 */
 export const MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS = 10
 
 /** 会话可调：固定注入轮数上限（含 0=关闭） */
 export const MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX = 16
+
+/** 未设置「线上近端 Token」时，固定近端块沿用的汉字软上限 */
+export const MEMORY_RECENT_PRIVATE_CHAT_INJECT_DEFAULT_CHAR_CAP = 14_000
+
+/** 线上近端主模式：上下文原文（按 Token）↔ 近端 X 轮（互斥） */
+export type RecentPrivateInjectMode = 'full_text' | 'near_rounds'
+
+export const RECENT_PRIVATE_INJECT_MODE_DEFAULT: RecentPrivateInjectMode = 'near_rounds'
+
+export function normalizeRecentPrivateInjectMode(raw: unknown): RecentPrivateInjectMode {
+  return raw === 'full_text' ? 'full_text' : RECENT_PRIVATE_INJECT_MODE_DEFAULT
+}
+
+export function resolveRecentPrivateInjectMode(
+  settings?: { recentPrivateInjectMode?: string | null } | null,
+): RecentPrivateInjectMode {
+  return normalizeRecentPrivateInjectMode(settings?.recentPrivateInjectMode)
+}
 
 /** 读取会话设置中的固定注入轮数；未设置则用默认 {@link MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS}。 */
 export function resolveRecentPrivateInjectAiRounds(
@@ -35,6 +58,70 @@ export function resolveRecentPrivateInjectAiRounds(
     return Math.max(0, Math.min(MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX, Math.floor(raw)))
   }
   return MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS
+}
+
+/**
+ * 读取会话「线上近端最大 Token」。
+ * 返回 `null` 表示未单独设置（沿用默认字数上限）；有值则按预算换算汉字软上限。
+ */
+export function resolveRecentPrivateInjectMaxContextTokens(
+  settings?: { recentPrivateInjectMaxContextTokens?: number | null } | null,
+): number | null {
+  const raw = settings?.recentPrivateInjectMaxContextTokens
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null
+  return clampDatingMaxContextTokens(raw)
+}
+
+/** Token → 固定近端汉字软上限（与线下「最近剧情」historyPrompt 档对齐） */
+export function privateInjectCharCapFromMaxContextTokens(rawTokens: number): number {
+  return datingContextCharBudgetsFromTokens(rawTokens).historyPrompt
+}
+
+/**
+ * 按主模式解析实际注入轮数窗：
+ * - `full_text`：拉满轮数窗，主要靠字数预算裁切
+ * - `near_rounds`：按用户设定的近端轮数
+ */
+export function resolveRecentPrivateInjectEffectiveRounds(
+  settings?: {
+    recentPrivateInjectMode?: string | null
+    recentPrivateInjectAiRounds?: number | null
+  } | null,
+): number {
+  if (resolveRecentPrivateInjectMode(settings) === 'full_text') {
+    return MEMORY_RECENT_PRIVATE_CHAT_INJECT_AI_ROUNDS_MAX
+  }
+  return resolveRecentPrivateInjectAiRounds(settings)
+}
+
+/**
+ * 按主模式解析字数预算：
+ * - `full_text`：用 Token 换算（未设则默认档）
+ * - `near_rounds`：固定默认软上限（不吃 Token 滑条）
+ */
+export function resolveRecentPrivateInjectEffectiveMaxChars(
+  settings?: {
+    recentPrivateInjectMode?: string | null
+    recentPrivateInjectMaxContextTokens?: number | null
+  } | null,
+): number {
+  if (resolveRecentPrivateInjectMode(settings) === 'full_text') {
+    const tokens =
+      resolveRecentPrivateInjectMaxContextTokens(settings) ?? DATING_AI_DEFAULT_CONTEXT_TOKENS
+    return privateInjectCharCapFromMaxContextTokens(tokens)
+  }
+  return MEMORY_RECENT_PRIVATE_CHAT_INJECT_DEFAULT_CHAR_CAP
+}
+
+/** @deprecated 请用 {@link resolveRecentPrivateInjectEffectiveMaxChars}；保留兼容旧调用 */
+export function resolveRecentPrivateInjectMaxChars(
+  settings?: {
+    recentPrivateInjectAiRounds?: number | null
+    recentPrivateInjectMaxContextTokens?: number | null
+    recentPrivateInjectMode?: string | null
+  } | null,
+): number {
+  return resolveRecentPrivateInjectEffectiveMaxChars(settings)
 }
 
 /** 未总结游标后消息（与 {@link formatUnsummarizedPrivateChatBlock} 同过滤）。 */
@@ -312,7 +399,21 @@ export function formatPrivateLineUnsummarized(
   let raw = stripWechatGroupEventNoticePrefix(String(m.content ?? '')).trim()
   if (m.redPacket) raw = raw || '[红包]'
   if (m.transfer) raw = raw || '[转账]'
-  if (m.callStatus) raw = raw || '[通话]'
+  if (m.callStatus) {
+    const dig = String(m.callStatus.transcriptText ?? '').trim()
+    if (dig) {
+      const timePrefix =
+        opts?.includeTimestamp && m.timestamp ? formatUnsummarizedDualTimePrefix(m) : ''
+      // 整通通话只占一条 / 一轮：不按句数拆，也不用短 maxChars 截断到只剩标题
+      const cap =
+        typeof opts?.maxChars === 'number' && Number.isFinite(opts.maxChars)
+          ? Math.max(1200, Math.floor(opts.maxChars))
+          : 6000
+      const body = dig.length <= cap ? dig : `${dig.slice(0, cap)}…`
+      return `- ${timePrefix}[私聊・语音通话·整通算一轮]\n${body}`
+    }
+    raw = raw || '[通话]'
+  }
   if (m.images?.length) raw = raw ? `${raw} [图片]` : '[图片]'
   if (m.voice) {
     const vt = m.voice.transcriptText?.trim() || raw || ''

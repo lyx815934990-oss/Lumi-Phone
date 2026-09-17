@@ -1,8 +1,12 @@
 import { motion } from 'framer-motion'
 import { Check, ChevronRight } from 'lucide-react'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { LoreArchiveTag, LoreEntry } from '../../worldbook/loreArchiveTypes'
-import { LORE_ARCHIVE_ENTRY_TAGS_CAP } from '../../worldbook/loreArchiveTypes'
+import type { LoreArchiveTag, LoreEntry, ArchiveWorldbookPriorityTier } from '../../worldbook/loreArchiveTypes'
+import {
+  ARCHIVE_WORLDBOOK_PRIORITY_TIER_LABELS,
+  LORE_ARCHIVE_ENTRY_TAGS_CAP,
+  normalizeArchiveWorldbookPriorityTier,
+} from '../../worldbook/loreArchiveTypes'
 import {
   WORLD_BOOK_CHAR_PLACEHOLDER,
   WORLD_BOOK_USER_PLACEHOLDER,
@@ -15,7 +19,7 @@ import { LA, LA_FONT_CN, laEase, laPageStyle } from './loreArchiveTheme'
 
 export type { LoreEditorCharacter }
 
-type EditTab = 'content' | 'tags' | 'scene' | 'roles'
+type EditTab = 'content' | 'priority' | 'tags' | 'scene' | 'roles'
 
 type Props = {
   draft: LoreEntry
@@ -31,6 +35,7 @@ type Props = {
 
 const EDIT_TABS: Array<{ id: EditTab; label: string }> = [
   { id: 'content', label: '内容' },
+  { id: 'priority', label: '优先级' },
   { id: 'tags', label: '分类' },
   { id: 'scene', label: '场景' },
   { id: 'roles', label: '角色' },
@@ -271,6 +276,44 @@ export function LoreEditor({
                 </button>
               </div>
             ) : null}
+          </div>
+        ) : null}
+
+        {tab === 'priority' ? (
+          <div>
+            <GuideBlock
+              title="优先级档次"
+              body="决定这份档案书相对「人设世界书」的效力。默认档 2；冲突时按所选档次处理。"
+            />
+            <div className="flex flex-col gap-2">
+              {([1, 2, 3] as ArchiveWorldbookPriorityTier[]).map((tier) => {
+                const meta = ARCHIVE_WORLDBOOK_PRIORITY_TIER_LABELS[tier]
+                const on = normalizeArchiveWorldbookPriorityTier(draft.priorityTier) === tier
+                return (
+                  <button
+                    key={tier}
+                    type="button"
+                    onClick={() => onChange({ ...draft, priorityTier: tier, updatedAt: Date.now() })}
+                    className="flex w-full items-start justify-between gap-3 rounded-2xl border px-4 py-3.5 text-left"
+                    style={{
+                      borderColor: on ? LA.amber : LA.hairline,
+                      background: on ? LA.amberSoft : LA.card,
+                      transition: 'border-color 200ms ease, background 200ms ease',
+                    }}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[14px] font-semibold" style={{ color: LA.ink }}>
+                        {meta.short}
+                      </p>
+                      <p className="mt-1 text-[12px] leading-relaxed" style={{ color: LA.mist }}>
+                        {meta.hint}
+                      </p>
+                    </div>
+                    {on ? <Check className="mt-0.5 size-4 shrink-0" style={{ color: LA.amber }} /> : null}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         ) : null}
 

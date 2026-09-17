@@ -13,6 +13,7 @@ import type {
   BranchOption,
   CharacterArchive,
   CharacterInfo,
+  DatingPlotContextInjectMode,
   NarrativeGenOptions,
   NarrativePerspective,
   PlotDimensionKind,
@@ -48,6 +49,13 @@ export type DatingStoryNormalActions = {
   setLengthTargetChars: (v: string) => void
   /** 传入刚改的字数可立即落盘；无参则用当前 lengthTargetChars（失焦场景） */
   blurPersistLengthTarget: (override?: string | number) => void
+  /** 上下文注入最大 token（存档） */
+  maxContextTokens: number
+  setMaxContextTokens: (tokens: number) => void
+  plotContextInjectMode: DatingPlotContextInjectMode
+  setPlotContextInjectMode: (mode: DatingPlotContextInjectMode) => void
+  plotSummaryInjectRounds: number
+  setPlotSummaryInjectRounds: (rounds: number) => void
   plotPace: DatingPlotPaceSettings
 
   toggleThinkingChain: () => void

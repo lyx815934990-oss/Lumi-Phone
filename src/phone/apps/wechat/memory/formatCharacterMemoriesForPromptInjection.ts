@@ -1,10 +1,24 @@
 import { personaDb } from '../newFriendsPersona/idb'
 import type { MemoryVectorRecallOpts } from './memoryVectorRecall'
 import { resolveMomentImagesForMemoryInjection } from './momentMemoryPromptImages'
+import {
+  emptyMemoryVectorRecallStatus,
+  mergeMemoryVectorRecallStatus,
+  type MemoryVectorRecallRoundStatus,
+} from './memoryVectorRecallStatus'
+
+export type { MemoryVectorRecallRoundStatus } from './memoryVectorRecallStatus'
+export {
+  emptyMemoryVectorRecallStatus,
+  formatMemoryVectorRecallConsoleLine,
+  mergeMemoryVectorRecallStatus,
+} from './memoryVectorRecallStatus'
 
 export type CharacterMemoryPromptInjectionPack = {
   text: string
   momentImageUrls: string[]
+  /** 本轮长期记忆向量召回调用情况（供聊天控制台提示） */
+  vectorRecall: MemoryVectorRecallRoundStatus
 }
 
 /** 私聊注入：自有长期记忆 + 线下关联记忆分轨拼接（总结入库逻辑不变）。 */
@@ -14,7 +28,13 @@ export async function formatCharacterMemoriesForPromptInjectionPack(
   opts?: MemoryVectorRecallOpts | null,
 ): Promise<CharacterMemoryPromptInjectionPack> {
   const cid = characterId.trim()
-  if (!cid) return { text: '', momentImageUrls: [] }
+  if (!cid) {
+    return {
+      text: '',
+      momentImageUrls: [],
+      vectorRecall: emptyMemoryVectorRecallStatus({ detail: '无角色' }),
+    }
+  }
   const recallOpts = { ...opts, apiConfig: opts?.apiConfig ?? null }
   const [ownMem, linkedMem] = await Promise.all([
     personaDb.formatCharacterMemoriesForPromptByRelevance(cid, relevanceText, {
@@ -32,7 +52,11 @@ export async function formatCharacterMemoriesForPromptInjectionPack(
     accountId: opts?.lineScope?.wechatAccountId ?? null,
     pickedMemories,
   })
-  return { text, momentImageUrls }
+  return {
+    text,
+    momentImageUrls,
+    vectorRecall: mergeMemoryVectorRecallStatus(ownMem.vectorRecall, linkedMem.vectorRecall),
+  }
 }
 
 export async function formatCharacterMemoriesForPromptInjection(

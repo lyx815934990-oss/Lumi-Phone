@@ -50,7 +50,8 @@ export async function loadFavoriteItems(
 
   for (const fav of favs) {
     const msg = await personaDb.getWeChatChatMessageById(fav.messageId)
-    const isPlayerMessage = msg?.type === 'player'
+    const isPlayerMessage =
+      msg?.type === 'player' || fav.characterId.trim() === SHARED_RECORD_PLAYER_ORIGIN_ID
     const sourceId = isPlayerMessage
       ? SHARED_RECORD_PLAYER_ORIGIN_ID
       : (msg?.characterId?.trim() || fav.characterId.trim())

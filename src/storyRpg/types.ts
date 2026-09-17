@@ -1,5 +1,7 @@
 /** H5 AI 剧情互动 · 核心数据模型 */
 
+import type { DatingPlotContextInjectMode } from '../phone/apps/wechat/dating/types'
+
 export type StoryDisplayMode = 'normal' | 'vn'
 
 export type NarrativePerspective = 'first' | 'second' | 'third'
@@ -102,6 +104,14 @@ export type StoryRpgSettings = {
   plotArtifactVisualPresetId: string
   perspective: NarrativePerspective
   lengthTargetChars: number
+  /** 上下文注入最大 token（8k～200k）；仅 full_text 模式主控「最近剧情」 */
+  maxContextTokens: number
+  /** 近端剧情：上下文原文 vs 近端摘要 */
+  plotContextInjectMode: DatingPlotContextInjectMode
+  /** summary 模式：近端摘要轮数 */
+  plotSummaryInjectRounds: number
+  /** 内容页显示「注入」快捷浮层（可拖动，与楼层按钮同类） */
+  plotInjectRailEnabled: boolean
   heartWhisperMode: boolean
   translateEnabled: boolean
   outputLanguage: string
@@ -138,6 +148,10 @@ export const DEFAULT_STORY_RPG_SETTINGS: StoryRpgSettings = {
   plotArtifactVisualPresetId: 'random',
   perspective: 'second',
   lengthTargetChars: 500,
+  maxContextTokens: 200_000,
+  plotContextInjectMode: 'full_text',
+  plotSummaryInjectRounds: 5,
+  plotInjectRailEnabled: false,
   heartWhisperMode: false,
   translateEnabled: false,
   outputLanguage: 'zh-CN',

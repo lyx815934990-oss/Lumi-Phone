@@ -42,6 +42,7 @@ export function wechatClassicSpecialSkinOverrides(night: boolean): Record<string
   const green = night ? WECHAT_CLASSIC.selfBubbleNight : WECHAT_CLASSIC.selfBubble
   return {
     '--wx-chat-input-shell-bg': shell,
+    '--wx-chat-input-shell-radius': '6px',
     '--wx-chat-input-shell-border': shellBorder,
     '--wx-chat-input-btn-color': text,
     '--wx-chat-input-text-color': text,

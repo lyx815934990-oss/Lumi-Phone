@@ -562,13 +562,14 @@ export function WeChatChatSkinPreviewPanel({
           btnPx={inputBar.buttonSize}
           btnColor={inputBar.buttonColor}
           layout={inputLayout}
+          wechatSendMode={inputBar.wechatSendMode}
           sendButtonColor={inputBar.sendButtonColor}
           borderRadius={inputBar.borderRadius}
           borderColor={inputBar.borderColor}
           backgroundColor={inputBar.backgroundColor}
           draft=""
           sendBusy={false}
-          planeCanAct={false}
+          planeCanAct={inputBar.wechatSendMode === 'button'}
           plusMenuOpen={false}
           onToggleInputMode={() => {}}
           textareaRef={textareaRef}

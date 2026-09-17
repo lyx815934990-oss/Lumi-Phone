@@ -37,6 +37,10 @@ import { MOMENT_TEXT_OUTPUT_HINT, sanitizeMomentText } from './momentTextSanitiz
 import { runMomentsVisionChat } from './momentVisionChat'
 import { personaDb } from '../../phone/apps/wechat/newFriendsPersona/idb'
 import { MOMENT_SONG_SHARE_AI_COMMENT_RULES } from './momentAttachedMusic'
+import {
+  MOMENT_PERSONA_INTERACT_STABLE_FORMAT_HINT,
+  parsePersonaInteractionsFromStableText,
+} from './momentStableFormat'
 
 const ENGAGEMENT_AI_CONCURRENCY = 4
 
@@ -112,7 +116,7 @@ const USER_MOMENT_INTERACTION_TASK = `
 - 若正文含「分享单曲」及歌词节选：评论须基于**该曲名、歌手与已给出的歌词**有感而发；**禁止**编造未出现的歌词或乱评。
 ${MOMENT_SONG_SHARE_AI_COMMENT_RULES}
 - 若 system 中【人脉关系】写明你如何称呼其他角色，评区提到对方时必须用该称呼，禁止臆造「学姐/学长」等与关系不符的叫法。
-- 只输出 JSON，不要 Markdown。
+- 只输出稳定字段行，不要 JSON / Markdown。
 ${MOMENT_TEXT_OUTPUT_HINT}
 `.trim()
 
@@ -121,11 +125,11 @@ function buildUserMomentInteractionSystemTask(
 ): string {
   if (isLowEngagementPreset(engagementRules?.presetId)) {
     return `${USER_MOMENT_INTERACTION_TASK}
-- 【静悄悄】默认 0 条互动；多数角色应输出 {"interactions":[]}。仅极熟/@ 时可能 like，comment 极少。`
+- 【静悄悄】默认 0 条互动；多数角色应输出「（无）」。仅极熟/@ 时可能点赞，评论极少。`
   }
   if (isHighCommentEngagementPreset(engagementRules?.presetId)) {
     return `${USER_MOMENT_INTERACTION_TASK}
-- 【高互动频度】关系非冷淡时**不要只点赞**：优先输出 comment，或 like+comment；禁止全员沉默或全员只赞。`
+- 【高互动频度】关系非冷淡时**不要只点赞**：优先输出评论，或点赞+评论；禁止全员沉默或全员只赞。`
   }
   return `${USER_MOMENT_INTERACTION_TASK}
 - 可 0 条互动；不必勉强。`
@@ -178,19 +182,20 @@ function buildSingleCharacterInteractionTask(params: {
     '',
     tierLine,
     '',
-    '输出 JSON：{"interactions":[{"type":"like"|"comment","content":"仅comment需要","delaySeconds":数字}]}',
+    '输出稳定字段行（不要 JSON）：',
+    MOMENT_PERSONA_INTERACT_STABLE_FORMAT_HINT,
     params.commentOnly
-      ? '【强制】必须输出至少 1 条 type=comment，直接回应正文；可同时 like，但禁止只点赞。'
+      ? '【强制】必须至少 1 行「评论｜…」，直接回应正文；可同时点赞，但禁止只点赞。'
       : isLowEngagementPreset(params.engagementRules?.presetId)
-        ? '【静悄悄】默认 {"interactions":[]}；可 0 条。仅极熟/@ 且特别想说话时 like 或 1 句 comment。'
+        ? '【静悄悄】默认写「（无）」；可 0 条。仅极熟/@ 且特别想说话时点赞或 1 句评论。'
         : isHighCommentEngagementPreset(params.engagementRules?.presetId)
-        ? '可 0～2 条；高互动模式下优先 comment 或 like+comment，**不要只点赞**；有 comment 时须回应正文。'
-        : '可 0～2 条；有 comment 时须回应正文具体内容。',
+        ? '可 0～2 条；高互动模式下优先评论或点赞+评论，**不要只点赞**；有评论时须回应正文。'
+        : '可 0～2 条；有评论时须回应正文具体内容。',
     params.hasAttachedMusic
       ? '本条含分享歌曲；评论须聊歌/歌词/歌手，勿写与歌曲无关的客套。'
       : null,
-    'delaySeconds 15～600（10 分钟内），**每条须明显错开**（可 20 秒、1 分半、4 分钟等，勿整分钟机械递增）。',
-    '禁止 type=viewed；静默浏览由系统另行记录，你只需决定要不要点赞/评论。',
+    '延迟秒数 15～600（10 分钟内），**每条须明显错开**（可 20 秒、1 分半、4 分钟等，勿整分钟机械递增）。',
+    '禁止浏览类输出；静默浏览由系统另行记录，你只需决定要不要点赞/评论。',
   ]
     .filter(Boolean)
     .join('\n')
@@ -238,6 +243,11 @@ function parseSingleCharacterInteractions(
 function parseInteractionRaw(raw: string, charId: string): AiMomentInteractionDraft[] {
   const trimmed = raw.trim()
   if (!trimmed) return []
+
+  const fromStable = parsePersonaInteractionsFromStableText(trimmed)
+  if (fromStable.length) {
+    return parseSingleCharacterInteractions(fromStable, charId)
+  }
 
   const payload = parseModelJsonPayload(trimmed)
   if (!payload) return []
@@ -345,12 +355,12 @@ async function generatePersonaBoundInteractionForCharacter(params: {
     !isLowEngagementPreset(params.engagementRules?.presetId)
   ) {
     drafts = await runOnce(
-      '你与用户关系很熟，刷朋友圈通常至少会点赞；请输出包含 like 或简短 comment 的有效 JSON。',
+      '你与用户关系很熟，刷朋友圈通常至少会点赞；请输出含「点赞｜」或简短「评论｜」的稳定字段行。',
     )
   }
   if (!drafts.length) {
     drafts = await runOnce(
-      '上次输出无效。请仅输出 JSON；若有 comment，必须直接回应朋友圈正文（禁止「看到了」「收到」等空话）。',
+      '上次输出无效。请只输出稳定字段行（---互动--- / 点赞｜秒 / 评论｜正文｜秒）；若有评论，必须直接回应朋友圈正文（禁止「看到了」「收到」等空话）。',
     )
   }
 
@@ -367,8 +377,8 @@ async function generatePersonaBoundInteractionForCharacter(params: {
   ) {
     const commentPush = await runOnce(
       params.commentOnly
-        ? '【强制评论】你必须输出至少一条 type=comment，直接回应朋友圈正文；可同时 like，但禁止只点赞不说话。'
-        : '【互动频度偏高】请不要只点赞：在 JSON 中至少包含一条 type=comment（可保留 like），comment 须回应正文具体内容。',
+        ? '【强制评论】你必须至少输出一行「评论｜…」，直接回应朋友圈正文；可同时点赞，但禁止只点赞不说话。'
+        : '【互动频度偏高】请不要只点赞：至少包含一行「评论｜…」（可保留点赞），评论须回应正文具体内容。',
     )
     drafts = mergeDraftsPreferringComments(drafts, commentPush)
   }

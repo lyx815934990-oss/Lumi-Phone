@@ -1,4 +1,6 @@
 import fs from 'node:fs'
+import dns from 'node:dns'
+import https from 'node:https'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -9,6 +11,20 @@ import { defineConfig, loadEnv, type Plugin, type ResolvedConfig } from 'vite'
 
 import { buildNeteaseDevProxyTable } from './viteNeteaseDevProxy'
 import { hfMirrorDevProxyPlugin } from './viteHfMirrorDevProxy'
+
+/** 国内环境连 api.bgm.tv 常因 IPv6 先握手超时；优先 IPv4 */
+try {
+  dns.setDefaultResultOrder('ipv4first')
+} catch {
+  /* older node */
+}
+
+const bgmHttpsAgent = new https.Agent({
+  family: 4,
+  keepAlive: true,
+  timeout: 20_000,
+})
+
 
 function ttfTableChecksum(buf: Buffer, offset: number, length: number): number {
   let sum = 0
@@ -584,6 +600,11 @@ export default defineConfig(({ command, mode }) => {
   server: {
     host: true,
     port: 5173,
+    /**
+     * Vite 默认只认 localhost；经 NATAPP 等穿透时 Host 是公网域名会被拦。
+     * `.natappfree.cc` = 该后缀下任意子域（免费隧道域名常变）。
+     */
+    allowedHosts: ['.natappfree.cc', '.natapp1.cc', '.natapp2.cc'],
     fs: {
       allow: [__dirname, path.resolve(__dirname, '剧本杀'), path.resolve(__dirname, '店铺菜品图')],
     },
@@ -617,6 +638,35 @@ export default defineConfig(({ command, mode }) => {
         secure: true,
         rewrite: (p) => p.replace(/^\/apizero-proxy/, ''),
       },
+      /**
+       * 免费 Google 网页翻译（无需 Key）。浏览器直连会 CORS。
+       * /gtx-proxy/* -> https://translate.googleapis.com/*
+       */
+      '/gtx-proxy': {
+        target: 'https://translate.googleapis.com',
+        changeOrigin: true,
+        secure: true,
+        timeout: 12_000,
+        proxyTimeout: 12_000,
+        rewrite: (p) => p.replace(/^\/gtx-proxy/, ''),
+      },
+      /**
+       * Bangumi：浏览器直连会 CORS，且 UA 受限。
+       * /bgm-proxy/* -> https://api.bgm.tv/*
+       */
+      '/bgm-proxy': {
+        target: 'https://api.bgm.tv',
+        changeOrigin: true,
+        secure: true,
+        timeout: 20_000,
+        proxyTimeout: 20_000,
+        agent: bgmHttpsAgent,
+        rewrite: (p) => p.replace(/^\/bgm-proxy/, ''),
+        headers: {
+          'User-Agent': 'LumiFanficForum/1.0 (fanfic character picker; +https://github.com/bangumi/api)',
+          Accept: 'application/json',
+        },
+      },
     },
   },
   preview: {
@@ -628,6 +678,27 @@ export default defineConfig(({ command, mode }) => {
         changeOrigin: true,
         secure: true,
         rewrite: (p) => p.replace(/^\/apizero-proxy/, ''),
+      },
+      '/gtx-proxy': {
+        target: 'https://translate.googleapis.com',
+        changeOrigin: true,
+        secure: true,
+        timeout: 12_000,
+        proxyTimeout: 12_000,
+        rewrite: (p) => p.replace(/^\/gtx-proxy/, ''),
+      },
+      '/bgm-proxy': {
+        target: 'https://api.bgm.tv',
+        changeOrigin: true,
+        secure: true,
+        timeout: 20_000,
+        proxyTimeout: 20_000,
+        agent: bgmHttpsAgent,
+        rewrite: (p) => p.replace(/^\/bgm-proxy/, ''),
+        headers: {
+          'User-Agent': 'LumiFanficForum/1.0 (fanfic character picker; +https://github.com/bangumi/api)',
+          Accept: 'application/json',
+        },
       },
     },
   },

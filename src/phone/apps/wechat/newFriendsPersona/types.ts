@@ -225,7 +225,7 @@ export type ChatConversationSettingsRow = {
   /** 是否注入「网络玩梗轻量词库」附录（默认关） */
   internetMemeLexiconEnabled: boolean
   /**
-   * 是否注入「语感同化 / 夫妻相」附录（默认关）：
+   * 是否注入「语气同化」附录（默认关）：
    * 按关系浓度下意识贴近用户表层说话习惯，人设与口语习惯仍优先。
    */
   mimicUserSpeakingStyleEnabled: boolean
@@ -303,8 +303,20 @@ export type ChatConversationSettingsRow = {
   /**
    * 本会话固定注入「最近 N 轮线上私聊原文」（对方回复轮数，含其间用户消息）。
    * 不依赖总结游标；缺省 10；0 = 关闭固定注入（仍可有未总结块）。
+   * 仅在 `recentPrivateInjectMode === 'near_rounds'` 时作为主规则生效。
    */
   recentPrivateInjectAiRounds?: number
+  /**
+   * 线上近端注入主模式（与线下约会「上下文原文 / 近端摘要」对齐，互斥）：
+   * - `full_text`：按最大 Token 自最新往历史装填原文
+   * - `near_rounds`：只带最近 N 轮（默认）
+   */
+  recentPrivateInjectMode?: 'full_text' | 'near_rounds'
+  /**
+   * 固定近端原文的最大上下文 token（8k～200k；可选）。
+   * 仅在 `recentPrivateInjectMode === 'full_text'` 时作为主规则生效。
+   */
+  recentPrivateInjectMaxContextTokens?: number
   /** 角色私聊：是否开启主动消息（按频率在后台也可能发来新消息） */
   proactiveMessageEnabled?: boolean
   /** 主动消息间隔（秒）；缺省 7200（2 小时）；最短 30 秒 */
@@ -833,6 +845,15 @@ export type WeChatCallStatusPayload = {
   status: 'rejected' | 'no_answer' | 'duration'
   /** status=duration 时存在 */
   durationSec?: number
+  /** 已接通通话的会话 id，用于点进详情回听 */
+  sessionId?: string
+  /**
+   * 整通文稿（一行一轮注入用）：挂断时写入；后续私聊/记忆只占一条消息，
+   * 不论通话里说了多少句。
+   */
+  transcriptText?: string
+  /** 谁结束了已接通的通话 */
+  endedBy?: 'user' | 'character'
 }
 
 export type WeChatVoicePayload = {

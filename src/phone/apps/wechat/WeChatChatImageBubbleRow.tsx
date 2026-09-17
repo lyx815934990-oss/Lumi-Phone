@@ -87,12 +87,10 @@ export function WeChatChatImageBubbleRow({
   const showFailed = genFailed && !showGenerating && !showAwaiting
   const descText = description.trim()
 
-  const bg = isSticker ? 'transparent' : '#ffffff'
+  const bg = isSticker ? 'transparent' : 'transparent'
   const border = isSticker
     ? 'none'
-    : isSelf
-      ? '1px solid #000000'
-      : '1px solid rgba(0,0,0,0.08)'
+    : '1px solid rgba(0,0,0,0.06)'
 
   const handleLongPress = useCallback(() => {
     if (!onLongPress) return

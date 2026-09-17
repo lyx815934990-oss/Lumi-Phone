@@ -214,6 +214,23 @@ export type MemoryTraceData = {
       }>
       /** 可选：最近 N 轮参考注入 / 省略状态 */
       recentRoundRefs?: MemoryTraceRecentRoundRef[]
+      /**
+       * 线下约会：本轮「最近剧情」装填正文（full_text=剧情上下文；summary 时多为短窗原文）。
+       * 旧溯源无此字段。
+       */
+      plotContextBlock?: string
+      /** 线下近端剧情：上下文原文 / 近端摘要（线上互注线下时同源） */
+      plotContextInjectMode?: 'full_text' | 'summary'
+      /** summary 模式近端摘要轮数 */
+      plotSummaryInjectRounds?: number
+      /** 本会话固定近端线上轮数（0=关闭；缺省按默认 10） */
+      onlineRecentInjectRounds?: number
+      /**
+       * 本会话固定近端最大 Token；`null`/缺省=未单独设置（沿用默认字数上限）。
+       */
+      onlineRecentInjectMaxTokens?: number | null
+      /** 线上近端主模式：上下文原文 / 近端轮数（与线下模式独立） */
+      onlineContextInjectMode?: 'full_text' | 'near_rounds'
     }
     deepMemory: {
       keywordHits: Array<{
@@ -609,6 +626,27 @@ export function parseMemoryTraceData(raw: unknown): MemoryTraceData | null {
         unsummarizedOfflinePlots,
         unsummarizedChats,
         recentRoundRefs: recentRoundRefs.length ? recentRoundRefs : undefined,
+        ...(asStr(rco.plotContextBlock)
+          ? { plotContextBlock: asStr(rco.plotContextBlock) }
+          : {}),
+        ...(rco.plotContextInjectMode === 'summary' || rco.plotContextInjectMode === 'full_text'
+          ? { plotContextInjectMode: rco.plotContextInjectMode as 'full_text' | 'summary' }
+          : {}),
+        ...(typeof rco.plotSummaryInjectRounds === 'number' && Number.isFinite(rco.plotSummaryInjectRounds)
+          ? { plotSummaryInjectRounds: Math.max(1, Math.round(rco.plotSummaryInjectRounds)) }
+          : {}),
+        ...(typeof rco.onlineRecentInjectRounds === 'number' && Number.isFinite(rco.onlineRecentInjectRounds)
+          ? { onlineRecentInjectRounds: Math.max(0, Math.round(rco.onlineRecentInjectRounds)) }
+          : {}),
+        ...(rco.onlineRecentInjectMaxTokens === null
+          ? { onlineRecentInjectMaxTokens: null }
+          : typeof rco.onlineRecentInjectMaxTokens === 'number' &&
+              Number.isFinite(rco.onlineRecentInjectMaxTokens)
+            ? { onlineRecentInjectMaxTokens: Math.round(rco.onlineRecentInjectMaxTokens) }
+            : {}),
+        ...(rco.onlineContextInjectMode === 'full_text' || rco.onlineContextInjectMode === 'near_rounds'
+          ? { onlineContextInjectMode: rco.onlineContextInjectMode as 'full_text' | 'near_rounds' }
+          : {}),
       },
       deepMemory: {
         keywordHits,

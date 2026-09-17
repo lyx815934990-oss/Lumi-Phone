@@ -114,6 +114,13 @@ export type StoryTimelinePromptLoadOpts = {
    * 与 state.currentStoryDay 取**较晚者**作「当前剧情日」（线上推进后不得被更早的线下末条压回）。
    */
   storyCalendarAnchor?: string | null
+  /**
+   * 线下约会：不注入「近端固定摘要」行；改由「最近剧情」按最大上下文自最新往历史装填。
+   * 微信线上等场景保持默认 false（仍注近端固定摘要）。
+   */
+  omitRecentSummaryRows?: boolean
+  /** 覆盖近端固定摘要条数（默认 {@link STORY_TIMELINE_INJECT_RECENT_ROWS}） */
+  recentSummaryRowCount?: number
 }
 
 /** 每角色持久化的行表上限 */

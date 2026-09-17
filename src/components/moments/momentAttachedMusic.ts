@@ -4,6 +4,7 @@ import {
   formatListenTrackShareAiTranscriptLine,
 } from '../../phone/apps/wechat/musicSync/listenShareAiContext'
 import type { WeChatListenTrackSharePayload } from '../../phone/apps/wechat/newFriendsPersona/types'
+import { CHARACTER_MOMENT_MUSIC_STABLE_HINT } from './momentStableFormat'
 
 export type MomentAttachedMusic = {
   title: string
@@ -173,8 +174,7 @@ export function parseCharacterMomentSongDraftFromAi(raw: unknown): CharacterMome
   }
 }
 
-export const CHARACTER_MOMENT_MUSIC_POST_JSON_HINT =
-  '"attachedMusic":{"title":"晴天","artist":"周杰伦"}'
+export const CHARACTER_MOMENT_MUSIC_POST_JSON_HINT = CHARACTER_MOMENT_MUSIC_STABLE_HINT
 
 export const CHARACTER_MOMENT_MUSIC_LOCALE_HINT = `
 - **默认选华语歌**（国语/粤语流行、民谣、说唱、影视 OST、抖音热歌等）；歌名、歌手优先用**中文**填写。
@@ -184,11 +184,11 @@ export const CHARACTER_MOMENT_MUSIC_LOCALE_HINT = `
 
 export function buildCharacterMomentMusicPostPrompt(localeHint = CHARACTER_MOMENT_MUSIC_LOCALE_HINT): string {
   return `
-# Music Share Post (postType = music · 分享歌曲)
-- 载体为**歌曲胶囊**（类似微信分享音乐到朋友圈），**禁止** imagePrompts / images。
-- 必填 attachedMusic：**网易云音乐能搜到的真实歌曲**（歌名 + 歌手）。
+# Music Share Post (类型 = music · 分享歌曲)
+- 载体为**歌曲胶囊**（类似微信分享音乐到朋友圈），**禁止**配图行。
+- 必填「歌名｜」「歌手｜」：**网易云音乐能搜到的真实歌曲**。
 ${localeHint}
-- content 可选：1～2 句分享理由/心情配文；也可留空仅分享歌曲。
+- 正文可选：1～2 句分享理由/心情配文；也可留空仅分享歌曲。
 - 须符合角色人设与近期上下文（例如一起听聊过的歌、私聊提到的歌、角色喜好）。
 `.trim()
 }

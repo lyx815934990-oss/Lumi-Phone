@@ -475,6 +475,7 @@ async function synthesizeMiniMaxVoiceViaAsyncTask(
     voice_id: params.voice_id,
     text: params.text,
     model: params.model,
+    emotion: params.emotion,
   })
   const task_id = String((created as { task_id?: unknown }).task_id ?? '').trim()
   if (!task_id) throw new Error('任务创建失败：缺少 task_id')
@@ -558,13 +559,15 @@ export async function synthesizeMiniMaxVoiceAudioBlob(
 
 export async function createMiniMaxT2AAsyncTask(
   creds: MiniMaxCredentials,
-  params: { voice_id: string; text: string; model?: string },
+  params: { voice_id: string; text: string; model?: string; emotion?: string },
 ) {
   const voiceId = params.voice_id.trim()
   const text = params.text.trim()
   const model = String(params.model || 'speech-2.8-hd').trim() || 'speech-2.8-hd'
   if (!voiceId) throw new Error('请先选择 voice_id')
   if (!text) throw new Error('请输入要合成的台词')
+  const emotionRaw = String(params.emotion || '').trim().toLowerCase()
+  const emotion = emotionRaw === 'neutral' ? 'calm' : emotionRaw
   return (await minimaxFetch('/v1/t2a_async_v2', creds, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -576,6 +579,7 @@ export async function createMiniMaxT2AAsyncTask(
         speed: 1,
         vol: 1,
         pitch: 0,
+        ...(emotion ? { emotion } : {}),
       },
       audio_setting: {
         format: 'mp3',

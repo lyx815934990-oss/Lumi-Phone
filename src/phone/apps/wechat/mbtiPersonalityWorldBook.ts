@@ -34,7 +34,24 @@ export const MBTI_PERSONALITY_USAGE_NOTE =
   '【参考偏向】以下为该类型的性格倾向提示，不是硬性标签。同一 MBTI 的人差别很大——可以有热络、幽默、敏感、任性等平常人的喜怒哀乐，也会因得失、被误解、被关心而开心或难过；不必写成全程冷静、冷漠、无情绪的「理性机器」。具体表现以角色其它设定为准，此处仅作参考。' +
   '【严禁出戏】微信气泡、弹幕、线下剧情、微博帖/评/私信等任何用户可见正文中，**禁止**写出 ENFP/INFJ 等四字母、禁止「快乐修勾」「INFJ 清冷感」等类型学套话；只把气质演出来，不要点名类型。'
 
-// 依据用户提供的“人格世界书”内容，拆成 5 个条目（均放在「序言介入」/ priority=before）。
+/**
+ * 聊天/约会注入用：仅一行气质偏向，不灌对外/对内/恋爱等长文说明书（避免与人设冲突）。
+ */
+export function buildMbtiPersonalityBiasNote(mbti?: string | null): string {
+  const k = normalizeMbti(mbti)
+  if (!k) return ''
+  return (
+    `【气质偏向】${k}（仅弱参考：说话节奏与处事倾向可略带该型常见气质；` +
+    `与角色人设/世界书冲突时**一律以人设为准**；禁止在可见正文点名四字母或类型学套话。）`
+  )
+}
+
+/** @deprecated 已改为 {@link buildMbtiPersonalityBiasNote}；保留以免旧调用报错 */
+export function buildMbtiPersonalityWorldBookText(mbti?: string | null): string {
+  return buildMbtiPersonalityBiasNote(mbti)
+}
+
+/** 编辑页可选建册用（默认不再注入聊天）；拆成 5 个条目 */
 const MBTI_PERSONALITY: Record<MbtiType, MbtiPersonality> = {
   INTJ: {
     title: '建筑师型人格',
@@ -234,25 +251,7 @@ function getPriority(): WorldBookPriority {
   return 'before'
 }
 
-export function buildMbtiPersonalityWorldBookText(mbti?: string | null): string {
-  const k = normalizeMbti(mbti)
-  if (!k) return ''
-  const bookName = getMbtiPersonalityWorldBookName(k)
-  const p = MBTI_PERSONALITY[k]
-  const priority = getPriority()
-  const items: Array<{ name: string; content: string }> = [
-    { name: '使用说明（参考偏向）', content: MBTI_PERSONALITY_USAGE_NOTE },
-    { name: '对外态度（陌生人、普通关系）', content: p.out },
-    { name: '对内态度（好朋友、家人、亲密关系）', content: p.inside },
-    { name: '优缺点', content: p.prosCons },
-    { name: '积极面与阴暗面', content: p.lightDark },
-    { name: '恋爱中的表现', content: p.romance },
-  ]
-  const lines = items.map((it) => `- [${priority === 'before' ? '序言介入' : '尾声延展'}] ${it.name}：${String(it.content || '').trim()}`).join('\n')
-  // 只输出 “INFP人格设定” 这种标题文本，避免使用中文书名号影响用户观感/匹配
-  return `${bookName}\n${lines}`
-}
-
+/** 仅供编辑页手动建「人格设定」册；聊天注入已改用 {@link buildMbtiPersonalityBiasNote} */
 export function buildMbtiPersonalityWorldBookItems(mbti: MbtiType, now: number): WorldBookItem[] {
   const p = MBTI_PERSONALITY[mbti]
   const priority = getPriority()

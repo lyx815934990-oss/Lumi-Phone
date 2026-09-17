@@ -1,9 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown, ChevronLeft, Mic, MicOff, PhoneOff, Volume2, VolumeX } from 'lucide-react'
+import { ChevronDown, ChevronLeft, PhoneOff } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Pressable } from '../../../components/Pressable'
-import { VC, VC_UI_FONT, vcLiquidGlassDark } from './voiceCallTheme'
+import { unlockVoiceCallAudio } from './callAudioBridge'
+import { VoiceCallPortal } from './VoiceCallPortal'
+import { VC, VC_UI_FONT } from './voiceCallTheme'
 
 export type CallDecision = 'ACCEPT' | 'REJECT' | 'NO_ANSWER'
 
@@ -29,8 +31,6 @@ export function CallingScreen({
   requestDecision: () => Promise<CallDecision>
 }) {
   const [phase, setPhase] = useState<'waiting' | 'resolved'>('waiting')
-  const [muted, setMuted] = useState(false)
-  const [speakerOn, setSpeakerOn] = useState(true)
   const mountedRef = useRef(false)
   const openSeqRef = useRef(0)
   const decisionRequestedRef = useRef(false)
@@ -53,13 +53,13 @@ export function CallingScreen({
       setPhase('waiting')
       mountedRef.current = false
       decisionRequestedRef.current = false
-      setMuted(false)
-      setSpeakerOn(true)
       return
     }
     if (decisionRequestedRef.current) return
     decisionRequestedRef.current = true
     mountedRef.current = true
+    // 用户刚点「语音通话」进入本页：趁手势链解锁音频，接通后开场白才能自动播
+    unlockVoiceCallAudio()
     const seq = Date.now()
     openSeqRef.current = seq
     setPhase('waiting')
@@ -78,6 +78,7 @@ export function CallingScreen({
   if (!open || minimized) return null
 
   return (
+    <VoiceCallPortal>
     <AnimatePresence>
       <motion.div
         key="calling-screen"
@@ -85,10 +86,9 @@ export function CallingScreen({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="fixed inset-0 z-[285] flex h-full w-full flex-col overflow-hidden"
+        className="absolute inset-0 z-[285] flex h-full w-full flex-col overflow-hidden"
         style={{ background: VC.ink, fontFamily: VC_UI_FONT }}
       >
-        {/* 头像高斯模糊铺满 + 40% 黑蒙层 */}
         <div className="absolute inset-0 overflow-hidden" aria-hidden>
           {avatar ? (
             <img
@@ -156,43 +156,19 @@ export function CallingScreen({
         </main>
 
         <footer
-          className="relative z-[2] shrink-0 px-5"
-          style={{ paddingBottom: 'max(22px, env(safe-area-inset-bottom, 0px))' }}
+          className="relative z-[2] flex shrink-0 flex-col items-center px-5"
+          style={{ paddingBottom: 'max(28px, calc(16px + env(safe-area-inset-bottom, 0px)))' }}
         >
-          <div
-            className="mx-auto flex w-full max-w-[360px] items-center justify-between px-6 py-4"
-            style={vcLiquidGlassDark({ borderRadius: 28 })}
+          <Pressable
+            type="button"
+            aria-label="挂断"
+            onClick={onCancel}
+            className="flex h-[72px] w-[72px] items-center justify-center rounded-full text-white active:scale-[0.96]"
+            style={{ background: VC.endRed, boxShadow: '0 8px 24px rgba(255,59,48,0.35)' }}
           >
-            <Pressable
-              type="button"
-              aria-label={muted ? '取消静音' : '静音'}
-              onClick={() => setMuted((v) => !v)}
-              className="flex h-12 w-12 items-center justify-center rounded-full text-white/90 active:scale-[0.96]"
-              style={{ background: muted ? 'rgba(255,255,255,0.14)' : 'transparent' }}
-            >
-              {muted ? <MicOff className="size-5" strokeWidth={1.7} /> : <Mic className="size-5" strokeWidth={1.7} />}
-            </Pressable>
-
-            <Pressable
-              type="button"
-              aria-label="挂断"
-              onClick={onCancel}
-              className="flex h-[72px] w-[72px] items-center justify-center rounded-full text-white active:scale-[0.96]"
-              style={{ background: VC.endRed, boxShadow: '0 8px 24px rgba(255,59,48,0.35)' }}
-            >
-              <PhoneOff className="size-7" strokeWidth={2} />
-            </Pressable>
-
-            <Pressable
-              type="button"
-              aria-label={speakerOn ? '关闭免提' : '开启免提'}
-              onClick={() => setSpeakerOn((v) => !v)}
-              className="flex h-12 w-12 items-center justify-center rounded-full text-white/90 active:scale-[0.96]"
-              style={{ background: speakerOn ? 'rgba(255,255,255,0.14)' : 'transparent' }}
-            >
-              {speakerOn ? <Volume2 className="size-5" strokeWidth={1.7} /> : <VolumeX className="size-5" strokeWidth={1.7} />}
-            </Pressable>
-          </div>
+            <PhoneOff className="size-7" strokeWidth={2} />
+          </Pressable>
+          <span className="mt-2.5 text-[12px] text-white/55">挂断</span>
         </footer>
 
         <style>{`
@@ -203,5 +179,6 @@ export function CallingScreen({
         `}</style>
       </motion.div>
     </AnimatePresence>
+    </VoiceCallPortal>
   )
 }

@@ -34,6 +34,11 @@ import { StoryFeed } from '../../../../storyRpg/components/feed/StoryFeed'
 import { DirectorConsole } from '../../../../storyRpg/components/console/DirectorConsole'
 import { AdvancedControlSheet } from '../../../../storyRpg/components/console/AdvancedControlSheet'
 import { StoryFloorDrawer, StoryFloorRailButton } from '../../../../storyRpg/components/navigation/StoryFloorDrawer'
+import {
+  loadPlotInjectRailVisible,
+  PlotInjectRail,
+  savePlotInjectRailVisible,
+} from '../../../../storyRpg/components/navigation/PlotInjectRail'
 import type { DanmakuBullet, DirectorActionId, StoryRpgSettings } from '../../../../storyRpg/types'
 import { buildStoryRpgThemeStyle } from '../../../../storyRpg/theme/storyRpgThemeBridge'
 import { buildStoryFloorEntries, countAiFloors } from '../../../../storyRpg/utils/storyFloorEntries'
@@ -84,6 +89,7 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
   } | null>(null)
   const [dimensionBusy, setDimensionBusy] = useState(false)
   const [floorDrawerOpen, setFloorDrawerOpen] = useState(false)
+  const [plotInjectRailEnabled, setPlotInjectRailEnabled] = useState(loadPlotInjectRailVisible)
   const [timelineRowTitles, setTimelineRowTitles] = useState<Map<string, string>>(() => new Map())
   const [timelineRowBodies, setTimelineRowBodies] = useState<Map<string, string>>(() => new Map())
 
@@ -250,6 +256,10 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
       plotArtifactVisualPresetId: currentArchive.plotArtifactVisualPresetId?.trim() || 'random',
       perspective: actions.perspective,
       lengthTargetChars: Number(actions.lengthTargetChars) || 500,
+      maxContextTokens: actions.maxContextTokens,
+      plotContextInjectMode: actions.plotContextInjectMode,
+      plotSummaryInjectRounds: actions.plotSummaryInjectRounds,
+      plotInjectRailEnabled,
       heartWhisperMode: false,
       translateEnabled:
         !!actions.languageSettingsValue.dialogueTranslationSyncEnabled ||
@@ -264,6 +274,10 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
       actions.perspective,
       actions.thinkingChainEnabled,
       actions.lengthTargetChars,
+      actions.maxContextTokens,
+      actions.plotContextInjectMode,
+      actions.plotSummaryInjectRounds,
+      plotInjectRailEnabled,
       currentArchive.commentModeEnabled,
       currentArchive.godPerspective,
       currentArchive.plotArtifactVisualEnabled,
@@ -347,6 +361,19 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
         // 必须把新值传入：setState 后立刻无参 persist 会读到闭包旧值，退出场控又变回 500
         actions.blurPersistLengthTarget(patch.lengthTargetChars)
       }
+      if (patch.maxContextTokens !== undefined) {
+        actions.setMaxContextTokens(patch.maxContextTokens)
+      }
+      if (patch.plotContextInjectMode !== undefined) {
+        actions.setPlotContextInjectMode(patch.plotContextInjectMode)
+      }
+      if (patch.plotSummaryInjectRounds !== undefined) {
+        actions.setPlotSummaryInjectRounds(patch.plotSummaryInjectRounds)
+      }
+      if (patch.plotInjectRailEnabled !== undefined) {
+        setPlotInjectRailEnabled(patch.plotInjectRailEnabled)
+        savePlotInjectRailVisible(patch.plotInjectRailEnabled)
+      }
       if (patch.translateEnabled !== undefined) {
         actions.patchDatingLanguageSettings({
           dialogueTranslationSyncEnabled: patch.translateEnabled,
@@ -366,7 +393,7 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
           if (next) {
             actions.setMainCharacterOffstage(false)
             actions.setDirectorMode(false)
-            actions.setAutoUserReaction(false)
+            // 不改写 autoUserReaction：上帝开启时 UI/生成侧临时锁抢话，关闭上帝后自动恢复原偏好
           }
           break
         }
@@ -628,6 +655,17 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
         onPlotVersionChange={handlePlotVersionChange}
       />
       <StoryFloorRailButton onClick={() => setFloorDrawerOpen(true)} />
+      {plotInjectRailEnabled ? (
+        <PlotInjectRail
+          mode={actions.plotContextInjectMode}
+          summaryRounds={actions.plotSummaryInjectRounds}
+          maxContextTokens={actions.maxContextTokens}
+          onModeChange={actions.setPlotContextInjectMode}
+          onSummaryRoundsChange={actions.setPlotSummaryInjectRounds}
+          onMaxContextTokensChange={actions.setMaxContextTokens}
+          themeStyle={themeStyle}
+        />
+      ) : null}
       <DirectorConsole
         loading={actions.loading}
         onSend={() => void actions.onSend()}
@@ -729,7 +767,7 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
         open={controlTutorialOpen}
         onClose={() => setControlTutorialOpen(false)}
         title="场控中心 · 说明"
-        subtitle="人称 · 字数 · 推进 · 开关 · 语言"
+        subtitle="人称 · 字数 · 上下文 · 推进 · 开关 · 语言"
         sections={DATING_ADVANCED_CONTROL_TUTORIAL_SECTIONS}
         onStartLiveCoach={startControlCoach}
         zIndex={64500}

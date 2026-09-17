@@ -126,6 +126,9 @@ async function rasterizeStaticImageToJpeg(src: string): Promise<{ base64: string
     canvas.height = height
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('canvas_ctx_unavailable')
+    // JPEG 无透明通道：先铺白底，避免透明区变成黑边
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, width, height)
     ctx.drawImage(img, 0, 0, width, height)
     const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.92)
     const jpeg = parseDataUrlParts(jpegDataUrl)

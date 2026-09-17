@@ -6,6 +6,7 @@ import { LazyChunkErrorBoundary } from './components/LazyChunkErrorBoundary'
 import { LazyRouteFallback } from './components/LazyRouteFallback'
 import { lazyWithRetry } from './lazyWithRetry'
 import { PhoneShell } from './components/PhoneShell'
+import { useGlobalVoiceCallFloatStore } from './apps/wechat/voiceCall/useGlobalVoiceCallFloatStore'
 import { UserSystemAuthModal } from './components/UserSystemAuthModal'
 import { UserInfoCorrectionModal } from './components/UserInfoCorrectionModal'
 import { AccountStatusCheckingOverlay } from './components/AccountStatusCheckingOverlay'
@@ -348,6 +349,14 @@ export function PhoneApp() {
   }, [])
 
   const wechatVisible = route.name === 'app' && route.id === 'wechat'
+  const homeVisible = route.name === 'home'
+
+  // 全局通话浮标点开：拉回微信（保活层）以恢复通话全屏
+  const voiceCallOpenWechatNonce = useGlobalVoiceCallFloatStore((s) => s.openWechatNonce)
+  useEffect(() => {
+    if (voiceCallOpenWechatNonce <= 0) return
+    openApp('wechat')
+  }, [voiceCallOpenWechatNonce, openApp])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -732,6 +741,21 @@ export function PhoneApp() {
           </Suspense>
         ) : null}
         <PhoneShell>
+          {/* 桌面保活：从应用返回时不卸载，避免组件重挂导致位移/抖动 */}
+          {bootDone ? (
+            <div
+              className={`route-page-layer absolute inset-0 z-[5] flex h-full min-h-0 flex-col ${
+                homeVisible ? '' : 'pointer-events-none'
+              }`}
+              aria-hidden={!homeVisible}
+            >
+              <HomeScreen
+                onOpenApp={openApp}
+                onOpenUserAccount={() => openUserAccount('overview')}
+                onUserAccountAuthChange={syncUserAuthFromLocal}
+              />
+            </div>
+          ) : null}
           {wechatKeepAlive ? (
             <div
               className={`route-page-layer flex h-full min-h-0 flex-col bg-white ${
@@ -753,24 +777,10 @@ export function PhoneApp() {
             </div>
           ) : null}
           <AnimatePresence mode="sync" initial={false}>
-            {route.name === 'home' && (
-              <motion.div
-                key="home"
-                className={`route-page-layer relative flex h-full min-h-0 flex-col ${disableTransitions ? '' : 'transform-gpu'}`}
-                {...pageProps}
-                initial={false}
-              >
-                <HomeScreen
-                  onOpenApp={openApp}
-                  onOpenUserAccount={() => openUserAccount('overview')}
-                  onUserAccountAuthChange={syncUserAuthFromLocal}
-                />
-              </motion.div>
-            )}
             {route.name === 'userAccount' && (
               <motion.div
                 key="userAccount"
-                className={`route-page-layer flex h-full min-h-0 flex-col ${disableTransitions ? '' : 'transform-gpu'}`}
+                className={`route-page-layer absolute inset-0 z-[15] flex h-full min-h-0 flex-col ${disableTransitions ? '' : 'transform-gpu'}`}
                 {...pageProps}
               >
                 <SuspenseApp label="打开账号…">
@@ -786,7 +796,7 @@ export function PhoneApp() {
             {route.name === 'customize' && (
               <motion.div
                 key="customize"
-                className={`route-page-layer flex h-full min-h-0 flex-col ${disableTransitions ? '' : 'transform-gpu'}`}
+                className={`route-page-layer absolute inset-0 z-[15] flex h-full min-h-0 flex-col ${disableTransitions ? '' : 'transform-gpu'}`}
                 {...pageProps}
               >
                 <SuspenseApp label="打开外观…">
@@ -797,7 +807,7 @@ export function PhoneApp() {
             {route.name === 'app' && route.id !== 'wechat' && (
               <motion.div
                 key={`app-${route.id}`}
-                className={`route-page-layer flex h-full min-h-0 flex-col ${disableTransitions ? '' : 'transform-gpu'}`}
+                className={`route-page-layer absolute inset-0 z-[15] flex h-full min-h-0 flex-col ${disableTransitions ? '' : 'transform-gpu'}`}
                 {...pageProps}
               >
                 <SuspenseApp>

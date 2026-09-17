@@ -11,16 +11,21 @@ import { assertMomentsChatApiConfigured } from './momentsChatApiReady'
 import type { MomentComment } from './mockMoments'
 import { MOMENT_TEXT_OUTPUT_HINT, sanitizeMomentText } from './momentTextSanitize'
 import { runMomentsVisionChat } from './momentVisionChat'
+import {
+  MOMENT_AUTHOR_REPLY_STABLE_FORMAT_HINT,
+  parseAuthorRepliesFromStableText,
+} from './momentStableFormat'
 
 const REPLY_TASK_PER_COMMENT = `
 【朋友圈互动指令】
 你发布了朋友圈。用户对你发送了评论，请结合你的人设回复（傲娇可装作不在意，爹系可认真回复）。
 输出规则：
-- 用户有 N 条评论时，replies 数组必须恰好 N 项，与评论顺序一一对应
+- 用户有 N 条评论时，必须恰好 N 行「回复｜…」，与评论顺序一一对应
 - 每项是自然口语，像微信朋友圈评，1-3 句，直接写正文
 - 禁止在正文里写「回复1」「回复₁」「回复一」等编号、分条标题或序号前缀
 - 禁止写出 MBTI 四字母或「快乐修勾」「INFJ 清冷感」等类型学套话
-- 仅输出 JSON：{"replies":["对第1条评论的回复","对第2条评论的回复"]}
+- 禁止 JSON；只输出稳定字段行
+${MOMENT_AUTHOR_REPLY_STABLE_FORMAT_HINT}
 ${MOMENT_SONG_SHARE_AI_COMMENT_RULES}
 ${MOMENT_TEXT_OUTPUT_HINT}
 `.trim()
@@ -30,10 +35,11 @@ const REPLY_TASK_UNIFIED = `
 你发布了朋友圈。用户连续发了多条评论，这些评论是同一段思路的展开（例如先疑惑、后想通），不是让你逐条分开答。
 请阅读全部评论后，写**一条**自然、连贯的回复，像真人在评论区接话：
 - 要承接用户评论的整体语境与情绪转折，可呼应最早一条里的疑问，也可接住最后一条里的结论
-- 只输出**一条**回复，不要拆成多条、不要编号、不要「回复1/回复2」
+- 只输出**一条**「回复｜…」，不要拆成多条、不要编号、不要「回复1/回复2」
 - 1-3 句口语化即可，像微信朋友圈评
 - 禁止写出 MBTI 四字母或「快乐修勾」「INFJ 清冷感」等类型学套话
-- 仅输出 JSON：{"reply":"你的整体回复"} 或 {"replies":["你的整体回复"]}
+- 禁止 JSON
+${MOMENT_AUTHOR_REPLY_STABLE_FORMAT_HINT}
 ${MOMENT_SONG_SHARE_AI_COMMENT_RULES}
 ${MOMENT_TEXT_OUTPUT_HINT}
 `.trim()
@@ -150,13 +156,13 @@ export async function generateMomentAuthorReplies(params: {
         `你发布了朋友圈：${params.momentContent.trim() || '（无文字）'}`,
         `用户 ${params.userDisplayName} 连续发了 ${expectedCount} 条评论（请当作同一段思路整体阅读）：`,
         commentLines,
-        '请写一条承接全部评论的整体回复，只返回 JSON。',
+        '请写一条承接全部评论的整体回复，只输出稳定字段行，不要 JSON。',
       ].join('\n\n')
     : [
         `你发布了朋友圈：${params.momentContent.trim() || '（无文字）'}`,
         `用户 ${params.userDisplayName} 对你连续发送了 ${expectedCount} 条评论：`,
         commentLines,
-        `请逐条回复，replies 数组必须包含 ${expectedCount} 项，只返回 JSON。`,
+        `请逐条回复，必须恰好 ${expectedCount} 行「回复｜…」，不要 JSON。`,
       ].join('\n\n')
 
   const taskAppendix = unified ? REPLY_TASK_UNIFIED : REPLY_TASK_PER_COMMENT
@@ -169,6 +175,13 @@ export async function generateMomentAuthorReplies(params: {
     max_tokens: unified ? 520 : 800,
   })
 
+  const fromStable = parseAuthorRepliesFromStableText(raw, outputCount)
+  if (fromStable?.some((r) => r.trim())) {
+    return normalizeReplyCount(fromStable, outputCount)
+      .map((r) => sanitizeMomentText(r))
+      .filter(Boolean)
+  }
+
   const payload = parseModelJsonPayload(raw)
   const parsed = parseRepliesFromPayload(payload, outputCount)
   if (parsed?.some((r) => r.trim())) {
@@ -178,12 +191,12 @@ export async function generateMomentAuthorReplies(params: {
   const fallback = raw.trim()
   if (fallback && !fallback.startsWith('{')) {
     const parts = unified
-      ? [sanitizeMomentText(fallback)].filter(Boolean)
-      : normalizeReplyCount(splitNumberedReplyContent(fallback), outputCount)
-          .map((r) => sanitizeMomentText(r))
-          .filter(Boolean)
-    if (parts.length) return parts
+      ? [fallback]
+      : splitNumberedReplyContent(fallback)
+    return normalizeReplyCount(parts, outputCount)
+      .map((r) => sanitizeMomentText(r))
+      .filter(Boolean)
   }
 
-  throw new Error('模型未返回有效回复，请重试')
+  return []
 }

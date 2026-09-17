@@ -5,6 +5,11 @@ type Params = {
   ms?: number
   /** 超过该位移视为滚动/拖动，取消长按 */
   moveThresholdPx?: number
+  /**
+   * 按下多久后才出现按压缩放反馈（默认 200ms）。
+   * 避免轻点 / 滑动列表一触就闪缩放。
+   */
+  pressVisualDelayMs?: number
   onLongPress: (e: PointerEvent) => void
   /** 短按（未触发长按、未明显移动） */
   onTap?: (e: PointerEvent) => void
@@ -31,7 +36,7 @@ function clearDomSelection() {
 }
 
 /**
- * 微信式长按：500ms 触发；按下期间可做轻微缩放反馈；移动/抬起/取消则终止。
+ * 微信式长按：默认约 500ms+ 触发；按压缩放可晚于按下出现，避免轻点/滑动误闪。
  * 统一用 PointerEvent，兼容 touch / mouse。
  * 按下期间阻止系统文本框选（selectstart + 清选区）。
  */
@@ -39,10 +44,12 @@ export function useLongPress({
   enabled = true,
   ms = 500,
   moveThresholdPx = 10,
+  pressVisualDelayMs = 200,
   onLongPress,
   onTap,
 }: Params) {
   const timerRef = useRef<number | null>(null)
+  const visualTimerRef = useRef<number | null>(null)
   const startRef = useRef<{ x: number; y: number; pointerId: number } | null>(null)
   const pressingRef = useRef(false)
   const firedRef = useRef(false)
@@ -52,6 +59,10 @@ export function useLongPress({
     if (timerRef.current != null) {
       window.clearTimeout(timerRef.current)
       timerRef.current = null
+    }
+    if (visualTimerRef.current != null) {
+      window.clearTimeout(visualTimerRef.current)
+      visualTimerRef.current = null
     }
     startRef.current = null
     pressingRef.current = false
@@ -72,10 +83,20 @@ export function useLongPress({
       clearDomSelection()
       pressingRef.current = true
       firedRef.current = false
-      setPressing(enabled)
+      setPressing(false)
       startRef.current = { x: ne.clientX, y: ne.clientY, pointerId: ne.pointerId }
       ;(e.currentTarget as HTMLElement | null)?.setPointerCapture?.(ne.pointerId)
       if (!enabled) return
+      const visualDelay = Math.max(0, Math.min(pressVisualDelayMs, Math.max(0, ms - 80)))
+      if (visualDelay <= 0) {
+        setPressing(true)
+      } else {
+        visualTimerRef.current = window.setTimeout(() => {
+          visualTimerRef.current = null
+          if (!pressingRef.current || firedRef.current) return
+          setPressing(true)
+        }, visualDelay)
+      }
       timerRef.current = window.setTimeout(() => {
         timerRef.current = null
         if (!pressingRef.current || firedRef.current) return
@@ -94,7 +115,7 @@ export function useLongPress({
         setPressing(false)
       }, ms)
     },
-    [enabled, ms, onLongPress],
+    [enabled, ms, onLongPress, pressVisualDelayMs],
   )
 
   const onPointerMove = useCallback(

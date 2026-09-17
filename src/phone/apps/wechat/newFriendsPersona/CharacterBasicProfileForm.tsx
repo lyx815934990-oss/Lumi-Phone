@@ -47,7 +47,7 @@ export type CharacterBasicProfileFormProps = {
   onPickAvatarFile: (file: File | null) => void
 
   patchCharacter: (p: Partial<Character>) => void
-  /** 写入 MBTI 并同步人设世界书中的「人格设定」册 */
+  /** 写入 MBTI 字段（仅作气质弱偏向；不再启用「人格设定」长文世界书） */
   onMbtiSelect: (nextCode: string) => void
 
   apiConfig: ApiConfig | null

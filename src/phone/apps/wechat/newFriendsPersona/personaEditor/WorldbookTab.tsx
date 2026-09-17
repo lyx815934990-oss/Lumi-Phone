@@ -22,7 +22,9 @@ export function WorldbookTab({
       <header className="border-b border-neutral-100/90 bg-white/80 px-4 py-4 backdrop-blur-sm">
         <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-neutral-400">05 LORE · 叙事书架</p>
         <h2 className="mt-2 text-[17px] font-semibold tracking-tight text-[#1C1C1E]">世界书</h2>
-        <p className="mt-1 text-[11px] font-light text-neutral-500">每卷设定左侧铂金装帧线由下列卡片隐喻呈现。</p>
+        <p className="mt-1 text-[11px] font-light text-neutral-500">
+          每卷设定左侧铂金装帧线由下列卡片隐喻呈现。可用下方 AI 优化按你的要求润色或补充条目。
+        </p>
       </header>
       <div className="persona-worldbook-shelf">
         <WorldBooksEditor

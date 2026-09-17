@@ -1,25 +1,10 @@
 import { listenPlainNumStyle } from '../../../../components/discoverListen/listenTogetherTypography'
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { fetchEmbeddingModels, fetchModels } from '../../api/apiSim'
+import { fetchModels } from '../../api/apiSim'
 import type { ApiConfig } from '../../api/types'
 import { useCurrentApiConfig } from '../../api/ApiSettingsContext'
 import { personaDb } from '../newFriendsPersona/idb'
-import { DEFAULT_MEMORY_EMBEDDING_MODEL } from './memoryEmbeddingApi'
-import {
-  downloadLocalEmbeddingModelManual,
-  getLocalEmbeddingDownloadRecord,
-  type LocalEmbeddingDownloadProgress,
-} from './localEmbeddingClient'
-import {
-  formatLocalEmbeddingDownloadError,
-  probeLocalEmbeddingDownloadChannel,
-} from './localEmbeddingRemoteHost'
-import { DEFAULT_LOCAL_EMBEDDING_MODEL, normalizeLocalEmbeddingModelId } from './memoryEmbeddingConstants'
-import {
-  testMemoryEmbeddingConnectionUnified,
-  type MemoryEmbeddingProviderMode,
-} from './memoryEmbeddingProvider'
 import { ARCHIVE_BG } from './memoryArchiveTheme'
 import {
   ARCHIVE_SOURCE_OFFLINE_LABEL,
@@ -44,7 +29,7 @@ import { MEMORY_ENGINE_TUTORIAL_SECTIONS } from './memoryEngineTutorialCopy'
 import { MemoryEngineSoftSwitch } from './MemoryEngineSoftSwitch'
 import { MemoryTutorialButton } from './MemoryTutorialButton'
 import { MemoryTutorialModal } from './MemoryTutorialModal'
-import type { ConnectionStatus, SummaryAPIConfig, VectorAPIConfig } from './memoryEngineConfigTypes'
+import type { ConnectionStatus, SummaryAPIConfig } from './memoryEngineConfigTypes'
 import { summaryConfigFromDraft } from './memoryEngineConfigTypes'
 import { MemoryApiModeCapsule, type MemoryApiMode } from './MemoryApiModeCapsule'
 import { MemorySummaryApiConfig } from './MemorySummaryApiConfig'
@@ -53,7 +38,6 @@ import { resolveSummaryPullSource } from './memorySummaryPullSource'
 import { testMemoryTimelineSummaryConnection } from './memoryTimelineSummaryApi'
 import { resolveTimelineSummaryPullSource } from './memoryTimelineSummaryPullSource'
 import { MemoryVectorRecallConfig } from './MemoryVectorRecallConfig'
-import { resolveEmbeddingPullSource } from './vectorEmbeddingPullSource'
 import type { AutoSummaryIntervalScope } from './memoryAutoSummaryInterval'
 import {
   loadAutoSummaryIntervalCharacterCandidates,
@@ -232,26 +216,6 @@ export function MemoryEngineConfig({
   const [timelineModelsLoading, setTimelineModelsLoading] = useState(false)
   const [timelineModelsPullMsg, setTimelineModelsPullMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [vectorRecallEnabled, setVectorRecallEnabled] = useState(true)
-  const [embeddingProviderMode, setEmbeddingProviderMode] = useState<MemoryEmbeddingProviderMode>('auto')
-  const [localEmbeddingModelId, setLocalEmbeddingModelId] = useState(DEFAULT_LOCAL_EMBEDDING_MODEL)
-  const [localModelDownloaded, setLocalModelDownloaded] = useState(false)
-  const [localModelDownloading, setLocalModelDownloading] = useState(false)
-  const [localModelDownloadProgress, setLocalModelDownloadProgress] =
-    useState<LocalEmbeddingDownloadProgress | null>(null)
-  const [localModelDownloadError, setLocalModelDownloadError] = useState<string | null>(null)
-  const [vectorDedicatedApiEnabled, setVectorDedicatedApiEnabled] = useState(false)
-  const [vectorConfig, setVectorConfig] = useState<VectorAPIConfig>({
-    endpoint: '',
-    apiKey: '',
-    collection: '',
-  })
-  const [hasSavedEmbeddingKey, setHasSavedEmbeddingKey] = useState(false)
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('idle')
-  const [embeddingModelDraft, setEmbeddingModelDraft] = useState('')
-  const [embeddingModelList, setEmbeddingModelList] = useState<string[]>([])
-  const [embeddingModelDropdownOpen, setEmbeddingModelDropdownOpen] = useState(false)
-  const [embeddingModelsLoading, setEmbeddingModelsLoading] = useState(false)
-  const [modelsPullMsg, setModelsPullMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [savedSettings, setSavedSettings] = useState<Awaited<ReturnType<typeof personaDb.getMemorySettings>> | null>(
     null,
   )
@@ -266,7 +230,6 @@ export function MemoryEngineConfig({
     setConfigLoadError(null)
     try {
       const settings = await personaDb.getMemorySettings()
-      const savedModel = settings.memoryEmbeddingModelId?.trim() || ''
       setAutoSummaryEnabled(settings.autoSummaryEnabled !== false)
       setIntervalDraft(String(settings.autoSummaryInterval))
       setIntervalScope(settings.autoSummaryIntervalScope === 'per_character' ? 'per_character' : 'global')
@@ -299,31 +262,7 @@ export function MemoryEngineConfig({
       })
       setTimelineConnectionStatus('idle')
       setVectorRecallEnabled(settings.memoryVectorRecallEnabled !== false)
-      setEmbeddingProviderMode(
-        settings.memoryEmbeddingProviderMode === 'api' ||
-          settings.memoryEmbeddingProviderMode === 'local' ||
-          settings.memoryEmbeddingProviderMode === 'auto'
-          ? settings.memoryEmbeddingProviderMode
-          : 'auto',
-      )
-      setLocalEmbeddingModelId(
-        normalizeLocalEmbeddingModelId(settings.memoryLocalEmbeddingModelId),
-      )
-      setVectorDedicatedApiEnabled(settings.memoryEmbeddingUseDedicatedApi === true)
-      setVectorConfig({
-        endpoint: settings.memoryEmbeddingApiUrl?.trim() || '',
-        apiKey: '',
-        collection: settings.memoryVectorCollection?.trim() || '',
-      })
-      setHasSavedEmbeddingKey(Boolean(settings.memoryEmbeddingApiKey?.trim()))
-      setEmbeddingModelDraft(savedModel)
-      setEmbeddingModelList((prev) => {
-        if (!savedModel) return prev
-        if (prev.includes(savedModel)) return prev
-        return [savedModel, ...prev]
-      })
       setSavedSettings(settings)
-      setConnectionStatus('idle')
 
       try {
         const chars = await loadAutoSummaryIntervalCharacterCandidates(currentWechatAccountId)
@@ -345,18 +284,6 @@ export function MemoryEngineConfig({
       setConfigHydrated(true)
     }
   }, [currentWechatAccountId])
-
-  const embeddingPullSource = useMemo(
-    () =>
-      resolveEmbeddingPullSource({
-        draft: vectorConfig,
-        saved: savedSettings ?? { memoryEmbeddingApiUrl: undefined, memoryEmbeddingApiKey: undefined },
-        hasSavedDedicatedKey: hasSavedEmbeddingKey,
-        useDedicatedApi: vectorDedicatedApiEnabled,
-        chatApi: chatApiConfig,
-      }),
-    [vectorConfig, savedSettings, hasSavedEmbeddingKey, vectorDedicatedApiEnabled, chatApiConfig],
-  )
 
   const summaryPullSource = useMemo(
     () =>
@@ -412,10 +339,6 @@ export function MemoryEngineConfig({
   }, [reload])
 
   useEffect(() => {
-    if (!embeddingModelList.length) setEmbeddingModelDropdownOpen(false)
-  }, [embeddingModelList.length])
-
-  useEffect(() => {
     if (!summaryModelList.length) setSummaryModelDropdownOpen(false)
   }, [summaryModelList.length])
 
@@ -462,61 +385,6 @@ export function MemoryEngineConfig({
     if (tab) setConfigSubTab(tab)
   }, [coachOpen, coachStepIndex])
 
-  useEffect(() => {
-    if (!configHydrated) return
-    let cancelled = false
-    void (async () => {
-      const model = localEmbeddingModelId
-      const record = await getLocalEmbeddingDownloadRecord(model)
-      if (!cancelled) {
-        setLocalModelDownloaded(!!record)
-        setLocalModelDownloadError(null)
-        setLocalModelDownloadProgress(null)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [configHydrated, localEmbeddingModelId])
-
-  const runLocalModelDownload = useCallback(
-    async (force = false) => {
-      const model = localEmbeddingModelId
-      setLocalModelDownloading(true)
-      setLocalModelDownloadProgress(null)
-      setLocalModelDownloadError(null)
-      try {
-        await probeLocalEmbeddingDownloadChannel(model)
-        await downloadLocalEmbeddingModelManual(
-          model,
-          (p) => {
-            setLocalModelDownloadProgress(p)
-          },
-          { force },
-        )
-        setLocalModelDownloaded(true)
-        setLocalModelDownloadProgress(null)
-      } catch (e) {
-        setLocalModelDownloadError(formatLocalEmbeddingDownloadError(e instanceof Error ? e.message : String(e)))
-        if (force) setLocalModelDownloaded(false)
-      } finally {
-        setLocalModelDownloading(false)
-      }
-    },
-    [localEmbeddingModelId],
-  )
-
-  const setLocalEmbeddingModelPersist = async (modelId: string) => {
-    const normalized = normalizeLocalEmbeddingModelId(modelId)
-    setLocalEmbeddingModelId(normalized)
-    setLocalModelDownloadError(null)
-    setLocalModelDownloadProgress(null)
-    await personaDb.putMemorySettings({ memoryLocalEmbeddingModelId: normalized })
-    setSavedSettings(await personaDb.getMemorySettings())
-    const record = await getLocalEmbeddingDownloadRecord(normalized)
-    setLocalModelDownloaded(!!record)
-  }
-
   const patchSummary = (patch: Partial<SummaryAPIConfig>) => {
     setSummaryConfig((prev) => ({ ...prev, ...patch }))
     setSummaryConnectionStatus('idle')
@@ -557,11 +425,6 @@ export function MemoryEngineConfig({
     }
     const fresh = await personaDb.getMemorySettings()
     setSavedSettings(fresh)
-  }
-
-  const patchVector = (patch: Partial<VectorAPIConfig>) => {
-    setVectorConfig((prev) => ({ ...prev, ...patch }))
-    setConnectionStatus('idle')
   }
 
   const commitInterval = async (raw: string | number) => {
@@ -628,92 +491,7 @@ export function MemoryEngineConfig({
   const toggleVectorRecall = async () => {
     const next = !vectorRecallEnabled
     setVectorRecallEnabled(next)
-    setEmbeddingModelDropdownOpen(false)
     await personaDb.putMemorySettings({ memoryVectorRecallEnabled: next })
-  }
-
-  const setVectorApiMode = async (mode: MemoryApiMode) => {
-    const next = mode === 'dedicated'
-    if (next === vectorDedicatedApiEnabled) return
-    setVectorDedicatedApiEnabled(next)
-    setEmbeddingModelDropdownOpen(false)
-    setConnectionStatus('idle')
-    await personaDb.putMemorySettings({ memoryEmbeddingUseDedicatedApi: next })
-  }
-
-  const commitVectorFields = async () => {
-    if (!vectorDedicatedApiEnabled) return
-    const url = vectorConfig.endpoint.trim()
-    const coll = vectorConfig.collection.trim()
-    const keyTyped = vectorConfig.apiKey.trim()
-    await personaDb.putMemorySettings({
-      memoryEmbeddingApiUrl: url ? url.slice(0, 512) : undefined,
-      memoryVectorCollection: coll ? coll.slice(0, 128) : undefined,
-      ...(keyTyped ? { memoryEmbeddingApiKey: keyTyped.slice(0, 2048) } : {}),
-    })
-    if (keyTyped) {
-      setVectorConfig((v) => ({ ...v, apiKey: '' }))
-      setHasSavedEmbeddingKey(true)
-    }
-    const fresh = await personaDb.getMemorySettings()
-    setSavedSettings(fresh)
-  }
-
-  const pullEmbeddingModels = async () => {
-    setModelsPullMsg(null)
-    setEmbeddingModelsLoading(true)
-    try {
-      const s = savedSettings ?? (await personaDb.getMemorySettings())
-      const source = resolveEmbeddingPullSource({
-        draft: vectorConfig,
-        saved: s,
-        hasSavedDedicatedKey: hasSavedEmbeddingKey,
-        useDedicatedApi: vectorDedicatedApiEnabled,
-        chatApi: chatApiConfig,
-      })
-      if (!source?.apiUrl || !source.apiKey) {
-        setModelsPullMsg({
-          ok: false,
-          text: vectorDedicatedApiEnabled
-            ? '还缺地址或密钥：请在下面填好向量专用接口。'
-            : '还缺地址或密钥：请先在全局里配好聊天 API。',
-        })
-        return
-      }
-      const cfg: ApiConfig = {
-        apiUrl: source.apiUrl,
-        apiKey: source.apiKey,
-        modelId: '',
-        modelList: [],
-      }
-      const res = await fetchEmbeddingModels(cfg)
-      if (!res.ok) {
-        setModelsPullMsg({ ok: false, text: res.error })
-        return
-      }
-      const picked = res.models
-      setEmbeddingModelList(picked)
-      const savedModel = (await personaDb.getMemorySettings()).memoryEmbeddingModelId?.trim() || ''
-      const draft = embeddingModelDraft.trim()
-      const preferred = draft || savedModel
-      let nextId = preferred && picked.includes(preferred) ? preferred : ''
-      if (!nextId && picked.includes(DEFAULT_MEMORY_EMBEDDING_MODEL)) nextId = DEFAULT_MEMORY_EMBEDDING_MODEL
-      if (!nextId && picked.length) nextId = picked[0] || ''
-      if (nextId) {
-        setEmbeddingModelDraft(nextId)
-        await personaDb.putMemorySettings({ memoryEmbeddingModelId: nextId })
-      }
-      const via =
-        source.kind === 'dedicated' ? '你填的向量专用接口' : '当前聊天主接口'
-      setModelsPullMsg({
-        ok: true,
-        text: picked.length
-          ? `已从${via}筛出 ${picked.length} 个 embedding 模型（不含聊天模型）`
-          : `接口有响应，但未筛到 embedding 模型；请换专用向量接口，或确认网关 /models 是否标注 embedding`,
-      })
-    } finally {
-      setEmbeddingModelsLoading(false)
-    }
   }
 
   const pullSummaryModels = async () => {
@@ -860,31 +638,6 @@ export function MemoryEngineConfig({
     if (!url || !key) return 'failed'
     const r = await testMemoryTimelineSummaryConnection({ apiUrl: url, apiKey: key })
     return r.ok ? 'connected' : 'failed'
-  }
-
-  const runRealEmbeddingTest = async (cfg: VectorAPIConfig): Promise<ConnectionStatus> => {
-    const s = await personaDb.getMemorySettings()
-    const model =
-      embeddingModelDraft.trim() || s.memoryEmbeddingModelId?.trim() || DEFAULT_MEMORY_EMBEDDING_MODEL
-    const r = await testMemoryEmbeddingConnectionUnified(
-      {
-        ...s,
-        memoryEmbeddingProviderMode: embeddingProviderMode,
-        memoryLocalEmbeddingModelId: localEmbeddingModelId,
-        memoryEmbeddingUseDedicatedApi: vectorDedicatedApiEnabled,
-        memoryEmbeddingApiUrl: cfg.endpoint.trim() || s.memoryEmbeddingApiUrl,
-        memoryEmbeddingApiKey: cfg.apiKey.trim() || s.memoryEmbeddingApiKey,
-      },
-      chatApiConfig?.apiUrl?.trim() && chatApiConfig?.apiKey?.trim() ? chatApiConfig : null,
-      model,
-    )
-    return r.ok ? 'connected' : 'failed'
-  }
-
-  const setEmbeddingProviderModePersist = async (mode: MemoryEmbeddingProviderMode) => {
-    setEmbeddingProviderMode(mode)
-    await personaDb.putMemorySettings({ memoryEmbeddingProviderMode: mode })
-    setSavedSettings(await personaDb.getMemorySettings())
   }
 
   const chatDefaultModelHint = chatApiConfig?.modelId?.trim() || ''
@@ -1121,41 +874,6 @@ export function MemoryEngineConfig({
           <MemoryVectorRecallConfig
             vectorRecallEnabled={vectorRecallEnabled}
             onToggleVectorRecall={() => void toggleVectorRecall()}
-            embeddingProviderMode={embeddingProviderMode}
-            onEmbeddingProviderModeChange={(mode) => void setEmbeddingProviderModePersist(mode)}
-            localEmbeddingModelId={localEmbeddingModelId}
-            onLocalEmbeddingModelChange={(modelId) => void setLocalEmbeddingModelPersist(modelId)}
-            localModelDownloaded={localModelDownloaded}
-            localModelDownloading={localModelDownloading}
-            localModelDownloadProgress={localModelDownloadProgress}
-            localModelDownloadError={localModelDownloadError}
-            onLocalModelDownload={(force) => void runLocalModelDownload(force)}
-            vectorDedicatedApiEnabled={vectorDedicatedApiEnabled}
-            onVectorApiModeChange={(mode) => void setVectorApiMode(mode)}
-            vectorConfig={vectorConfig}
-            onVectorConfigChange={patchVector}
-            onVectorFieldsBlur={() => void commitVectorFields()}
-            hasSavedEmbeddingKey={hasSavedEmbeddingKey}
-            connectionStatus={connectionStatus}
-            onConnectionStatusChange={setConnectionStatus}
-            onTestConnection={runRealEmbeddingTest}
-            embeddingPullSource={embeddingPullSource}
-            embeddingModelDraft={embeddingModelDraft}
-            onEmbeddingModelChange={(m) => {
-              setEmbeddingModelDraft(m)
-              setEmbeddingModelDropdownOpen(false)
-              setEmbeddingModelList((prev) => (prev.includes(m) ? prev : [m, ...prev]))
-              void (async () => {
-                await personaDb.putMemorySettings({ memoryEmbeddingModelId: m })
-                setSavedSettings(await personaDb.getMemorySettings())
-              })()
-            }}
-            embeddingModelList={embeddingModelList}
-            embeddingModelsLoading={embeddingModelsLoading}
-            modelsPullMsg={modelsPullMsg}
-            onPullEmbeddingModels={() => void pullEmbeddingModels()}
-            embeddingModelDropdownOpen={embeddingModelDropdownOpen}
-            onEmbeddingModelDropdownToggle={() => setEmbeddingModelDropdownOpen((v) => !v)}
           />
         </div>
       </div>
@@ -1178,7 +896,7 @@ export function MemoryEngineConfig({
         onSkip={() => finishCoach()}
         onComplete={(opts) => finishCoach(opts)}
         scopeRoot="memory-engine"
-        layoutEpoch={`${configSubTab}-${vectorRecallEnabled}-${embeddingProviderMode}-${vectorDedicatedApiEnabled}-${vectorRecallEnabled && vectorDedicatedApiEnabled ? 'dedicated' : 'main'}`}
+        layoutEpoch={`${configSubTab}-${vectorRecallEnabled}`}
         zIndex={54000}
       />
     </div>

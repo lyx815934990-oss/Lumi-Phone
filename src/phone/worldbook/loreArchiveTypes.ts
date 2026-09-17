@@ -55,8 +55,35 @@ export const LORE_ARCHIVE_ENTRY_TAGS_CAP = 8
 
 /**
  * 档案室统一条目：原「档案法则」+ 原「微信全局世界书」条目合并为同一列表。
- * 每条可单独配置：生效板块、作用角色、标题与正文。
+ * 每条可单独配置：生效板块、作用角色、标题与正文、优先级档次。
  */
+export type ArchiveWorldbookPriorityTier = 1 | 2 | 3
+
+/** 1 仅次于输出规范、高于人设；2 与人设同级但冲突跟全局；3 次于人设世界书 */
+export const ARCHIVE_WORLDBOOK_PRIORITY_TIER_LABELS: Record<
+  ArchiveWorldbookPriorityTier,
+  { short: string; hint: string }
+> = {
+  1: {
+    short: '档 1 · 高于人设',
+    hint: '仅次于输出规范提示词；与人设世界书冲突时以本条为准',
+  },
+  2: {
+    short: '档 2 · 同级偏全局',
+    hint: '与人设世界书同级；有矛盾时仍跟随全局档案书',
+  },
+  3: {
+    short: '档 3 · 次于人设',
+    hint: '次于人设世界书；人设明文冲突时以人设为准',
+  },
+}
+
+export function normalizeArchiveWorldbookPriorityTier(raw: unknown): ArchiveWorldbookPriorityTier {
+  const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim())
+  if (n === 1 || n === 3) return n
+  return 2
+}
+
 export type ArchiveWorldbookEntry = {
   id: string
   title: string
@@ -66,6 +93,11 @@ export type ArchiveWorldbookEntry = {
   /** 全部场景，或限定私聊/群聊/线下剧情/VN 等 */
   plateScope: GlobalWechatWorldBookScope
   characterScope: ArchiveCharacterScope
+  /**
+   * 优先级档次（默认 2）：
+   * 1 仅次于输出规范、高于人设；2 与人设同级但冲突跟全局；3 次于人设。
+   */
+  priorityTier?: ArchiveWorldbookPriorityTier
   /** 归属的自定义标签 id（可多选） */
   tagIds?: string[]
   updatedAt: number
@@ -142,6 +174,7 @@ export function normalizeArchiveEntryPartial(raw: Record<string, unknown>): Arch
   const id = typeof raw.id === 'string' ? raw.id.trim() : ''
   if (!id) return null
   const tagIds = normalizeTagIds(raw.tagIds)
+  const priorityTier = normalizeArchiveWorldbookPriorityTier(raw.priorityTier)
   return {
     id,
     title: typeof raw.title === 'string' ? raw.title : '',
@@ -149,6 +182,7 @@ export function normalizeArchiveEntryPartial(raw: Record<string, unknown>): Arch
     enabled: raw.enabled !== false,
     plateScope: normalizeGlobalWechatWorldBookScope(raw.plateScope),
     characterScope: normalizeCharacterScope(raw.characterScope),
+    priorityTier,
     ...(tagIds.length ? { tagIds } : {}),
     updatedAt: typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt) ? raw.updatedAt : Date.now(),
   }
@@ -184,6 +218,8 @@ export type LoreArchiveStoreShapeV3 = {
   entries: ArchiveWorldbookEntry[]
   /** 系统内置预设开关；未写入时默认全部关闭，由用户自行打开 */
   builtinPresets?: LoreArchiveBuiltinPresetToggles
+  /** 系统内置预设优先级档次；未写入默认 2 */
+  builtinPresetPriorityTiers?: Partial<Record<string, ArchiveWorldbookPriorityTier>>
   /** 用户自定义标签目录 */
   tags?: LoreArchiveTag[]
   weibo?: { _reserved: true }

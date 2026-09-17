@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   GALLERY_GRID_COLS,
   GALLERY_GRID_GAP,
@@ -92,7 +92,7 @@ export function HomeWidgetGalleryPage({
           navigator.vibrate(12)
         }
         onEnterEditMode()
-      }, 480)
+      }, 700)
     },
     [clearLongPress, isEditMode, onEnterEditMode],
   )

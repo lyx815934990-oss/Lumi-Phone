@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronDown } from 'lucide-react'
 import type { MomentsImageGenSettings } from '../../../../components/moments/useMomentsSettingsStore'
 import { decodeApiPresetRouteId } from '../apiPresetRoutes'
 import { useApiSettings } from '../ApiSettingsContext'
@@ -14,16 +13,17 @@ import type { ApiPreset, SubApiType, TranslationProviderId } from '../types'
 import { API_LINK_PREVIEW_ROUTE } from '../linkPreviewDisplayLabels'
 import { TRANSLATION_PROVIDER_OPTIONS } from '../translationProviders'
 
-const SUB_META: Record<SubApiType, { title: string; desc: string }> = {
+const SUB_META: Record<Exclude<SubApiType, 'voiceAsr'>, { title: string; desc: string }> = {
   xinyu: { title: '心语', desc: '用于生成约会心语内容' },
   chatCard: { title: '聊天记录卡片', desc: '用于生成聊天记录卡片文案' },
   danmaku: { title: '弹幕', desc: '用于生成弹幕内容' },
-  voiceAsr: { title: '语音识别', desc: '用于语音通话长按麦克风转文字' },
   translation: {
     title: '翻译',
     desc: '默认由聊天模型输出译文；勾选「使用副接口」后可接 DeepL / Google / Azure / 百度 / 有道 / 腾讯云或独立 OpenAI 兼容模型',
   },
 }
+
+type SubUiType = keyof typeof SUB_META
 
 type EditTab = 'main' | 'sub' | 'imageGen'
 
@@ -149,7 +149,6 @@ export function ApiPresetEditPage() {
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [saveOk, setSaveOk] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
-  const [voiceAsrCollapsed, setVoiceAsrCollapsed] = useState(false)
   const toastTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -280,9 +279,9 @@ export function ApiPresetEditPage() {
         {activeTab === 'sub' ? (
           <>
             <p className="mx-4 mt-2 text-[14px]" style={{ color: apiTheme.subText, fontWeight: 300 }}>
-              副接口可选，启用后将优先于主接口用于对应场景。
+              副接口可选，启用后将优先于主接口用于对应场景。语音识别已内置 SenseVoice，无需在此配置。
             </p>
-            {(Object.keys(SUB_META) as SubApiType[]).map((k) => {
+            {(Object.keys(SUB_META) as SubUiType[]).map((k) => {
               const meta = SUB_META[k]
               const sub = draft.sub[k]
               if (!sub) return null
@@ -309,36 +308,7 @@ export function ApiPresetEditPage() {
                         {meta.desc}
                       </p>
                     </div>
-                    {k === 'voiceAsr' ? (
-                      <div className="flex shrink-0 items-center gap-2">
-                        <p className="text-[12px]" style={{ color: apiTheme.subText }}>
-                          {sub.enabled ? '开启' : '关闭'}
-                        </p>
-                        <ToggleSwitch
-                          checked={!!sub.enabled}
-                          onChange={(v) => {
-                            setDirty(true)
-                            setDraft((s) => ({
-                              ...s,
-                              updatedAt: Date.now(),
-                              sub: { ...s.sub, [k]: { ...s.sub[k], enabled: v, useMainApi: false } },
-                            }))
-                          }}
-                        />
-                        <button
-                          type="button"
-                          aria-label={voiceAsrCollapsed ? '展开语音识别配置' : '收起语音识别配置'}
-                          className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md"
-                          onClick={() => setVoiceAsrCollapsed((v) => !v)}
-                          style={{ color: apiTheme.subText }}
-                        >
-                          <ChevronDown
-                            className={`size-4 transition-transform duration-200 ${voiceAsrCollapsed ? 'rotate-0' : 'rotate-180'}`}
-                            strokeWidth={1.8}
-                          />
-                        </button>
-                      </div>
-                    ) : k === 'translation' ? (
+                    {k === 'translation' ? (
                       <div className="flex shrink-0 items-center gap-2">
                         <p className="text-[12px] whitespace-nowrap" style={{ color: apiTheme.subText }}>
                           使用副接口
@@ -551,9 +521,7 @@ export function ApiPresetEditPage() {
                     </div>
                   ) : null}
 
-                  {k !== 'translation' &&
-                  (k === 'voiceAsr' ? !voiceAsrCollapsed : true) &&
-                  (k === 'voiceAsr' || !sub.useMainApi) ? (
+                  {k !== 'translation' && !sub.useMainApi ? (
                     <div className="mt-4">
                       <ApiConfigBlock
                         title="独立配置"
@@ -568,36 +536,14 @@ export function ApiPresetEditPage() {
                               [k]: {
                                 ...s.sub[k],
                                 enabled: typeof s.sub[k].enabled === 'boolean' ? s.sub[k].enabled : true,
-                                useMainApi: k === 'voiceAsr' ? false : s.sub[k].useMainApi,
+                                useMainApi: s.sub[k].useMainApi,
                                 apiConfig: next,
                               },
                             },
                           }))
                         }}
-                        showTest={k !== 'voiceAsr'}
-                        mode={k === 'voiceAsr' ? 'asr' : 'full'}
-                        footer={
-                          k === 'voiceAsr' ? (
-                            <div
-                              className="rounded-xl px-4 py-3 text-[12px]"
-                              style={{
-                                border: `1px solid ${apiTheme.border}`,
-                                background: '#fff',
-                                color: apiTheme.subText,
-                              }}
-                            >
-                              语音识别 Key 获取：{' '}
-                              <a
-                                href="https://account.siliconflow.cn/zh/login?redirect=https%3A%2F%2Fcloud.siliconflow.cn%2Fme%2Fmodels%3F"
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{ color: apiTheme.accent, textDecoration: 'underline' }}
-                              >
-                                硅基流动控制台
-                              </a>
-                            </div>
-                          ) : null
-                        }
+                        showTest
+                        mode="full"
                       />
                     </div>
                   ) : null}

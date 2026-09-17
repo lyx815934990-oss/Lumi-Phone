@@ -25,8 +25,43 @@ export function parsePlotDimensionLengthTarget(raw: number | string, fallback = 
   if (!Number.isFinite(n)) return fallback
   return Math.max(1, Math.min(DATING_AI_LENGTH_TARGET_MAX, Math.round(n)))
 }
-/** 送入约会剧情模型的上下文预算（词符/token；仍受 API/模型实际上限） */
+/** 送入约会剧情模型的上下文预算上限（词符/token；仍受 API/模型实际上限） */
 export const DATING_AI_MAX_CONTEXT_TOKENS = 200_000
+/** 滑杆下限：过小会导致几乎无记忆可注入 */
+export const DATING_AI_MIN_CONTEXT_TOKENS = 8_000
+/** 默认拉满上限（与历史硬编码预算对齐） */
+export const DATING_AI_DEFAULT_CONTEXT_TOKENS = DATING_AI_MAX_CONTEXT_TOKENS
+
+export function clampDatingMaxContextTokens(raw: number): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DATING_AI_DEFAULT_CONTEXT_TOKENS
+  return Math.max(
+    DATING_AI_MIN_CONTEXT_TOKENS,
+    Math.min(DATING_AI_MAX_CONTEXT_TOKENS, Math.round(n)),
+  )
+}
+
+/** 线下「最近剧情」注入方式：上下文原文（按 token 预算）或近端摘要行 */
+export type DatingPlotContextInjectMode = 'full_text' | 'summary'
+
+export const DATING_PLOT_CONTEXT_INJECT_MODE_DEFAULT: DatingPlotContextInjectMode = 'full_text'
+
+export const DATING_PLOT_SUMMARY_INJECT_ROUNDS_MIN = 1
+export const DATING_PLOT_SUMMARY_INJECT_ROUNDS_MAX = 30
+export const DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT = 5
+
+export function normalizeDatingPlotContextInjectMode(raw: unknown): DatingPlotContextInjectMode {
+  return raw === 'summary' ? 'summary' : DATING_PLOT_CONTEXT_INJECT_MODE_DEFAULT
+}
+
+export function clampDatingPlotSummaryInjectRounds(raw: number): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DATING_PLOT_SUMMARY_INJECT_ROUNDS_DEFAULT
+  return Math.max(
+    DATING_PLOT_SUMMARY_INJECT_ROUNDS_MIN,
+    Math.min(DATING_PLOT_SUMMARY_INJECT_ROUNDS_MAX, Math.round(n)),
+  )
+}
 
 /**
  * 剧情 completion 等待上限（毫秒）。
@@ -53,9 +88,40 @@ export const DATING_AI_HISTORY_PROMPT_MAX = 60_000
 
 export const DATING_AI_SCENE_HINTS_PROMPT_MAX = 20_000
 
+/**
+ * 按用户设定的最大上下文 token，等比缩放各段汉字注入上限。
+ * 满档（200k）= 现有硬编码预算；调低则各段同步收紧。
+ */
+export function datingContextCharBudgetsFromTokens(rawTokens: number): {
+  tokens: number
+  referenceSection: number
+  offlineUnsummarized: number
+  historyPrompt: number
+  sceneHints: number
+  referenceTotal: number
+} {
+  const tokens = clampDatingMaxContextTokens(rawTokens)
+  const ratio = tokens / DATING_AI_MAX_CONTEXT_TOKENS
+  const scale = (base: number, floor: number) =>
+    Math.max(floor, Math.round(base * ratio))
+  return {
+    tokens,
+    referenceSection: scale(DATING_AI_REFERENCE_SECTION_CHAR_CAP, 2_000),
+    offlineUnsummarized: scale(DATING_AI_OFFLINE_UNSUMMARIZED_CHAR_CAP, 4_000),
+    historyPrompt: scale(DATING_AI_HISTORY_PROMPT_MAX, 3_000),
+    sceneHints: scale(DATING_AI_SCENE_HINTS_PROMPT_MAX, 1_000),
+    referenceTotal: scale(DATING_AI_REFERENCE_TOTAL_CHAR_BUDGET, 8_000),
+  }
+}
 export type NarrativeGenOptions = {
   /** 期望字数（大概值，非硬性） */
   lengthTargetChars?: number
+  /** 本轮上下文注入最大 token（覆盖存档默认） */
+  maxContextTokens?: number
+  /** 近端剧情注入：上下文原文 / 近端摘要 */
+  plotContextInjectMode?: DatingPlotContextInjectMode
+  /** summary 模式：近端摘要轮数 */
+  plotSummaryInjectRounds?: number
   autoUserReaction?: boolean
   /** 文风描述，与 referenceSnippet 一并注入 system 侧补充（见 datingStylePrompt） */
   stylePrompt?: string
@@ -234,6 +300,10 @@ export type PlotItem = {
    */
   observationNotesRevert?: import('../observationNotes/plotRevert').ObservationNotesPlotRevert
   /**
+   * 本条 AI 最近一次成功落库的人生账本补丁回滚信息；删剧情 / 重生前用于恢复。
+   */
+  lifeLedgerRevert?: import('../lifeMutable/plotRevert').LifeLedgerPlotRevert
+  /**
    * @deprecated 待办台账已下线；旧档可能仍有此字段，读写时忽略。
    */
   todoLedgerBefore?: import('../memory/storyTimelineTypes').StoryTimelineTodoEntry[]
@@ -345,6 +415,19 @@ export type CharacterArchive = {
   branchContinuationHint?: string
   /** 线下/VN 剧情生成：目标正文字数（汉字），与界面「目标字数」同步落盘，避免切换角色后仍用默认 500 */
   datingLengthTargetChars?: number
+  /**
+   * 线下剧情注入上下文的最大 token 预算（8k～200k）。
+   * `full_text` 模式下「最近剧情」按预算自最新往历史装填；记忆/未总结段同比缩放；缺省等同满档 200k。
+   */
+  datingMaxContextTokens?: number
+  /**
+   * 线下近端剧情注入方式：
+   * - `full_text`：按最大上下文装填剧情原文（默认）
+   * - `summary`：注入近端 N 轮剧情摘要行
+   */
+  datingPlotContextInjectMode?: DatingPlotContextInjectMode
+  /** `summary` 模式下注入的近端摘要轮数（1～30，默认 5） */
+  datingPlotSummaryInjectRounds?: number
   /** 剧情生成后是否穿插剧情配图 */
   plotImageGenEnabled?: boolean
   /** 每轮剧情配图张数范围 */

@@ -11,6 +11,7 @@ import {
 } from './linkPreviewSettingsUtils'
 import { normalizeTranslationSubFields } from './translationProviders'
 import { pickApiConfigSamplingFields } from './apiConfigSampling'
+import { normalizeApiVisionInputMode } from './apiModelVision'
 
 const STORAGE_KEY = API_STORE_STORAGE_KEY
 
@@ -32,6 +33,10 @@ function normalizeApiConfig(raw: unknown): ApiConfig {
           }
         : undefined,
     ...pickApiConfigSamplingFields(r),
+    ...((): Pick<ApiConfig, 'visionInput'> => {
+      const mode = normalizeApiVisionInputMode(r.visionInput)
+      return mode ? { visionInput: mode } : {}
+    })(),
   }
 }
 

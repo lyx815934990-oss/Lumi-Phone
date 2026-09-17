@@ -7,7 +7,7 @@ export const DATING_STORY_COACH_TARGET_ATTR = 'data-dating-story-coach'
 export const DATING_STORY_COACH_ROOT_ATTR = 'data-dating-story-coach-root'
 export const DATING_STORY_COACH_SCOPE = 'dating-story-layout'
 /** v5：补标题栏重置进度 + 左侧楼层目录 */
-export const DATING_STORY_LAYOUT_COACH_SEEN_KEY = 'dating-story-layout-coach-completed-v5'
+export const DATING_STORY_LAYOUT_COACH_SEEN_KEY = 'dating-story-layout-coach-completed-v7'
 
 export const DATING_STORY_LAYOUT_COACH_STEPS: MemoryCoachStep[] = [
   {
@@ -26,6 +26,12 @@ export const DATING_STORY_LAYOUT_COACH_STEPS: MemoryCoachStep[] = [
     target: 'sr-worldbook',
     title: '全局档案室世界书',
     body: datingStoryLayoutTutorialBody('全局档案室世界书'),
+    cardPlacement: 'below',
+  },
+  {
+    target: 'sr-writing-presets',
+    title: '写作预设',
+    body: datingStoryLayoutTutorialBody('写作预设'),
     cardPlacement: 'below',
   },
   {

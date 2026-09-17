@@ -3,7 +3,8 @@ import { Keyboard, Mic, Paperclip, Plus, Smile } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Pressable } from '../../../components/Pressable'
 import { wechatChatComposerFontStyle } from '../WeChatChatMixedText'
-import { WeChatComposerField, WECHAT_COMPOSER_MAX_HEIGHT_PX } from '../WeChatComposerField'
+import { WeChatComposerField, WECHAT_COMPOSER_LINE_HEIGHT_PX, WECHAT_COMPOSER_MAX_HEIGHT_PX } from '../WeChatComposerField'
+import { publicAssetUrl } from '../../../../publicAssetUrl'
 
 const COMPOSER_ROW_CLASS = 'flex min-h-[36px] min-w-0 flex-1 items-center'
 const COMPOSER_SIDE_BTN_CLASS = 'flex h-7 w-7 shrink-0 items-center justify-center text-[#8E8E93]'
@@ -74,6 +75,54 @@ function TelegramSendIcon() {
   )
 }
 
+/** 微信 App 输入栏：语音 / 表情用主题贴图；加号 / 键盘仍为矢量 */
+/** 贴图墨色约 #1D1D1F；已去浅灰底，改用 currentColor 与输入栏按钮色统一 */
+const WECHAT_THEME_VOICE_BTN_URL = publicAssetUrl('/image/微信主题语音按钮.png')
+const WECHAT_THEME_EMOJI_BTN_URL = publicAssetUrl('/image/微信主题表情按钮.png')
+const WECHAT_THEME_KEYBOARD_BTN_URL = publicAssetUrl('/image/微信主题键盘按钮.png')
+
+/** 微信主题输入栏贴图：mask + currentColor，夜间/日间跟随 --wx-chat-input-btn-color */
+function WechatThemeAssetIcon({ src }: { src: string }) {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none block h-11 w-11 shrink-0 select-none"
+      style={{
+        backgroundColor: 'currentColor',
+        WebkitMaskImage: `url(${src})`,
+        maskImage: `url(${src})`,
+        WebkitMaskSize: 'contain',
+        maskSize: 'contain',
+        WebkitMaskRepeat: 'no-repeat',
+        maskRepeat: 'no-repeat',
+        WebkitMaskPosition: 'center',
+        maskPosition: 'center',
+      }}
+    />
+  )
+}
+
+function WechatCircleVoiceIcon() {
+  return <WechatThemeAssetIcon src={WECHAT_THEME_VOICE_BTN_URL} />
+}
+
+function WechatCircleSmileIcon() {
+  return <WechatThemeAssetIcon src={WECHAT_THEME_EMOJI_BTN_URL} />
+}
+
+function WechatCirclePlusIcon() {
+  return (
+    <svg width={32} height={32} viewBox="0 0 32 32" fill="none" aria-hidden>
+      <circle cx="16" cy="16" r="12.25" stroke="currentColor" strokeWidth={1.7} />
+      <path d="M16 10.4v11.2M10.4 16h11.2" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function WechatCircleKeyboardIcon() {
+  return <WechatThemeAssetIcon src={WECHAT_THEME_KEYBOARD_BTN_URL} />
+}
+
 export function ChatInputBar({
   inputMode,
   btnPx,
@@ -82,6 +131,7 @@ export function ChatInputBar({
   borderColor,
   backgroundColor,
   layout = 'lumi',
+  wechatSendMode = 'enter',
   sendButtonColor,
   draft,
   sendBusy,
@@ -108,6 +158,8 @@ export function ChatInputBar({
   /** 输入胶囊底色（X 风格等） */
   backgroundColor?: string
   layout?: 'lumi' | 'wechat' | 'imessage' | 'telegram' | 'talkmaker' | 'twitter'
+  /** 微信模版：仅回车 / 回车+发送按钮 */
+  wechatSendMode?: 'enter' | 'button'
   sendButtonColor?: string
   draft: string
   sendBusy: boolean
@@ -500,34 +552,38 @@ export function ChatInputBar({
 
   if (layout === 'wechat') {
   const wechatSideBtnClass =
-    'flex h-7 w-7 shrink-0 items-center justify-center active:opacity-60'
+    'flex h-11 w-8 shrink-0 items-center justify-center active:opacity-55'
+  const wechatAssetSideBtnClass =
+    'flex h-11 w-11 shrink-0 items-center justify-center active:opacity-55'
   const wechatSideBtnStyle: CSSProperties = { color: 'var(--wx-chat-input-btn-color, #191919)' }
+  // 壳高 44 与侧钮对齐；正文行高用 WECHAT_COMPOSER_LINE_HEIGHT_PX，避免多行间距被拉成 44
   const wechatComposerShellClass =
-    'flex min-h-[36px] min-w-0 flex-1 items-end overflow-hidden rounded-md border px-3 py-1.5'
+    'box-border flex min-h-11 min-w-0 flex-1 items-center overflow-hidden px-3 py-0'
   const wechatComposerShellStyle: CSSProperties = {
     backgroundColor: 'var(--wx-chat-input-shell-bg, #ffffff)',
-    borderColor: 'var(--wx-chat-input-shell-border, #e5e5e5)',
+    border: 'none',
     borderRadius: 'var(--wx-chat-input-shell-radius, 6px)',
+    minHeight: 44,
   }
 
   return (
-    <div className="flex w-full max-w-full items-end gap-3">
+    <div className="flex w-full max-w-full items-end gap-2.5">
       <Pressable
         type="button"
         aria-label={inputMode === 'text' ? '切换为语音输入' : '切换为文字输入'}
         onClick={onToggleInputMode}
-        className={wechatSideBtnClass}
+        className={wechatAssetSideBtnClass}
         style={wechatSideBtnStyle}
       >
-        {inputMode === 'voice' ? (
-          <Keyboard size={28} strokeWidth={1.8} aria-hidden />
-        ) : (
-          <Mic size={28} strokeWidth={1.8} aria-hidden />
-        )}
+        {inputMode === 'voice' ? <WechatCircleKeyboardIcon /> : <WechatCircleVoiceIcon />}
       </Pressable>
 
       {inputMode === 'voice' ? (
-        <div data-wx-chat-input-shell className={wechatComposerShellClass} style={wechatComposerShellStyle}>
+        <div
+          data-wx-chat-input-shell
+          className={wechatComposerShellClass}
+          style={{ ...wechatComposerShellStyle, height: 44 }}
+        >
           <motion.button
             type="button"
             whileTap={{ scale: 0.98 }}
@@ -535,7 +591,7 @@ export function ChatInputBar({
             onPointerMove={onVoicePointerMove}
             onPointerUp={onVoicePointerUp}
             onPointerCancel={onVoicePointerUp}
-            className="select-none flex min-h-[24px] w-full items-center justify-center bg-transparent text-[15px] leading-6 outline-none"
+            className="select-none flex h-11 w-full items-center justify-center bg-transparent text-[15px] leading-none outline-none"
             style={{
               touchAction: 'none',
               color: 'var(--wx-chat-input-text-color, var(--wx-text))',
@@ -548,13 +604,19 @@ export function ChatInputBar({
         <div data-wx-chat-input-shell className={wechatComposerShellClass} style={wechatComposerShellStyle}>
           <WeChatComposerField
             ref={textareaRef}
-            className="min-h-[24px] min-w-0 flex-1 resize-none bg-transparent text-[15px] leading-6 outline-none"
+            className="box-border min-w-0 flex-1 resize-none bg-transparent py-0 text-[15px] outline-none"
             style={{
+              ...wechatChatComposerFontStyle,
+              boxSizing: 'border-box',
+              paddingTop: 0,
+              paddingBottom: 0,
+              margin: 0,
               maxHeight: WECHAT_COMPOSER_MAX_HEIGHT_PX,
+              minHeight: WECHAT_COMPOSER_LINE_HEIGHT_PX,
+              lineHeight: `${WECHAT_COMPOSER_LINE_HEIGHT_PX}px`,
               color: 'var(--wx-chat-input-text-color, var(--wx-text))',
               caretColor: 'var(--wx-chat-input-text-color, var(--wx-text))',
               WebkitTextFillColor: 'var(--wx-chat-input-text-color, var(--wx-text))',
-              ...wechatChatComposerFontStyle,
             }}
             placeholder=""
             aria-label="输入消息"
@@ -569,14 +631,10 @@ export function ChatInputBar({
         type="button"
         aria-label={emojiPanelOpen ? '键盘' : '表情'}
         onClick={onEmojiOrKeyboardClick}
-        className={wechatSideBtnClass}
+        className={wechatAssetSideBtnClass}
         style={wechatSideBtnStyle}
       >
-        {emojiPanelOpen ? (
-          <Keyboard size={28} strokeWidth={1.8} aria-hidden />
-        ) : (
-          <Smile size={28} strokeWidth={1.8} aria-hidden />
-        )}
+        {emojiPanelOpen ? <WechatCircleKeyboardIcon /> : <WechatCircleSmileIcon />}
       </Pressable>
 
       <Pressable
@@ -586,19 +644,23 @@ export function ChatInputBar({
         className={wechatSideBtnClass}
         style={wechatSideBtnStyle}
       >
-        <Plus size={28} strokeWidth={1.8} className={plusMenuOpen ? 'rotate-45' : ''} aria-hidden />
+        <span className={plusMenuOpen ? 'inline-flex rotate-45' : 'inline-flex'}>
+          <WechatCirclePlusIcon />
+        </span>
       </Pressable>
 
-      <Pressable
-        type="button"
-        onClick={onSend}
-        disabled={sendBusy || !planeCanAct}
-        className="shrink-0 rounded-md px-3 py-1.5 text-sm font-semibold leading-6 text-white transition-[transform,opacity] active:scale-95 disabled:pointer-events-none disabled:opacity-40"
-        style={{ backgroundColor: sendBtnColor }}
-        aria-label={hasDraft ? '发送' : '请求 AI 回复'}
-      >
-        发送
-      </Pressable>
+      {wechatSendMode === 'button' ? (
+        <Pressable
+          type="button"
+          onClick={onSend}
+          disabled={sendBusy || !planeCanAct}
+          className="flex h-8 shrink-0 items-center justify-center rounded-[4px] px-2.5 text-[14px] font-medium leading-none text-white transition-[transform,opacity] active:scale-[0.97] active:opacity-85 disabled:pointer-events-none disabled:opacity-40"
+          style={{ backgroundColor: sendBtnColor || '#07C160', minWidth: 52 }}
+          aria-label={hasDraft ? '发送并请求回复' : '请求 AI 回复'}
+        >
+          {hasDraft ? '发送' : '回复'}
+        </Pressable>
+      ) : null}
     </div>
   )
   }

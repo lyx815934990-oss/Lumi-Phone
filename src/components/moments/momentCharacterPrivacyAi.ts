@@ -1,6 +1,7 @@
 import { filterPublishableCharacterContacts } from './momentFeedVisibility'
 import type { MomentPrivacyMeta } from './newMomentTypes'
 import type { MomentContactRef } from './newMomentTypes'
+import { CHARACTER_MOMENT_PRIVACY_STABLE_HINT } from './momentStableFormat'
 
 export type CharacterMomentPrivacyMode = 'public' | 'only_user' | 'hide_from'
 
@@ -9,12 +10,8 @@ export type CharacterMomentPrivacyDraft = {
   hideFromCharacterIds: string[]
 }
 
-export const CHARACTER_MOMENT_PRIVACY_JSON_HINT = `
-"privacy": "public" | "only_user" | "hide_from",
-"hideFromCharacterIds": ["角色characterId", "..."]  // 仅 privacy 为 hide_from 时必填，最多 8 人
-"mentionUser": true | false,
-"mentionCharacterIds": ["角色characterId", "..."]  // 可选，提醒其他好友查看，最多 5 人
-`.trim()
+/** @deprecated 使用 CHARACTER_MOMENT_PRIVACY_STABLE_HINT */
+export const CHARACTER_MOMENT_PRIVACY_JSON_HINT = CHARACTER_MOMENT_PRIVACY_STABLE_HINT
 
 export const CHARACTER_MOMENT_PRIVACY_RULES = `
 # Privacy Protocol（观测权限 · 必须审慎选择）
@@ -22,22 +19,22 @@ export const CHARACTER_MOMENT_PRIVACY_RULES = `
 
 - **public**：仅当内容对所有通讯录好友都安全、可公开时使用（如正式通知、无害日常、节日问候）。
 - **only_user**：仅对当前用户可见——暧昧钓鱼、冷战暗示、只对 TA 说的悄悄话、欲擒故纵；**不要**对这类内容用 public。
-- **hide_from**：对指定 NPC **屏蔽不可见**——不想被某些人看到的动态（如：深夜饮酒、恋情苗头、吐槽家长/上司/同事、叛逆/脆弱面）。须在 hideFromCharacterIds 填入下方 roster 中的 characterId（可多人）。**家长、导师、上司、情敌、爱打小报告的 NPC 等，只要内容不适合他们看，就应屏蔽，而不是 public。**
+- **hide_from**：对指定 NPC **屏蔽不可见**——不想被某些人看到的动态（如：深夜饮酒、恋情苗头、吐槽家长/上司/同事、叛逆/脆弱面）。须在「屏蔽｜」填入下方 roster 中的 characterId（可多人）。**家长、导师、上司、情敌、爱打小报告的 NPC 等，只要内容不适合他们看，就应屏蔽，而不是 public。**
 
 决策优先级：
 1. 只想让用户看见 → only_user
 2. 多数人可看，但有个别 NPC 绝不能看 → hide_from（屏蔽那些人）
 3. 确实人人可看 → public
 
-hideFromCharacterIds 只能填 roster 中的 characterId，不要填发布者自己；不要编造不存在的 id。
+屏蔽 id 只能填 roster 中的 characterId，不要填发布者自己；不要编造不存在的 id。
 
 # Mention Protocol（提醒谁看 · 极少使用）
-- **mentionUser**：默认 **false**。仅当你想**特别强调**「请用户来看这条」时才设为 true——类似微信「提醒谁看」，会显示「提到了你」并推送未读。
-- **与 only_user 不同**：only_user = 仅用户可见（隐私权限）；mentionUser = 在可见范围内额外 @ 强调。**禁止**因 only_user / 钓鱼 / 暧昧就设 mentionUser；仅你可见的动态**不要**再 @。
-- **使用场景（极稀有）**：用户私聊明确要求「@你 / 提醒你看 / 让你看这条」；或本条是重磅、必须让用户立刻注意到的重要动态（日常碎碎念、随手拍、情绪发泄**一律 false**）。
-- **频率**：绝大多数动态 mentionUser 应为 false；连续多条 true 视为错误。
-- **mentionCharacterIds**：可选，提醒 roster 中其他好友（characterId 数组，最多 5 人）；与 mentionUser 可同时使用。
-- 提醒谁看**不改变** privacy 可见范围；仅额外通知被提醒的人。
+- **提醒用户**：默认 **否**。仅当你想**特别强调**「请用户来看这条」时才写「是」——类似微信「提醒谁看」，会显示「提到了你」并推送未读。
+- **与 only_user 不同**：only_user = 仅用户可见（隐私权限）；提醒用户 = 在可见范围内额外 @ 强调。**禁止**因 only_user / 钓鱼 / 暧昧就提醒用户；仅你可见的动态**不要**再 @。
+- **使用场景（极稀有）**：用户私聊明确要求「@你 / 提醒你看 / 让你看这条」；或本条是重磅、必须让用户立刻注意到的重要动态（日常碎碎念、随手拍、情绪发泄**一律否**）。
+- **频率**：绝大多数动态提醒用户应为否；连续多条「是」视为错误。
+- **提醒**：可选，提醒 roster 中其他好友（characterId，逗号分隔，最多 5 人）；可与提醒用户同时使用。
+- 提醒谁看**不改变**权限可见范围；仅额外通知被提醒的人。
 `.trim()
 
 export function buildCharacterMomentPrivacyRosterBlock(params: {
@@ -54,7 +51,7 @@ export function buildCharacterMomentPrivacyRosterBlock(params: {
 
   const lines: string[] = []
   if (roster.length) {
-    lines.push('【可屏蔽的通讯录 NPC（hide_from 时 hideFromCharacterIds 从此处选 characterId）】')
+    lines.push('【可屏蔽的通讯录 NPC（权限 hide_from 时「屏蔽｜」从此处选 characterId）】')
     for (const c of roster.slice(0, 40)) {
       lines.push(`- ${c.name.trim() || '未命名'}（characterId: ${c.characterId!.trim()}）`)
     }

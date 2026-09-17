@@ -9,12 +9,12 @@ type Props = {
 
 const spring = { type: 'spring' as const, stiffness: 420, damping: 34 }
 
-/** CoT 思维链折叠条 */
+/** CoT 思维链折叠条（配色跟随剧情页主题 token） */
 export function CotAccordion({ open, onToggle, content }: Props) {
   if (!content.trim()) return null
 
   return (
-    <div className="mb-3 overflow-hidden rounded-xl border border-white/[0.06] bg-black/25">
+    <div className="mb-3 overflow-hidden rounded-xl border border-[var(--sr-border)] bg-[var(--sr-glass)]">
       <button
         type="button"
         onClick={onToggle}
@@ -25,7 +25,7 @@ export function CotAccordion({ open, onToggle, content }: Props) {
           Neural Thought Process
         </span>
         <ChevronDown
-          className={`size-3.5 shrink-0 text-white/40 transition-transform duration-300 ${open ? 'rotate-180' : ''}`}
+          className={`size-3.5 shrink-0 text-[var(--sr-text-faint)] transition-transform duration-300 ${open ? 'rotate-180' : ''}`}
         />
       </button>
       <motion.div
@@ -34,7 +34,7 @@ export function CotAccordion({ open, onToggle, content }: Props) {
         transition={spring}
         className="overflow-hidden"
       >
-        <pre className="mx-3 mb-3 max-h-[200px] overflow-auto rounded-lg border border-white/[0.04] bg-[#0a0a0c] p-3 font-mono text-[11px] leading-relaxed text-emerald-400/80 whitespace-pre-wrap">
+        <pre className="mx-3 mb-3 max-h-[200px] overflow-auto rounded-lg border border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] p-3 font-mono text-[11px] leading-relaxed text-[var(--sr-text-soft)] whitespace-pre-wrap [scrollbar-width:thin]">
           {content}
         </pre>
       </motion.div>

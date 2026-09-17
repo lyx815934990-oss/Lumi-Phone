@@ -10,6 +10,7 @@ import {
   stripMutualFriendChainFromBubbles,
 } from './mutualFriend'
 import type { ApiConfig } from '../api/types'
+import { maybeMarkVisionUnsupportedFromError, resolveApiVisionInput } from '../api/apiModelVision'
 import type {
   Character,
   CharacterPsyche,
@@ -163,7 +164,10 @@ import {
   WECHAT_CHARACTER_PROFILE_IMAGE_APPLY_IMAGE_ROUND_HINT,
   buildCharacterSelfProfileVisionParts,
 } from './wechatCharacterProfileImageApply'
-import { resolveVisionImageUrlToDataUrl } from './wechatVisionImageResolve'
+import {
+  resolveVisionImageUrlToDataUrl,
+  resolveVisionImageUrlsToDataUrls,
+} from './wechatVisionImageResolve'
 import {
   WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX,
 } from './wechatCharacterProfileUpdateApply'
@@ -190,9 +194,10 @@ import {
 } from './characterPsyche/characterPsycheTypes'
 import { WECHAT_GROUP_PSYCHE_SYSTEM_PROMPT } from './wechatGroupPsychePrompt'
 import { logConsole } from './consoleLogger'
-import { VOICE_CALL_SYSTEM_PROMPT } from './voiceCall/voiceCallSystemPrompt'
+import { buildVoiceCallChannelOverride, buildVoiceCallSystemPrompt } from './voiceCall/voiceCallSystemPrompt'
+import { sanitizeVoiceDisplayText } from './voiceCall/voiceCallSegmentUtils'
 import { VOICE_CALL_DECISION_SYSTEM_PROMPT } from './voiceCall/callDecisionSystemPrompt'
-import { buildMbtiPersonalityWorldBookText, getMbtiPersonalityWorldBookName, isMbtiPersonalityWorldBookName, normalizeMbti } from './mbtiPersonalityWorldBook'
+import { buildMbtiPersonalityBiasNote, isMbtiPersonalityWorldBookName, normalizeMbti } from './mbtiPersonalityWorldBook'
 import { formatAnimalArchetypeForCharacterCard } from './newFriendsPersona/animalArchetype'
 import type { WorldBookPromptVoice } from './newFriendsPersona/worldBookPronounGuide'
 import { formatWorldBookItemLineForPrompt } from './newFriendsPersona/worldBookPronounGuide'
@@ -204,9 +209,14 @@ import {
   clampModelMemoryTriggerCategory,
   clampModelMemoryTriggerPrecise,
 } from './memory/memoryTriggerUtils'
-import { buildWorldbookContext } from '../../worldbook/buildWorldbookContext'
+import { buildWorldbookContext, buildWorldbookContextByTier } from '../../worldbook/buildWorldbookContext'
 import type { GlobalWechatPlate } from '../../worldbook/globalWorldBookTypes'
-import { getLoreArchiveBuiltinPresetTogglesSnapshot, getWorldbookLoreEntriesSnapshot } from '../../worldbook/worldbookLoreStore'
+import { buildWechatReplyRomanceSectionsByTier } from '../../worldbook/loreArchiveBuiltinPresets'
+import {
+  getLoreArchiveBuiltinPresetPriorityTiersSnapshot,
+  getLoreArchiveBuiltinPresetTogglesSnapshot,
+  getWorldbookLoreEntriesSnapshot,
+} from '../../worldbook/worldbookLoreStore'
 import {
   buildWechatHeartWhisperSpeakerSplitDirective,
   buildWechatTranscriptSpeakerAttributionLine,
@@ -228,7 +238,7 @@ import {
 } from './newFriendsPersona/worldBookAfterPatch'
 import { resolveTimePromptSection } from './time/wechatTimeUtils'
 
-export { buildWorldbookContext } from '../../worldbook/buildWorldbookContext'
+export { buildWorldbookContext, buildWorldbookContextByTier } from '../../worldbook/buildWorldbookContext'
 export type { GlobalWechatPlate } from '../../worldbook/globalWorldBookTypes'
 
 function resolveWorldbookLoreInjection(params: {
@@ -240,6 +250,24 @@ function resolveWorldbookLoreInjection(params: {
   if (pre) return pre
   const ids = [...new Set((params.chatMemberIds ?? []).map((x) => String(x ?? '').trim()).filter(Boolean))]
   return buildWorldbookContext(ids, getWorldbookLoreEntriesSnapshot(), params.globalWechatPlate)
+}
+
+function resolveWorldbookLoreByTier(params: {
+  worldbookLoreContext?: string
+  chatMemberIds?: string[]
+  globalWechatPlate?: GlobalWechatPlate
+}): Record<1 | 2 | 3, string> {
+  const pre = params.worldbookLoreContext?.trim()
+  if (pre) {
+    // 预拼块视为档2（与旧「同级最高」行为一致）
+    return { 1: '', 2: pre, 3: '' }
+  }
+  const ids = [...new Set((params.chatMemberIds ?? []).map((x) => String(x ?? '').trim()).filter(Boolean))]
+  return buildWorldbookContextByTier(ids, getWorldbookLoreEntriesSnapshot(), params.globalWechatPlate)
+}
+
+function joinArchiveTierBlocks(...parts: Array<string | undefined | null>): string {
+  return parts.map((p) => String(p ?? '').trim()).filter(Boolean).join('\n\n')
 }
 
 function resolveChatWorldbookMemberIds(
@@ -434,13 +462,11 @@ export function buildWorldBookText(
   const voice: WorldBookPromptVoice = opts?.voice ?? 'character_card'
   const subjectName = String(character.name ?? '').trim() || (voice === 'player_identity' ? '用户' : '该角色')
   const currentMbti = normalizeMbti(character.mbti)
-  const currentMbtiWorldBookName = currentMbti ? getMbtiPersonalityWorldBookName(currentMbti) : null
 
-  // 只保留“当前 MBTI 对应”的人格世界书；避免旧 MBTI 世界书在开启时造成重复/冲突。
+  // 不注入「××人格设定」长文世界书；仅保留一行气质偏向，避免与人设冲突。
   const existingEnabledWorldBooks = (character.worldBooks ?? []).filter((w) => {
     if (!w?.enabled) return false
-    if (!currentMbtiWorldBookName) return true
-    if (isMbtiPersonalityWorldBookName(w.name) && w.name !== currentMbtiWorldBookName) return false
+    if (isMbtiPersonalityWorldBookName(w.name)) return false
     return true
   })
 
@@ -463,18 +489,8 @@ export function buildWorldBookText(
     })
     .filter(Boolean)
 
-  const hasCurrentMbtiContent = Boolean(
-    currentMbtiWorldBookName &&
-      existingEnabledWorldBooks.some(
-        (w) =>
-          w.name === currentMbtiWorldBookName &&
-          (w.items ?? []).some((it) => it.enabled && String(it.content || '').trim()),
-      ),
-  )
-
-  const injectedMbtiWorldBookText = currentMbti && !hasCurrentMbtiContent ? buildMbtiPersonalityWorldBookText(currentMbti) : ''
-
-  const parts = [injectedMbtiWorldBookText, ...existingParts].filter(Boolean)
+  const mbtiBias = currentMbti ? buildMbtiPersonalityBiasNote(currentMbti) : ''
+  const parts = [mbtiBias, ...existingParts].filter(Boolean)
   const raw = parts.join('\n\n')
   const cap = Math.max(200, maxChars)
   if (raw.length <= cap) return raw
@@ -491,12 +507,10 @@ export async function buildWorldBookTextForPrompt(
   const voice: WorldBookPromptVoice = opts?.voice ?? 'character_card'
   const subjectName = String(character.name ?? '').trim() || (voice === 'player_identity' ? '用户' : '该角色')
   const currentMbti = normalizeMbti(character.mbti)
-  const currentMbtiWorldBookName = currentMbti ? getMbtiPersonalityWorldBookName(currentMbti) : null
 
   const existingEnabledWorldBooks = (character.worldBooks ?? []).filter((w) => {
     if (!w?.enabled) return false
-    if (!currentMbtiWorldBookName) return true
-    if (isMbtiPersonalityWorldBookName(w.name) && w.name !== currentMbtiWorldBookName) return false
+    if (isMbtiPersonalityWorldBookName(w.name)) return false
     return true
   })
 
@@ -525,18 +539,8 @@ export async function buildWorldBookTextForPrompt(
     }),
   )
 
-  const hasCurrentMbtiContent = Boolean(
-    currentMbtiWorldBookName &&
-      existingEnabledWorldBooks.some(
-        (w) =>
-          w.name === currentMbtiWorldBookName &&
-          (w.items ?? []).some((it) => it.enabled && String(it.content || '').trim()),
-      ),
-  )
-
-  const injectedMbtiWorldBookText = currentMbti && !hasCurrentMbtiContent ? buildMbtiPersonalityWorldBookText(currentMbti) : ''
-
-  const parts = [injectedMbtiWorldBookText, ...existingParts.filter(Boolean)]
+  const mbtiBias = currentMbti ? buildMbtiPersonalityBiasNote(currentMbti) : ''
+  const parts = [mbtiBias, ...existingParts.filter(Boolean)]
   const raw = parts.join('\n\n')
   const cap = Math.max(200, maxChars)
   if (raw.length <= cap) return raw
@@ -639,7 +643,9 @@ export function buildCharacterCard(
     c.birthdayMD ? `生日：${c.birthdayMD}` : '',
     c.zodiac ? `星座：${c.zodiac}` : '',
     displayIdentity ? `身份：${displayIdentity}` : '',
-    c.mbti ? `MBTI：${c.mbti}` : '',
+    c.mbti
+      ? `气质偏向：${c.mbti}（弱参考，与人设冲突时以人设为准；禁止正文点名类型）`
+      : '',
     formatAnimalArchetypeForCharacterCard(c.animalArchetype),
     c.wechatNickname ? `微信昵称：${c.wechatNickname}` : '',
     c.wechatSignature ? `微信签名：${c.wechatSignature}` : '',
@@ -908,12 +914,22 @@ export function buildSystemContent(params: {
           currentWindowSpeakerLabel: sessionExpandNames.userName,
         })
       : ''
-  const loreInject = resolveWorldbookLoreInjection({
+  const loreByTier = resolveWorldbookLoreByTier({
     worldbookLoreContext: params.worldbookLoreContext,
     chatMemberIds: params.chatMemberIds,
     globalWechatPlate: params.globalWechatPlate,
   })
-  const loreBlock = loreInject ? `\n\n${loreInject}\n` : ''
+  const romanceByTier = buildWechatReplyRomanceSectionsByTier({
+    toggles: getLoreArchiveBuiltinPresetTogglesSnapshot(),
+    priorityTiers: getLoreArchiveBuiltinPresetPriorityTiersSnapshot(),
+  })
+  const archiveTier1 = joinArchiveTierBlocks(loreByTier[1], romanceByTier[1])
+  const archiveTier2 = joinArchiveTierBlocks(loreByTier[2], romanceByTier[2])
+  const archiveTier3 = joinArchiveTierBlocks(loreByTier[3], romanceByTier[3])
+  const loreBlockAll = joinArchiveTierBlocks(archiveTier1, archiveTier2, archiveTier3)
+  const loreBlockTier1 = archiveTier1 ? `\n\n${archiveTier1}\n` : ''
+  /** 贴纸禁令等仍扫全档合并正文；助手模式仍整块注入 */
+  const loreBlock = loreBlockAll ? `\n\n${loreBlockAll}\n` : ''
   const player = params.playerDisplayName.trim() || '朋友'
   const attributionLine =
     params.promptMode === 'lumi-assistant'
@@ -1007,19 +1023,20 @@ export function buildSystemContent(params: {
     : isRegenBias
       ? `\n\n---\n【效力层级·重新回复】本轮对上一气泡不满意重写。` +
         `「本轮回复偏向」为**内容最高优先级**；其次服从**角色档案、私藏侧写、可变人生账本、人设世界书与全局档案室世界书**` +
-        `（同级最高设定；侧写规范 char 如何看待/称呼/对待 user，账本规范本线年龄/身份/资产等剧情事实，世界书管性格禁忌与关系站位）；` +
+        `（档案室可按档1/2/3：档1仅次于输出规范高于人设；档2与人设同级但冲突跟全局；档3次于人设；侧写规范 char 如何看待/称呼/对待 user，账本规范本线年龄/身份/资产等剧情事实，世界书管性格禁忌与关系站位）；` +
         `输出格式硬约束（换行分条/禁 JSON/Markdown）次之；` +
         `不得捏造与「尚未总结」「剧情时间轴·当前状态」「尾声延展」明文冲突的已定事实。\n`
       : `\n\n---\n【效力层级·微信私聊｜七板块记忆参考】` +
         `**【贴人设活人感 × 反爹味 × 反油腻】并列置顶铁则**（须同时满足；照顾型年上亦零爹味油腻豁免）> ` +
-        `**角色档案 + 私藏侧写 + 可变人生账本 + 人设世界书 + 全局档案室世界书**` +
-        `（同级最高设定；侧写＝char 对 user 的稳定认知与对待方式；账本＝本线当前年龄/身份/资产等剧情事实；世界书＝性格禁忌与关系站位）> 输出格式硬约束 > 玩家身份铁律 > 世界背景/NPC网/尾声延展·关系 > ` +
-        `内置恋爱参考（与上列同级硬底线）> ` +
+        `输出格式硬约束 ≈ **档案室档1**（若有；仅次于输出规范、高于人设）> ` +
+        `**角色档案 + 私藏侧写 + 可变人生账本 + 人设世界书 + 档案室档2**` +
+        `（档2与人设同级；与人设矛盾时仍跟随全局档案；侧写＝char 对 user 的稳定认知与对待方式；账本＝本线当前年龄/身份/资产等剧情事实；世界书＝性格禁忌与关系站位）> ` +
+        `**档案室档3**（若有；次于人设）> 玩家身份铁律 > 世界背景/NPC网/尾声延展·关系 > ` +
         `3.11/3.12 等细则（落实上述铁则）> ` +
         `①剧情时间轴·当前状态 > ⑤未总结·线上私聊原文（末尾最新）> 近端·固定线上私聊原文（必注全文；轮数可调）> ④近端·最近2轮线下剧情原文 > ` +
         `③近端·更早5轮线下摘要 > ②向量召回·历史剧情摘要（至多5）> ` +
         `⑥向量召回·线上长期记忆（至多5）≈ ⑦关键词命中·线上长期记忆。` +
-        `人设与全局档案冲突时取更具体硬约束；本轮用户消息决定接话方向，**不得**改写已定事实。` +
+        `本轮用户消息决定接话方向，**不得**改写已定事实。` +
         `**私藏侧写例外**：侧写只是 char 对 user 的**当前了解**（会变）。` +
         `若与用户本轮反应/自述冲突，**一切以用户当前反应为准**——接话可承认旧印象并更新认知（「我以为…我记住了」类），` +
         `并在侧写答卷覆盖对应字段（含食物、称呼、亲密偏好等）；禁止用过时侧写抬杠。\n`
@@ -1073,7 +1090,15 @@ export function buildSystemContent(params: {
       extra += `\n---\n【世界背景（次于档案与世界书、人设世界书；若与下方世界书冲突，以世界书为准）】\n${wbg}\n`
     }
     if (wb.trim()) {
-      extra += `\n---\n【世界书条目（人设绑定·与全局档案室同级最高设定；条目间冲突取更具体硬约束）】\n${wb}\n`
+      extra += `\n---\n【世界书条目（人设绑定·与档案室档2同级；与档2冲突时跟随全局档案；与档1冲突时以档1为准；档3不得覆盖本段明文）】\n${wb}\n`
+    }
+    // 档2：与人设世界书同级（冲突跟全局；紧接人设之后注入）
+    if (archiveTier2.trim()) {
+      extra += `\n---\n${archiveTier2.trim()}\n`
+    }
+    // 档3：次于人设世界书
+    if (archiveTier3.trim()) {
+      extra += `\n---\n${archiveTier3.trim()}\n`
     }
     const chatAfterDyn = buildChatAfterWorldBookDynamicSection(params.character)
     if (chatAfterDyn.trim()) {
@@ -1081,6 +1106,8 @@ export function buildSystemContent(params: {
     }
   } else {
     extra += `\n\n---\n【当前状态】未绑定完整人设档案（无世界书）。请以友善、有分寸的微信好友身份交谈，仍须遵守上述通用铁则，且绝不暴露非人类身份。\n`
+    if (archiveTier2.trim()) extra += `\n---\n${archiveTier2.trim()}\n`
+    if (archiveTier3.trim()) extra += `\n---\n${archiveTier3.trim()}\n`
   }
 
   const networkNpcPronoun =
@@ -1092,8 +1119,7 @@ export function buildSystemContent(params: {
   const mutualFriendChainBlock = mutualFriendChain ? `\n\n---\n${mutualFriendChain}\n` : ''
   /**
    * 效力层级（高→低）：
-   * 重新回复偏向（若有）→ 角色档案/私藏侧写/可变人生账本/人设世界书/全局档案室（同级）→ 输出格式硬约束 → 玩家身份 →
-   * NPC/尾声 → 时间轴·当前状态 → 尚未总结/线下末尾 → 语义召回/近端 → 向量长期记忆
+   * 重新回复偏向（若有）→ 输出规范 → 档案室档1 → 角色档案/侧写/账本/人设世界书/档案室档2 → 档案室档3 → …
    */
   const roleplayPrompt =
     params.promptMode === 'persona' && params.character && params.relationshipStage
@@ -1101,8 +1127,8 @@ export function buildSystemContent(params: {
       : WECHAT_ROLEPLAY_SYSTEM_PROMPT
   const rawMain =
     `${roleplayPrompt}${priorityLadder}` +
-    `${replyBias}${regenAppendix}${earlyOutput}${fictionCot}` +
-    `${pi}${userPulse}${loreBlock}${extra}${networkRelationships}${networkNpcPronoun}${mutualFriendChainBlock}` +
+    `${replyBias}${regenAppendix}${earlyOutput}${loreBlockTier1}${fictionCot}` +
+    `${pi}${userPulse}${extra}${networkRelationships}${networkNpcPronoun}${mutualFriendChainBlock}` +
     `${memoryTail}` +
     `${altProbe}${currentTime}${schedule}${peerLine}`
   return appendLinkPreview(linkedExpand(rawMain))
@@ -1707,7 +1733,7 @@ function buildWechatOutputProtocolAppendix(
   heartWhisperKind: 'private' | 'group' = 'private',
 ): string {
   const toggles = getLoreArchiveBuiltinPresetTogglesSnapshot()
-  const output = buildWechatReplyOutputAppendix(toggles)
+  const output = buildWechatReplyOutputAppendix(toggles, { omitRomance: true })
   const lang = buildWechatReplyOutputLanguageAppendix(replyOutputLanguage, replyVoiceLanguage, {
     translationSyncEnabled,
     translationLanguage,
@@ -1753,7 +1779,7 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   /** 「支持发图」：思维链增加发图判定 */
   includeCharacterImageSend?: boolean
   includeInternetMemeLexicon?: boolean
-  /** 「语感同化 / 夫妻相」：按关系贴近用户表层说话习惯 */
+  /** 「语气同化」：按关系贴近用户表层说话习惯 */
   includeMimicUserSpeakingStyle?: boolean
   replyOutputLanguage?: string
   replyVoiceLanguage?: string
@@ -1840,7 +1866,7 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   return appendWorldBookAfterPatchOutputRules(
     params.character,
     false,
-    `${buildWechatReplyOutputAppendix(toggles)}${forwardBlock}${pulseDmShotBlock}${thinkingBlock}${profileImageBlock}${profileStateBlock}${memeLexiconBlock}${mimicStyleBlock}${langAppend}\n\n${WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX}${pinCatalog ? `\n\n${pinCatalog}` : ''}${userMomentsCatalog ? `\n\n${userMomentsCatalog}` : ''}\n\n${WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_PIN_APPENDIX}\n\n${WECHAT_CHARACTER_PRESENCE_MURMUR_APPENDIX}`,
+    `${buildWechatReplyOutputAppendix(toggles, { omitRomance: true })}${forwardBlock}${pulseDmShotBlock}${thinkingBlock}${profileImageBlock}${profileStateBlock}${memeLexiconBlock}${mimicStyleBlock}${langAppend}\n\n${WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX}${pinCatalog ? `\n\n${pinCatalog}` : ''}${userMomentsCatalog ? `\n\n${userMomentsCatalog}` : ''}\n\n${WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_PIN_APPENDIX}\n\n${WECHAT_CHARACTER_PRESENCE_MURMUR_APPENDIX}`,
   )
 }
 
@@ -1930,6 +1956,17 @@ async function callWeChatPeerReplyChat(
     max_tokens?: number
   },
 ): Promise<string> {
+  const chatOpts = {
+    temperature: opts.temperature,
+    ...(opts.max_tokens != null ? { max_tokens: opts.max_tokens } : {}),
+  }
+
+  const visionPolicy = resolveApiVisionInput(cfg)
+  if (!visionPolicy.enabled) {
+    logConsole('ai', `[AI识图] 已跳过带图 · ${visionPolicy.reason}`)
+    return openAiCompatibleChat(cfg, messages, { ...chatOpts, diagAttemptLabel: '纯文本' })
+  }
+
   const memUrls = (opts.memoryMomentImages ?? []).map((u) => u.trim()).filter(Boolean)
   const selfPartsRaw = opts.characterSelfProfileVisionParts ?? []
   const userAvatarUrlRaw = opts.playerWechatAvatarUrl?.trim() || ''
@@ -1962,18 +1999,67 @@ async function callWeChatPeerReplyChat(
     visionBlocks.push({ message: buildMemoryMomentImagesUserMessage(memUrlsResolved) })
   }
 
-  const chatOpts = {
-    temperature: opts.temperature,
-    ...(opts.max_tokens != null ? { max_tokens: opts.max_tokens } : {}),
+  if (!visionBlocks.length) {
+    logConsole('ai', `[AI识图] 策略允许识图，但本轮无可注入图片 · ${visionPolicy.reason}`)
+    return openAiCompatibleChat(cfg, messages, { ...chatOpts, diagAttemptLabel: '纯文本' })
   }
 
-  if (!visionBlocks.length) {
-    return openAiCompatibleChat(cfg, messages, chatOpts)
+  const visionMsgs = injectPreHistoryVisionMessages(messages, visionBlocks)
+  const selfN = selfPartsResolved.length
+  const memN = memUrlsResolved.length
+  const avatarN = userAvatarUrl ? 1 : 0
+  let visionImageBytes = 0
+  let visionImageCount = 0
+  for (const m of visionMsgs) {
+    const c = m && typeof m === 'object' ? (m as Record<string, unknown>).content : null
+    if (!Array.isArray(c)) continue
+    for (const p of c) {
+      const part = p && typeof p === 'object' ? (p as Record<string, unknown>) : null
+      if (!part) continue
+      const imageUrl =
+        part.image_url && typeof part.image_url === 'object'
+          ? (part.image_url as Record<string, unknown>).url
+          : part.image_url
+      const url1 = typeof imageUrl === 'string' ? imageUrl : typeof part.url === 'string' ? part.url : ''
+      if (!url1 && part.type !== 'image_url') continue
+      visionImageCount += 1
+      if (typeof url1 === 'string' && url1.startsWith('data:')) {
+        const b64 = url1.replace(/^data:[^,]*,/, '')
+        visionImageBytes += Math.floor((b64.length * 3) / 4)
+      }
+    }
   }
+  logConsole(
+    'ai',
+    `[AI识图注入] ${visionPolicy.reason} · 角色资料图 ${selfN} · 用户头像 ${avatarN} · 记忆配图 ${memN} · 实发 ${visionImageCount} 张` +
+      (visionImageBytes > 0 ? ` · 约 ${Math.max(1, Math.round(visionImageBytes / 1024))}KB` : ''),
+  )
+
   try {
-    return await openAiCompatibleChatAny(cfg, injectPreHistoryVisionMessages(messages, visionBlocks), chatOpts)
-  } catch {
-    return openAiCompatibleChat(cfg, messages, chatOpts)
+    return await openAiCompatibleChatAny(cfg, visionMsgs, {
+      ...chatOpts,
+      diagAttemptLabel: '识图多模态',
+    })
+  } catch (visionErr) {
+    const msg = visionErr instanceof Error ? visionErr.message : String(visionErr)
+    logConsole('ai', `[AI识图] 多模态失败，回退纯文本重试：${msg.slice(0, 240)}`)
+    try {
+      const text = await openAiCompatibleChat(cfg, messages, {
+        ...chatOpts,
+        diagAttemptLabel: '纯文本回退',
+      })
+      logConsole('ai', '[AI识图] 纯文本回退成功（说明刚才的 400 很可能就是图片触发的）')
+      maybeMarkVisionUnsupportedFromError(cfg.modelId || '', visionErr)
+      return text
+    } catch (textErr) {
+      logConsole(
+        'ai',
+        `[AI识图] 纯文本回退也失败（不全是图片问题）：${
+          textErr instanceof Error ? textErr.message.slice(0, 240) : String(textErr)
+        }`,
+      )
+      throw textErr
+    }
   }
 }
 
@@ -2390,11 +2476,24 @@ export async function requestWeChatVoiceCallReplyText(params: {
   chatMemberIds?: string[]
   globalWechatPlate?: GlobalWechatPlate
   worldBookPlaceholderIdMap?: Readonly<Record<string, string>>
+  /** 是否允许模型输出 MiniMax 语气词 */
+  allowSynthToneTokens?: boolean
+  /** 是否允许模型输出情绪标签 */
+  allowSynthEmotion?: boolean
+  /** @deprecated 请用 allowSynthToneTokens / allowSynthEmotion */
+  allowSynthToneEmotion?: boolean
 }): Promise<string> {
   const cfg = params.apiConfig
   if (!cfg?.apiUrl?.trim() || !cfg.apiKey?.trim() || !cfg.modelId?.trim()) {
     throw new Error('未配置 AI API')
   }
+  const allowToneTokens =
+    params.allowSynthToneTokens === true ||
+    (params.allowSynthToneTokens == null && params.allowSynthToneEmotion === true)
+  const allowEmotion =
+    params.allowSynthEmotion === true ||
+    (params.allowSynthEmotion == null && params.allowSynthToneEmotion === true)
+  const promptFlags = { allowToneTokens, allowEmotion }
   const base = await materializeSystemContent({
     character: params.character,
     playerIdentity: params.playerIdentity,
@@ -2417,7 +2516,11 @@ export async function requestWeChatVoiceCallReplyText(params: {
     globalWechatPlate: params.globalWechatPlate,
     worldBookPlaceholderIdMap: params.worldBookPlaceholderIdMap,
   })
-  const system = `${base}\n\n---\n【语音通话场景规则】\n${VOICE_CALL_SYSTEM_PROMPT}\n`
+  const system =
+    `${buildVoiceCallChannelOverride(promptFlags)}\n\n` +
+    `${base}\n\n---\n【语音通话场景规则】\n${buildVoiceCallSystemPrompt(promptFlags)}\n` +
+    `\n---\n【再强调】本轮须含半角 ()：环境音与/或语气嗓音听感，优先单独成行；若要结束通话须单独一行「语音通话 挂断」；私聊「禁旁白」对本通道无效。\n` +
+    `\n【本通上下文】对话历史里含「当前这通语音通话」已发生的对白：必须紧接上文回应；用户已明确做过/说过的事（如已喝水）禁止再催、再问、当作没发生。\n`
   const history = transcriptToMessages(params.transcript)
   const messages: OpenAiCompatibleMessage[] = [{ role: 'system', content: system }, ...history]
   const text = await openAiCompatibleChat(cfg, messages, {
@@ -2425,7 +2528,8 @@ export async function requestWeChatVoiceCallReplyText(params: {
     max_tokens: 800,
   })
   const cleaned = stripAssistantFence(text)
-  return cleaned.trim() || '…'
+  const { rest } = extractWorldBookAfterPatchBlock(cleaned)
+  return sanitizeVoiceDisplayText(rest) || '…'
 }
 
 export type VoiceCallDecision = {
@@ -2539,11 +2643,12 @@ export async function requestWeChatVoiceCallDecision(params: {
 const WECHAT_IMAGE_REPLY_APPENDIX = `
 现在我发送了一张图片，请你以[角色姓名]的身份，结合我们之前的对话和记忆，对这张图片做出自然的反应。
 不要像机器人一样客观描述图片，要像真人聊天一样表达你的感受、疑问或评论。
+【本轮识图优先 · 覆盖反脑补】本条 user 消息已附带真实图片（多模态）；「线上文字频道看不见表情/环境」只约束纯文字回合，**不适用于本轮已附上的图**。须按画面内容接话，禁止用「隔着屏幕看不到/没图」敷衍。
 硬性要求（必须遵守）：
 - 你必须基于图片内容说出至少 2 个「具体可核对」的细节（例如：人物/物体、环境、文字、颜色、动作、构图等）。禁止只说“看到了/收到啦/不错哦”这种空话。
 - 你必须给出 1 句带情绪/立场的反应（喜欢、惊讶、担心、好奇、吐槽都可以，但要贴合场景）。
 - 你必须提出至少 1 个自然的追问或下一步建议，让对话继续。
-- 如果你实际上没有收到图片内容、无法看图或看不清：必须直接说明“我没看到图/看不清”，并引导我用文字描述或重发；严禁假装看到了。
+- 仅当本条消息里确实没有任何图片附件、或画面完全糊到无法辨认时：才可说明“我没看到图/看不清”，并引导我用文字描述或重发；严禁在已附上清晰图时假装看不到。
 - 回复请用**换行分隔**：每一行一条微信气泡（与日常聊天相同），不要整段挤在一行。
 例如（仅示例禁止照搬，照搬罚款十亿美元）：
 - 美食照片："哇看起来好好吃！你在哪里吃的呀？"
@@ -2814,10 +2919,66 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
         includeInternetMemeLexicon: params.includeInternetMemeLexicon === true,
         includeMimicUserSpeakingStyle: params.includeMimicUserSpeakingStyle === true,
       })
-  const memoryMomentImages = (params.longTermMemoryMomentImages ?? [])
-    .map((u) => u.trim())
-    .filter(Boolean)
-  const playerWechatAvatarUrl = params.playerWechatAvatarUrl?.trim() || ''
+  const imageAppendixTitle = params.userImageIsScreenShare ? '【一起刷·屏幕画面附加要求】' : '【图片消息附加要求】'
+  // 与纯文字链路一致：头像/记忆配图须先转成 data URL，否则站内相对路径会拖垮整次识图请求
+  const visionPolicy = resolveApiVisionInput(cfg)
+  if (!visionPolicy.enabled) {
+    logConsole('ai', `[识图] 已跳过用户发图识图 · ${visionPolicy.reason}`)
+    const historySkip = transcriptToMessages(params.transcript, { groupChat: params.groupChatTranscript })
+    const skipSystem = `${busyPrefix ? `${busyPrefix}\n\n` : ''}${base}\n\n${recallGuide}\n\n---\n${imageAppendixTitle}\n${imgRules}\n\n${outputAppendix}${
+      params.userImageIsScreenShare
+        ? ''
+        : `${mediaFreqBlock ? `\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n${danmakuInstruction}` : ''}\n\n${stickerBlock}${imageGenBlock ? `\n\n${imageGenBlock}` : ''}`
+    }`
+    const fallbackMessages: OpenAiCompatibleMessage[] = [
+      { role: 'system', content: skipSystem },
+      ...historySkip,
+      ...(params.perRoundMemoryAppendix?.trim()
+        ? [{ role: 'user' as const, content: params.perRoundMemoryAppendix.trim() }]
+        : []),
+      {
+        role: 'user',
+        content: params.userImageIsScreenShare
+          ? '我正在给你看我的手机屏幕画面，但你当前模型/接口未开启识图，看不见画面。请用自然聊天语气说明这一点，并让我用文字描述屏幕内容。'
+          : params.userImageIsSticker
+            ? '我发了一张表情包，但你当前模型/接口未开启识图。请自然说明你看不见图，让我用文字表达。'
+            : '我刚发了一张图片，但你当前模型/接口未开启识图。请用自然的微信语气说明你看不见图片，并引导我用文字描述。',
+      },
+    ]
+    const text = await openAiCompatibleChat(cfg, fallbackMessages, {
+      temperature: isLumi ? 0.62 : 0.82,
+      diagAttemptLabel: '纯文本（跳过识图）',
+    })
+    const pSkip = parseWeChatPeerReplyWithThinking(text.trim() ? text : '收到。')
+    const bSkip = pSkip.bubbles
+    logWeChatAiReplyDebug('vision-skipped-text', text, bSkip, pSkip.forwardHistory, pSkip.mutualFriendChain)
+    return {
+      bubbles: bSkip.length ? bSkip : [text.trim() || '收到。'],
+      orderedSegments: pSkip.orderedSegments?.length
+        ? pSkip.orderedSegments
+        : (bSkip.length ? bSkip : [text.trim() || '收到。']).map((t) => ({ kind: 'bubble' as const, text: t })),
+      thinking: pSkip.thinking,
+      danmakuLines: pSkip.danmakuLines,
+      worldBookPatches: pSkip.worldBookPatches,
+      worldBookEpilogueJudged: pSkip.worldBookEpilogueJudged,
+      observationNotesPatches: pSkip.observationNotesPatches,
+      observationNotesJudged: pSkip.observationNotesJudged,
+      lifeLedgerPatches: pSkip.lifeLedgerPatches,
+      lifeLedgerJudged: pSkip.lifeLedgerJudged,
+      forwardHistory: pSkip.forwardHistory,
+      mutualFriendChain: pSkip.mutualFriendChain,
+      heartWhisper: pSkip.heartWhisper,
+      groupHeartWhisperEntries: pSkip.groupHeartWhisperEntries,
+    }
+  }
+
+  const memoryMomentImages = await resolveVisionImageUrlsToDataUrls(
+    (params.longTermMemoryMomentImages ?? []).map((u) => u.trim()).filter(Boolean),
+  )
+  const playerWechatAvatarUrlRaw = params.playerWechatAvatarUrl?.trim() || ''
+  const playerWechatAvatarUrl = playerWechatAvatarUrlRaw
+    ? (await resolveVisionImageUrlToDataUrl(playerWechatAvatarUrlRaw)) || ''
+    : ''
   const userAvatarVisionMsg = playerWechatAvatarUrl
     ? buildUserChatAvatarVisionUserMessage(playerWechatAvatarUrl)
     : null
@@ -2827,7 +2988,6 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   const userChatAvatarAppendix = playerWechatAvatarUrl
     ? `\n\n---\n${WECHAT_USER_CHAT_AVATAR_APPENDIX}\n`
     : ''
-  const imageAppendixTitle = params.userImageIsScreenShare ? '【一起刷·屏幕画面附加要求】' : '【图片消息附加要求】'
   const system = `${busyPrefix ? `${busyPrefix}\n\n` : ''}${base}${userChatAvatarAppendix}${memoryImagesAppendix}\n\n${recallGuide}\n\n---\n${imageAppendixTitle}\n${imgRules}\n\n${outputAppendix}${
     params.userImageIsScreenShare
       ? ''
@@ -2843,9 +3003,14 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
     : params.userImageIsSticker
       ? '（我发来了一张表情包）'
       : '（我发来了一张图片）'
+  const visionApproxKb = Math.max(1, Math.round(params.imageBase64.length / 1024))
   logConsole(
     'ai',
-    `图片多模态请求：apiUrl=${cfg.apiUrl} modelId=${cfg.modelId} mime=${params.imageMime} b64Len=${params.imageBase64.length}${params.userImageIsScreenShare ? ' screenShare=1' : ''}`,
+    `[识图] 开始 · ${cfg.modelId} · ${params.imageMime} · 约 ${visionApproxKb}KB` +
+      `${playerWechatAvatarUrl ? ' · 已附用户头像' : ''}` +
+      `${memoryMomentImages.length ? ` · 记忆配图 ${memoryMomentImages.length} 张` : ''}` +
+      `${params.userImageIsScreenShare ? ' · 一起刷画面' : ''}` +
+      ` · ${cfg.apiUrl}`,
   )
   const visionMessages: unknown[] = [
     { role: 'system', content: system },
@@ -2864,12 +3029,19 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
     },
   ]
 
+  const clipVisionErr = (err: unknown) => {
+    const raw = err instanceof Error ? err.message : String(err)
+    const t = raw.replace(/\s+/g, ' ').trim()
+    return t.length > 220 ? `${t.slice(0, 220)}…` : t || '未知错误'
+  }
+
   try {
     const text = await openAiCompatibleChatAny(cfg, visionMessages, {
       temperature: isLumi ? 0.62 : 0.82,
     })
     const p0 = parseWeChatPeerReplyWithThinking(text)
     const b0 = p0.bubbles
+    logConsole('ai', `[识图] 成功 · 模型已收到图片，将按画面接话`)
     logWeChatAiReplyDebug('vision-main', text, b0, p0.forwardHistory, p0.mutualFriendChain)
     return {
       bubbles: b0.length ? b0 : ['收到。'],
@@ -2889,10 +3061,11 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       heartWhisper: p0.heartWhisper,
       groupHeartWhisperEntries: p0.groupHeartWhisperEntries,
     }
-  } catch {
+  } catch (visionErr) {
+    maybeMarkVisionUnsupportedFromError(cfg.modelId || '', visionErr)
     logConsole(
       'ai',
-      `图片多模态调用失败：apiUrl=${cfg.apiUrl} modelId=${cfg.modelId}（将尝试兼容变体与回退）`,
+      `[识图] 主格式失败 · ${clipVisionErr(visionErr)}（将试兼容格式）`,
     )
     // 兼容少数“伪 OpenAI”实现：对 image_url 字段或 content parts 结构要求不同。
     // 在彻底回退到纯文本前，尝试两种常见变体，尽量让用户在同一套 API 下也能看图回复。
@@ -2937,10 +3110,11 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
           ],
         },
       ]
-      return await tryAlt(alt1)
-    } catch {
-      logConsole('ai', '图片多模态调用失败：兼容变体1也失败')
-      // ignore and continue
+      const altOk = await tryAlt(alt1)
+      logConsole('ai', `[识图] 兼容格式1成功 · 模型已收到图片`)
+      return altOk
+    } catch (alt1Err) {
+      logConsole('ai', `[识图] 兼容格式1失败 · ${clipVisionErr(alt1Err)}`)
     }
     try {
       // 变体 2：部分实现使用 url 字段而非 image_url 包裹
@@ -2957,10 +3131,14 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
           ],
         },
       ]
-      return await tryAlt(alt2)
-    } catch {
-      logConsole('ai', '图片多模态调用失败：兼容变体2也失败，进入纯文本回退')
-      // ignore and fallback
+      const altOk = await tryAlt(alt2)
+      logConsole('ai', `[识图] 兼容格式2成功 · 模型已收到图片`)
+      return altOk
+    } catch (alt2Err) {
+      logConsole(
+        'ai',
+        `[识图] 兼容格式2失败 · ${clipVisionErr(alt2Err)} → 已回退纯文本（角色会说看不见图；请检查接口是否支持识图 / 模型是否为多模态）`,
+      )
     }
 
     // 回退：仍交给模型输出“看不见图片”，不做本地兜底文案
@@ -5497,15 +5675,22 @@ export async function requestWeChatGroupMultiSpeakerReplyBubblesWithImage(params
   if (!cfg?.apiUrl?.trim() || !cfg.apiKey?.trim() || !cfg.modelId?.trim()) {
     throw new Error('未配置 AI API')
   }
-  const memoryMomentImages = (params.longTermMemoryMomentImages ?? [])
-    .map((u) => u.trim())
-    .filter(Boolean)
+  const memoryMomentImages = await resolveVisionImageUrlsToDataUrls(
+    (params.longTermMemoryMomentImages ?? []).map((u) => u.trim()).filter(Boolean),
+  )
   const memoryImagesAppendix = memoryMomentImages.length
     ? `\n\n---\n${WECHAT_MEMORY_MOMENT_IMAGES_APPENDIX}\n`
     : ''
   const history = transcriptToMessages(params.transcript, { groupChat: true })
   const dataUrl = `data:${params.imageMime};base64,${params.imageBase64}`
   const visionUserText = params.userImageIsSticker ? '（我发来了一张表情包）' : '（我发来了一张图片）'
+  const visionApproxKb = Math.max(1, Math.round(params.imageBase64.length / 1024))
+  logConsole(
+    'ai',
+    `[识图·群聊] 开始 · ${cfg.modelId} · ${params.imageMime} · 约 ${visionApproxKb}KB` +
+      `${memoryMomentImages.length ? ` · 记忆配图 ${memoryMomentImages.length} 张` : ''}` +
+      ` · ${cfg.apiUrl}`,
+  )
   const visionMessages: unknown[] = [
     { role: 'system', content: `${params.systemContent}${memoryImagesAppendix}` },
     ...(memoryMomentImages.length ? [buildMemoryMomentImagesUserMessage(memoryMomentImages)] : []),
@@ -5525,9 +5710,12 @@ export async function requestWeChatGroupMultiSpeakerReplyBubblesWithImage(params
     const text = await openAiCompatibleChatAny(cfg, visionMessages, {
       temperature: params.promptMode === 'lumi-assistant' ? 0.62 : 0.82,
     })
+    logConsole('ai', `[识图·群聊] 成功 · 模型已收到图片`)
     return parse(text)
-  } catch {
-    logConsole('ai', `群聊多说话人带图：主视觉调用失败，尝试兼容变体`)
+  } catch (visionErr) {
+    const m = visionErr instanceof Error ? visionErr.message : String(visionErr)
+    const clipped = m.replace(/\s+/g, ' ').trim().slice(0, 220)
+    logConsole('ai', `[识图·群聊] 主格式失败 · ${clipped || '未知错误'}（将试兼容格式）`)
   }
   try {
     const alt1: unknown[] = [
@@ -5545,9 +5733,15 @@ export async function requestWeChatGroupMultiSpeakerReplyBubblesWithImage(params
     const text = await openAiCompatibleChatAny(cfg, alt1, {
       temperature: params.promptMode === 'lumi-assistant' ? 0.62 : 0.82,
     })
+    logConsole('ai', `[识图·群聊] 兼容格式成功 · 模型已收到图片`)
     return parse(text)
-  } catch {
-    /* continue */
+  } catch (altErr) {
+    const m = altErr instanceof Error ? altErr.message : String(altErr)
+    const clipped = m.replace(/\s+/g, ' ').trim().slice(0, 220)
+    logConsole(
+      'ai',
+      `[识图·群聊] 兼容格式失败 · ${clipped || '未知错误'} → 已回退纯文本（成员会说看不见图）`,
+    )
   }
   const fallbackMessages: OpenAiCompatibleMessage[] = [
     { role: 'system', content: params.systemContent },

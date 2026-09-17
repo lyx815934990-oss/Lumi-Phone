@@ -2,16 +2,23 @@ import type { CSSProperties } from 'react'
 
 import { LUMI_SHELL, LUMI_SHELL_FONT } from '../lumiShellTheme'
 
-/** 通话页专属色板（复用 Lumi 机基调 + 电话惯例绿/红） */
+/** 通话页专属色板：对齐微信默认黑白壳层（无品牌绿） */
 export const VC = {
   paper: LUMI_SHELL.paper,
   ink: LUMI_SHELL.ink,
   card: LUMI_SHELL.card,
   mist: LUMI_SHELL.mist,
   hairline: LUMI_SHELL.hairline,
-  callGreen: '#34C759',
-  endRed: '#FF3B30',
+  /** 主强调色：墨黑（历史字段名 callGreen，实际已非绿色） */
+  callGreen: LUMI_SHELL.ink,
+  accent: LUMI_SHELL.ink,
+  accentSoft: 'rgba(16, 16, 18, 0.12)',
+  accentMid: 'rgba(16, 16, 18, 0.35)',
+  accentGlow: 'rgba(16, 16, 18, 0.28)',
+  endRed: '#FA5151',
   transcriptUser: '#4A4A4C',
+  /** 用户歌词：中性灰蓝偏灰，保持黑白调 */
+  userLyric: '#5C5C5E',
 } as const
 
 /** 中文 UI：PingFang；与壳层 --wx-font 对齐 */

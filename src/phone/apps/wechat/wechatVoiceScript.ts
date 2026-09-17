@@ -33,6 +33,10 @@ const VOICE_ALLOWED_TONE_TOKENS = new Set([
   'hissing',
   'emm',
   'sneezes',
+  // 异步接口文档额外支持；同步 2.8 亦常可用
+  'whistles',
+  'crying',
+  'applause',
 ])
 
 export function sanitizeVoiceTranscriptDisplay(input: string): string {
