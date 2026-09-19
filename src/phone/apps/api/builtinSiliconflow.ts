@@ -1,8 +1,14 @@
 /**
- * 内置硅基流动凭证（SenseVoice / 向量记忆等）。
- * 前端包可被反查；外传安装包时请轮换 Key。
+ * 内置向量 / 语音走服务端代理。硅基流动 Key 只放在 Worker Secret，不要写进前端或仓库。
+ * 代理只转发 BAAI/bge-m3 与 FunAudioLLM/SenseVoiceSmall。
  */
-export const BUILTIN_SILICONFLOW_API_BASE_URL = 'https://api.siliconflow.cn/v1'
+const DEFAULT_BUILTIN_SILICONFLOW_PROXY_BASE_URL =
+  'https://siliconflow-builtin.lyx815934990.workers.dev'
 
-export const BUILTIN_SILICONFLOW_API_KEY =
-  'sk-rbbdomnvztapazliwgengotdfrpcgwerttdvwigtpbllrxqz'
+export function readBuiltinSiliconflowProxyBase(): string {
+  const fromEnv = import.meta.env.VITE_SILICONFLOW_BUILTIN_PROXY
+  if (typeof fromEnv === 'string' && fromEnv.trim()) {
+    return fromEnv.trim().replace(/\/+$/, '')
+  }
+  return DEFAULT_BUILTIN_SILICONFLOW_PROXY_BASE_URL
+}

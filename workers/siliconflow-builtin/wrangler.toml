@@ -1,0 +1,12 @@
+name = "siliconflow-builtin"
+main = "src/index.ts"
+compatibility_date = "2026-09-19"
+account_id = "62e5c09828c1313db1ff2dcd330c4c88"
+
+# 密钥不要写进本文件。部署后执行：
+#   wrangler secret put SILICONFLOW_API_KEY
+# 只转发 BAAI/bge-m3 与 FunAudioLLM/SenseVoiceSmall。
+
+[observability]
+enabled = true
+head_sampling_rate = 1

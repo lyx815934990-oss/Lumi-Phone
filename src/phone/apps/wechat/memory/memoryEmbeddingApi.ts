@@ -1,27 +1,31 @@
 import { buildOpenAiEmbeddingsEndpoint } from '../../api/openAiCompatibleEndpoints'
-import {
-  BUILTIN_SILICONFLOW_API_BASE_URL,
-  BUILTIN_SILICONFLOW_API_KEY,
-} from '../../api/builtinSiliconflow'
+import { readBuiltinSiliconflowProxyBase } from '../../api/builtinSiliconflow'
 import type { ApiConfig } from '../../api/types'
 import type { MemorySettingsRow } from '../newFriendsPersona/types'
 
 /** 默认向量模型：BGE-M3 */
 export const DEFAULT_MEMORY_EMBEDDING_MODEL = 'BAAI/bge-m3'
 
-export const DEFAULT_MEMORY_EMBEDDING_API_URL = BUILTIN_SILICONFLOW_API_BASE_URL
+export const DEFAULT_MEMORY_EMBEDDING_API_URL = readBuiltinSiliconflowProxyBase()
 
 /**
- * 记忆向量召回固定走内置云端向量（用户无需再配主接口 / 副接口）。
+ * 记忆向量召回固定走内置代理（密钥在服务端，客户端不带 Key）。
  */
 export function resolveEmbeddingApiCredentials(
   _settings: MemorySettingsRow,
   _chatFallback: Pick<ApiConfig, 'apiUrl' | 'apiKey'> | null | undefined,
 ): { apiUrl: string; apiKey: string } {
   return {
-    apiUrl: DEFAULT_MEMORY_EMBEDDING_API_URL,
-    apiKey: BUILTIN_SILICONFLOW_API_KEY,
+    apiUrl: readBuiltinSiliconflowProxyBase(),
+    apiKey: '',
   }
+}
+
+function embeddingRequestHeaders(apiKey: string): HeadersInit {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const key = apiKey.trim()
+  if (key) headers.Authorization = `Bearer ${key}`
+  return headers
 }
 
 function normalizeEmbeddingArray(raw: unknown): number[] | null {
@@ -49,10 +53,7 @@ export async function fetchEmbeddingVector(
   const url = buildOpenAiEmbeddingsEndpoint(cfg.apiUrl)
   const resp = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${cfg.apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: embeddingRequestHeaders(cfg.apiKey),
     body: JSON.stringify({
       model: modelId.trim() || DEFAULT_MEMORY_EMBEDDING_MODEL,
       input: t.slice(0, EMBEDDING_INPUT_CHAR_LIMIT),
@@ -86,10 +87,7 @@ export async function fetchEmbeddingVectorsBatch(
   const url = buildOpenAiEmbeddingsEndpoint(cfg.apiUrl)
   const resp = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${cfg.apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: embeddingRequestHeaders(cfg.apiKey),
     body: JSON.stringify({
       model: modelId.trim() || DEFAULT_MEMORY_EMBEDDING_MODEL,
       input: trimmed.length === 1 ? trimmed[0] : trimmed,

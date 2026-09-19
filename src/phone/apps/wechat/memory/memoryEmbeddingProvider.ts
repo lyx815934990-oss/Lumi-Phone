@@ -68,7 +68,7 @@ export function isMemoryEmbeddingAvailable(
   const mode = resolveMemoryEmbeddingProviderMode(settings)
   if (mode === 'local') return true
   const cred = resolveEmbeddingApiCredentials(settings, chatFallback ?? null)
-  if (mode === 'api') return Boolean(cred.apiUrl.trim() && cred.apiKey.trim())
+  if (mode === 'api') return Boolean(cred.apiUrl.trim())
   return true
 }
 

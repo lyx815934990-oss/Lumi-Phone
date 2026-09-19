@@ -15,6 +15,8 @@ public/wechat-emojis
 public/fonts
 src/phone/apps/qixi/qixi-letter.ttf
 *.local
+.dev.vars
+**/.dev.vars
 
 # Editor directories and files
 .vscode/*

@@ -1,8 +1,5 @@
 import { buildOpenAiAudioTranscriptionsEndpoint } from '../../api/openAiCompatibleEndpoints'
-import {
-  BUILTIN_SILICONFLOW_API_BASE_URL,
-  BUILTIN_SILICONFLOW_API_KEY,
-} from '../../api/builtinSiliconflow'
+import { readBuiltinSiliconflowProxyBase } from '../../api/builtinSiliconflow'
 import type { ApiConfig } from '../../api/types'
 
 export type VoiceAsrResult = {
@@ -11,7 +8,11 @@ export type VoiceAsrResult = {
 }
 
 const SILICONFLOW_ASR_MODEL = 'FunAudioLLM/SenseVoiceSmall'
-export const SILICONFLOW_ASR_DEFAULT_BASE_URL = BUILTIN_SILICONFLOW_API_BASE_URL
+export const SILICONFLOW_ASR_DEFAULT_BASE_URL = readBuiltinSiliconflowProxyBase()
+
+function isOfficialSiliconflowBase(url: string): boolean {
+  return /api\.siliconflow\.(cn|com)/i.test(url)
+}
 
 /** 过短 / 空录音，SenseVoice 常返回空或 4xx，时好时坏 */
 const MIN_ASR_BLOB_BYTES = 1200
@@ -46,9 +47,20 @@ export function normalizeSenseVoiceText(raw: string): VoiceAsrResult {
 }
 
 function resolveAsrConfig(cfg: ApiConfig | null | undefined): ApiConfig {
-  const key = cfg?.apiKey?.trim() || BUILTIN_SILICONFLOW_API_KEY
+  const url = (cfg?.apiUrl?.trim() || '').replace(/\/+$/, '')
+  const key = cfg?.apiKey?.trim() || ''
+  const proxy = readBuiltinSiliconflowProxyBase()
+  const useBuiltinProxy = !key || !url || url === proxy || isOfficialSiliconflowBase(url)
+  if (useBuiltinProxy && !key) {
+    return {
+      apiUrl: proxy,
+      apiKey: '',
+      modelId: SILICONFLOW_ASR_MODEL,
+      modelList: [SILICONFLOW_ASR_MODEL],
+    }
+  }
   return {
-    apiUrl: (cfg?.apiUrl?.trim() || SILICONFLOW_ASR_DEFAULT_BASE_URL).replace(/\/+$/, ''),
+    apiUrl: url || proxy,
     apiKey: key,
     modelId: SILICONFLOW_ASR_MODEL,
     modelList: [SILICONFLOW_ASR_MODEL],
@@ -78,9 +90,11 @@ async function postSiliconflowTranscriptionOnce(
   form.append('file', file)
   form.append('model', SILICONFLOW_ASR_MODEL)
 
+  const headers: Record<string, string> = {}
+  if (apiKey.trim()) headers.Authorization = `Bearer ${apiKey.trim()}`
   const resp = await fetch(endpoint, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers,
     body: form,
     signal,
   })
