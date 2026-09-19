@@ -3186,6 +3186,9 @@ function normalizeMemorySettingsRow(input: unknown): MemorySettingsRow {
   const memEmbedKeyRaw = (r as { memoryEmbeddingApiKey?: unknown }).memoryEmbeddingApiKey
   const memoryEmbeddingApiKey: MemorySettingsRow['memoryEmbeddingApiKey'] =
     typeof memEmbedKeyRaw === 'string' && memEmbedKeyRaw.trim() ? memEmbedKeyRaw.trim().slice(0, 2048) : undefined
+  const memBuiltinKeyRaw = (r as { memoryEmbeddingUseBuiltinKey?: unknown }).memoryEmbeddingUseBuiltinKey
+  const memoryEmbeddingUseBuiltinKey: MemorySettingsRow['memoryEmbeddingUseBuiltinKey'] =
+    memBuiltinKeyRaw === false ? false : memBuiltinKeyRaw === true ? true : undefined
   const memDedicatedRaw = (r as { memoryEmbeddingUseDedicatedApi?: unknown }).memoryEmbeddingUseDedicatedApi
   const memoryEmbeddingUseDedicatedApi: MemorySettingsRow['memoryEmbeddingUseDedicatedApi'] =
     memDedicatedRaw === true
@@ -3349,6 +3352,7 @@ function normalizeMemorySettingsRow(input: unknown): MemorySettingsRow {
     meetAutoSummaryInterval,
     memoryVectorRecallEnabled,
     memoryEmbeddingUseDedicatedApi,
+    memoryEmbeddingUseBuiltinKey,
     memoryEmbeddingModelId,
     memoryEmbeddingApiUrl,
     memoryEmbeddingApiKey,

@@ -116,7 +116,7 @@ import { resolveMessengerBubbleStyle } from './wechatMessengerSpecialBubbles'
 import { weChatChatSkinCssProperties } from './wechatChatSkinVars'
 import { wrapWeChatChatSkinScopedCss } from './bubblePack/scopedCss'
 import './wechatChatSkinScope.css'
-import { useCurrentApiConfig, useIsSubApiEnabled, useTranslationRuntime } from '../api/ApiSettingsContext'
+import { useCurrentApiConfig, useApiSettings, useIsSubApiEnabled, useTranslationRuntime } from '../api/ApiSettingsContext'
 import type { ApiConfig } from '../api/types'
 import { DEFAULT_IMAGE_GEN_SETTINGS } from '../api/imageGenPresetUtils'
 import { loadResolvedImageGenSettings } from '../api/loadResolvedImageGenSettings'
@@ -654,6 +654,7 @@ import { useGlobalVoiceCallFloatStore } from './voiceCall/useGlobalVoiceCallFloa
 import { VoiceCallActionSheet } from './voiceCall/VoiceCallActionSheet'
 import { VoiceCallPanel } from './voiceCall/VoiceCallPanel'
 import { requestSiliconflowTranscription } from './voiceCall/siliconflowAsr'
+import { buildVoiceAsrApiConfig } from './voiceCall/voiceAsrSettings'
 import { ChatEmojiPickerPanel } from './stickers/ChatEmojiPickerPanel'
 import {
   clearWeChatComposerField,
@@ -2834,6 +2835,9 @@ export function ChatRoomInner({
   const { wechatTheme } = state
   const { chatTheme } = useChatTheme()
   const apiConfig = useCurrentApiConfig('chatCard')
+  const { currentPreset } = useApiSettings()
+  const voiceAsrRequestConfigRef = useRef(buildVoiceAsrApiConfig(currentPreset?.sub.voiceAsr))
+  voiceAsrRequestConfigRef.current = buildVoiceAsrApiConfig(currentPreset?.sub.voiceAsr)
   const { currentAccountId, accounts } = useWechatStore()
   const danmakuApiConfig = useCurrentApiConfig('danmaku')
   /** API 设置「翻译」副接口开启：同步翻译走服务商，模型勿写 [译] */
@@ -15340,7 +15344,7 @@ export function ChatRoomInner({
               showComposerToast('录音为空，请重试')
               return
             }
-            const asr = await requestSiliconflowTranscription(null, audioBlob)
+            const asr = await requestSiliconflowTranscription(voiceAsrRequestConfigRef.current, audioBlob)
             const text = asr.text.trim() || `（语音转文字）${durationSec}秒录音未识别到清晰文本`
             setDraft(text)
             setInputMode('text')
@@ -15361,7 +15365,7 @@ export function ChatRoomInner({
           let transcriptText = ''
           let emotion = ''
           try {
-            const asr = await requestSiliconflowTranscription(null, audioBlob)
+            const asr = await requestSiliconflowTranscription(voiceAsrRequestConfigRef.current, audioBlob)
             transcriptText = asr.text.trim()
             emotion = asr.emotion || ''
           } catch {
@@ -18994,7 +18998,7 @@ export function ChatRoomInner({
           })
         }}
         onTranscribeAudio={async (audioBlob) => {
-          return await requestSiliconflowTranscription(null, audioBlob)
+          return await requestSiliconflowTranscription(voiceAsrRequestConfigRef.current, audioBlob)
         }}
       />
 

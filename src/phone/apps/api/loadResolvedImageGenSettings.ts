@@ -12,7 +12,7 @@ import {
 import { normalizeModelPricingMap } from './modelPricingUtils'
 import type { ApiConfig, ApiPreset, ApiStore, SubApiType } from './types'
 import { createEmptyApiConfig, createEmptyPreset } from './mock'
-import { SILICONFLOW_ASR_DEFAULT_BASE_URL } from '../wechat/voiceCall/siliconflowAsr'
+import { normalizeVoiceAsrBuiltinFlag } from '../wechat/voiceCall/voiceAsrSettings'
 import { normalizeTranslationSubFields } from './translationProviders'
 
 const STORAGE_KEY = API_STORE_STORAGE_KEY
@@ -57,10 +57,10 @@ function normalizePreset(raw: unknown): ApiPreset | null {
           : typeof src?.useMainApi === 'boolean'
             ? src.useMainApi
             : true,
-      apiConfig:
-        k === 'voiceAsr'
-          ? { ...normalizedApi, apiUrl: normalizedApi.apiUrl.trim() || SILICONFLOW_ASR_DEFAULT_BASE_URL }
-          : normalizedApi,
+      apiConfig: normalizedApi,
+      ...(k === 'voiceAsr'
+        ? { useBuiltinKey: normalizeVoiceAsrBuiltinFlag((src as { useBuiltinKey?: unknown } | undefined)?.useBuiltinKey) }
+        : {}),
       ...translationFields,
     }
   }

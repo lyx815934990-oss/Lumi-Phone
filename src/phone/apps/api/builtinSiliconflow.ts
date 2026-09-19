@@ -12,3 +12,13 @@ export function readBuiltinSiliconflowProxyBase(): string {
   }
   return DEFAULT_BUILTIN_SILICONFLOW_PROXY_BASE_URL
 }
+
+export function isBuiltinSiliconflowProxyUrl(url: string): boolean {
+  const trimmed = url.trim().replace(/\/+$/, '')
+  if (!trimmed) return false
+  return trimmed === readBuiltinSiliconflowProxyBase()
+}
+
+/** 勾选内置 Key 时给配置页看的说明 */
+export const BUILTIN_SILICONFLOW_PROXY_HINT =
+  '内置 Key 经 Cloudflare 转发，国内一般要先开代理才能连上。关掉后填写自己的地址和密钥，可直连，不用开代理。'

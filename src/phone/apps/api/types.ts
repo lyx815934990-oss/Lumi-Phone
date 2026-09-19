@@ -66,6 +66,11 @@ export type ApiConfigCore = Pick<ApiConfig, 'apiUrl' | 'apiKey' | 'modelId'>
 export type SubApiConfig = {
   enabled: boolean
   useMainApi: boolean
+  /**
+   * 仅语音识别：缺省 / true 走内置 Cloudflare 代理（国内需开代理）；
+   * false 时使用本项 apiConfig 的地址和密钥，直连，不经代理。
+   */
+  useBuiltinKey?: boolean
   apiConfig: ApiConfig
   /** 仅 translation：服务商 */
   translationProvider?: TranslationProviderId

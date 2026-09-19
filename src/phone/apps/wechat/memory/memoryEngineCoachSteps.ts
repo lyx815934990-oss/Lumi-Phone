@@ -82,8 +82,8 @@ export const MEMORY_ENGINE_COACH_STEPS: MemoryCoachStep[] = [
   },
   {
     target: 'extra-api',
-    title: '向量 Key 已内置',
-    body: '语义召回已内置 BAAI/bge-m3，不用再填接口或密钥。简单说：它会看着你们最近在聊啥，从旧记忆里把意思接近的捞出来给角色。',
+    title: '向量地址和密钥',
+    body: '可以勾选内置 Key（国内要开代理才能连上），也可以关掉后自己填向量地址和密钥，直连、不用开代理。模型是 BAAI/bge-m3。',
   },
   {
     target: 'engine-tutorial',

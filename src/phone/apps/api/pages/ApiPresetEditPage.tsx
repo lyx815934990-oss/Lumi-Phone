@@ -11,6 +11,8 @@ import { ToggleSwitch } from '../components/ToggleSwitch'
 import { TopNav } from '../components/TopNav'
 import type { ApiPreset, SubApiType, TranslationProviderId } from '../types'
 import { API_LINK_PREVIEW_ROUTE } from '../linkPreviewDisplayLabels'
+import { VoiceAsrCredentialEditor } from '../../wechat/voiceCall/VoiceAsrCredentialEditor'
+import { patchPresetVoiceAsr, voiceAsrUsesBuiltin } from '../../wechat/voiceCall/voiceAsrSettings'
 import { TRANSLATION_PROVIDER_OPTIONS } from '../translationProviders'
 
 const SUB_META: Record<Exclude<SubApiType, 'voiceAsr'>, { title: string; desc: string }> = {
@@ -279,8 +281,39 @@ export function ApiPresetEditPage() {
         {activeTab === 'sub' ? (
           <>
             <p className="mx-4 mt-2 text-[14px]" style={{ color: apiTheme.subText, fontWeight: 300 }}>
-              副接口可选，启用后将优先于主接口用于对应场景。语音识别已内置 SenseVoice，无需在此配置。
+              副接口可选，启用后将优先于主接口用于对应场景。语音识别与通话页共用同一份地址和密钥。
             </p>
+            <div className="mx-4 mt-3 rounded-2xl bg-white p-5" style={{ boxShadow: apiTheme.shadow }}>
+              <p className="text-[16px] font-semibold" style={{ color: apiTheme.text }}>
+                语音识别
+              </p>
+              <p className="mt-1 text-[14px]" style={{ color: apiTheme.subText, fontWeight: 300 }}>
+                用于私聊按住说话和语音通话转写。模型固定 FunAudioLLM/SenseVoiceSmall。
+              </p>
+              <VoiceAsrCredentialEditor
+                useBuiltin={voiceAsrUsesBuiltin(draft.sub.voiceAsr?.useBuiltinKey)}
+                apiUrl={draft.sub.voiceAsr?.apiConfig.apiUrl || ''}
+                hasSavedKey={Boolean(draft.sub.voiceAsr?.apiConfig.apiKey.trim())}
+                onUseBuiltinChange={(next) => {
+                  const stored = presets.find((p) => p.id === draft.id)
+                  setDraft((s) => patchPresetVoiceAsr(s, { useBuiltinKey: next }))
+                  if (stored) upsertPreset(patchPresetVoiceAsr(stored, { useBuiltinKey: next }))
+                  else setDirty(true)
+                }}
+                onCommitUrl={(url) => {
+                  const stored = presets.find((p) => p.id === draft.id)
+                  setDraft((s) => patchPresetVoiceAsr(s, { apiUrl: url }))
+                  if (stored) upsertPreset(patchPresetVoiceAsr(stored, { apiUrl: url }))
+                  else setDirty(true)
+                }}
+                onCommitKey={(key) => {
+                  const stored = presets.find((p) => p.id === draft.id)
+                  setDraft((s) => patchPresetVoiceAsr(s, { apiKey: key }))
+                  if (stored) upsertPreset(patchPresetVoiceAsr(stored, { apiKey: key }))
+                  else setDirty(true)
+                }}
+              />
+            </div>
             {(Object.keys(SUB_META) as SubUiType[]).map((k) => {
               const meta = SUB_META[k]
               const sub = draft.sub[k]

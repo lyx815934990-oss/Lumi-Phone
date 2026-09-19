@@ -37,6 +37,7 @@ import { testMemorySummaryConnection } from './memorySummaryApi'
 import { resolveSummaryPullSource } from './memorySummaryPullSource'
 import { testMemoryTimelineSummaryConnection } from './memoryTimelineSummaryApi'
 import { resolveTimelineSummaryPullSource } from './memoryTimelineSummaryPullSource'
+import { isBuiltinSiliconflowProxyUrl } from '../../api/builtinSiliconflow'
 import { MemoryVectorRecallConfig } from './MemoryVectorRecallConfig'
 import type { AutoSummaryIntervalScope } from './memoryAutoSummaryInterval'
 import {
@@ -216,6 +217,9 @@ export function MemoryEngineConfig({
   const [timelineModelsLoading, setTimelineModelsLoading] = useState(false)
   const [timelineModelsPullMsg, setTimelineModelsPullMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [vectorRecallEnabled, setVectorRecallEnabled] = useState(true)
+  const [vectorUseBuiltinKey, setVectorUseBuiltinKey] = useState(true)
+  const [vectorApiUrl, setVectorApiUrl] = useState('')
+  const [hasSavedVectorKey, setHasSavedVectorKey] = useState(false)
   const [savedSettings, setSavedSettings] = useState<Awaited<ReturnType<typeof personaDb.getMemorySettings>> | null>(
     null,
   )
@@ -262,6 +266,10 @@ export function MemoryEngineConfig({
       })
       setTimelineConnectionStatus('idle')
       setVectorRecallEnabled(settings.memoryVectorRecallEnabled !== false)
+      setVectorUseBuiltinKey(settings.memoryEmbeddingUseBuiltinKey !== false)
+      const savedVectorUrl = settings.memoryEmbeddingApiUrl?.trim() || ''
+      setVectorApiUrl(isBuiltinSiliconflowProxyUrl(savedVectorUrl) ? '' : savedVectorUrl)
+      setHasSavedVectorKey(Boolean(settings.memoryEmbeddingApiKey?.trim()))
       setSavedSettings(settings)
 
       try {
@@ -492,6 +500,31 @@ export function MemoryEngineConfig({
     const next = !vectorRecallEnabled
     setVectorRecallEnabled(next)
     await personaDb.putMemorySettings({ memoryVectorRecallEnabled: next })
+  }
+
+  const toggleVectorBuiltinKey = async () => {
+    const next = !vectorUseBuiltinKey
+    setVectorUseBuiltinKey(next)
+    await personaDb.putMemorySettings({ memoryEmbeddingUseBuiltinKey: next })
+    const fresh = await personaDb.getMemorySettings()
+    setSavedSettings(fresh)
+  }
+
+  const commitVectorUrl = async (url: string) => {
+    const next = url.trim().slice(0, 512)
+    setVectorApiUrl(next)
+    await personaDb.putMemorySettings({ memoryEmbeddingApiUrl: next || undefined })
+    const fresh = await personaDb.getMemorySettings()
+    setSavedSettings(fresh)
+  }
+
+  const commitVectorKey = async (key: string) => {
+    const next = key.trim().slice(0, 2048)
+    if (!next) return
+    await personaDb.putMemorySettings({ memoryEmbeddingApiKey: next })
+    setHasSavedVectorKey(true)
+    const fresh = await personaDb.getMemorySettings()
+    setSavedSettings(fresh)
   }
 
   const pullSummaryModels = async () => {
@@ -874,6 +907,12 @@ export function MemoryEngineConfig({
           <MemoryVectorRecallConfig
             vectorRecallEnabled={vectorRecallEnabled}
             onToggleVectorRecall={() => void toggleVectorRecall()}
+            useBuiltinKey={vectorUseBuiltinKey}
+            apiUrl={vectorApiUrl}
+            hasSavedKey={hasSavedVectorKey}
+            onToggleBuiltinKey={() => void toggleVectorBuiltinKey()}
+            onCommitUrl={(url) => void commitVectorUrl(url)}
+            onCommitKey={(key) => void commitVectorKey(key)}
           />
         </div>
       </div>

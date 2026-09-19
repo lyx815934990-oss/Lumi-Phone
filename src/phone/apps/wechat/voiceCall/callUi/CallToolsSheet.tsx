@@ -1,9 +1,12 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { AudioLines, AudioWaveform, Keyboard, Mic2, ScrollText, Smile, Sparkles } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Pressable } from '../../../../components/Pressable'
+import { useApiSettings } from '../../../api/ApiSettingsContext'
+import { VoiceAsrCredentialEditor } from '../VoiceAsrCredentialEditor'
+import { patchPresetVoiceAsr, voiceAsrUsesBuiltin } from '../voiceAsrSettings'
 import { VC, vcLiquidGlassLight } from '../voiceCallTheme'
 
 function ToolRow({
@@ -111,6 +114,10 @@ export function CallToolsSheet({
   onOpenTranscript: () => void
   onOpenVoiceBind?: () => void
 }) {
+  const [asrOpen, setAsrOpen] = useState(false)
+  const { currentPreset, upsertPreset } = useApiSettings()
+  const voiceAsr = currentPreset?.sub.voiceAsr
+  const useBuiltin = voiceAsrUsesBuiltin(voiceAsr?.useBuiltinKey)
   if (typeof document === 'undefined') return null
 
   return createPortal(
@@ -158,13 +165,44 @@ export function CallToolsSheet({
               <ToolRow
                 icon={<AudioWaveform className="size-4" strokeWidth={1.9} />}
                 title="语音识别（语气情感）"
-                subtitle="催回复 / 挂断时才识别；录音松手立刻上屏"
+                subtitle={
+                  useBuiltin
+                    ? '内置 Key · 国内需开代理'
+                    : voiceAsr?.apiConfig.apiKey.trim()
+                      ? '自定义地址和密钥 · 与 API 设置同步'
+                      : '未填写自定义密钥'
+                }
                 trailing={
                   <span className="text-[12px] font-medium" style={{ color: VC.ink }}>
-                    已启用
+                    {asrOpen ? '收起' : '配置'}
                   </span>
                 }
+                onClick={() => setAsrOpen((v) => !v)}
               />
+              {asrOpen ? (
+                <div className="px-3.5 pb-3" style={{ borderTop: `1px solid ${VC.hairline}` }}>
+                  {currentPreset ? (
+                    <VoiceAsrCredentialEditor
+                      useBuiltin={useBuiltin}
+                      apiUrl={voiceAsr?.apiConfig.apiUrl || ''}
+                      hasSavedKey={Boolean(voiceAsr?.apiConfig.apiKey.trim())}
+                      onUseBuiltinChange={(next) => {
+                        upsertPreset(patchPresetVoiceAsr(currentPreset, { useBuiltinKey: next }))
+                      }}
+                      onCommitUrl={(url) => {
+                        upsertPreset(patchPresetVoiceAsr(currentPreset, { apiUrl: url }))
+                      }}
+                      onCommitKey={(key) => {
+                        upsertPreset(patchPresetVoiceAsr(currentPreset, { apiKey: key }))
+                      }}
+                    />
+                  ) : (
+                    <p className="py-3 text-[12px] leading-relaxed" style={{ color: VC.mist }}>
+                      请先在 API 设置里保存一个预设，这里会和那边的语音识别共用同一份地址和密钥。
+                    </p>
+                  )}
+                </div>
+              ) : null}
 
               <ToolRow
                 icon={<AudioLines className="size-4" strokeWidth={1.9} />}

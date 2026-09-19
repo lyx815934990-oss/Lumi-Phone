@@ -1,7 +1,7 @@
 import { pullPhoneKvWithLocalStorageLegacy, personaDb } from '../wechat/newFriendsPersona/idb'
 import { normalizeModelPricingMap } from './modelPricingUtils'
 import type { ApiConfig, ApiPreset, ApiStore, SubApiType } from './types'
-import { SILICONFLOW_ASR_DEFAULT_BASE_URL } from '../wechat/voiceCall/siliconflowAsr'
+import { normalizeVoiceAsrBuiltinFlag } from '../wechat/voiceCall/voiceAsrSettings'
 import { createEmptyApiConfig, createEmptyPreset } from './mock'
 import { migrateLegacyImageGenIntoStore, normalizeImageGenSettings } from './imageGenPresetUtils'
 import {
@@ -60,10 +60,10 @@ function normalizePreset(raw: unknown): ApiPreset | null {
           : typeof src?.useMainApi === 'boolean'
             ? src.useMainApi
             : true,
-      apiConfig:
-        k === 'voiceAsr'
-          ? { ...normalizedApi, apiUrl: normalizedApi.apiUrl.trim() || SILICONFLOW_ASR_DEFAULT_BASE_URL }
-          : normalizedApi,
+      apiConfig: normalizedApi,
+      ...(k === 'voiceAsr'
+        ? { useBuiltinKey: normalizeVoiceAsrBuiltinFlag((src as { useBuiltinKey?: unknown } | undefined)?.useBuiltinKey) }
+        : {}),
       ...translationFields,
     }
   }

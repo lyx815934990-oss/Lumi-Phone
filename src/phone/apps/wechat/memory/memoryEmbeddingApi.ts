@@ -1,5 +1,5 @@
 import { buildOpenAiEmbeddingsEndpoint } from '../../api/openAiCompatibleEndpoints'
-import { readBuiltinSiliconflowProxyBase } from '../../api/builtinSiliconflow'
+import { isBuiltinSiliconflowProxyUrl, readBuiltinSiliconflowProxyBase } from '../../api/builtinSiliconflow'
 import type { ApiConfig } from '../../api/types'
 import type { MemorySettingsRow } from '../newFriendsPersona/types'
 
@@ -12,12 +12,19 @@ export const DEFAULT_MEMORY_EMBEDDING_API_URL = readBuiltinSiliconflowProxyBase(
  * 记忆向量召回固定走内置代理（密钥在服务端，客户端不带 Key）。
  */
 export function resolveEmbeddingApiCredentials(
-  _settings: MemorySettingsRow,
+  settings: MemorySettingsRow,
   _chatFallback: Pick<ApiConfig, 'apiUrl' | 'apiKey'> | null | undefined,
 ): { apiUrl: string; apiKey: string } {
+  if (settings.memoryEmbeddingUseBuiltinKey !== false) {
+    return {
+      apiUrl: readBuiltinSiliconflowProxyBase(),
+      apiKey: '',
+    }
+  }
+  const url = settings.memoryEmbeddingApiUrl?.trim() || ''
   return {
-    apiUrl: readBuiltinSiliconflowProxyBase(),
-    apiKey: '',
+    apiUrl: isBuiltinSiliconflowProxyUrl(url) ? '' : url,
+    apiKey: settings.memoryEmbeddingApiKey?.trim() || '',
   }
 }
 

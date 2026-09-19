@@ -732,6 +732,11 @@ export type MemorySettingsRow = {
    * 若本地曾保存过专用 url/key 且无显式 `false`，读取时兼容为 `true`。
    */
   memoryEmbeddingUseDedicatedApi?: boolean
+  /**
+   * 向量记忆是否使用内置 Key。缺省 / true：走 Cloudflare 代理（国内需开代理）。
+   * false：使用下方自填地址和密钥，直连。
+   */
+  memoryEmbeddingUseBuiltinKey?: boolean
   /** 覆盖默认 `text-embedding-3-small`（须与当前 API 兼容） */
   memoryEmbeddingModelId?: string
   /**

@@ -1,6 +1,7 @@
 import { buildOpenAiAudioTranscriptionsEndpoint } from '../../api/openAiCompatibleEndpoints'
-import { readBuiltinSiliconflowProxyBase } from '../../api/builtinSiliconflow'
+import { isBuiltinSiliconflowProxyUrl, readBuiltinSiliconflowProxyBase } from '../../api/builtinSiliconflow'
 import type { ApiConfig } from '../../api/types'
+import { buildVoiceAsrApiConfig } from './voiceAsrSettings'
 
 export type VoiceAsrResult = {
   text: string
@@ -9,10 +10,6 @@ export type VoiceAsrResult = {
 
 const SILICONFLOW_ASR_MODEL = 'FunAudioLLM/SenseVoiceSmall'
 export const SILICONFLOW_ASR_DEFAULT_BASE_URL = readBuiltinSiliconflowProxyBase()
-
-function isOfficialSiliconflowBase(url: string): boolean {
-  return /api\.siliconflow\.(cn|com)/i.test(url)
-}
 
 /** 过短 / 空录音，SenseVoice 常返回空或 4xx，时好时坏 */
 const MIN_ASR_BLOB_BYTES = 1200
@@ -47,21 +44,10 @@ export function normalizeSenseVoiceText(raw: string): VoiceAsrResult {
 }
 
 function resolveAsrConfig(cfg: ApiConfig | null | undefined): ApiConfig {
-  const url = (cfg?.apiUrl?.trim() || '').replace(/\/+$/, '')
-  const key = cfg?.apiKey?.trim() || ''
-  const proxy = readBuiltinSiliconflowProxyBase()
-  const useBuiltinProxy = !key || !url || url === proxy || isOfficialSiliconflowBase(url)
-  if (useBuiltinProxy && !key) {
-    return {
-      apiUrl: proxy,
-      apiKey: '',
-      modelId: SILICONFLOW_ASR_MODEL,
-      modelList: [SILICONFLOW_ASR_MODEL],
-    }
-  }
+  if (!cfg?.apiUrl?.trim()) return buildVoiceAsrApiConfig(undefined)
   return {
-    apiUrl: url || proxy,
-    apiKey: key,
+    apiUrl: cfg.apiUrl.trim().replace(/\/+$/, ''),
+    apiKey: cfg.apiKey?.trim() || '',
     modelId: SILICONFLOW_ASR_MODEL,
     modelList: [SILICONFLOW_ASR_MODEL],
   }
@@ -134,7 +120,7 @@ async function postSiliconflowTranscriptionOnce(
   return parsed
 }
 
-/** 私聊 / 通话按住说话：默认走内置 SenseVoice，无需副接口配置 */
+/** 私聊 / 通话按住说话。勾选内置 Key 走代理；否则用调用方传入的地址和密钥。 */
 export async function requestSiliconflowTranscription(
   cfg: ApiConfig | null | undefined,
   audioBlob: Blob,
@@ -144,9 +130,11 @@ export async function requestSiliconflowTranscription(
     throw new Error('录音太短或为空，请按住说完再松手')
   }
   const resolved = resolveAsrConfig(cfg)
-  const endpoint = buildOpenAiAudioTranscriptionsEndpoint(
-    resolved.apiUrl || SILICONFLOW_ASR_DEFAULT_BASE_URL,
-  )
+  if (!resolved.apiUrl.trim()) throw new Error('请填写语音识别接口地址，或勾选内置 Key')
+  if (!resolved.apiKey.trim() && !isBuiltinSiliconflowProxyUrl(resolved.apiUrl)) {
+    throw new Error('请填写语音识别密钥，或勾选内置 Key')
+  }
+  const endpoint = buildOpenAiAudioTranscriptionsEndpoint(resolved.apiUrl)
   if (!endpoint) throw new Error('语音识别 API URL 无效')
 
   const timeoutMs =
