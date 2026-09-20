@@ -1,10 +1,10 @@
 import type { CharacterMemory, MemorySettingsRow } from '../newFriendsPersona/types'
 import type { ApiConfig } from '../../api/types'
-import { DEFAULT_MEMORY_EMBEDDING_MODEL } from './memoryEmbeddingApi'
 import {
   fetchEmbeddingVectorUnified,
   fetchEmbeddingVectorsUnified,
   isMemoryEmbeddingAvailable,
+  resolveApiEmbeddingModelId,
 } from './memoryEmbeddingProvider'
 import { flattenMemoryTriggerKeywords, isMemoryAlwaysTrigger } from './memoryTriggerUtils'
 
@@ -358,10 +358,10 @@ export function isMemoryVectorRecallEnabled(settings: MemorySettingsRow, opts?: 
 }
 
 export function resolveMemoryEmbeddingModelId(
-  _settings: MemorySettingsRow,
+  settings: MemorySettingsRow,
   _opts?: MemoryVectorRecallOpts | null,
 ): string {
-  return DEFAULT_MEMORY_EMBEDDING_MODEL
+  return resolveApiEmbeddingModelId(settings)
 }
 
 export const MEMORY_VECTOR_TOP_PRIVATE = 5

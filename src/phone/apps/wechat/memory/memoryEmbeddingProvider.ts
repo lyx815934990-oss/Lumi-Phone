@@ -54,10 +54,17 @@ export function resolveLocalEmbeddingModelId(settings: MemorySettingsRow): strin
 }
 
 export function resolveApiEmbeddingModelId(
-  _settings: MemorySettingsRow,
-  _override?: string | null,
+  settings: MemorySettingsRow,
+  override?: string | null,
 ): string {
-  return DEFAULT_MEMORY_EMBEDDING_MODEL
+  const o = String(override ?? '').trim()
+  if (o) return o
+  // 内置 Key 固定 BGE-M3；自填接口才用用户拉取/选择的模型
+  if (settings.memoryEmbeddingUseBuiltinKey !== false) {
+    return DEFAULT_MEMORY_EMBEDDING_MODEL
+  }
+  const saved = settings.memoryEmbeddingModelId?.trim() || ''
+  return saved || DEFAULT_MEMORY_EMBEDDING_MODEL
 }
 
 /** 向量召回是否可用（本地模式无需 API Key） */

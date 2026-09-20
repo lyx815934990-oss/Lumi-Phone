@@ -220,6 +220,7 @@ export function MemoryEngineConfig({
   const [vectorUseBuiltinKey, setVectorUseBuiltinKey] = useState(true)
   const [vectorApiUrl, setVectorApiUrl] = useState('')
   const [hasSavedVectorKey, setHasSavedVectorKey] = useState(false)
+  const [vectorModelId, setVectorModelId] = useState('')
   const [savedSettings, setSavedSettings] = useState<Awaited<ReturnType<typeof personaDb.getMemorySettings>> | null>(
     null,
   )
@@ -270,6 +271,7 @@ export function MemoryEngineConfig({
       const savedVectorUrl = settings.memoryEmbeddingApiUrl?.trim() || ''
       setVectorApiUrl(isBuiltinSiliconflowProxyUrl(savedVectorUrl) ? '' : savedVectorUrl)
       setHasSavedVectorKey(Boolean(settings.memoryEmbeddingApiKey?.trim()))
+      setVectorModelId(settings.memoryEmbeddingModelId?.trim() || '')
       setSavedSettings(settings)
 
       try {
@@ -523,6 +525,14 @@ export function MemoryEngineConfig({
     if (!next) return
     await personaDb.putMemorySettings({ memoryEmbeddingApiKey: next })
     setHasSavedVectorKey(true)
+    const fresh = await personaDb.getMemorySettings()
+    setSavedSettings(fresh)
+  }
+
+  const commitVectorModel = async (modelId: string) => {
+    const next = modelId.trim().slice(0, 120)
+    setVectorModelId(next)
+    await personaDb.putMemorySettings({ memoryEmbeddingModelId: next || undefined })
     const fresh = await personaDb.getMemorySettings()
     setSavedSettings(fresh)
   }
@@ -910,9 +920,11 @@ export function MemoryEngineConfig({
             useBuiltinKey={vectorUseBuiltinKey}
             apiUrl={vectorApiUrl}
             hasSavedKey={hasSavedVectorKey}
+            modelId={vectorModelId}
             onToggleBuiltinKey={() => void toggleVectorBuiltinKey()}
             onCommitUrl={(url) => void commitVectorUrl(url)}
             onCommitKey={(key) => void commitVectorKey(key)}
+            onCommitModel={(id) => void commitVectorModel(id)}
           />
         </div>
       </div>
