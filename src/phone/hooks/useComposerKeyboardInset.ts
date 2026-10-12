@@ -13,21 +13,8 @@ type ComposerKeyboardInsetOptions = {
   inputBarActivePadding?: string
 }
 
-function isEditableFocusedInBar(bar: HTMLElement | null): boolean {
-  const active = document.activeElement
-  if (!bar || !(active instanceof HTMLElement)) return false
-  if (!bar.contains(active)) return false
-  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
-    return !active.disabled
-  }
-  if (active.isContentEditable) return true
-  return !!active.closest(
-    '[contenteditable="true"], textarea, input:not([type=hidden]):not([disabled])',
-  )
-}
-
 /**
- * 聊天室底栏软键盘抬升：仅在输入框聚焦时测量，避免未弹键盘时误抬升导致底栏悬空。
+ * 聊天室底栏软键盘抬升（与 Lumi-Phone 仓库一致：max(vv缺口, overlap)）。
  */
 export function useComposerKeyboardInset(
   scrollRef: RefObject<HTMLElement | null>,
@@ -58,6 +45,7 @@ export function useComposerKeyboardInset(
         }
       }
       if (bar) {
+        bar.style.transition = 'none'
         if (insetPx > 0) {
           bar.style.transform = `translate3d(0, -${insetPx}px, 0)`
           bar.style.willChange = 'transform'
@@ -84,20 +72,11 @@ export function useComposerKeyboardInset(
     [scrollRef, inputBarRef, fillRef, scrollPaddingAnchor, inputBarSafePadding, inputBarActivePadding],
   )
 
-  const clearComposerInset = useCallback(() => {
-    if (keyboardInsetRef.current === 0) return
-    keyboardInsetRef.current = 0
-    applyComposerInsetDom(0)
-  }, [applyComposerInsetDom])
-
   const syncComposerInsetFromRefs = useCallback(() => {
     applyComposerInsetDom(keyboardInsetRef.current)
   }, [applyComposerInsetDom])
 
   useLayoutEffect(() => {
-    if (!isEditableFocusedInBar(inputBarRef.current) && keyboardInsetRef.current !== 0) {
-      keyboardInsetRef.current = 0
-    }
     syncComposerInsetFromRefs()
   })
 
@@ -117,15 +96,8 @@ export function useComposerKeyboardInset(
 
     const measureAndCommit = () => {
       rafId = null
-      const bar = inputBarRef.current
-
-      if (!isEditableFocusedInBar(bar)) {
-        clearComposerInset()
-        return
-      }
-
       const fromVv = computeWeChatStyleKeyboardInset(keyboardBaselineRef.current)
-      const overlap = measureComposerOverlapPx(bar)
+      const overlap = measureComposerOverlapPx(inputBarRef.current)
       const inset = Math.max(0, Math.round(Math.max(fromVv, overlap)))
       const prevInset = keyboardInsetRef.current
       const insetStable = Math.abs(prevInset - inset) < 4
@@ -139,18 +111,11 @@ export function useComposerKeyboardInset(
       rafId = window.requestAnimationFrame(measureAndCommit)
     }
 
-    const onFocusChange = () => {
-      scheduleMeasure()
-      window.setTimeout(scheduleMeasure, 120)
-    }
-
     measureAndCommit()
     vv.addEventListener('resize', scheduleMeasure)
     vv.addEventListener('scroll', scheduleMeasure)
     virtualKeyboard?.addEventListener?.('geometrychange', scheduleMeasure)
     window.addEventListener('orientationchange', scheduleMeasure)
-    document.addEventListener('focusin', onFocusChange, true)
-    document.addEventListener('focusout', onFocusChange, true)
 
     return () => {
       if (rafId != null) window.cancelAnimationFrame(rafId)
@@ -158,10 +123,8 @@ export function useComposerKeyboardInset(
       vv.removeEventListener('scroll', scheduleMeasure)
       virtualKeyboard?.removeEventListener?.('geometrychange', scheduleMeasure)
       window.removeEventListener('orientationchange', scheduleMeasure)
-      document.removeEventListener('focusin', onFocusChange, true)
-      document.removeEventListener('focusout', onFocusChange, true)
     }
-  }, [inputBarRef, clearComposerInset, syncComposerInsetFromRefs])
+  }, [inputBarRef, syncComposerInsetFromRefs])
 
   return { syncComposerInsetFromRefs, keyboardInsetRef }
 }

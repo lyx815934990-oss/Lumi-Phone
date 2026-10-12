@@ -614,11 +614,14 @@ export function MomentsImageGenSettingsPanel({
 
   return (
     <div
-      className={
+      className={[
         embedded
           ? 'overflow-hidden'
-          : 'mt-5 overflow-hidden rounded-2xl border border-[#F3F4F6] bg-[#FAFAFA]/80'
-      }
+          : 'mt-5 overflow-hidden rounded-2xl border border-[#F3F4F6] bg-[#FAFAFA]/80',
+        settingsContext === 'api' ? 'api-ig-tone' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       <ImageGenTabBar activeTab={activeTab} onChange={setActiveTab} />
 

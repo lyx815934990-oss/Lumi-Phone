@@ -66,6 +66,7 @@ export function SpyDesktop({
   playerIdentityId,
   playerDisplayName,
   playerWechatAvatarUrl,
+  playerWechatNickname,
   useLumiProjectAssistantPrompt,
   onToast,
   onExit,
@@ -75,6 +76,7 @@ export function SpyDesktop({
   playerIdentityId: string
   playerDisplayName: string
   playerWechatAvatarUrl?: string
+  playerWechatNickname?: string
   useLumiProjectAssistantPrompt: boolean
   onToast: (msg: string) => void
   onExit: () => void
@@ -477,6 +479,8 @@ export function SpyDesktop({
             characterId={characterId}
             playerIdentityId={playerIdentityId}
             playerDisplayName={playerDisplayName}
+            playerWechatAvatarUrl={playerWechatAvatarUrl}
+            playerWechatNickname={playerWechatNickname || playerDisplayName}
             useLumiProjectAssistantPrompt={useLumiProjectAssistantPrompt}
             onToast={onToast}
           />

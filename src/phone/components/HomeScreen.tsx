@@ -1400,12 +1400,17 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       if (!id || !allowed.has(id) || overflowSet.has(id)) return null
       return id
     })
+    /** 主屏没空位时，新应用直接落到次页（溢出区） */
+    const spillToOverflow: AppSlot['id'][] = []
     for (const app of apps.slice(DOCK_COUNT)) {
       if (page2Set.has(app.id)) continue
       if (overflowSet.has(app.id)) continue
       if (next.includes(app.id)) continue
       const emptyIndex = next.findIndex((slot) => slot === null)
-      if (emptyIndex < 0) break
+      if (emptyIndex < 0) {
+        spillToOverflow.push(app.id)
+        continue
+      }
       next[emptyIndex] = app.id
     }
     dockIdsRef.current = nextDock
@@ -1423,7 +1428,54 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       state.desktopLayout.length === next.length &&
       state.desktopLayout.every((id, i) => id === next[i])
     if (!stateSame) setDesktopLayout(next)
-  }, [activeDrag, activeWidgetDrag, apps, desktopSlots, state.desktopLayout, overflowIconIds, setDesktopLayout])
+
+    if (spillToOverflow.length > 0) {
+      const mergedIds = [...overflowIconIdsRef.current, ...spillToOverflow]
+      const blockedGallery = widgetOccupiedHomeCells(galleryState.placements, 1)
+      const nextOverflow = reconcileOverflowPlacements(
+        mergedIds,
+        overflowPlacementsRef.current,
+        blockedGallery,
+      )
+      const overflowSame =
+        nextOverflow.length === overflowPlacementsRef.current.length &&
+        nextOverflow.every(
+          (p, i) =>
+            p.id === overflowPlacementsRef.current[i]?.id &&
+            p.col === overflowPlacementsRef.current[i]?.col &&
+            p.row === overflowPlacementsRef.current[i]?.row,
+        )
+      if (!overflowSame) {
+        setOverflowPlacements(nextOverflow)
+        overflowPlacementsRef.current = nextOverflow
+        overflowIconIdsRef.current = nextOverflow.map((p) => p.id)
+        try {
+          window.localStorage.setItem(
+            HOME_WIDGET_LAYOUT_STORAGE_KEY,
+            JSON.stringify({
+              v: FREE_HOME_LAYOUT_VERSION,
+              profileAnchor: profileAnchorState,
+              slots: slotOriginsRef.current,
+              overflowIconIds: nextOverflow.map((p) => p.id),
+              overflowPlacements: nextOverflow,
+            }),
+          )
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }, [
+    activeDrag,
+    activeWidgetDrag,
+    apps,
+    desktopSlots,
+    galleryState.placements,
+    profileAnchorState,
+    state.desktopLayout,
+    overflowIconIds,
+    setDesktopLayout,
+  ])
 
   const handleEnterEditMode = useCallback((id: AppSlot['id']) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {

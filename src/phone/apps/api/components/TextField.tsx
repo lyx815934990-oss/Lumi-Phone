@@ -18,17 +18,19 @@ export function TextField({
   return (
     <label className="block">
       {label.trim() ? (
-        <p className="text-[14px]" style={{ color: apiTheme.subText }}>
+        <p className="text-[12px] font-medium" style={{ color: apiTheme.subText }}>
           {label}
         </p>
       ) : null}
-      <div className={label.trim() ? 'relative mt-2' : 'relative'}>
+      <div className={label.trim() ? 'relative mt-1.5' : 'relative'}>
         <input
           value={value}
           type={type}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full rounded-xl bg-white px-4 py-3 text-[16px] outline-none transition-all duration-200 ease-out"
+          className={`w-full rounded-xl bg-white py-2.5 text-[15px] outline-none transition-all duration-200 ease-out ${
+            right ? 'pl-3.5 pr-11' : 'px-3.5'
+          }`}
           style={{
             border: `1px solid ${apiTheme.border}`,
             color: apiTheme.text,
@@ -40,7 +42,9 @@ export function TextField({
             e.currentTarget.style.borderColor = apiTheme.border
           }}
         />
-        {right ? <div className="absolute right-3 top-1/2 -translate-y-1/2">{right}</div> : null}
+        {right ? (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2">{right}</div>
+        ) : null}
       </div>
     </label>
   )

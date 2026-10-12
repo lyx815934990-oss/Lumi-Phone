@@ -75,9 +75,18 @@ export type StoryNode = {
   versionCount?: number
   /** AI 多版本：当前展示下标（0-based） */
   currentVersionIndex?: number
+  /** AI：本轮模型生成耗时（毫秒） */
+  generationDurationMs?: number
   createdAt: number
   /** 玩家输入条：当轮生效场控标签 */
   activeControlTags?: Array<{ id: string; label: string }>
+  /** 互动模式拍：正文按互动气泡样式渲染 */
+  fromInteractive?: boolean
+  interactiveBubbles?: Array<{
+    id: string
+    kind: 'action' | 'dialogue' | 'thought'
+    text: string
+  }>
 }
 
 export type DanmakuBullet = {
@@ -142,9 +151,9 @@ export const DEFAULT_STORY_RPG_SETTINGS: StoryRpgSettings = {
   danmakuEnabled: false,
   thinkingChainEnabled: true,
   autoUserReaction: false,
-  commentModeEnabled: true,
+  commentModeEnabled: false,
   /** 小剧场：HTML 剧情可视化 */
-  plotArtifactVisualEnabled: true,
+  plotArtifactVisualEnabled: false,
   plotArtifactVisualPresetId: 'random',
   perspective: 'second',
   lengthTargetChars: 500,

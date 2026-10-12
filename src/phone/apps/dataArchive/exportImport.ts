@@ -304,10 +304,50 @@ export async function downloadBlob(blob: Blob, filename: string): Promise<void> 
   }
 }
 
-export type ImportArchiveResult = { keysRestored: number; indexedDbRestored: boolean }
+export type ImportArchiveResult = {
+  keysRestored: number
+  keysSkippedQuota: number
+  keysSkippedIdbMirror: number
+  indexedDbRestored: boolean
+}
+
+/** 已迁入 IndexedDB 的大键：导入时若 IDB 已恢复则不再强写 localStorage，避免顶爆配额 */
+const LS_IDB_MIRROR_KEYS = new Set(['wechat-dating-archives-v1'])
+
+function isQuotaExceededError(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+  const err = e as { name?: string; code?: number; message?: string }
+  if (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED') return true
+  if (err.code === 22 || err.code === 1014) return true
+  const msg = typeof err.message === 'string' ? err.message : ''
+  return /quota|exceeded|存储空间|空间不足/i.test(msg)
+}
+
+function serializeLsValue(v: unknown): string {
+  return typeof v === 'string' ? v : JSON.stringify(v)
+}
+
+async function notifyArchiveImportedSync(): Promise<void> {
+  if (typeof window === 'undefined') return
+  try {
+    // 先锁微信内存回写并清进程缓存，再派发事件；避免导入前打开的注册空态覆盖刚恢复的账号
+    const { markWechatStorePendingDiskRehydrate } = await import('../wechat/useWechatStore')
+    markWechatStorePendingDiskRehydrate()
+  } catch {
+    /* ignore */
+  }
+  try {
+    const { emitWeChatStorageChanged } = await import('../wechat/newFriendsPersona/idb')
+    emitWeChatStorageChanged()
+  } catch {
+    window.dispatchEvent(new CustomEvent('wechat-storage-changed'))
+  }
+  window.dispatchEvent(new CustomEvent(LUMI_ARCHIVE_IMPORTED_EVENT))
+}
 
 /**
  * 从 .lumi / .json 恢复。v1 仅 localStorage；v2 另写回归档内附带的 IndexedDB 主库（须本机已有对应库结构）。
+ * localStorage 单键配额失败时跳过该键并继续；主数据在 IndexedDB 时仍会派发刷新事件，无需整页重载。
  */
 export async function importDataFromFile(text: string): Promise<ImportArchiveResult> {
   let parsed: unknown
@@ -338,18 +378,67 @@ export async function importDataFromFile(text: string): Promise<ImportArchiveRes
   if (!snap || typeof snap !== 'object' || Array.isArray(snap)) {
     throw new Error('归档中缺少 localStorage 快照。')
   }
-  const entries = Object.entries(snap as Record<string, unknown>)
-  let n = 0
-  for (const [k, v] of entries) {
-    if (typeof k !== 'string' || !k.trim()) continue
-    if (v === null || v === undefined) {
-      localStorage.removeItem(k)
-    } else if (typeof v === 'string') {
-      localStorage.setItem(k, v)
-    } else {
-      localStorage.setItem(k, JSON.stringify(v))
+
+  // 导入前清掉已知 IDB 镜像大键，腾出 localStorage 配额给真正需要的键
+  if (typeof localStorage !== 'undefined') {
+    for (const mirrorKey of LS_IDB_MIRROR_KEYS) {
+      try {
+        localStorage.removeItem(mirrorKey)
+      } catch {
+        /* ignore */
+      }
     }
-    n += 1
+  }
+
+  type LsWrite = { k: string; value: string | null; size: number }
+  const writes: LsWrite[] = []
+  let keysSkippedIdbMirror = 0
+  for (const [k, v] of Object.entries(snap as Record<string, unknown>)) {
+    if (typeof k !== 'string' || !k.trim()) continue
+    if (indexedDbRestored && LS_IDB_MIRROR_KEYS.has(k)) {
+      keysSkippedIdbMirror += 1
+      continue
+    }
+    if (v === null || v === undefined) {
+      writes.push({ k, value: null, size: 0 })
+    } else {
+      const value = serializeLsValue(v)
+      writes.push({ k, value, size: k.length + value.length })
+    }
+  }
+  // 小键优先，降低「大字体/壁纸先写爆配额导致关键配置全丢」的概率
+  writes.sort((a, b) => a.size - b.size)
+
+  let n = 0
+  let keysSkippedQuota = 0
+  for (const { k, value } of writes) {
+    try {
+      if (value === null) {
+        localStorage.removeItem(k)
+      } else {
+        localStorage.setItem(k, value)
+      }
+      n += 1
+    } catch (e) {
+      if (isQuotaExceededError(e)) {
+        keysSkippedQuota += 1
+        continue
+      }
+      // 非配额错误：若 IDB 已成功则仍继续并刷新 UI；否则中止
+      if (indexedDbRestored || n > 0) {
+        keysSkippedQuota += 1
+        continue
+      }
+      throw e instanceof Error
+        ? e
+        : new Error('写入本机小仓库（localStorage）失败。')
+    }
+  }
+
+  if (n <= 0 && !indexedDbRestored) {
+    throw new Error(
+      '本机小仓库（localStorage）空间不足，无法写入备份。请先点「压缩本机数据 · 清理冗余缓存」，或删除部分壁纸/字体后再导入。',
+    )
   }
 
   if (indexedDbRestored) {
@@ -363,22 +452,13 @@ export async function importDataFromFile(text: string): Promise<ImportArchiveRes
     }
   }
 
-  if (typeof window !== 'undefined') {
-    try {
-      // 先锁微信内存回写并清进程缓存，再派发事件；避免导入前打开的注册空态覆盖刚恢复的账号
-      const { markWechatStorePendingDiskRehydrate } = await import('../wechat/useWechatStore')
-      markWechatStorePendingDiskRehydrate()
-    } catch {
-      /* ignore */
-    }
-    try {
-      const { emitWeChatStorageChanged } = await import('../wechat/newFriendsPersona/idb')
-      emitWeChatStorageChanged()
-    } catch {
-      window.dispatchEvent(new CustomEvent('wechat-storage-changed'))
-    }
-    window.dispatchEvent(new CustomEvent(LUMI_ARCHIVE_IMPORTED_EVENT))
-  }
+  // 无论 localStorage 是否部分跳过，只要主库/部分键已写入就刷新界面（修复「要整页重载才看到通讯录」）
+  await notifyArchiveImportedSync()
 
-  return { keysRestored: n, indexedDbRestored }
+  return {
+    keysRestored: n,
+    keysSkippedQuota,
+    keysSkippedIdbMirror,
+    indexedDbRestored,
+  }
 }

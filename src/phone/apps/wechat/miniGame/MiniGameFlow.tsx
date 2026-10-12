@@ -22,9 +22,11 @@ export function MiniGameFlow({
   charName,
   avatarUrl,
   playerAvatarUrl,
+  playerIdentityId,
   conversationKey,
   onCloseLobby,
   onSendInvite,
+  onPlayDirect,
   onCloseGame,
   onGameFinished,
 }: {
@@ -34,16 +36,21 @@ export function MiniGameFlow({
   charName?: string
   avatarUrl?: string
   playerAvatarUrl?: string
+  playerIdentityId?: string
   conversationKey?: string
   onCloseLobby: () => void
   onSendInvite: (game: MiniGameType) => void
+  /** 跳过邀约、直接进入对局（大富翁调试用） */
+  onPlayDirect?: (game: MiniGameType) => void
   onCloseGame: () => void
   onGameFinished?: (params: { inviteId: string; matchResult: WeChatMiniGameMatchResult }) => void
 }) {
   const [launchPhase, setLaunchPhase] = useState<'ready' | 'playing'>('ready')
 
   useEffect(() => {
-    if (session) setLaunchPhase('ready')
+    if (!session) return
+    // 大富翁调试：跳过准备页，直接进棋盘
+    setLaunchPhase(session.gameType === 'monopoly' ? 'playing' : 'ready')
   }, [session])
 
   const handleStartGame = useCallback(() => {
@@ -58,9 +65,22 @@ export function MiniGameFlow({
     [onCloseLobby, onSendInvite],
   )
 
+  const handlePlayDirect = useCallback(
+    (game: MiniGameType) => {
+      onPlayDirect?.(game)
+      onCloseLobby()
+    },
+    [onCloseLobby, onPlayDirect],
+  )
+
   return (
     <>
-      <GameLobbySheet open={lobbyOpen} onClose={onCloseLobby} onSendInvite={handleSendInvite} />
+      <GameLobbySheet
+        open={lobbyOpen}
+        onClose={onCloseLobby}
+        onSendInvite={handleSendInvite}
+        onPlayDirect={onPlayDirect ? handlePlayDirect : undefined}
+      />
       {session ? (
         <>
           <GameReadyScreen
@@ -79,6 +99,7 @@ export function MiniGameFlow({
             charName={charName}
             avatarUrl={avatarUrl}
             playerAvatarUrl={playerAvatarUrl}
+            playerIdentityId={playerIdentityId}
             conversationKey={conversationKey}
             inviteId={session.inviteId}
             preloadedGomokuSetup={session.preloadedGomokuSetup}

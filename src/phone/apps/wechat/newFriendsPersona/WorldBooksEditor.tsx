@@ -41,7 +41,6 @@ import {
   resetWorldBookAfterItemToInitial,
   resetWorldBookAfterToInitial,
 } from './worldBookAfterPatch'
-
 const BG_PAGE = 'linear-gradient(180deg, #fafaf9 0%, #f5f5f4 48%, #f4f4f5 100%)'
 
 export function WorldBooksEditor({
@@ -457,98 +456,136 @@ export function WorldBooksEditor({
   const timingLabel = (p: WorldBookItem['priority']) =>
     p === 'before' ? '[ 序言介入 Pre-Chat ]' : '[ 尾声延展 Post-Chat ]'
 
+  const outlineBtn =
+    'inline-flex items-center gap-1.5 rounded-full border border-[#E3DFD9] bg-white px-3 py-1.5 text-[12px] font-medium text-[#5C5954] shadow-sm transition hover:border-[#D4D0C8] hover:bg-[#FAFAF9] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45'
+
   return (
     <div className="relative min-h-[min(100vh,860px)] pb-36" style={{ background: BG_PAGE }}>
-      <div className="px-5 pt-8 pb-4">
-        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-stone-400">Lore Archive</p>
-        <h2 className="mt-2 text-[22px] font-semibold tracking-tight text-stone-900">世界书档案室</h2>
-        <p className="mt-2 text-[13px] leading-relaxed text-stone-500">
+      <div className="px-5 pt-6 pb-4">
+        <p
+          className="font-medium uppercase"
+          style={{ fontSize: 10.5, letterSpacing: '0.08em', color: '#B4A9C9' }}
+        >
+          LORE ARCHIVE
+        </p>
+        <h2
+          className="font-bold tracking-tight"
+          style={{ fontSize: 17, color: '#1A1A1A', marginTop: 4 }}
+        >
+          世界书档案室
+        </h2>
+        <p
+          className="leading-relaxed"
+          style={{ fontSize: 11.5, color: '#9A9A95', lineHeight: 1.6, marginTop: 5 }}
+        >
           {forPlayerIdentity
             ? '刻画玩家本人侧设定；与通讯录人设档案无关。'
             : '双层法则：序言介入为基底，尾声延展为关系快照；轻触条目即可雕琢。'}
         </p>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={alignUserBusy || userPlaceholderSummary.slotCount === 0}
-            onClick={runAlignUserPlaceholders}
-            title={
-              userPlaceholderSummary.slotCount === 0
-                ? '当前档案世界书中没有 {{user}} 表达式'
-                : worldBookUserInsertContext
-                  ? `未绑定的 {{user}} 将绑到当前账号「${worldBookUserInsertContext.displayName}」；已有绑定不变；旧式长表达式按原文迁出`
-                  : '请先在当前微信账号下选择扮演身份'
-            }
-            className="inline-flex items-center gap-1.5 rounded-full border border-stone-200/90 bg-white/90 px-3 py-1.5 text-[12px] font-medium text-stone-600 shadow-sm transition hover:border-stone-300 hover:bg-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <Link2 className="size-3.5 shrink-0 text-stone-500" strokeWidth={2} />
-            {alignUserBusy ? '对齐中…' : '对齐 {{user}}'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setArchiveGuideOpen((v) => !v)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-stone-200/90 bg-white/90 px-3 py-1.5 text-[12px] font-medium text-stone-600 shadow-sm transition hover:border-stone-300 hover:bg-white active:scale-[0.98]"
-            aria-expanded={archiveGuideOpen}
-          >
-            <BookOpen className="size-3.5 shrink-0 text-stone-500" strokeWidth={2} />
-            编辑说明
-          </button>
+        <div className="mt-5 space-y-4">
+          <div>
+            <p className="mb-2 text-[10.5px] font-medium" style={{ color: '#B8B4AE' }}>
+              格式
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={alignUserBusy || userPlaceholderSummary.slotCount === 0}
+                onClick={runAlignUserPlaceholders}
+                title={
+                  userPlaceholderSummary.slotCount === 0
+                    ? '当前档案世界书中没有 {{user}} 表达式'
+                    : worldBookUserInsertContext
+                      ? `未绑定的 {{user}} 将绑到当前账号「${worldBookUserInsertContext.displayName}」；已有绑定不变；旧式长表达式按原文迁出`
+                      : '请先在当前微信账号下选择扮演身份'
+                }
+                className={outlineBtn}
+              >
+                <Link2 className="size-3.5 shrink-0" strokeWidth={2} style={{ color: '#9A9A95' }} />
+                {alignUserBusy ? '对齐中…' : '对齐 {{user}}'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setArchiveGuideOpen((v) => !v)}
+                className={outlineBtn}
+                aria-expanded={archiveGuideOpen}
+              >
+                <BookOpen className="size-3.5 shrink-0" strokeWidth={2} style={{ color: '#9A9A95' }} />
+                编辑说明
+              </button>
+            </div>
+          </div>
+
           {!forPlayerIdentity ? (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!epilogueInitialSnapshots.length) {
-                    setAlignUserToast('尚无定点尾声可预览。请先「定点尾声」保存当前正文。')
-                    window.setTimeout(() => setAlignUserToast(null), 4200)
-                    return
+            <div>
+              <p className="mb-2 text-[10.5px] font-medium" style={{ color: '#B8B4AE' }}>
+                预览与定点
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!epilogueInitialSnapshots.length) {
+                      setAlignUserToast('尚无定点尾声可预览。请先「定点尾声」保存当前正文。')
+                      window.setTimeout(() => setAlignUserToast(null), 4200)
+                      return
+                    }
+                    setEpilogueInitialPreviewOpen(true)
+                  }}
+                  className={outlineBtn}
+                  title="预览已保存的最初尾声定点正文"
+                >
+                  <Eye className="size-3.5 shrink-0" strokeWidth={2} style={{ color: '#9A9A95' }} />
+                  {epilogueInitialSnapshots.length > 0
+                    ? `预览定点 · ${epilogueInitialSnapshots.length}`
+                    : '预览定点'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleMarkEpilogueInitial}
+                  className={
+                    confirmMarkEpilogue
+                      ? 'inline-flex items-center gap-1.5 rounded-full border border-sky-400/80 bg-sky-50 px-3 py-1.5 text-[12px] font-medium text-sky-950 shadow-sm transition active:scale-[0.98]'
+                      : outlineBtn
                   }
-                  setEpilogueInitialPreviewOpen(true)
-                }}
-                className="inline-flex items-center gap-1.5 rounded-full border border-stone-200/90 bg-white/90 px-3 py-1.5 text-[12px] font-medium text-stone-600 shadow-sm transition hover:border-stone-300 hover:bg-white active:scale-[0.98]"
-                title="预览已保存的最初尾声定点正文"
-              >
-                <Eye className="size-3.5 shrink-0" strokeWidth={2} />
-                {epilogueInitialSnapshots.length > 0
-                  ? `预览定点 · ${epilogueInitialSnapshots.length}`
-                  : '预览定点'}
-              </button>
-              <button
-                type="button"
-                onClick={handleMarkEpilogueInitial}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-medium shadow-sm transition active:scale-[0.98] ${
-                  confirmMarkEpilogue
-                    ? 'border-sky-400/80 bg-sky-50 text-sky-950'
-                    : 'border-stone-200/90 bg-white/90 text-stone-600 hover:border-stone-300 hover:bg-white'
-                }`}
-                title="把所有尾声延展的当前正文记为最初定点，供之后「重置尾声」恢复"
-              >
-                <BookmarkPlus className="size-3.5 shrink-0" strokeWidth={2} />
-                {confirmMarkEpilogue
-                  ? '再点确认定点'
-                  : epilogueMarkableCount > 0
-                    ? `定点尾声 · ${epilogueMarkableCount}`
-                    : '定点尾声'}
-              </button>
-              <button
-                type="button"
-                onClick={handleResetEpilogue}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-medium shadow-sm transition active:scale-[0.98] ${
-                  confirmResetEpilogue
-                    ? 'border-amber-400/80 bg-amber-50 text-amber-900'
-                    : 'border-stone-200/90 bg-white/90 text-stone-600 hover:border-stone-300 hover:bg-white'
-                }`}
-                title="将所有尾声延展条目恢复为已保存的定点稿"
-              >
-                <RotateCcw className="size-3.5 shrink-0" strokeWidth={2} />
-                {confirmResetEpilogue
-                  ? '再点确认'
-                  : epilogueResettableCount > 0
-                    ? `重置尾声 · ${epilogueResettableCount}`
-                    : '重置尾声'}
-              </button>
-            </>
+                  title="把所有尾声延展的当前正文记为最初定点，供之后「重置尾声」恢复"
+                >
+                  <BookmarkPlus className="size-3.5 shrink-0" strokeWidth={2} />
+                  {confirmMarkEpilogue
+                    ? '再点确认定点'
+                    : epilogueMarkableCount > 0
+                      ? `定点尾声 · ${epilogueMarkableCount}`
+                      : '定点尾声'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetEpilogue}
+                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium shadow-sm transition active:scale-[0.98]"
+                  style={
+                    confirmResetEpilogue
+                      ? {
+                          background: '#F8E8E4',
+                          color: '#A94438',
+                          border: '1px solid #E8A99A',
+                        }
+                      : {
+                          background: '#FDF4F2',
+                          color: '#C0564A',
+                          border: '1px solid #F0C9C0',
+                        }
+                  }
+                  title="将所有尾声延展条目恢复为已保存的定点稿（有风险，请确认）"
+                >
+                  <RotateCcw className="size-3.5 shrink-0" strokeWidth={2} />
+                  {confirmResetEpilogue
+                    ? '再点确认重置'
+                    : epilogueResettableCount > 0
+                      ? `重置尾声 · ${epilogueResettableCount}`
+                      : '重置尾声'}
+                </button>
+              </div>
+            </div>
           ) : null}
         </div>
 
@@ -648,6 +685,7 @@ export function WorldBooksEditor({
         worldBackgroundPrompt={worldBackgroundPrompt}
         identityContext={identityContext}
         linkedNpcsContext={linkedNpcsContext}
+        userInsertContext={worldBookUserInsertContext}
         onApplyWorldBooks={(next, summary) => {
           setWorldBooks(next)
           setAlignUserToast(summary)
@@ -657,9 +695,21 @@ export function WorldBooksEditor({
 
       <div className="space-y-4 px-4">
         {worldBooks.length === 0 ? (
-          <div className="rounded-[22px] border border-dashed border-stone-200/90 bg-white/40 px-6 py-14 text-center backdrop-blur-sm">
-            <p className="text-[14px] text-stone-500">尚无世界书卷轴</p>
-            <p className="mt-2 text-[12px] text-stone-400">点击下方缔造新世界，开启第一条叙事线索</p>
+          <div
+            className="text-center"
+            style={{
+              border: '1px dashed #E3DFD9',
+              borderRadius: 16,
+              padding: '22px 16px',
+              background: 'rgba(255,255,255,0.45)',
+            }}
+          >
+            <p className="font-medium" style={{ fontSize: 13, color: '#9A9A95' }}>
+              尚无世界书卷轴
+            </p>
+            <p style={{ fontSize: 11, color: '#C2BEB6', marginTop: 6, lineHeight: 1.55 }}>
+              点击下方「缔造新世界」创建第一卷；也可在名册「新建角色人设 › 导入设定文档」带入 txt / docx
+            </p>
           </div>
         ) : (
           worldBooks.map((wb) => (

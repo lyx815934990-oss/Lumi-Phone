@@ -457,7 +457,7 @@ export function MomentImageViewer({
     <AnimatePresence>
       {open ? (
         <motion.div
-          className="fixed inset-0 z-[600] flex flex-col bg-black/96"
+          className="fixed inset-0 z-[11000] flex flex-col bg-black/96"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -471,14 +471,17 @@ export function MomentImageViewer({
         >
           <div
             className="flex shrink-0 items-center justify-between px-3 pb-2"
-            style={{ paddingTop: 'max(8px, env(safe-area-inset-top, 0px))' }}
+            style={{ paddingTop: 'max(12px, calc(env(safe-area-inset-top, 0px) + 8px))' }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               type="button"
               aria-label="关闭"
-              onClick={onClose}
-              className="flex size-10 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/10"
+              onClick={(e) => {
+                e.stopPropagation()
+                onClose()
+              }}
+              className="flex size-11 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/10"
             >
               <X className="size-5" strokeWidth={1.75} />
             </button>

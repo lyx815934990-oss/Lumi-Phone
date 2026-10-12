@@ -1,5 +1,5 @@
 /**
- * 微信风格聊天加号扩展菜单：2 页 × 8 格（2 行 4 列），横向滑动分页 + 指示器。
+ * 微信风格聊天加号扩展菜单：3 页 × 最多 8 格（2 行 4 列），横向滑动分页 + 指示器。
  */
 import { useCallback, useRef, useState, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
@@ -13,13 +13,14 @@ import {
   Image,
   MapPin,
   MessageSquarePlus,
-  MonitorSmartphone,
+  BrainCircuit,
   PhoneCall,
+  PieChart,
   Play,
   RotateCcw,
+  SquareTerminal,
   Smartphone,
   Star,
-  Terminal,
 } from 'lucide-react'
 
 import { Pressable } from '../../components/Pressable'
@@ -45,8 +46,10 @@ export type WeChatPlusActionId =
   | 'continue_reply'
   | 'console_logs'
   | 'screen_share'
+  | 'thinking_chain'
   | 'check_phone'
   | 'games'
+  | 'reply_token'
 
 type PlusMenuItem = {
   id: WeChatPlusActionId
@@ -63,20 +66,29 @@ const PAGE1: PlusMenuItem[] = [
   { id: 'location', label: '位置', Icon: MapPin },
   { id: 'redpacket', label: '红包', Icon: Gift },
   { id: 'transfer', label: '转账', Icon: CreditCard },
-  { id: 'screen_share', label: '一起刷', Icon: MonitorSmartphone, disabled: true },
+  { id: 'thinking_chain', label: '文心', Icon: BrainCircuit },
   { id: 'favorite', label: '收藏', Icon: Star },
 ]
 
 const PAGE2: PlusMenuItem[] = [
-  { id: 'games', label: '游戏', Icon: Gamepad2 },
+  { id: 'reply_token', label: '回复Token', Icon: PieChart },
   { id: 'heart_words', label: '心语', Icon: Heart },
   { id: 'read_ignore', label: '已读不回', Icon: EyeOff },
   { id: 'retry_reply', label: '重新回复', Icon: RotateCcw },
   { id: 'generate_reply', label: '生成回复', Icon: MessageSquarePlus },
   { id: 'continue_reply', label: '继续回复', Icon: Play },
-  { id: 'console_logs', label: '控制台', Icon: Terminal },
   { id: 'check_phone', label: '查手机', Icon: Smartphone },
+  { id: 'console_logs', label: '控制台', Icon: SquareTerminal },
 ]
+
+/** 第三页：玩法类入口（游戏等） */
+const PAGE3: PlusMenuItem[] = [
+  { id: 'games', label: '游戏', Icon: Gamepad2 },
+]
+
+const PLUS_MENU_PAGES = [PAGE1, PAGE2, PAGE3] as const
+const PLUS_MENU_PAGE_COUNT = PLUS_MENU_PAGES.length
+const PLUS_MENU_LAST_PAGE = PLUS_MENU_PAGE_COUNT - 1
 
 function RedPacketIcon({ size = 24 }: { size?: number }) {
   // 极简红包：矩形 + 上半部分 V 字（你指定的样式）
@@ -266,7 +278,7 @@ export function WeChatChatPlusMenuPanel({ onAction }: { onAction: (id: WeChatPlu
 
   const snapTo = useCallback(
     (p: number) => {
-      const clamped = Math.max(0, Math.min(1, p))
+      const clamped = Math.max(0, Math.min(PLUS_MENU_LAST_PAGE, p))
       setPage(clamped)
       const el = scrollerRef.current
       if (!el) return
@@ -300,7 +312,7 @@ export function WeChatChatPlusMenuPanel({ onAction }: { onAction: (id: WeChatPlu
     if (!el) return
     const w = el.clientWidth || 1
     const p = Math.round(el.scrollLeft / w)
-    const clamped = Math.max(0, Math.min(1, p))
+    const clamped = Math.max(0, Math.min(PLUS_MENU_LAST_PAGE, p))
     setPage(clamped)
   }
 
@@ -322,35 +334,24 @@ export function WeChatChatPlusMenuPanel({ onAction }: { onAction: (id: WeChatPlu
         role="presentation"
       >
         <div className="flex h-full min-w-0 w-full">
-          <PlusMenuPage>
-            {PAGE1.map((it) => (
-              <PlusMenuGridCell
-                key={it.id}
-                label={it.label}
-                Icon={it.Icon}
-                onPress={() => onAction(it.id)}
-                suppressClickRef={suppressClickRef}
-                actionId={it.id}
-                disabled={it.disabled}
-              />
-            ))}
-          </PlusMenuPage>
-          <PlusMenuPage>
-            {PAGE2.map((it) => (
-              <PlusMenuGridCell
-                key={it.id}
-                label={it.label}
-                Icon={it.Icon}
-                onPress={() => onAction(it.id)}
-                suppressClickRef={suppressClickRef}
-                actionId={it.id}
-                disabled={it.disabled}
-              />
-            ))}
-          </PlusMenuPage>
+          {PLUS_MENU_PAGES.map((pageItems, pageIdx) => (
+            <PlusMenuPage key={pageIdx}>
+              {pageItems.map((it) => (
+                <PlusMenuGridCell
+                  key={it.id}
+                  label={it.label}
+                  Icon={it.Icon}
+                  onPress={() => onAction(it.id)}
+                  suppressClickRef={suppressClickRef}
+                  actionId={it.id}
+                  disabled={it.disabled}
+                />
+              ))}
+            </PlusMenuPage>
+          ))}
         </div>
       </div>
-      <PageDots total={2} active={page} onPick={(i) => snapTo(i)} />
+      <PageDots total={PLUS_MENU_PAGE_COUNT} active={page} onPick={(i) => snapTo(i)} />
     </div>
   )
 }

@@ -150,6 +150,8 @@ export type AppSlot = {
     | 'sandbox'
     | 'appearance'
     | 'evolution'
+    | 'coupleSpace'
+    | 'thinkingChain'
   label: string
   /** 可选：自定义图标图片 URL（优先于线框 SVG） */
   iconImageUrl: string
@@ -339,6 +341,14 @@ export function resolveBubbleShowAvatar(
   bubble: WeChatBubbleTheme,
   side: 'self' | 'other',
 ): boolean {
+  // X 预设曾把两侧钉成 false；旧版「显示头像·开」只改总开关，会留下「总开关开、两侧关」
+  if (
+    bubble.showAvatar === true &&
+    bubble.showAvatarSelf === false &&
+    bubble.showAvatarOther === false
+  ) {
+    return true
+  }
   if (side === 'self') return bubble.showAvatarSelf ?? bubble.showAvatar
   return bubble.showAvatarOther ?? bubble.showAvatar
 }
@@ -1078,6 +1088,8 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
     { id: 'sandbox', label: '幻境引擎', iconImageUrl: '', iconRadius: 18 },
     { id: 'appearance', label: '外观', iconImageUrl: '', iconRadius: 18 },
     { id: 'evolution', label: '系统演进录', iconImageUrl: '', iconRadius: 18 },
+    { id: 'coupleSpace', label: '情侣空间', iconImageUrl: '', iconRadius: 18 },
+    { id: 'thinkingChain', label: '文心', iconImageUrl: '', iconRadius: 18 },
   ],
   desktopLayout: [
     'voiceprint',
@@ -1086,8 +1098,8 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
     'recycleBin',
     'sandbox',
     'evolution',
-    null,
-    null,
+    'coupleSpace',
+    'thinkingChain',
   ],
   /** 主屏第二页图标布局（创作者工具等） */
   desktopLayoutPage2: [null, null, null, null, null, null, null, null],
@@ -1162,6 +1174,22 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
       cardBg: '#ffffff',
       fontFamily:
         '"Inter", "Noto Sans SC", system-ui, -apple-system, "PingFang SC", sans-serif',
+    },
+    coupleSpace: {
+      ...DEFAULT_APP_PAGE_STYLE,
+      pageBg: '#f7f1ea',
+      headerBg: 'rgba(250,246,241,0.94)',
+      cardBg: 'rgba(255,252,248,0.92)',
+      fontFamily:
+        '"Songti SC", "STSong", "Noto Serif SC", "PingFang SC", system-ui, sans-serif',
+    },
+    thinkingChain: {
+      ...DEFAULT_APP_PAGE_STYLE,
+      pageBg: '#FAF6EF',
+      headerBg: 'rgba(250,246,239,0.94)',
+      cardBg: '#ffffff',
+      fontFamily:
+        '"Cormorant Garamond", "Noto Serif SC", "STSong", "Songti SC", serif',
     },
   },
   dockStyle: {

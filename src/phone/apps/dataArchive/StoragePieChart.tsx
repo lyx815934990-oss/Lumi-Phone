@@ -44,6 +44,7 @@ export function StoragePieChart({
   localStorageOutsideRingBytes = 0,
   indexedDbOutsideRingBytes = 0,
   tokenSummary,
+  rebuildableCacheBytes = 0,
 }: {
   variant?: StoragePieVariant
   segments: StorageSegment[]
@@ -55,6 +56,8 @@ export function StoragePieChart({
   indexedDbOutsideRingBytes?: number
   /** 灵感累计（localStorage 计数，单独展示） */
   tokenSummary?: { count: number } | null
+  /** 听一听 / TTS 等可重建缓存，不进环图、不进可打包 */
+  rebuildableCacheBytes?: number
 }) {
   const cx = 100
   const cy = 100
@@ -229,6 +232,12 @@ export function StoragePieChart({
         >
           IndexedDB 已扫描侧合计 {formatBytes(indexedDbOutsideRingBytes)}
           <span className="block mt-0.5">（未计入上环，与「索引库」标签同源）</span>
+        </p>
+      ) : null}
+
+      {rebuildableCacheBytes > 0 ? (
+        <p className="mt-3 max-w-[320px] px-2 text-center text-[10px] leading-relaxed" style={{ color: PLATINUM.ash }}>
+          可重建缓存 {formatBytes(rebuildableCacheBytes)}（听一听接口、语音合成等），不计入上方数字。点「压缩本机数据」可清掉。
         </p>
       ) : null}
 

@@ -53,7 +53,7 @@ export function buildStoryRpgThemeStyle(appearance?: DatingStoryAppearance | unk
     '--sr-border': t.rule,
     '--sr-glass': night ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.42)',
     '--sr-glass-strong': night ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.55)',
-    '--sr-header-bg': night ? `${t.bg}cc` : `${t.bgElevated}f0`,
+    '--sr-header-bg': night ? t.bg : t.bgElevated,
     '--sr-console-bg': night ? `${t.bg}e6` : `${t.bgElevated}f5`,
     '--sr-prose-em': t.muted,
     '--plot-dialogue-fg': t.muted,

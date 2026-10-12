@@ -21,6 +21,11 @@ import {
 import type { GomokuReactionKey } from './gomokuSituation'
 import { fetchGameReaction } from './miniGameAi'
 import type { ClawReactionKey, GameEvent, MiniGameType } from './types'
+import { loadObservationNotes } from '../observationNotes/store'
+import {
+  inferWeChatRelationshipStage,
+  type RelationshipStage,
+} from '../wechatChatPrompt'
 
 const CLAW_KEY_REPEAT_MS: Partial<Record<ClawReactionKey, number>> = {
   thinking: 3_200,
@@ -185,6 +190,7 @@ export function useGameReactionEngine(
     conversationKey?: string
     peerDisplayName?: string
     preloadedGomokuSetup?: GomokuSessionSetup | null
+    playerIdentityId?: string
   },
 ) {
   const apiConfig = useCurrentApiConfig('chatCard')
@@ -208,6 +214,7 @@ export function useGameReactionEngine(
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const thinkingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const characterRef = useRef<Character | null>(null)
+  const relationshipStageRef = useRef<RelationshipStage | null>(null)
   const gomokuSetupRef = useRef<GomokuSessionSetup>(buildDefaultGomokuSessionSetup())
   const gomokuUsedLinesRef = useRef<Partial<Record<GomokuReactionKey, Set<string>>>>({})
   const gomokuUsedStartLinesRef = useRef<Set<string>>(new Set())
@@ -225,11 +232,27 @@ export function useGameReactionEngine(
     void (async () => {
       const ch = await personaDb.getCharacter(charId)
       if (!cancelled) characterRef.current = ch
+      try {
+        const notes = await loadObservationNotes({
+          conversationCharacterId: charId,
+          playerIdentityId: opts?.playerIdentityId?.trim() || '__default__',
+          charDisplayName: opts?.peerDisplayName?.trim() || '对方',
+          seedIfEmpty: false,
+        })
+        if (!cancelled) {
+          relationshipStageRef.current = inferWeChatRelationshipStage({
+            affection: notes?.affection,
+            relationshipLabel: notes?.relationshipLabel,
+          })
+        }
+      } catch {
+        if (!cancelled) relationshipStageRef.current = null
+      }
     })()
     return () => {
       cancelled = true
     }
-  }, [charId])
+  }, [charId, opts?.peerDisplayName, opts?.playerIdentityId])
 
   const gomokuContextRef = useRef<GomokuReactionContext>({ ...DEFAULT_GOMOKU_CONTEXT })
 
@@ -544,6 +567,9 @@ export function useGameReactionEngine(
         return
       }
 
+      // 大富翁气泡由 MonopolyGame 自行拉取（含关系阶段），此处只负责结算事件透传
+      if (gameType === 'monopoly') return
+
       if (!PRIORITY_EVENTS.has(event.type) && now - lastCallAtRef.current < throttle) {
         return
       }
@@ -558,6 +584,7 @@ export function useGameReactionEngine(
             eventType: event.type,
             eventDetail: event.detail,
             score: event.score,
+            relationshipStage: relationshipStageRef.current,
           })
           if (text) {
             lastCallAtRef.current = Date.now()

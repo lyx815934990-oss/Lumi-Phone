@@ -1,36 +1,110 @@
-import { Fragment, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type UIEvent as ReactUIEvent,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { motion } from 'framer-motion'
 import {
   CircleUserRound,
   Image as ImageIcon,
   Lock,
   MessageSquareText,
+  Phone,
   Sparkles,
-  Trash2,
   UserRound,
   Wallet,
 } from 'lucide-react'
 
 import { Pressable } from '../../../../components/Pressable'
+import { MomentsContentBackdrop } from '../../../../../components/moments/MomentsContentBackdrop'
+import { MomentsCover } from '../../../../../components/moments/MomentsCover'
+import { MomentsFeed } from '../../../../../components/moments/MomentsFeed'
+import { resolveMomentsCoverDisplayUrl } from '../../../../../components/moments/momentsCoverDefaults'
+import { useCustomization } from '../../../../CustomizationContext'
 import { useCurrentApiConfig } from '../../../api/ApiSettingsContext'
 import {
-  DEFAULT_CUSTOMIZATION,
   DEFAULT_PUBLIC_AVATAR_URL,
-  type CustomizationState,
+  resolveBubbleShowAvatar,
   type WeChatBubbleTheme,
+  type WeChatTheme,
 } from '../../../../types'
-import { formatWeChatChatTimestamp, shouldRenderWeChatTimestamp } from '../../time/wechatTimeUtils'
-import { RedPacketBubble } from '../../redPacket/RedPacketBubble'
-import { TransferBubble } from '../../transfer/TransferBubble'
-import { upsertLumiTransfer } from '../../transfer/lumiTransferStorage'
-import { generateSpyWechatData } from '../spyWechatAi'
-import { DataSyncModal } from './DataSyncModal'
-import { clearMirrorWeChatAddressBookMemory, syncMirrorWeChatAddressBookToCharacterMemory } from './mirrorWechatContactMemory'
+import { wrapWeChatChatSkinScopedCss } from '../../bubblePack/scopedCss'
+import { LocationChatRow } from '../../location/LocationChatRow'
+import {
+  formatWeChatChatTimestamp,
+  formatWeChatMessagesTabTimestamp,
+  shouldRenderWeChatTimestamp,
+} from '../../time/wechatTimeUtils'
+import { RedPacketChatRow } from '../../redPacket/RedPacketChatRow'
+import { TransferBubbleFace } from '../../transfer/TransferBubble'
+import { getLumiTransferFresh, upsertLumiTransfer } from '../../transfer/lumiTransferStorage'
+import { resolveCharacterStoryNowMs } from '../../time/messagesTabStoryTime'
+import { CallStatusBubble } from '../../voiceCall/CallStatusBubble'
+import { formatCallStatusLabel, fmtCallStatusDuration } from '../../voiceCall/callStatusLabel'
+import {
+  WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE,
+  WECHAT_CHAT_DEFAULT_TRANSLATION_LANGUAGE,
+  type WeChatChatLanguageCode,
+} from '../../wechatChatLanguage'
+import { WeChatAvatarChromeProvider } from '../../WeChatAvatarChromeWrap'
+import { WeChatChatSkinEngineProvider } from '../../WeChatChatSkinEngineContext'
+import { WeChatMessageBubbleRow } from '../../WeChatMessageBubbleRow'
+import {
+  isTwitterXNightMode,
+  isTwitterXPresetActive,
+  isWechatClassicNightMode,
+  migrateMislabeledLumiDefaultBubble,
+} from '../../wechatBubblePresets'
+import { TWITTER_X_COLORS } from '../../wechatBubbleTwitterUi'
+import {
+  WECHAT_CLASSIC,
+  WECHAT_CLASSIC_AVATAR_SIZE_PX,
+  wechatClassicSpecialSkinOverrides,
+} from '../../wechatBubbleWechatUi'
+import { chatBubbleSideFontCssVars } from '../../wechatBubbleSideFonts'
+import { resolveMessengerBubbleStyle } from '../../wechatMessengerSpecialBubbles'
+import {
+  generateSpyWechatData,
+  summarizeMirrorChatForAppend,
+  type SpyChatTimeSpanUnit,
+  type SpyExistingChatTranscript,
+} from '../spyWechatAi'
+import { inferSpySpecialFromContent, reconcileMirrorCallDurationSec } from '../spyWechatMarkup'
+import { DataSyncModal, type MirrorSyncScope } from './DataSyncModal'
+import {
+  clearMirrorWeChatAddressBookMemory,
+  clearMirrorWeChatChatMemory,
+  deleteMirrorWeChatChatMemoryForContacts,
+  getMirrorPlayerContactId,
+  syncMirrorWeChatAddressBookToCharacterMemory,
+  syncMirrorWeChatChatsToCharacterMemory,
+} from './mirrorWechatContactMemory'
+import { MirrorVoiceCallDetailModal } from './MirrorVoiceCallDetailModal'
+import {
+  mirrorContactsToMomentRefs,
+  mirrorMomentsToFeedItems,
+} from './mirrorMomentsFeedItems'
+import { enrichMirrorMessagesWithClaimReceipts } from './mirrorSpecialClaimReceipts'
 import { MirrorWeChatStoreProvider, useMirrorWeChatStore } from './MirrorWeChatStore'
-import type { MirrorWeChatContact, MirrorWeChatTab } from './types'
+import { MirrorChatListAvatar } from './WeChatGroupAvatarMosaic'
+import {
+  findMirrorDmContactByName,
+  isMirrorGroupContact,
+  type MirrorWeChatContact,
+  type MirrorWeChatMessage,
+  type MirrorWeChatTab,
+} from './types'
+import { WeChatChatMixedText } from '../../WeChatChatMixedText'
 
-/** 查手机通讯录生成：关系偏向多选项（默认不预选） */
-const MIRROR_WECHAT_RELATION_PRESETS = ['家人', '同事', '朋友', '死党', '暧昧', '恋人', '网友'] as const
+function bubbleForRole(theme: WeChatTheme, roleKey: string): WeChatBubbleTheme {
+  const by = theme.bubbleByRole?.[roleKey]
+  return by || theme.bubbleGlobal
+}
 
 const LETTER_INDEX = [
   'A',
@@ -112,28 +186,6 @@ function formatMoney(amount: number) {
   return `${amount >= 0 ? '+' : '-'}${abs}`
 }
 
-function readBubblePrefsLite(): { showAvatar: boolean; mergeConsecutiveAvatarGroup: boolean } {
-  if (typeof window === 'undefined') return { showAvatar: true, mergeConsecutiveAvatarGroup: true }
-  const keys = ['lumi-phone-custom-v3', 'lumi-phone-custom-v2', 'lumi-phone-custom-v1']
-  for (const key of keys) {
-    try {
-      const raw = window.localStorage.getItem(key)
-      if (!raw) continue
-      const parsed = JSON.parse(raw) as Partial<CustomizationState>
-      const g = (parsed as any)?.wechatTheme?.bubbleGlobal
-      if (g && typeof g === 'object') {
-        return {
-          showAvatar: g.showAvatar !== false,
-          mergeConsecutiveAvatarGroup: g.mergeConsecutiveAvatarGroup !== false,
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-  return { showAvatar: true, mergeConsecutiveAvatarGroup: true }
-}
-
 function tabLabel(tab: MirrorWeChatTab) {
   switch (tab) {
     case 'chats':
@@ -151,6 +203,8 @@ function Main({
   characterId,
   playerIdentityId,
   playerDisplayName,
+  playerWechatAvatarUrl,
+  playerWechatNickname,
   useLumiProjectAssistantPrompt,
   onClose,
   onToast,
@@ -158,44 +212,237 @@ function Main({
   characterId: string
   playerIdentityId: string
   playerDisplayName: string
+  playerWechatAvatarUrl?: string
+  playerWechatNickname?: string
   useLumiProjectAssistantPrompt: boolean
   onClose: () => void
   onToast: (msg: string) => void
 }) {
   const apiConfig = useCurrentApiConfig('chatCard')
-  const { state, mergeGenerated, hydrated, reset } = useMirrorWeChatStore()
+  const {
+    state,
+    mergeGenerated,
+    hydrated,
+    clearByTab,
+    clearChatMessagesForContacts,
+    removeContactsByIds,
+  } = useMirrorWeChatStore()
   const [tab, setTab] = useState<MirrorWeChatTab>('chats')
   const [syncOpen, setSyncOpen] = useState(false)
   const [syncBusy, setSyncBusy] = useState(false)
+  const [syncBusyLabel, setSyncBusyLabel] = useState('')
+  const [fabCoachOpen, setFabCoachOpen] = useState(false)
   const [chatOpenId, setChatOpenId] = useState<string | null>(null)
   const [walletOpen, setWalletOpen] = useState(false)
-  const [contactCount, setContactCount] = useState(12)
-  const [chatContactsCountInput, setChatContactsCountInput] = useState('6')
-  const [minMessagesPerContactInput, setMinMessagesPerContactInput] = useState('12')
-  const [selectedRelations, setSelectedRelations] = useState<string[]>([])
+  const [minMessagesPerContact, setMinMessagesPerContact] = useState(8)
+  const [chatTimeSpanUnit, setChatTimeSpanUnit] = useState<SpyChatTimeSpanUnit>('day')
+  const [chatTimeSpanValue, setChatTimeSpanValue] = useState(7)
+  const [plotNowLabel, setPlotNowLabel] = useState('')
+  const [plotNowMs, setPlotNowMs] = useState<number | null>(null)
   const [walletBias, setWalletBias] = useState('')
-  const [includeBlocked, setIncludeBlocked] = useState(true)
+  const [selectedRelations, setSelectedRelations] = useState<string[]>([])
+  const [contactCount, setContactCount] = useState(12)
+  const [contactCustomBias, setContactCustomBias] = useState('')
+  const [selectedChatBiases, setSelectedChatBiases] = useState<string[]>([])
+  const [chatCustomBias, setChatCustomBias] = useState('')
+  const [generateRelatedGroups, setGenerateRelatedGroups] = useState(false)
+  const [relatedGroupsCount, setRelatedGroupsCount] = useState(2)
+  const [groupChatCustomBias, setGroupChatCustomBias] = useState('')
+  const [voiceCallDetail, setVoiceCallDetail] = useState<{
+    durationSec: number
+    peerName: string
+    peerAvatarUrl?: string
+    characterName?: string
+    characterAvatarUrl?: string
+    lines: Array<{ role: 'character' | 'player'; text: string; translation?: string }>
+  } | null>(null)
+  /** 窥探只读：红包详情（不可代领） */
+  const [redPacketDetail, setRedPacketDetail] = useState<{
+    amountYuan: number
+    remark: string
+    senderName: string
+    senderAvatarUrl?: string
+    claimerName?: string
+    peerLabel: string
+    selfLabel: string
+    fromSelf: boolean
+    opened: boolean
+  } | null>(null)
+  /** 窥探只读：转账详情（不可代收） */
+  const [transferDetail, setTransferDetail] = useState<{
+    amountYuan: number
+    note: string
+    senderName: string
+    senderAvatarUrl?: string
+    peerLabel: string
+    selfLabel: string
+    fromSelf: boolean
+    status: 'pending' | 'accepted' | 'returned'
+  } | null>(null)
   const [includeHideFromUser, setIncludeHideFromUser] = useState(true)
   const [includeOnlyTaVisible, setIncludeOnlyTaVisible] = useState(true)
+  const [ingestChatToMemory, setIngestChatToMemory] = useState(false)
+  const [generateLanguage, setGenerateLanguage] = useState<WeChatChatLanguageCode>(
+    WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE,
+  )
+  const [syncTranslation, setSyncTranslation] = useState(false)
+  const [translationLanguage, setTranslationLanguage] = useState<WeChatChatLanguageCode>(
+    WECHAT_CHAT_DEFAULT_TRANSLATION_LANGUAGE,
+  )
+  const [includeSpecialMessages, setIncludeSpecialMessages] = useState(false)
+  const [openMirrorTranslations, setOpenMirrorTranslations] = useState<Record<string, boolean>>({})
+  const playerContactId = useMemo(
+    () => getMirrorPlayerContactId(playerIdentityId),
+    [playerIdentityId],
+  )
+  const hasContacts = state.contacts.some((c) => !isMirrorGroupContact(c))
   const [activeLetter, setActiveLetter] = useState<LetterKey>('A')
   const groupRefs = useRef<Partial<Record<LetterKey, HTMLDivElement | null>>>({})
   const indexNavRef = useRef<HTMLDivElement | null>(null)
+  const chatScrollRef = useRef<HTMLDivElement | null>(null)
+  /** 各会话上次上滑阅读位置；贴底离开则清除，下次进房默认到底 */
+  const chatScrollMemoryRef = useRef<Record<string, number>>({})
+  const syncAbortRef = useRef<AbortController | null>(null)
 
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const ms = await resolveCharacterStoryNowMs(characterId)
+      if (cancelled) return
+      if (typeof ms === 'number' && Number.isFinite(ms) && ms > 0) {
+        setPlotNowMs(ms)
+        const d = new Date(ms)
+        const pad = (x: number) => String(x).padStart(2, '0')
+        setPlotNowLabel(
+          `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
+        )
+      } else {
+        setPlotNowMs(null)
+        setPlotNowLabel('')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [characterId, syncOpen])
+
+  const FAB_COACH_SEEN_KEY = 'mirrorWechat.fabCoach.seen.v1'
+  const dismissFabCoach = () => {
+    try {
+      window.localStorage.setItem(FAB_COACH_SEEN_KEY, '1')
+    } catch {
+      /* ignore */
+    }
+    setFabCoachOpen(false)
+  }
+  useEffect(() => {
+    if (!hydrated || chatOpenId || syncOpen) return
+    try {
+      if (window.localStorage.getItem(FAB_COACH_SEEN_KEY) === '1') return
+    } catch {
+      /* show coach anyway */
+    }
+    const id = window.setTimeout(() => setFabCoachOpen(true), 480)
+    return () => window.clearTimeout(id)
+  }, [hydrated, chatOpenId, syncOpen])
+
+  const { state: customization } = useCustomization()
+  const wechatTheme = customization.wechatTheme
   const currentChat = useMemo(() => state.contacts.find((item) => item.id === chatOpenId) || null, [chatOpenId, state.contacts])
   const roleAvatarUrl = useMemo(() => state.profile?.avatarUrl || DEFAULT_PUBLIC_AVATAR_URL, [state.profile?.avatarUrl])
-  const mirrorBubbleTheme: WeChatBubbleTheme = DEFAULT_CUSTOMIZATION.wechatTheme.bubbleGlobal
-  const bubblePrefs = useMemo(() => readBubblePrefsLite(), [])
+  const mirrorMomentsAuthorName = useMemo(
+    () => state.profile?.nickname?.trim() || playerWechatNickname?.trim() || '角色',
+    [playerWechatNickname, state.profile?.nickname],
+  )
+  const mirrorMomentsFeedItems = useMemo(
+    () =>
+      mirrorMomentsToFeedItems(state.moments, {
+        authorName: mirrorMomentsAuthorName,
+        authorAvatar: roleAvatarUrl,
+        authorCharacterId: characterId,
+        nowMs: plotNowMs ?? undefined,
+      }),
+    [characterId, mirrorMomentsAuthorName, plotNowMs, roleAvatarUrl, state.moments],
+  )
+  const mirrorMomentContacts = useMemo(
+    () => mirrorContactsToMomentRefs(state.contacts),
+    [state.contacts],
+  )
+  const mirrorMomentsCoverUrl = useMemo(() => resolveMomentsCoverDisplayUrl(null), [])
+  const mirrorBubbleTheme = useMemo(
+    () => migrateMislabeledLumiDefaultBubble(bubbleForRole(wechatTheme, characterId)),
+    [wechatTheme, characterId],
+  )
+  const messengerStyle = useMemo(
+    () => resolveMessengerBubbleStyle(mirrorBubbleTheme, wechatTheme.chatSkinEngine),
+    [mirrorBubbleTheme, wechatTheme.chatSkinEngine],
+  )
+  const bubblePrefs = useMemo(() => {
+    const g = mirrorBubbleTheme
+    const groupOpen = !!(currentChat && isMirrorGroupContact(currentChat))
+    return {
+      /** 群聊强制对方头像；己方仍跟主题（X 等私信风可无头像） */
+      showAvatarOther: groupOpen || resolveBubbleShowAvatar(g, 'other'),
+      showAvatarSelf: resolveBubbleShowAvatar(g, 'self'),
+      mergeConsecutiveAvatarGroup:
+        g.bubbleTailStyle === 'wechat' ? false : g.mergeConsecutiveAvatarGroup !== false,
+    }
+  }, [mirrorBubbleTheme, currentChat])
+  const wechatClassicNight = isWechatClassicNightMode(wechatTheme)
+  const twitterDmActive = isTwitterXPresetActive(wechatTheme)
+  const twitterDmNight = twitterDmActive && isTwitterXNightMode(wechatTheme)
+  const chatNightMode = wechatClassicNight || twitterDmNight
+  const showChatTimestamps = wechatTheme.timestampStyle !== 'hidden'
+  const dmContacts = useMemo(
+    () => state.contacts.filter((item) => !isMirrorGroupContact(item)),
+    [state.contacts],
+  )
+  const dmContactById = useMemo(() => {
+    const map = new Map<string, MirrorWeChatContact>()
+    for (const c of dmContacts) map.set(c.id, c)
+    return map
+  }, [dmContacts])
+  const mirrorChatScopeStyle = useMemo(() => {
+    const roomBg = chatNightMode
+      ? wechatClassicNight
+        ? WECHAT_CLASSIC.chatBgNight
+        : TWITTER_X_COLORS.bgNight
+      : '#EDEDED'
+    return {
+      ...chatBubbleSideFontCssVars(mirrorBubbleTheme),
+      ...(wechatClassicNight ? wechatClassicSpecialSkinOverrides(true) : {}),
+      '--wx-self-bubble-bg': mirrorBubbleTheme.selfBubbleBg,
+      '--wx-self-bubble-text': wechatTheme.selfBubbleText || '#191919',
+      '--wx-self-bubble-radius': `${mirrorBubbleTheme.selfBubbleRadiusPx}px`,
+      '--wx-other-bubble-bg': mirrorBubbleTheme.otherBubbleBg,
+      '--wx-other-bubble-text':
+        wechatTheme.otherBubbleText || (chatNightMode ? WECHAT_CLASSIC.textNight : '#191919'),
+      '--wx-other-bubble-radius': `${mirrorBubbleTheme.otherBubbleRadiusPx}px`,
+      '--wx-avatar-radius': `${mirrorBubbleTheme.avatarRadiusPx}px`,
+      '--wx-chat-room-bg': roomBg,
+      '--wx-text-muted': chatNightMode ? WECHAT_CLASSIC.mutedNight : '#888888',
+      '--wx-timestamp-text':
+        wechatTheme.timestampText ||
+        (chatNightMode ? WECHAT_CLASSIC.timestampTextNight : '#888'),
+      background: `var(--wx-chat-room-bg, ${roomBg})`,
+    } as CSSProperties
+  }, [mirrorBubbleTheme, wechatTheme, chatNightMode, wechatClassicNight])
+
+  const chatDisplayName = (item: MirrorWeChatContact) =>
+    isMirrorGroupContact(item)
+      ? (item.groupName || item.remarkName || item.nickname || '群聊').trim() || '群聊'
+      : (item.remarkName || item.nickname || '对话').trim() || '对话'
   const starredContacts = useMemo(
     () =>
-      state.contacts
+      dmContacts
         .filter((item) => !!item.isStarred)
         .sort((a, b) => (a.remarkName || a.nickname || '').localeCompare(b.remarkName || b.nickname || '', 'zh-CN-u-co-pinyin')),
-    [state.contacts],
+    [dmContacts],
   )
   const contactsGrouped = useMemo(() => {
     const map = new Map<LetterKey, typeof state.contacts>()
     for (const letter of LETTER_INDEX) map.set(letter, [])
-    for (const item of state.contacts) {
+    for (const item of dmContacts) {
       const key = getGroupLetter(item.remarkName || item.nickname || '')
       map.get(key)?.push(item)
     }
@@ -204,7 +451,7 @@ function Main({
       if (!list.length) map.delete(k)
     }
     return map
-  }, [state.contacts])
+  }, [dmContacts])
   const contactVisibleLetters = useMemo(() => Array.from(contactsGrouped.keys()), [contactsGrouped])
 
   useEffect(() => {
@@ -261,116 +508,378 @@ function Main({
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
   }
 
-  const runSync = async (mode: 'generate' | 'update' = 'generate') => {
-    if (tab === 'chats' && !state.contacts.length) {
-      onToast('请先同步通讯录关系网，方可提取聊天碎片。')
-      setSyncOpen(false)
+  const runSyncScopes = async (payload: {
+    action: 'generate' | 'update'
+    scopes: MirrorSyncScope[]
+    contactIds: string[]
+  }) => {
+    const { action: mode, scopes, contactIds } = payload
+    if (scopes.some((s) => s !== 'contacts') && !hasContacts) {
+      onToast('请先生成通讯录，才能操作其它数据。')
       return
     }
-    const hasExistingData =
-      tab === 'contacts'
-        ? state.contacts.length > 0
-        : tab === 'chats'
-          ? state.contacts.some((x) => x.messages.length > 0)
-          : tab === 'moments'
-            ? state.moments.length > 0
-            : Boolean(state.profile?.nickname || state.profile?.signature || state.profile?.avatarUrl)
-    if (mode === 'generate' && hasExistingData && typeof window !== 'undefined') {
-      const proceed = window.confirm(
-        '当前已有镜像微信数据。\n建议优先使用“更新”：会基于现有数据追加/微调。\n如果继续“生成”，将覆盖当前已有数据并生成新的一套。\n\n确认继续生成吗？',
+    if (scopes.includes('chats') && !contactIds.length) {
+      onToast('请至少勾选一个联系人再生成聊天。')
+      return
+    }
+    if (mode === 'generate' && typeof window !== 'undefined') {
+      const hasContactsData = scopes.includes('contacts') && hasContacts
+      const hasChatData = scopes.includes('chats') && state.contacts.some((x) => x.messages.length > 0)
+      const hasMomentsData = scopes.includes('moments') && state.moments.length > 0
+      const hasMeData =
+        scopes.includes('me') &&
+        Boolean(state.profile?.nickname || state.bills.length || state.affectionCards.length)
+      if (hasContactsData) {
+        const hasAnyChats = state.contacts.some((x) => x.messages.length > 0)
+        const proceed = window.confirm(
+          [
+            '当前通讯录已有数据。',
+            '',
+            '继续「生成」会整表重新生成通讯录（不是追加更新）。',
+            hasAnyChats
+              ? '已有的联系人聊天记录也会被清空；对应记忆摘要会一并清除。'
+              : '若之后再生成聊天，将基于新通讯录重新铺开。',
+            '',
+            '若只想在现有名单上增量调整，请改用「更新」。',
+            '',
+            '确认继续生成吗？',
+          ].join('\n'),
+        )
+        if (!proceed) return
+      } else if (hasChatData || hasMomentsData || hasMeData) {
+        const proceed = window.confirm(
+          '所选范围已有数据。「生成」会覆盖对应范围；若想追加请改用「更新」。\n\n确认继续生成吗？',
+        )
+        if (!proceed) return
+      }
+    }
+
+    syncAbortRef.current?.abort()
+    const ac = new AbortController()
+    syncAbortRef.current = ac
+    setSyncBusy(true)
+    setSyncBusyLabel('准备中…')
+    let stoppedByUser = false
+    try {
+      const toSnapshot = (list: typeof state.contacts) =>
+        list.map((c) => ({
+          id: c.id,
+          nickname: c.nickname,
+          remarkName: c.remarkName,
+          characterId: c.characterId,
+          isStarred: c.isStarred,
+          isPinned: c.isPinned,
+          blocked: c.blocked,
+          kind: c.kind,
+          avatarUrl: c.avatarUrl,
+          relationshipNote: c.relationshipNote,
+        }))
+      let liveSnapshot = toSnapshot(state.contacts)
+      let liveContacts = state.contacts
+      // 通讯录优先，便于同一次勾选后其它范围依赖最新名单
+      const ordered = (['contacts', 'chats', 'moments', 'me'] as MirrorSyncScope[]).filter((s) =>
+        scopes.includes(s),
       )
-      if (!proceed) return
+      let wroteChatMemory = false
+      for (const scope of ordered) {
+        if (ac.signal.aborted) {
+          stoppedByUser = true
+          break
+        }
+        const scopeLabel =
+          scope === 'me' ? '我' : scope === 'chats' ? '信息' : scope === 'moments' ? '朋友圈' : '通讯录'
+        setSyncBusyLabel(`正在${mode === 'update' ? '更新' : '生成'}「${scopeLabel}」…`)
+        const userContactBias = [
+          selectedRelations.length ? `关系偏向：${selectedRelations.join('、')}` : '',
+          contactCustomBias.trim() ? `自定义要求：${contactCustomBias.trim()}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+        const userChatBias = [
+          selectedChatBiases.length ? `内容偏向：${selectedChatBiases.join('、')}` : '',
+          chatCustomBias.trim() ? `自定义要求：${chatCustomBias.trim()}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+        const updateBias =
+          scope === 'contacts'
+            ? '仅基于当前已存在通讯录与用户-角色近期对话/线下剧情做增量更新；总体联系人保持稳定，仅在剧情明确出现“新认识的人”时新增。'
+            : scope === 'chats'
+              ? '续写追加硬项：承接该会话已有聊天末尾往下写；禁止重复已问过的开场/同一问题（如已问「有没有喜欢的人」禁止再问）；新戳须晚于旧末条并贴近剧情「现在」。'
+              : '仅基于当前已有数据与近期剧情推进增量更新。'
+        const contactBiasForScope =
+          scope === 'contacts'
+            ? [mode === 'update' ? updateBias : '', userContactBias].filter(Boolean).join('\n')
+            : scope === 'me'
+              ? walletBias.trim()
+              : ''
+        const chatBiasForScope =
+          scope === 'chats'
+            ? [mode === 'update' ? updateBias : '', userChatBias].filter(Boolean).join('\n')
+            : undefined
+        const existingChatTranscriptsByContactId: Record<string, SpyExistingChatTranscript> | undefined =
+          scope === 'chats' && mode === 'update'
+            ? (() => {
+                const map: Record<string, SpyExistingChatTranscript> = {}
+                const ids =
+                  contactIds.length > 0
+                    ? contactIds
+                    : liveContacts.filter((c) => !isMirrorGroupContact(c)).map((c) => c.id)
+                for (const id of ids) {
+                  const row = liveContacts.find((c) => c.id === id)
+                  if (!row || isMirrorGroupContact(row)) continue
+                  const summary = summarizeMirrorChatForAppend(row.messages || [])
+                  if (summary) map[id] = summary
+                }
+                return map
+              })()
+            : undefined
+        let data
+        try {
+          data = await generateSpyWechatData({
+            apiConfig,
+            characterId,
+            playerIdentityId,
+            playerDisplayName,
+            playerWechatAvatarUrl,
+            playerWechatNickname: playerWechatNickname || playerDisplayName,
+            useLumiProjectAssistantPrompt,
+            scope,
+            signal: ac.signal,
+            onProgress: (msg) => setSyncBusyLabel(msg),
+            options: {
+              contactCount:
+                scope === 'contacts'
+                  ? Math.min(30, Math.max(4, contactCount || 12))
+                  : mode === 'update'
+                    ? Math.min(
+                        30,
+                        Math.max(4, liveContacts.filter((c) => !isMirrorGroupContact(c)).length || 4),
+                      )
+                    : Math.min(30, Math.max(4, contactCount || 12)),
+              contactBias: contactBiasForScope,
+              chatBias: chatBiasForScope,
+              currentContactsSnapshot:
+                scope === 'chats' || scope === 'moments' || mode === 'update' ? liveSnapshot : [],
+              includeBlocked: true,
+              includeMomentsHideFromUser: mode === 'update' ? true : includeHideFromUser,
+              includeMomentsOnlyTaVisibleWithoutUser: mode === 'update' ? true : includeOnlyTaVisible,
+              minMessagesPerContact: Math.min(80, Math.max(1, minMessagesPerContact || 8)),
+              chatContactsCount: contactIds.length || 1,
+              chatTargetContactIds: scope === 'chats' ? contactIds : undefined,
+              chatTimeSpanUnit,
+              chatTimeSpanValue: Math.max(1, chatTimeSpanValue || 1),
+              generateRelatedGroups: scope === 'chats' ? generateRelatedGroups : false,
+              relatedGroupsCount: scope === 'chats' ? relatedGroupsCount : undefined,
+              groupChatCustomBias: scope === 'chats' ? groupChatCustomBias : undefined,
+              generateLanguage,
+              syncTranslation,
+              translationLanguage,
+              includeSpecialMessages: scope === 'chats' ? includeSpecialMessages : false,
+              chatsAppend: scope === 'chats' && mode === 'update',
+              existingChatTranscriptsByContactId,
+            },
+          })
+        } catch (e) {
+          const aborted =
+            ac.signal.aborted ||
+            (e instanceof Error &&
+              (e.name === 'AbortError' || /aborted|已停止/i.test(e.message || '')))
+          if (aborted) {
+            stoppedByUser = true
+            break
+          }
+          throw e
+        }
+        mergeGenerated(scope, data, mode)
+        if (scope === 'contacts' && Array.isArray(data.contacts) && data.contacts.length) {
+          liveContacts = data.contacts.map((c) => ({
+            ...c,
+            messages:
+              mode === 'generate' && !String(c.id || '').startsWith('player:')
+                ? []
+                : Array.isArray(c.messages)
+                  ? c.messages
+                  : [],
+          }))
+          liveSnapshot = toSnapshot(liveContacts)
+          if (mode === 'generate') {
+            await clearMirrorWeChatChatMemory(characterId)
+            setChatOpenId(null)
+          }
+          await syncMirrorWeChatAddressBookToCharacterMemory(
+            characterId,
+            playerIdentityId,
+            liveContacts,
+          )
+        }
+        if (scope === 'chats') {
+          const incomingById = new Map((data.contacts || []).map((c) => [c.id, c] as const))
+          const mergedAfterChats = liveContacts.map((oldC) => {
+            const incoming = incomingById.get(oldC.id)
+            if (!incoming) return oldC
+            return {
+              ...oldC,
+              kind: incoming.kind || oldC.kind,
+              groupName: incoming.groupName || oldC.groupName,
+              members: incoming.members?.length ? incoming.members : oldC.members,
+              messages:
+                oldC.id === playerContactId || mode === 'generate'
+                  ? incoming.messages || []
+                  : [...(oldC.messages || []), ...(incoming.messages || [])],
+            }
+          })
+          for (const c of incomingById.values()) {
+            if (!mergedAfterChats.some((x) => x.id === c.id)) {
+              mergedAfterChats.push({
+                ...c,
+                messages: Array.isArray(c.messages) ? c.messages : [],
+              })
+            }
+          }
+          liveContacts = mergedAfterChats
+          // 用户已点停止则不再打记忆摘要轮；群聊按群单独写入，不进通讯录备忘
+          if (ingestChatToMemory && !ac.signal.aborted) {
+            setSyncBusyLabel('正在写入长期记忆摘要…\n（私聊按人 · 群聊按群，各整批一轮）')
+            await syncMirrorWeChatChatsToCharacterMemory(
+              characterId,
+              playerIdentityId,
+              mergedAfterChats,
+              {
+                apiConfig,
+                useAiSummary: true,
+              },
+            )
+            wroteChatMemory = true
+          }
+        }
+        if (ac.signal.aborted) {
+          stoppedByUser = true
+          break
+        }
+      }
+      setSyncOpen(false)
+      if (stoppedByUser) {
+        onToast('已停止生成；已完成的内容已保留')
+      } else {
+        const labels = ordered
+          .map((s) => (s === 'me' ? '我' : s === 'chats' ? '信息' : s === 'moments' ? '朋友圈' : '通讯录'))
+          .join('、')
+        onToast(
+          `${mode === 'update' ? '已更新' : '已生成'}：${labels}${wroteChatMemory ? '（含记忆）' : ''}`,
+        )
+      }
+    } catch (error) {
+      const aborted =
+        syncAbortRef.current?.signal.aborted ||
+        (error instanceof Error &&
+          (error.name === 'AbortError' || /aborted|已停止/i.test(error.message || '')))
+      if (aborted) onToast('已停止生成；已完成的内容已保留')
+      else onToast(error instanceof Error ? error.message : '同步失败')
+    } finally {
+      syncAbortRef.current = null
+      setSyncBusy(false)
+      setSyncBusyLabel('')
+    }
+  }
+
+  const stopSyncGeneration = () => {
+    if (!syncAbortRef.current) return
+    setSyncBusyLabel('正在停止…\n已生成的内容会保留')
+    syncAbortRef.current.abort()
+  }
+
+  const runDeleteScopes = async (payload: { scopes: MirrorSyncScope[]; contactIds: string[] }) => {
+    const { scopes, contactIds } = payload
+    if (!scopes.length) return
+    if (typeof window !== 'undefined') {
+      const labels = scopes
+        .map((s) => (s === 'me' ? '我' : s === 'chats' ? '信息' : s === 'moments' ? '朋友圈' : '通讯录'))
+        .join('、')
+      const confirmed = window.confirm(
+        `确认删除所选范围（${labels}）${
+          contactIds.length ? `，涉及 ${contactIds.length} 个会话/联系人` : ''
+        }？此操作不可撤销。`,
+      )
+      if (!confirmed) return
     }
     setSyncBusy(true)
     try {
-      const scope = tab === 'profile' ? 'me' : tab
-      const relationBiasText = selectedRelations.join('、')
-      const contactBiasPayload = tab === 'profile' ? walletBias.trim() : relationBiasText
-      const updateContactBias =
-        scope === 'contacts'
-          ? '仅基于当前已存在通讯录与用户-角色近期对话/线下剧情做增量更新；总体联系人保持稳定，仅在剧情明确出现“新认识的人”时新增。'
-          : scope === 'chats'
-            ? '仅基于当前已有聊天记录与用户-角色近期对话/线下剧情做续写追加，不重建旧会话。'
-            : '仅基于当前已有数据与近期剧情推进增量更新。'
-      const effectiveContactCount =
-        mode === 'update' ? Math.min(20, Math.max(4, state.contacts.length || 4)) : Math.min(20, Math.max(4, contactCount))
-      const effectiveChatContactsCount =
-        mode === 'update'
-          ? Math.min(20, Math.max(1, state.contacts.filter((x) => x.messages.length).length || 1))
-          : Math.min(20, Math.max(1, Math.round(Number(chatContactsCountInput) || 6)))
-      const data = await generateSpyWechatData({
-        apiConfig,
-        characterId,
-        playerIdentityId,
-        playerDisplayName,
-        useLumiProjectAssistantPrompt,
-        scope,
-        options: {
-          contactCount: effectiveContactCount,
-          contactBias:
-            mode === 'update'
-              ? updateContactBias
-              : contactBiasPayload,
-          currentContactsSnapshot:
-            mode === 'update'
-              ? state.contacts.map((c) => ({
-                  id: c.id,
-                  nickname: c.nickname,
-                  remarkName: c.remarkName,
-                  characterId: c.characterId,
-                  isStarred: c.isStarred,
-                  blocked: c.blocked,
-                }))
-              : [],
-          includeBlocked: mode === 'update' ? true : includeBlocked,
-          includeMomentsHideFromUser: mode === 'update' ? true : includeHideFromUser,
-          includeMomentsOnlyTaVisibleWithoutUser: mode === 'update' ? true : includeOnlyTaVisible,
-          minMessagesPerContact:
-            mode === 'update'
-              ? 12
-              : Math.min(80, Math.max(1, Math.round(Number(minMessagesPerContactInput) || 12))),
-          chatContactsCount: effectiveChatContactsCount,
-        },
-      })
-      mergeGenerated(scope, data, mode)
+      if (scopes.includes('contacts')) {
+        const nonPlayer = state.contacts.filter((c) => c.id !== playerContactId)
+        const deletingPartial =
+          contactIds.length > 0 && contactIds.length < nonPlayer.length
+        if (deletingPartial) {
+          const remain = state.contacts.filter((c) => !contactIds.includes(c.id))
+          removeContactsByIds(contactIds)
+          await deleteMirrorWeChatChatMemoryForContacts(characterId, contactIds)
+          await syncMirrorWeChatAddressBookToCharacterMemory(
+            characterId,
+            playerIdentityId,
+            remain,
+          )
+        } else {
+          clearByTab('contacts')
+          await clearMirrorWeChatAddressBookMemory(characterId)
+        }
+        setChatOpenId(null)
+      } else if (scopes.includes('chats')) {
+        const ids = contactIds.length
+          ? contactIds
+          : state.contacts.filter((c) => c.id !== playerContactId).map((c) => c.id)
+        clearChatMessagesForContacts(ids)
+        await deleteMirrorWeChatChatMemoryForContacts(characterId, ids)
+        if (chatOpenId && ids.includes(chatOpenId)) setChatOpenId(null)
+      }
+      if (scopes.includes('moments')) clearByTab('moments')
+      if (scopes.includes('me')) {
+        clearByTab('profile')
+        setWalletOpen(false)
+      }
       setSyncOpen(false)
-      onToast(mode === 'update' ? `${tabLabel(tab)}已更新` : `${tabLabel(tab)}已生成`)
+      onToast('已按所选范围删除')
     } catch (error) {
-      onToast(error instanceof Error ? error.message : '同步失败')
+      onToast(error instanceof Error ? error.message : '删除失败')
     } finally {
       setSyncBusy(false)
     }
   }
 
-  const onClearGeneratedCache = async () => {
-    if (typeof window !== 'undefined') {
-      const confirmed = window.confirm('确认清除当前镜像微信已生成缓存数据吗？该操作不可撤销。')
-      if (!confirmed) return
-    }
-    reset()
-    setChatOpenId(null)
-    setWalletOpen(false)
-    setSyncOpen(false)
-    await clearMirrorWeChatAddressBookMemory(characterId)
-    onToast('已清除镜像微信缓存数据')
-  }
-
-  const chats = state.contacts.filter((item) => item.messages.length)
+  const chats = useMemo(() => {
+    const list = state.contacts.filter((item) => item.messages.length)
+    return [...list].sort((a, b) => {
+      const ap = a.isPinned ? 1 : 0
+      const bp = b.isPinned ? 1 : 0
+      if (ap !== bp) return bp - ap
+      const at = a.messages.at(-1)?.timestamp || 0
+      const bt = b.messages.at(-1)?.timestamp || 0
+      return bt - at
+    })
+  }, [state.contacts])
 
   useEffect(() => {
     if (!chatOpenId || !currentChat) return
     const conversationKey = `mirror:${chatOpenId}`
     currentChat.messages.forEach((msg, index) => {
-      if (msg.special?.kind !== 'transfer') return
-      const transferId = msg.special.transferId?.trim() || `mirror-transfer:${conversationKey}:${msg.timestamp}:${index}`
+      const special = msg.special?.kind === 'transfer' ? msg.special : inferSpySpecialFromContent(msg.content)
+      if (special?.kind !== 'transfer') return
+      const transferId =
+        (special.transferId || '').trim() || `mirror-transfer:${conversationKey}:${msg.timestamp}:${index}`
+      const existing = getLumiTransferFresh(transferId, () => Date.now())
+      const amount =
+        Number(special.amountYuan) > 0
+          ? Number(special.amountYuan)
+          : Number(existing?.amount) > 0
+            ? Number(existing!.amount)
+            : 88
       upsertLumiTransfer({
         id: transferId,
-        amount: Number(msg.special.amountYuan || 188),
-        remark: msg.special.note || msg.content || '微信转账',
+        amount,
+        remark: special.note || msg.content || existing?.remark || '微信转账',
         senderId: msg.from === 'character' ? 'mirror-role' : 'mirror-peer',
         receiverId: msg.from === 'character' ? 'mirror-peer' : 'mirror-role',
-        status: msg.special.status || 'pending',
-        createdAt: Number(msg.timestamp || Date.now()),
+        status: special.status || existing?.status || 'pending',
+        createdAt: Number(msg.timestamp || existing?.createdAt || Date.now()),
         expiresAt: Number(msg.timestamp || Date.now()) + 24 * 60 * 60 * 1000,
         conversationKey,
         messageId: `mirror-msg:${msg.timestamp}:${index}`,
@@ -378,51 +887,198 @@ function Main({
     })
   }, [chatOpenId, currentChat])
 
-  const renderMessageBody = (msg: MirrorWeChatContact['messages'][number], isSelf: boolean, index: number) => {
-    if (msg.special?.kind === 'red_packet') {
+  const mirrorVoiceCallDurationSec = (special: {
+    durationSec?: number
+    lines?: unknown[]
+  }) => {
+    const n = Array.isArray(special.lines) ? special.lines.length : 0
+    const dur = Math.max(0, Number(special.durationSec) || 0)
+    const aligned = reconcileMirrorCallDurationSec(dur, n)
+    return Math.max(1, aligned || dur || 1)
+  }
+
+  const openVoiceCallDetail = (msg: MirrorWeChatMessage) => {
+    if (msg.special?.kind !== 'voice_call') return
+    const peer =
+      currentChat && isMirrorGroupContact(currentChat)
+        ? chatDisplayName(currentChat)
+        : currentChat?.remarkName || currentChat?.nickname || '对方'
+    const lines = Array.isArray(msg.special.lines) ? msg.special.lines : []
+    setVoiceCallDetail({
+      durationSec: mirrorVoiceCallDurationSec(msg.special),
+      peerName: peer,
+      peerAvatarUrl: currentChat?.avatarUrl,
+      characterName: state.profile?.nickname?.trim() || '角色',
+      characterAvatarUrl: roleAvatarUrl,
+      lines,
+    })
+  }
+
+  const mirrorSelfLabel = () =>
+    state.profile?.nickname?.trim() || playerWechatNickname?.trim() || '角色'
+
+  /** 点红包：窥探模式只读查看金额/备注/领取态，不可代领 */
+  const openMirrorRedPacket = (
+    msg: MirrorWeChatMessage,
+    _index: number,
+    isSelf: boolean,
+    peerLabel: string,
+    leftAvatar: string,
+  ) => {
+    if (!chatOpenId) return
+    const special = msg.special?.kind === 'red_packet' ? msg.special : undefined
+    if (!special) return
+    const amountYuan = Number(special.amountYuan) > 0 ? Number(special.amountYuan) : 8.88
+    const remark = (special.remark || '恭喜发财，大吉大利').trim() || '恭喜发财，大吉大利'
+    const selfLabel = mirrorSelfLabel()
+    const senderName = isSelf ? selfLabel : peerLabel
+    const senderAvatarUrl = isSelf ? roleAvatarUrl : leftAvatar
+    setRedPacketDetail({
+      amountYuan,
+      remark,
+      senderName,
+      senderAvatarUrl,
+      claimerName: special.opened ? (isSelf ? peerLabel : selfLabel) : undefined,
+      peerLabel,
+      selfLabel,
+      fromSelf: isSelf,
+      opened: !!special.opened,
+    })
+  }
+
+  /** 点转账：窥探模式只读查看金额/备注/收款态，不可代收 */
+  const openMirrorTransfer = (
+    msg: MirrorWeChatMessage,
+    index: number,
+    isSelf: boolean,
+    peerLabel: string,
+    leftAvatar: string,
+  ) => {
+    if (!chatOpenId) return
+    const special =
+      msg.special?.kind === 'transfer' ? msg.special : inferSpySpecialFromContent(msg.content)
+    if (special?.kind !== 'transfer') return
+    const transferId =
+      (special.transferId || '').trim() ||
+      `mirror-transfer:mirror:${chatOpenId}:${msg.timestamp}:${index}`
+    const stored = getLumiTransferFresh(transferId, () => Date.now())
+    const amountYuan =
+      Number(special.amountYuan) > 0
+        ? Number(special.amountYuan)
+        : Number(stored?.amount) > 0
+          ? Number(stored!.amount)
+          : 88
+    const status = special.status || stored?.status || 'pending'
+    const note = (special.note || stored?.remark || '').trim() || '微信转账'
+    const selfLabel = mirrorSelfLabel()
+    setTransferDetail({
+      amountYuan,
+      note,
+      senderName: isSelf ? selfLabel : peerLabel,
+      senderAvatarUrl: isSelf ? roleAvatarUrl : leftAvatar,
+      peerLabel,
+      selfLabel,
+      fromSelf: isSelf,
+      status,
+    })
+  }
+
+  /** 特殊消息卡片（无整行头像）；文字气泡走 WeChatMessageBubbleRow */
+  const renderSpecialCard = (
+    msg: MirrorWeChatMessage,
+    isSelf: boolean,
+    index: number,
+    leftAvatar: string,
+  ) => {
+    const special = msg.special || inferSpySpecialFromContent(msg.content)
+    if (special?.kind === 'voice_call') {
+      const data =
+        special.status === 'duration'
+          ? {
+              status: 'duration' as const,
+              durationSec: mirrorVoiceCallDurationSec(special),
+            }
+          : { status: special.status }
       return (
-        <RedPacketBubble
-          isSelf={isSelf}
-          data={{
-            amountYuan: Number(msg.special.amountYuan || 0),
-            opened: !!msg.special.opened,
-            remark: msg.special.remark || '恭喜发财，大吉大利',
-          }}
+        <CallStatusBubble
+          data={data}
+          initiatedBySelf={isSelf}
+          twitterStyle={twitterDmActive}
+          onClickDuration={
+            special.status === 'duration' ? () => openVoiceCallDetail(msg) : undefined
+          }
         />
       )
     }
-    if (msg.special?.kind === 'transfer') {
-      const transferId = msg.special.transferId?.trim() || `mirror-transfer:mirror:${chatOpenId || 'chat'}:${msg.timestamp}:${index}`
+    if (special?.kind === 'red_packet') {
+      // 红包走 RedPacketChatRow（窥探只读详情）
+      return null
+    }
+    if (special?.kind === 'transfer') {
+      const transferId =
+        (special.transferId || '').trim() ||
+        `mirror-transfer:mirror:${chatOpenId || 'chat'}:${msg.timestamp}:${index}`
+      const stored = getLumiTransferFresh(transferId, () => Date.now())
+      const amountYuan =
+        Number(special.amountYuan) > 0
+          ? Number(special.amountYuan)
+          : Number(stored?.amount) > 0
+            ? Number(stored!.amount)
+            : 88
+      const status = special.status || stored?.status || 'pending'
+      const remark = special.note || stored?.remark || undefined
+      const peerLabel =
+        (currentChat?.remarkName || currentChat?.nickname || '对方').trim() || '对方'
       return (
-        <TransferBubble transferId={transferId} getCurrentTime={() => Date.now()} />
+        <Pressable
+          type="button"
+          className="block max-w-full text-left"
+          onClick={() => openMirrorTransfer(msg, index, isSelf, peerLabel, leftAvatar)}
+        >
+          <TransferBubbleFace
+            status={status}
+            amountYuan={amountYuan}
+            remark={remark}
+            perspective={isSelf ? 'outgoing' : 'incoming'}
+            messengerStyle={messengerStyle}
+          />
+        </Pressable>
       )
     }
     if (msg.special?.kind === 'sticker') {
       const stickerUrl = msg.special.imageUrl
-      return (
-        stickerUrl ? (
-          <div
-            className="inline-block overflow-hidden select-none"
-            style={{
-              borderRadius: isSelf ? `${mirrorBubbleTheme.selfBubbleRadiusPx}px` : `${mirrorBubbleTheme.otherBubbleRadiusPx}px`,
-              border: isSelf ? 'none' : '1px solid rgba(0,0,0,0.08)',
-              background: isSelf ? 'transparent' : '#ffffff',
-            }}
-          >
-            <img src={stickerUrl} alt="" className="block h-auto w-[160px] max-w-[46vw] select-none object-cover" draggable={false} />
-          </div>
-        ) : (
-          <div
-            className="inline-flex h-[96px] w-[96px] items-center justify-center overflow-hidden select-none"
-            style={{
-              borderRadius: isSelf ? `${mirrorBubbleTheme.selfBubbleRadiusPx}px` : `${mirrorBubbleTheme.otherBubbleRadiusPx}px`,
-              border: isSelf ? 'none' : '1px solid rgba(0,0,0,0.08)',
-              background: isSelf ? 'transparent' : '#ffffff',
-            }}
-          >
-            <span className="text-[28px]" aria-label="表情包">🙂</span>
-          </div>
-        )
+      const r = isSelf
+        ? mirrorBubbleTheme.selfBubbleRadiusPx
+        : mirrorBubbleTheme.otherBubbleRadiusPx
+      return stickerUrl ? (
+        <div
+          className="inline-block overflow-hidden select-none"
+          style={{
+            borderRadius: `${r}px`,
+            border: isSelf ? 'none' : '1px solid rgba(0,0,0,0.08)',
+            background: isSelf ? 'transparent' : 'var(--wx-other-bubble-bg, #fff)',
+          }}
+        >
+          <img
+            src={stickerUrl}
+            alt=""
+            className="block h-auto w-[160px] max-w-[46vw] select-none object-cover"
+            draggable={false}
+          />
+        </div>
+      ) : (
+        <div
+          className="inline-flex h-[96px] w-[96px] items-center justify-center overflow-hidden select-none"
+          style={{
+            borderRadius: `${r}px`,
+            border: isSelf ? 'none' : '1px solid rgba(0,0,0,0.08)',
+            background: isSelf ? 'transparent' : 'var(--wx-other-bubble-bg, #fff)',
+          }}
+        >
+          <span className="text-[28px]" aria-label="表情包">
+            🙂
+          </span>
+        </div>
       )
     }
     if (msg.special?.kind === 'image' && msg.special.imageUrl) {
@@ -433,30 +1089,106 @@ function Main({
         </div>
       )
     }
-    return (
-      <div
-        className={`max-w-[min(78%,calc(100vw-24px-24px-80px))] rounded-[12px] px-3 py-2 text-[14px] leading-6 shadow-[0_8px_18px_rgba(0,0,0,0.04)] ${
-          !isSelf ? 'bg-[#f0f1f3] text-[#1c1d20]' : 'bg-[#16171a] text-white'
-        }`}
-      >
-        {msg.content}
-      </div>
-    )
+    return null
   }
 
-  const getChatPreviewText = (msg?: MirrorWeChatContact['messages'][number]) => {
+  const getChatPreviewText = (
+    msg?: MirrorWeChatContact['messages'][number],
+    opts?: { isGroup?: boolean },
+  ) => {
     if (!msg) return '暂无聊天碎片'
-    if (msg.special?.kind === 'red_packet') return `[微信红包] ${msg.special.remark || ''}`.trim()
-    if (msg.special?.kind === 'transfer') return `[微信转账] ${msg.special.note || msg.content || ''}`.trim()
-    if (msg.special?.kind === 'sticker') return '[表情包]'
-    if (msg.special?.kind === 'image') return '[图片]'
-    return msg.content || '暂无聊天碎片'
+    const special = msg.special || inferSpySpecialFromContent(msg.content)
+    let body = ''
+    if (special?.kind === 'red_packet') {
+      body = special.opened
+        ? `[微信红包] 已领取`
+        : `[微信红包] ${special.remark || ''}`.trim()
+    } else if (special?.kind === 'transfer') {
+      const amt = Number(special.amountYuan)
+      const amtText = Number.isFinite(amt) && amt > 0 ? `¥${amt.toFixed(2)}` : ''
+      body = `[微信转账] ${amtText} ${special.note || ''}`.trim()
+    } else if (special?.kind === 'voice_call') {
+      body =
+        special.status === 'duration'
+          ? `[语音通话] ${fmtCallStatusDuration(mirrorVoiceCallDurationSec(special))}`
+          : special.status === 'rejected'
+            ? '[语音通话] 已拒绝'
+            : '[语音通话] 未接听'
+    } else if (special?.kind === 'location') body = `[位置] ${special.name || ''}`.trim()
+    else if (msg.special?.kind === 'sticker') body = '[表情包]'
+    else if (msg.special?.kind === 'image') body = '[图片]'
+    else body = msg.content || '暂无聊天碎片'
+    if (opts?.isGroup && msg.from !== 'character') {
+      const who = (msg.senderNickname || '').trim()
+      if (who) return `${who}：${body}`
+    }
+    return body
   }
 
-  const currentChatMessages = useMemo(
-    () => (currentChat ? [...currentChat.messages].sort((a, b) => a.timestamp - b.timestamp) : []),
-    [currentChat],
-  )
+  const currentChatMessages = useMemo(() => {
+    if (!currentChat) return []
+    const sorted = [...currentChat.messages].sort((a, b) => a.timestamp - b.timestamp)
+    const peerLabel =
+      (currentChat.remarkName || currentChat.nickname || '对方').trim() || '对方'
+    return enrichMirrorMessagesWithClaimReceipts(sorted, {
+      peerLabel,
+      selfLabel: state.profile?.nickname?.trim() || playerWechatNickname?.trim() || '角色',
+    })
+  }, [currentChat, playerWechatNickname, state.profile?.nickname])
+
+  const CHAT_NEAR_BOTTOM_PX = 56
+
+  const rememberChatScroll = (contactId: string | null) => {
+    const id = (contactId || '').trim()
+    const el = chatScrollRef.current
+    if (!id || !el) return
+    const remain = el.scrollHeight - (el.scrollTop + el.clientHeight)
+    if (remain <= CHAT_NEAR_BOTTOM_PX) {
+      delete chatScrollMemoryRef.current[id]
+    } else {
+      chatScrollMemoryRef.current[id] = el.scrollTop
+    }
+  }
+
+  const openMirrorChat = (contactId: string) => {
+    setChatOpenId(contactId)
+  }
+
+  const closeMirrorChat = () => {
+    rememberChatScroll(chatOpenId)
+    setChatOpenId(null)
+  }
+
+  const onChatScrollBody = (e: ReactUIEvent<HTMLDivElement>) => {
+    if (!chatOpenId) return
+    const el = e.currentTarget
+    const remain = el.scrollHeight - (el.scrollTop + el.clientHeight)
+    if (remain <= CHAT_NEAR_BOTTOM_PX) {
+      delete chatScrollMemoryRef.current[chatOpenId]
+    } else {
+      chatScrollMemoryRef.current[chatOpenId] = el.scrollTop
+    }
+  }
+
+  // 进入会话：有上滑记忆则还原，否则滚到最底部
+  useLayoutEffect(() => {
+    if (!chatOpenId || !currentChat) return
+    const el = chatScrollRef.current
+    if (!el) return
+    const saved = chatScrollMemoryRef.current[chatOpenId]
+    const apply = () => {
+      if (typeof saved === 'number' && Number.isFinite(saved) && saved >= 0) {
+        el.scrollTop = saved
+      } else {
+        el.scrollTop = el.scrollHeight
+      }
+    }
+    apply()
+    // 等气泡布局完成后再贴一次，避免高度未算准
+    requestAnimationFrame(() => {
+      requestAnimationFrame(apply)
+    })
+  }, [chatOpenId, currentChat, currentChatMessages.length])
 
   if (!hydrated) {
     return (
@@ -473,118 +1205,534 @@ function Main({
 
   return (
     <motion.div
-      className="fixed inset-0 z-[1410] overflow-hidden bg-[#fbfbfc] text-[#141517]"
+      className={`fixed inset-0 z-[1410] overflow-hidden ${
+        chatOpenId && chatNightMode ? 'bg-[#111111] text-[#E5E5E5]' : 'bg-[#fbfbfc] text-[#141517]'
+      }`}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(178,23,23,0.05),transparent_28%),radial-gradient(circle_at_bottom,rgba(155,118,42,0.06),transparent_30%)]" />
+      {!(chatOpenId && chatNightMode) ? (
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(178,23,23,0.05),transparent_28%),radial-gradient(circle_at_bottom,rgba(155,118,42,0.06),transparent_30%)]" />
+      ) : null}
 
       <div className="relative flex h-full flex-col">
         <div
-          className="sticky top-0 z-20 border-b border-[#ececef] bg-white/80 px-4 pb-3 backdrop-blur-xl"
+          className={`sticky top-0 z-20 border-b px-4 pb-3 backdrop-blur-xl ${
+            chatOpenId && chatNightMode
+              ? 'border-white/10 bg-[#111111]/92'
+              : 'border-[#ececef] bg-white/80'
+          }`}
           style={{ paddingTop: 'max(14px, env(safe-area-inset-top))' }}
         >
           <div className="flex items-center justify-between gap-3">
-            <Pressable type="button" onClick={chatOpenId ? () => setChatOpenId(null) : onClose} className="rounded-[14px] border border-[#e6e7eb] bg-white px-3 py-2 text-[13px] text-[#4d5056]">
+            <Pressable
+              type="button"
+              onClick={chatOpenId ? closeMirrorChat : onClose}
+              className={`rounded-[14px] border px-3 py-2 text-[13px] ${
+                chatOpenId && chatNightMode
+                  ? 'border-white/12 bg-white/8 text-[#E5E5E5]'
+                  : 'border-[#e6e7eb] bg-white text-[#4d5056]'
+              }`}
+            >
               返回
             </Pressable>
-            <div className="text-[16px] font-medium tracking-[0.12em] text-[#111214]">{chatOpenId ? currentChat?.remarkName || '对话' : `镜像微信 · ${tabLabel(tab)}`}</div>
-            <div className="inline-flex items-center gap-2">
-              <Pressable
-                type="button"
-                onClick={onClearGeneratedCache}
-                className="rounded-[14px] border border-[#e8dede] bg-white px-2.5 py-2 text-[#8f4f56] shadow-[0_8px_18px_rgba(0,0,0,0.05)]"
-                aria-label="清除缓存数据"
-                title="清除缓存数据"
-              >
-                <Trash2 size={15} />
-              </Pressable>
-              <Pressable
-                type="button"
-                onClick={() => setSyncOpen(true)}
-                className="rounded-[16px] border border-[#ece1c6] bg-[#fffdfa] px-3 py-2 text-[13px] text-[#7b6332] shadow-[0_8px_20px_rgba(180,145,83,0.08)]"
-              >
-                <span className="inline-flex items-center gap-1"><Sparkles size={14} />生成/更新</span>
-              </Pressable>
+            <div
+              className={`min-w-0 flex-1 truncate px-2 text-center text-[16px] font-medium tracking-[0.12em] ${
+                chatOpenId && chatNightMode ? 'text-[#E5E5E5]' : 'text-[#111214]'
+              }`}
+            >
+              {chatOpenId && currentChat
+                ? chatDisplayName(currentChat)
+                : chatOpenId
+                  ? '对话'
+                  : `镜像微信 · ${tabLabel(tab)}`}
             </div>
+            {/* 与左侧返回对称占位，标题居中；生成改悬浮钮 */}
+            <div className="w-[52px] shrink-0" aria-hidden />
           </div>
         </div>
 
-        <div className="relative flex-1 overflow-y-auto overflow-x-hidden pb-24">
+        <div
+          ref={chatScrollRef}
+          className="relative flex-1 overflow-y-auto overflow-x-hidden pb-24"
+          onScroll={onChatScrollBody}
+        >
           {chatOpenId && currentChat ? (
-            <div className="px-4 pb-5 pt-4">
-              <div className="space-y-2">
-                {(() => {
-                  let previousShownTimeMs: number | null = null
-                  const nowMs = Date.now()
-                  return currentChatMessages.map((msg, index) => {
-                    const showTimestamp = shouldRenderWeChatTimestamp(previousShownTimeMs, msg.timestamp)
-                    if (showTimestamp) previousShownTimeMs = msg.timestamp
-                    // 镜像微信里：角色消息固定右侧，联系人（含用户）固定左侧。
-                    const isSelf = msg.from === 'character'
-                    const prev = index > 0 ? currentChatMessages[index - 1] : null
-                    const showAvatarColumn =
-                      bubblePrefs.showAvatar &&
-                      (!bubblePrefs.mergeConsecutiveAvatarGroup || !prev || prev.from !== msg.from)
-                    const leftAvatar = currentChat.avatarUrl || DEFAULT_PUBLIC_AVATAR_URL
-                    const rightAvatar = roleAvatarUrl
-                    return (
-                      <Fragment key={`${msg.timestamp}-${index}`}>
-                        {showTimestamp ? (
-                          <div className="my-2 flex justify-center">
-                            <span className="rounded-full bg-black/5 px-2.5 py-0.5 text-[11px] text-[#8f9298]">
-                              {formatWeChatChatTimestamp(msg.timestamp, nowMs)}
-                            </span>
-                          </div>
-                        ) : null}
-                        <div className={`flex ${msg.from === 'character' ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`flex w-full min-w-0 items-start gap-2 ${isSelf ? 'justify-end' : 'justify-start'}`}>
-                            {!isSelf && bubblePrefs.showAvatar ? (
-                              showAvatarColumn ? (
-                                <img src={leftAvatar} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
-                              ) : (
-                                <div className="h-9 w-9 shrink-0" aria-hidden />
+            <WeChatChatSkinEngineProvider engine={wechatTheme.chatSkinEngine}>
+              <WeChatAvatarChromeProvider chrome={wechatTheme.avatarChrome}>
+                <div
+                  data-wx-chat-skin-scope
+                  {...(wechatClassicNight ? { 'data-wx-wechat-night': '1' } : {})}
+                  className="relative min-h-full px-0 pb-5 pt-2"
+                  style={mirrorChatScopeStyle}
+                >
+                  {chatNightMode ? (
+                    <div
+                      className="pointer-events-none absolute inset-0 z-0"
+                      style={{
+                        backgroundColor: twitterDmNight
+                          ? TWITTER_X_COLORS.wallpaperDimNight
+                          : WECHAT_CLASSIC.wallpaperDimNight,
+                      }}
+                      aria-hidden
+                    />
+                  ) : null}
+                  {wechatTheme.chatSkinScopedCss?.trim() ? (
+                    <style
+                      dangerouslySetInnerHTML={{
+                        __html: wrapWeChatChatSkinScopedCss(wechatTheme.chatSkinScopedCss),
+                      }}
+                    />
+                  ) : null}
+                  <div className="relative z-[1] overflow-x-visible">
+                    {(() => {
+                      let previousShownTimeMs: number | null = null
+                      const nowMs = plotNowMs && plotNowMs > 0 ? plotNowMs : Date.now()
+                      const isGroupChat = isMirrorGroupContact(currentChat)
+                      /** 与主微信 ChatRoom.messageBlockSpacing 同规则 */
+                      const wechatClassicGap = mirrorBubbleTheme.bubbleTailStyle === 'wechat'
+                      const msgGapClass = (index: number, showStamp: boolean) => {
+                        if (index <= 0) return ''
+                        if (showStamp) return wechatClassicGap ? 'mt-6' : 'mt-4'
+                        const prevMsg = currentChatMessages[index - 1]
+                        const cur = currentChatMessages[index]
+                        const same =
+                          !!prevMsg &&
+                          prevMsg.from === cur.from &&
+                          (prevMsg.senderKey || '') === (cur.senderKey || '')
+                        if (same) {
+                          if (twitterDmActive) return 'mt-1'
+                          if (wechatClassicGap) return 'mt-4'
+                          return 'mt-2'
+                        }
+                        if (twitterDmActive) return 'mt-3'
+                        if (wechatClassicGap) return 'mt-7'
+                        return 'mt-4'
+                      }
+                      return currentChatMessages.map((msg, index) => {
+                        const showTimestamp = shouldRenderWeChatTimestamp(
+                          previousShownTimeMs,
+                          msg.timestamp,
+                        )
+                        if (showTimestamp) previousShownTimeMs = msg.timestamp
+                        const isSelf = msg.from === 'character'
+                        const prev = index > 0 ? currentChatMessages[index - 1] : null
+                        const sameSender =
+                          !!prev &&
+                          prev.from === msg.from &&
+                          (prev.senderKey || '') === (msg.senderKey || '')
+                        const rowGap = msgGapClass(index, showTimestamp)
+                        const sideShowAvatar = isSelf
+                          ? bubblePrefs.showAvatarSelf
+                          : bubblePrefs.showAvatarOther
+                        const showAvatarColumn =
+                          sideShowAvatar &&
+                          (!bubblePrefs.mergeConsecutiveAvatarGroup || !prev || !sameSender)
+                        const senderMemberRaw =
+                          isGroupChat && !isSelf
+                            ? currentChat.members?.find((m) => m.key === msg.senderKey) ||
+                              currentChat.members?.find(
+                                (m) =>
+                                  m.nickname === msg.senderNickname ||
+                                  m.remarkName === msg.senderNickname,
                               )
-                            ) : null}
-                            {renderMessageBody(msg, isSelf, index)}
-                            {isSelf && bubblePrefs.showAvatar ? (
-                              showAvatarColumn ? (
-                                <img src={rightAvatar} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
-                              ) : (
-                                <div className="h-9 w-9 shrink-0" aria-hidden />
+                            : undefined
+                        /** 群内同名陌生人挂回通讯录，共用头像/备注 */
+                        const linkedDm =
+                          isGroupChat && !isSelf
+                            ? (senderMemberRaw?.contactId
+                                ? dmContactById.get(senderMemberRaw.contactId)
+                                : undefined) ||
+                              (msg.senderKey ? dmContactById.get(msg.senderKey) : undefined) ||
+                              findMirrorDmContactByName(
+                                dmContacts,
+                                msg.senderNickname ||
+                                  senderMemberRaw?.nickname ||
+                                  msg.senderKey ||
+                                  '',
                               )
-                            ) : null}
+                            : undefined
+                        const senderIsContact = !!(
+                          linkedDm ||
+                          senderMemberRaw?.isContact ||
+                          msg.isContactSender
+                        )
+                        const leftAvatar =
+                          (isGroupChat
+                            ? linkedDm?.avatarUrl ||
+                              (senderMemberRaw?.contactId
+                                ? dmContactById.get(senderMemberRaw.contactId)?.avatarUrl
+                                : undefined) ||
+                              msg.senderAvatarUrl ||
+                              senderMemberRaw?.avatarUrl
+                            : currentChat.avatarUrl) || DEFAULT_PUBLIC_AVATAR_URL
+                        const rightAvatar = roleAvatarUrl
+                        const senderLabelRaw =
+                          isGroupChat && !isSelf
+                            ? (
+                                (linkedDm
+                                  ? linkedDm.remarkName || linkedDm.nickname
+                                  : undefined) ||
+                                msg.senderNickname ||
+                                senderMemberRaw?.remarkName ||
+                                senderMemberRaw?.nickname ||
+                                ''
+                              ).trim()
+                            : ''
+                        const senderRel =
+                          isGroupChat && !isSelf && !senderIsContact
+                            ? (senderMemberRaw?.relationshipNote || '').trim()
+                            : ''
+                        /** 与主微信一致：仅在本行显示头像时挂昵称（连发同人只标首条） */
+                        const senderLabel =
+                          !isSelf && showAvatarColumn ? senderLabelRaw : ''
+                        const special = msg.special || inferSpySpecialFromContent(msg.content)
+                        const tr = (msg.translation || '').trim()
+                        const trKey = `${chatOpenId}:${index}`
+                        const trOpen = !!openMirrorTranslations[trKey]
+
+                        const stampText = formatWeChatChatTimestamp(msg.timestamp, nowMs)
+                        const stampParts = stampText.split(' ')
+                        const stampLeft = stampParts.slice(0, -1).join(' ')
+                        const stampTime = stampParts.at(-1) ?? stampText
+                        const stamp =
+                          showChatTimestamps && showTimestamp ? (
+                            <div className="my-2 flex justify-center">
+                              <span
+                                data-wx-timestamp
+                                className={
+                                  twitterDmActive
+                                    ? 'px-2 py-0.5 text-[12px]'
+                                    : 'px-3 py-1 text-[12px]'
+                                }
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  color: twitterDmActive
+                                    ? 'var(--wx-timestamp-text, #536471)'
+                                    : wechatClassicNight
+                                      ? WECHAT_CLASSIC.timestampTextNight
+                                      : 'var(--wx-timestamp-text, #999999)',
+                                  lineHeight: 1.1,
+                                  borderRadius: twitterDmActive
+                                    ? 0
+                                    : 'var(--wx-chat-timestamp-radius, 9999px)',
+                                  fontFamily: 'var(--wx-chat-timestamp-font, inherit)',
+                                  background: twitterDmActive
+                                    ? 'transparent'
+                                    : wechatClassicNight
+                                      ? WECHAT_CLASSIC.timestampBgNight
+                                      : 'var(--wx-chat-timestamp-bg, #f2f2f2)',
+                                }}
+                              >
+                                {twitterDmActive ? (
+                                  <WeChatChatMixedText text={stampText} />
+                                ) : stampLeft ? (
+                                  <>
+                                    <WeChatChatMixedText text={stampLeft} />
+                                    &nbsp;
+                                    <WeChatChatMixedText text={stampTime} />
+                                  </>
+                                ) : (
+                                  <WeChatChatMixedText text={stampTime} />
+                                )}
+                              </span>
+                            </div>
+                          ) : null
+
+                        // 系统条：领取红包等（居中灰字，与主微信一致）
+                        if (!special && /^【系统】/.test(String(msg.content || '').trim())) {
+                          return (
+                            <div key={`${msg.timestamp}-${index}`} className={rowGap}>
+                              {stamp}
+                              <div className="my-1.5 flex justify-center px-6">
+                                <span
+                                  className="max-w-[90%] text-center text-[12px] leading-snug"
+                                  style={{
+                                    color: wechatClassicNight
+                                      ? WECHAT_CLASSIC.timestampTextNight
+                                      : 'var(--wx-timestamp-text, #999999)',
+                                  }}
+                                >
+                                  {String(msg.content || '')
+                                    .replace(/^【系统】/, '')
+                                    .trim()}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        }
+
+                        if (special?.kind === 'red_packet') {
+                          const peerLabel =
+                            (isGroupChat
+                              ? senderLabelRaw || senderMemberRaw?.nickname || '对方'
+                              : currentChat.remarkName || currentChat.nickname || '对方'
+                            ).trim() || '对方'
+                          // 窥探只读：不用本地「已拆」UI store，避免误显示为可代领后的已领态
+                          const rpId = `mirror-rp-ro:${chatOpenId || 'chat'}:${msg.timestamp}:${index}`
+                          return (
+                            <div key={`${msg.timestamp}-${index}`} className={rowGap}>
+                              {stamp}
+                              <RedPacketChatRow
+                                id={rpId}
+                                isSelf={isSelf}
+                                data={{
+                                  amountYuan: Number(special.amountYuan || 0) || 8.88,
+                                  opened: !!special.opened,
+                                  remark: special.remark || '恭喜发财，大吉大利',
+                                }}
+                                bubble={mirrorBubbleTheme}
+                                showAvatar={sideShowAvatar}
+                                showAvatarColumn={showAvatarColumn}
+                                chatSelfAvatarUrl={rightAvatar}
+                                chatOtherAvatarUrl={leftAvatar}
+                                chatOtherSenderNickname={
+                                  senderLabel
+                                    ? senderRel
+                                      ? `${senderLabel} · ${senderRel}`
+                                      : senderLabel
+                                    : undefined
+                                }
+                                onOpen={() =>
+                                  openMirrorRedPacket(msg, index, isSelf, peerLabel, leftAvatar)
+                                }
+                              />
+                            </div>
+                          )
+                        }
+
+                        if (special?.kind === 'location') {
+                          return (
+                            <div key={`${msg.timestamp}-${index}`} className={rowGap}>
+                              {stamp}
+                              <LocationChatRow
+                                id={`mirror-loc:${chatOpenId}:${index}`}
+                                isSelf={isSelf}
+                                data={{
+                                  locationId: `mirror-loc:${chatOpenId}:${msg.timestamp}`,
+                                  name: special.name || '位置',
+                                  address: special.address,
+                                  distance: special.distance || '附近',
+                                }}
+                                bubble={mirrorBubbleTheme}
+                                showAvatar={sideShowAvatar}
+                                showAvatarColumn={showAvatarColumn}
+                                chatSelfAvatarUrl={rightAvatar}
+                                chatOtherAvatarUrl={leftAvatar}
+                                chatOtherSenderNickname={
+                                  senderLabel
+                                    ? senderRel
+                                      ? `${senderLabel} · ${senderRel}`
+                                      : senderLabel
+                                    : undefined
+                                }
+                                variant="chat"
+                              />
+                            </div>
+                          )
+                        }
+
+                        if (
+                          special?.kind === 'voice_call' ||
+                          special?.kind === 'transfer' ||
+                          msg.special?.kind === 'sticker' ||
+                          msg.special?.kind === 'image'
+                        ) {
+                          const card = renderSpecialCard(msg, isSelf, index, leftAvatar)
+                          if (special?.kind === 'voice_call') {
+                            return (
+                              <div key={`${msg.timestamp}-${index}`} className={rowGap}>
+                                {stamp}
+                                <WeChatMessageBubbleRow
+                                  messageText={formatCallStatusLabel(
+                                    special.status,
+                                    isSelf,
+                                    mirrorVoiceCallDurationSec(special),
+                                  )}
+                                  messagePrefixIcon={<Phone size={16} className="shrink-0 opacity-80" />}
+                                  isSelf={isSelf}
+                                  bubble={mirrorBubbleTheme}
+                                  showAvatar={sideShowAvatar}
+                                  showAvatarColumn={showAvatarColumn}
+                                  showBubbleTail={false}
+                                  twitterStyle={twitterDmActive}
+                                  variant="chat"
+                                  avatarSizePx={
+                                    mirrorBubbleTheme.bubbleTailStyle === 'wechat'
+                                      ? WECHAT_CLASSIC_AVATAR_SIZE_PX
+                                      : undefined
+                                  }
+                                  chatSelfAvatarUrl={rightAvatar}
+                                  chatOtherAvatarUrl={leftAvatar}
+                                  chatOtherSenderNickname={
+                                    senderLabel
+                                      ? senderRel
+                                        ? `${senderLabel} · ${senderRel}`
+                                        : senderLabel
+                                      : undefined
+                                  }
+                                  onBubbleTap={
+                                    special.status === 'duration'
+                                      ? () => openVoiceCallDetail(msg)
+                                      : undefined
+                                  }
+                                />
+                              </div>
+                            )
+                          }
+                          return (
+                            <div key={`${msg.timestamp}-${index}`} className={rowGap}>
+                              {stamp}
+                              <div
+                                className={`flex w-full ${isSelf ? 'justify-end' : 'justify-start'} px-4`}
+                              >
+                                <div
+                                  className={`flex max-w-[75%] items-start gap-3 ${
+                                    isSelf ? 'flex-row-reverse' : 'flex-row'
+                                  }`}
+                                >
+                                  {sideShowAvatar ? (
+                                    showAvatarColumn ? (
+                                      <img
+                                        src={isSelf ? rightAvatar : leftAvatar}
+                                        alt=""
+                                        className="h-10 w-10 shrink-0 object-cover"
+                                        style={{
+                                          borderRadius: `var(--wx-avatar-radius, 4px)`,
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="h-10 w-10 shrink-0" aria-hidden />
+                                    )
+                                  ) : null}
+                                  <div
+                                    className={`flex min-w-0 flex-col ${
+                                      isSelf ? 'items-end' : 'items-start'
+                                    }`}
+                                  >
+                                    {senderLabel ? (
+                                      <div className="mb-0.5 max-w-full truncate px-0.5 text-[11px] text-[color:var(--wx-timestamp-text,#9a9da3)]">
+                                        {senderLabel}
+                                        {senderRel ? (
+                                          <span className="opacity-70"> · {senderRel}</span>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+                                    {card}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        }
+
+                        return (
+                          <div key={`${msg.timestamp}-${index}`} className={rowGap}>
+                            {stamp}
+                            <WeChatMessageBubbleRow
+                              messageText={msg.content || ''}
+                              isSelf={isSelf}
+                              bubble={mirrorBubbleTheme}
+                              showAvatar={sideShowAvatar}
+                              showAvatarColumn={showAvatarColumn}
+                              showBubbleTail={!!mirrorBubbleTheme.showBubbleTail}
+                              twitterStyle={twitterDmActive}
+                              variant="chat"
+                              avatarSizePx={
+                                mirrorBubbleTheme.bubbleTailStyle === 'wechat'
+                                  ? WECHAT_CLASSIC_AVATAR_SIZE_PX
+                                  : undefined
+                              }
+                              chatSelfAvatarUrl={rightAvatar}
+                              chatOtherAvatarUrl={leftAvatar}
+                              chatOtherSenderNickname={
+                                senderLabel
+                                  ? senderRel
+                                    ? `${senderLabel} · ${senderRel}`
+                                    : senderLabel
+                                  : undefined
+                              }
+                              translationText={tr || undefined}
+                              translationExpanded={trOpen}
+                              onTranslationToggle={
+                                tr
+                                  ? () =>
+                                      setOpenMirrorTranslations((prev) => ({
+                                        ...prev,
+                                        [trKey]: !prev[trKey],
+                                      }))
+                                  : undefined
+                              }
+                            />
                           </div>
-                        </div>
-                      </Fragment>
-                    )
-                  })
-                })()}
-              </div>
-              <div className="mt-4 rounded-[20px] border border-[#e8e9ec] bg-white/88 px-4 py-3 text-[13px] italic text-[#8a8d93]">
-                *Observer mode active. (窥探模式)*
-              </div>
-            </div>
+                        )
+                      })
+                    })()}
+                  </div>
+                  <div className="mx-4 mt-4 rounded-[20px] border border-black/5 bg-white/70 px-4 py-3 text-[13px] italic text-black/45">
+                    *Observer mode active. (窥探模式)*
+                  </div>
+                </div>
+              </WeChatAvatarChromeProvider>
+            </WeChatChatSkinEngineProvider>
           ) : tab === 'chats' ? (
             <div className="px-4 pt-4">
               <div className="space-y-2.5">
                 {chats.length ? (
                   chats.map((item) => (
-                    <Pressable key={item.id} type="button" onClick={() => setChatOpenId(item.id)} className="flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-[22px] border border-[#ececef] bg-white/88 px-3 py-3 shadow-[0_10px_24px_rgba(18,18,18,0.04)]">
-                      <img src={item.avatarUrl} alt="" className="h-12 w-12 rounded-xl object-cover" />
+                    <Pressable
+                      key={item.id}
+                      type="button"
+                      onClick={() => openMirrorChat(item.id)}
+                      className={`flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-[22px] border px-3 py-3 shadow-[0_10px_24px_rgba(18,18,18,0.04)] ${
+                        item.isPinned
+                          ? 'border-[#e8dfc8] bg-[#fffdf6]/95'
+                          : 'border-[#ececef] bg-white/88'
+                      }`}
+                    >
+                      <MirrorChatListAvatar
+                        contact={item}
+                        selfAvatarUrl={roleAvatarUrl}
+                        resolveContactAvatar={(id) => dmContactById.get(id)?.avatarUrl}
+                        size={48}
+                        radius={12}
+                      />
                       <div className="min-w-0 flex-1 overflow-hidden">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="truncate text-[15px] font-medium text-[#15161a]">{item.remarkName}</div>
-                          <div className="text-[11px] text-[#9a9da3]">{item.messages.at(-1)?.timestamp ? new Date(item.messages.at(-1)!.timestamp).toLocaleDateString() : ''}</div>
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            {item.isPinned ? (
+                              <span className="shrink-0 rounded-full bg-[#f0e6c8] px-1.5 py-0.5 text-[10px] text-[#8a6a23]">
+                                置顶
+                              </span>
+                            ) : null}
+                            {isMirrorGroupContact(item) ? (
+                              <span className="shrink-0 rounded-full bg-[#e8eef8] px-1.5 py-0.5 text-[10px] text-[#3d5a80]">
+                                群
+                              </span>
+                            ) : null}
+                            <div className="truncate text-[15px] font-medium text-[#15161a]">{chatDisplayName(item)}</div>
+                          </div>
+                          <div className="text-[11px] text-[#9a9da3]">
+                            {item.messages.at(-1)?.timestamp
+                              ? formatWeChatMessagesTabTimestamp(
+                                  item.messages.at(-1)!.timestamp,
+                                  plotNowMs && plotNowMs > 0 ? plotNowMs : Date.now(),
+                                )
+                              : ''}
+                          </div>
                         </div>
-                        <div className="mt-1 text-left truncate text-[13px] text-[#73767d]">{getChatPreviewText(item.messages.at(-1))}</div>
+                        <div className="mt-1 text-left truncate text-[13px] text-[#73767d]">
+                          {getChatPreviewText(item.messages.at(-1), { isGroup: isMirrorGroupContact(item) })}
+                        </div>
                       </div>
                     </Pressable>
                   ))
                 ) : (
                   <div className="rounded-[24px] border border-[#ececef] bg-white px-5 py-8 text-center text-[14px] leading-7 text-[#7a7d84]">
-                    暂无聊天碎片。<br />请先同步通讯录，再生成信息页。
+                    暂无聊天碎片。<br />
+                    {hasContacts ? '点右下角悬浮钮，勾选联系人生成信息。' : '请先用悬浮钮生成通讯录。'}
                   </div>
                 )}
               </div>
@@ -597,7 +1745,7 @@ function Main({
                 </div>
                 <div className="flex items-center justify-between rounded-[20px] border border-[#ececef] bg-white px-4 py-3">
                   <div className="flex items-center gap-3"><Lock size={17} className="text-[#8c2431]" /><span className="text-[14px] text-[#212327]">黑名单</span></div>
-                  <span className="text-[12px] text-[#8a8d94]">{state.contacts.filter((item) => item.blocked).length}</span>
+                  <span className="text-[12px] text-[#8a8d94]">{dmContacts.filter((item) => item.blocked).length}</span>
                 </div>
               </div>
               {starredContacts.length ? (
@@ -676,32 +1824,24 @@ function Main({
               ) : null}
             </div>
           ) : tab === 'moments' ? (
-            <div>
-              <div className="h-40 bg-[linear-gradient(135deg,#ebe8e1,#f8f8f9)]" />
-              <div className="-mt-8 space-y-3 px-4 pb-6">
-                {state.moments.length ? (
-                  state.moments.map((item) => {
-                    const privacyTone = item.visibility.includes('屏蔽') ? 'bg-[#5f1018]/10 text-[#8c1b28]' : item.visibility.includes('仅') ? 'bg-[#7a5a1a]/10 text-[#8d6920]' : 'bg-[#eff0f2] text-[#6d7076]'
-                    return (
-                      <div key={item.id} className="rounded-[24px] border border-[#ececef] bg-white/92 p-4 shadow-[0_12px_26px_rgba(0,0,0,0.04)]">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="text-[15px] leading-7 text-[#18191c]">{item.content}</div>
-                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] ${privacyTone}`}>{item.visibility}</span>
-                        </div>
-                        <div className="mt-3 text-[12px] text-[#9b9ea4]">点赞：{item.likes.join('、') || '暂无'}</div>
-                        <div className="mt-2 space-y-1">
-                          {item.comments.map((comment, index) => (
-                            <div key={`${item.id}-${index}`} className="rounded-[14px] bg-[#f6f7f8] px-3 py-2 text-[12px] text-[#5f6268]">
-                              <span className="text-[#1d1f23]">{comment.from}</span>：{comment.content}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })
-                ) : (
-                  <div className="rounded-[24px] border border-[#ececef] bg-white px-5 py-8 text-center text-[14px] leading-7 text-[#7a7d84]">暂无朋友圈镜像数据。</div>
-                )}
+            <div className="relative bg-white text-[#111827] pb-6">
+              <div className="relative mx-auto max-w-[560px]">
+                <MomentsCover
+                  coverUrl={mirrorMomentsCoverUrl}
+                  nickname={mirrorMomentsAuthorName}
+                  avatarUrl={roleAvatarUrl}
+                  signature={state.profile?.signature}
+                />
+                <MomentsContentBackdrop>
+                  <MomentsFeed
+                    moments={mirrorMomentsFeedItems}
+                    currentUserName={mirrorMomentsAuthorName}
+                    currentUserAvatarUrl={roleAvatarUrl}
+                    momentContacts={mirrorMomentContacts}
+                    playerIdentityId={playerIdentityId}
+                    emptyMessage="暂无朋友圈镜像数据。"
+                  />
+                </MomentsContentBackdrop>
               </div>
             </div>
           ) : (
@@ -762,66 +1902,309 @@ function Main({
         </div>
 
         {!chatOpenId ? (
-          <div
-            className="absolute bottom-0 left-0 right-0 z-20 border-t border-white/70 bg-white/80 px-4 pb-3 pt-2 backdrop-blur-xl"
-            style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
-          >
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                { id: 'chats', label: '信息', Icon: MessageSquareText },
-                { id: 'contacts', label: '通讯录', Icon: UserRound },
-                { id: 'moments', label: '朋友圈', Icon: ImageIcon },
-                { id: 'profile', label: '我', Icon: CircleUserRound },
-              ].map(({ id, label, Icon }) => {
-                const active = tab === id
-                return (
-                  <Pressable key={id} type="button" onClick={() => setTab(id as MirrorWeChatTab)} className="flex flex-col items-center gap-1 rounded-[18px] py-2">
-                    <Icon size={18} className={active ? 'text-[#131417]' : 'text-[#9699a0]'} />
-                    <span className={`text-[11px] ${active ? 'text-[#131417]' : 'text-[#9699a0]'}`}>{label}</span>
-                  </Pressable>
-                )
-              })}
+          <>
+            <Pressable
+              type="button"
+              onClick={() => {
+                if (fabCoachOpen) dismissFabCoach()
+                setSyncOpen(true)
+              }}
+              className={`absolute flex h-14 w-14 items-center justify-center rounded-full bg-[#16171a] text-white shadow-[0_12px_28px_rgba(0,0,0,0.22)] ${
+                fabCoachOpen
+                  ? 'z-[40] animate-pulse ring-4 ring-[#f5d76e] ring-offset-2 ring-offset-[#fbfbfc]'
+                  : 'z-30'
+              }`}
+              style={{
+                right: 18,
+                bottom: 'calc(72px + env(safe-area-inset-bottom))',
+              }}
+              aria-label="生成、更新或删除"
+              title="生成 / 更新 / 删除"
+              data-mirror-fab="sync"
+            >
+              <Sparkles size={22} />
+            </Pressable>
+            {fabCoachOpen ? (
+              <div className="absolute inset-0 z-[35]">
+                <button
+                  type="button"
+                  className="absolute inset-0 bg-black/50"
+                  aria-label="关闭指引"
+                  onClick={dismissFabCoach}
+                />
+                <div
+                  className="pointer-events-auto absolute right-3 max-w-[250px] rounded-[18px] border border-[#ece1c6] bg-[#fffdfa] px-3.5 py-3 shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                  style={{ bottom: 'calc(148px + env(safe-area-inset-bottom))' }}
+                >
+                  <div className="text-[13px] font-medium text-[#1b1c1f]">点右下角悬浮钮</div>
+                  <div className="mt-1 text-[12px] leading-[1.45] text-[#6b6e74]">
+                    打开生成 / 更新 / 删除面板。没有通讯录时请先生成通讯录，再生成聊天等信息。
+                  </div>
+                  <div className="mt-2.5 flex gap-2">
+                    <Pressable
+                      type="button"
+                      onClick={dismissFabCoach}
+                      className="h-8 flex-1 rounded-full border border-[#e4e6ea] bg-white text-[12px] text-[#5b5e64]"
+                    >
+                      知道了
+                    </Pressable>
+                    <Pressable
+                      type="button"
+                      onClick={() => {
+                        dismissFabCoach()
+                        setSyncOpen(true)
+                      }}
+                      className="h-8 flex-1 rounded-full bg-[#16171a] text-[12px] text-white"
+                    >
+                      去生成
+                    </Pressable>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            <div
+              className="absolute bottom-0 left-0 right-0 z-20 border-t border-white/70 bg-white/80 px-4 pb-3 pt-2 backdrop-blur-xl"
+              style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
+            >
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { id: 'chats', label: '信息', Icon: MessageSquareText },
+                  { id: 'contacts', label: '通讯录', Icon: UserRound },
+                  { id: 'moments', label: '朋友圈', Icon: ImageIcon },
+                  { id: 'profile', label: '我', Icon: CircleUserRound },
+                ].map(({ id, label, Icon }) => {
+                  const active = tab === id
+                  return (
+                    <Pressable key={id} type="button" onClick={() => setTab(id as MirrorWeChatTab)} className="flex flex-col items-center gap-1 rounded-[18px] py-2">
+                      <Icon size={18} className={active ? 'text-[#131417]' : 'text-[#9699a0]'} />
+                      <span className={`text-[11px] ${active ? 'text-[#131417]' : 'text-[#9699a0]'}`}>{label}</span>
+                    </Pressable>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          </>
         ) : null}
       </div>
 
       <DataSyncModal
         open={syncOpen}
         busy={syncBusy}
-        title={`${tabLabel(tab)}生成/更新`}
-        subtitle={
-          tab === 'contacts'
-            ? '先建立关系网基石，再为后续聊天碎片和朋友圈黑盒提供人物坐标。'
-            : tab === 'chats'
-              ? '聊天记录依赖通讯录。将抽取高张力对话，维持冷白铂金风的窥探体验。'
-              : tab === 'moments'
-                ? '生成角色自己与联系人之间的朋友圈、点赞与隐私标签。'
-                : '同步“我”页与钱包子数据，包括亲情卡与账单流水。'
-        }
-        contactCount={contactCount}
-        onContactCountChange={setContactCount}
-        showContactCountSlider={tab === 'contacts'}
-        countLabel="联系人数量"
-        relationPresetLabels={tab === 'profile' ? undefined : MIRROR_WECHAT_RELATION_PRESETS}
+        busyLabel={syncBusyLabel}
+        hasContacts={hasContacts}
+        contacts={state.contacts}
+        selfAvatarUrl={roleAvatarUrl}
+        playerContactId={playerContactId}
+        plotNowLabel={plotNowLabel || undefined}
+        minMessagesPerContact={minMessagesPerContact}
+        onMinMessagesPerContactChange={setMinMessagesPerContact}
+        chatTimeSpanUnit={chatTimeSpanUnit}
+        chatTimeSpanValue={chatTimeSpanValue}
+        onChatTimeSpanUnitChange={(unit) => {
+          setChatTimeSpanUnit(unit)
+          if (unit === 'day') setChatTimeSpanValue(7)
+          else if (unit === 'week') setChatTimeSpanValue(2)
+          else if (unit === 'month') setChatTimeSpanValue(3)
+          else setChatTimeSpanValue(1)
+        }}
+        onChatTimeSpanValueChange={setChatTimeSpanValue}
+        includeHideFromUser={includeHideFromUser}
+        onIncludeHideFromUserChange={setIncludeHideFromUser}
+        includeOnlyTaVisible={includeOnlyTaVisible}
+        onIncludeOnlyTaVisibleChange={setIncludeOnlyTaVisible}
+        ingestChatToMemory={ingestChatToMemory}
+        onIngestChatToMemoryChange={setIngestChatToMemory}
+        generateLanguage={generateLanguage}
+        onGenerateLanguageChange={setGenerateLanguage}
+        syncTranslation={syncTranslation}
+        onSyncTranslationChange={(on) => {
+          setSyncTranslation(on)
+          if (on && translationLanguage === generateLanguage) {
+            setTranslationLanguage(generateLanguage === 'zh-CN' ? 'en' : 'zh-CN')
+          }
+        }}
+        translationLanguage={translationLanguage}
+        onTranslationLanguageChange={setTranslationLanguage}
         selectedRelations={selectedRelations}
         onSelectedRelationsChange={setSelectedRelations}
+        contactCount={contactCount}
+        onContactCountChange={setContactCount}
+        contactCustomBias={contactCustomBias}
+        onContactCustomBiasChange={setContactCustomBias}
+        selectedChatBiases={selectedChatBiases}
+        onSelectedChatBiasesChange={setSelectedChatBiases}
+        chatCustomBias={chatCustomBias}
+        onChatCustomBiasChange={setChatCustomBias}
+        generateRelatedGroups={generateRelatedGroups}
+        onGenerateRelatedGroupsChange={setGenerateRelatedGroups}
+        relatedGroupsCount={relatedGroupsCount}
+        onRelatedGroupsCountChange={setRelatedGroupsCount}
+        groupChatCustomBias={groupChatCustomBias}
+        onGroupChatCustomBiasChange={setGroupChatCustomBias}
+        includeSpecialMessages={includeSpecialMessages}
+        onIncludeSpecialMessagesChange={setIncludeSpecialMessages}
         walletBiasText={walletBias}
         onWalletBiasTextChange={setWalletBias}
-        chatContactsCount={chatContactsCountInput}
-        minMessagesPerContact={minMessagesPerContactInput}
-        includeBlocked={includeBlocked}
-        includeHideFromUser={includeHideFromUser}
-        includeOnlyTaVisible={includeOnlyTaVisible}
-        onChatContactsCountChange={tab === 'chats' ? setChatContactsCountInput : undefined}
-        onMinMessagesPerContactChange={tab === 'chats' ? setMinMessagesPerContactInput : undefined}
-        onIncludeBlockedChange={tab === 'contacts' ? setIncludeBlocked : undefined}
-        onIncludeHideFromUserChange={tab === 'moments' ? setIncludeHideFromUser : undefined}
-        onIncludeOnlyTaVisibleChange={tab === 'moments' ? setIncludeOnlyTaVisible : undefined}
-        onClose={() => setSyncOpen(false)}
-        onSubmit={() => runSync('generate')}
-        onUpdate={tab === 'contacts' || tab === 'chats' ? () => runSync('update') : undefined}
+        onClose={() => {
+          if (syncBusy) return
+          setSyncOpen(false)
+        }}
+        onStopGeneration={stopSyncGeneration}
+        onConfirmGenerateOrUpdate={(p) => void runSyncScopes(p)}
+        onConfirmDelete={(p) => void runDeleteScopes(p)}
       />
+
+      <MirrorVoiceCallDetailModal
+        open={!!voiceCallDetail}
+        durationSec={voiceCallDetail?.durationSec || 0}
+        peerName={voiceCallDetail?.peerName || '对方'}
+        peerAvatarUrl={voiceCallDetail?.peerAvatarUrl}
+        characterName={voiceCallDetail?.characterName}
+        characterAvatarUrl={voiceCallDetail?.characterAvatarUrl}
+        lines={voiceCallDetail?.lines || []}
+        onClose={() => setVoiceCallDetail(null)}
+      />
+
+      {redPacketDetail ? (
+        <div
+          className="fixed inset-0 z-[210] flex items-end justify-center bg-black/35 px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-10 sm:items-center"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setRedPacketDetail(null)
+          }}
+        >
+          <div
+            className="w-full max-w-[360px] overflow-hidden rounded-[20px] border border-[#e8e2d8] bg-[#faf9f6] shadow-[0_20px_50px_rgba(0,0,0,0.18)]"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-[#efe9e0] px-4 py-3 text-center text-[13px] font-medium tracking-[0.16em] text-[#8a8580]">
+              红包详情
+            </div>
+            <div className="px-5 pb-5 pt-4">
+              <div className="flex flex-col items-center text-center">
+                {redPacketDetail.senderAvatarUrl ? (
+                  <img
+                    src={redPacketDetail.senderAvatarUrl}
+                    alt=""
+                    className="h-14 w-14 rounded-2xl object-cover"
+                  />
+                ) : (
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#eee] text-[#999]">
+                    ?
+                  </div>
+                )}
+                <p className="mt-2.5 text-[15px] font-medium text-[#1a1a1a]">
+                  {redPacketDetail.senderName}
+                </p>
+                <p className="mt-1 text-[12px] text-[#8c877c]">
+                  {redPacketDetail.opened
+                    ? '已领取'
+                    : redPacketDetail.fromSelf
+                      ? `${redPacketDetail.peerLabel}还未领取`
+                      : `${redPacketDetail.selfLabel}还未领取`}
+                </p>
+                {!redPacketDetail.opened ? (
+                  <p className="mt-1 text-[11px] text-[#b0aaa0]">窥探模式不可代领</p>
+                ) : null}
+              </div>
+              <p className="mt-5 text-center text-[11px] tracking-[0.2em] text-[#9a958c]">AMOUNT</p>
+              <p className="mt-1 text-center text-[36px] tabular-nums leading-none text-[#1c1c1c]">
+                ¥{redPacketDetail.amountYuan.toFixed(2)}
+              </p>
+              <div className="mt-5 rounded-[14px] border border-[#e8e2d8] bg-white px-3.5 py-3">
+                <div className="text-[11px] tracking-[0.12em] text-[#9a958c]">备注</div>
+                <div className="mt-1 text-[14px] text-[#3d3d3d]">
+                  {redPacketDetail.remark || '—'}
+                </div>
+              </div>
+              {redPacketDetail.opened ? (
+                <div className="mt-3 rounded-[14px] border border-[#e8e2d8] bg-white px-3.5 py-3 text-[13px] text-[#4a4a4a]">
+                  <div className="flex justify-between gap-2">
+                    <span>{redPacketDetail.claimerName || '领取人'}</span>
+                    <span className="tabular-nums font-medium text-[#9a7b4a]">
+                      ¥{redPacketDetail.amountYuan.toFixed(2)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[12px] text-[#8c877c]">已领取</p>
+                </div>
+              ) : null}
+              <Pressable
+                type="button"
+                onClick={() => setRedPacketDetail(null)}
+                className="mt-4 w-full rounded-[12px] bg-[#16171a] py-2.5 text-center text-[14px] text-white"
+              >
+                关闭
+              </Pressable>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {transferDetail ? (
+        <div
+          className="fixed inset-0 z-[210] flex items-end justify-center bg-black/35 px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-10 sm:items-center"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setTransferDetail(null)
+          }}
+        >
+          <div
+            className="w-full max-w-[360px] overflow-hidden rounded-[20px] border border-[#e8e2d8] bg-[#faf9f6] shadow-[0_20px_50px_rgba(0,0,0,0.18)]"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-[#efe9e0] px-4 py-3 text-center text-[13px] font-medium tracking-[0.16em] text-[#8a8580]">
+              转账详情
+            </div>
+            <div className="px-5 pb-5 pt-4">
+              <div className="flex flex-col items-center text-center">
+                {transferDetail.senderAvatarUrl ? (
+                  <img
+                    src={transferDetail.senderAvatarUrl}
+                    alt=""
+                    className="h-14 w-14 rounded-2xl object-cover"
+                  />
+                ) : (
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#eee] text-[#999]">
+                    ?
+                  </div>
+                )}
+                <p className="mt-2.5 text-[15px] font-medium text-[#1a1a1a]">
+                  {transferDetail.senderName}
+                </p>
+                <p className="mt-1 text-[12px] text-[#8c877c]">
+                  {transferDetail.status === 'accepted'
+                    ? '已收款'
+                    : transferDetail.status === 'returned'
+                      ? '已退还'
+                      : transferDetail.fromSelf
+                        ? `${transferDetail.peerLabel}还未收款`
+                        : `${transferDetail.selfLabel}还未收款`}
+                </p>
+                {transferDetail.status === 'pending' ? (
+                  <p className="mt-1 text-[11px] text-[#b0aaa0]">窥探模式不可代收</p>
+                ) : null}
+              </div>
+              <p className="mt-5 text-center text-[11px] tracking-[0.2em] text-[#9a958c]">AMOUNT</p>
+              <p className="mt-1 text-center text-[36px] tabular-nums leading-none text-[#1c1c1c]">
+                ¥{transferDetail.amountYuan.toFixed(2)}
+              </p>
+              <div className="mt-5 rounded-[14px] border border-[#e8e2d8] bg-white px-3.5 py-3">
+                <div className="text-[11px] tracking-[0.12em] text-[#9a958c]">备注</div>
+                <div className="mt-1 text-[14px] text-[#3d3d3d]">
+                  {transferDetail.note || '—'}
+                </div>
+              </div>
+              <Pressable
+                type="button"
+                onClick={() => setTransferDetail(null)}
+                className="mt-4 w-full rounded-[12px] bg-[#16171a] py-2.5 text-center text-[14px] text-white"
+              >
+                关闭
+              </Pressable>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </motion.div>
   )
 }
@@ -830,6 +2213,8 @@ export function MirrorWeChatApp(props: {
   characterId: string
   playerIdentityId: string
   playerDisplayName: string
+  playerWechatAvatarUrl?: string
+  playerWechatNickname?: string
   useLumiProjectAssistantPrompt: boolean
   onClose: () => void
   onToast: (msg: string) => void

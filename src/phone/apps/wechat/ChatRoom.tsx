@@ -18,6 +18,7 @@ import { AtSign, ChevronDown, PhoneCall, Share2, Trash2, X } from 'lucide-react'
 
 import { useCustomization } from '../../CustomizationContext'
 import { computeWeChatStyleKeyboardInset, measureComposerOverlapPx } from '../../hooks/keyboardInset'
+import { syncWeChatChatHeaderPinFromViewport } from './wechatChatHeaderViewportPin'
 import { Pressable } from '../../components/Pressable'
 import { setBackgroundNotifyPendingWork } from '../backgroundNotify/backgroundNotifyPendingWork'
 import { registerProactiveMessageRevealHandler } from './proactiveMessageRevealBridge'
@@ -29,6 +30,7 @@ import {
   setScreenSharePaused,
   startScreenShareSession,
 } from './screenShare'
+import { CotQuickAdjustSheet } from '../thinkingChain'
 import {
   matchAnyDirectiveName,
   pickNamed,
@@ -166,6 +168,7 @@ import {
 } from '../lumiMeet/meetUserProfileSnapshot'
 import { loadMeetEncounterMemoriesPromptBlock } from '../lumiMeet/meetWechatSyncOnFriendLinked'
 import { formatCharacterMemoriesForPromptInjectionPack } from './memory/formatCharacterMemoriesForPromptInjection'
+import { buildCoupleSpaceMemoryInjection } from './coupleSpace/coupleSpaceMemoryQuery'
 import {
   emptyMemoryVectorRecallStatus,
   formatMemoryVectorRecallConsoleLine,
@@ -377,6 +380,7 @@ import { loadOfflineDatingPlotsPromptBlock } from './dating/loadOfflineDatingPlo
 import { loadDatingPlotInjectPrefs } from './dating/datingInjectPrefs'
 import { buildOnlineChatCrossChannelTimelineRule, resolveLastOfflineAiPlotTimestampMs } from './wechatCrossChannelTimeline'
 import { publishWeChatGroupMemoryTrace, publishWeChatPrivatePersonaMemoryTrace } from './memoryTracePublisher'
+import { snapshotLastChatApiUsage, type ChatApiTokenUsage } from './chatApiUsage'
 import {
   loadDatingPlotsFromKv,
   runGroupChatMemorySummaryAfterThreshold,
@@ -455,10 +459,44 @@ import {
   WeChatChatPlusMenuPanel,
   type WeChatPlusActionId,
 } from './WeChatChatPlusMenu'
+import { showReplyTokenFab } from './replyTokenFabStore'
 import { CheckPhoneFlow } from './checkPhone/CheckPhoneFlow'
 import { enrichMiniGamePayloadMatchResult, collectMiniGameThreadMessageIds, playerSideMatchOutcome, charSideMatchOutcome, resolveMiniGameThreadLink } from './miniGame/miniGameMatchHelpers'
 import { MiniGameFlow, type MiniGameSession } from './miniGame/MiniGameFlow'
 import { MiniGameInviteChatRow } from './miniGame/MiniGameInviteChatRow'
+import { CoupleContractReveal, COUPLE_SPACE_USER_ACCEPTED_PANEL_COPY } from './coupleSpace/CoupleContractReveal'
+import { CoupleSpaceApp } from './coupleSpace/CoupleSpaceApp'
+import { CoupleSpaceInviteChatRow } from './coupleSpace/CoupleSpaceInviteChatRow'
+import {
+  adjudicateCoupleSpaceFromCharacterText,
+  buildCoupleSpaceInviteReplyBias,
+  coupleSpaceOutcomeToCharResponded,
+  findLatestPendingCoupleSpaceInvite,
+  getCoupleSpaceOutcomePanelCopy,
+  isCoupleSpaceAcceptOutcome,
+  isCoupleSpaceDirectiveArtifactLine,
+  parseCoupleSpaceInviteActionDirective,
+  resolvePendingCoupleSpaceInviteMessageId,
+  WECHAT_COUPLE_SPACE_INVITE_OUTPUT_BLOCK,
+  type CoupleSpaceInviteOutcome,
+} from './coupleSpace/coupleSpaceInviteAi'
+import {
+  buildCharacterCoupleSpaceInvitePayload,
+  buildCharacterCoupleSpaceInviteStateBias,
+  findLatestPendingCharacterCoupleSpaceInvite,
+  formatCharacterCoupleSpaceInviteTranscriptLine,
+  formatUserCoupleSpaceInviteTranscriptLine,
+  isCharacterCoupleSpaceInviteDirectiveArtifactLine,
+  parseCharacterCoupleSpaceInviteDirectiveFromArtifactLine,
+  preprocessCharacterCoupleSpaceInviteBubblesForChat,
+  type PendingCharacterCoupleSpaceInvite,
+  WECHAT_CHARACTER_COUPLE_SPACE_INVITE_OUTPUT_BLOCK,
+} from './coupleSpace/wechatCharacterCoupleSpaceInviteAi'
+import { consumeCoupleSpaceAutoInvite, WECHAT_COUPLE_SPACE_AUTO_INVITE_EVENT } from './coupleSpace/coupleSpaceInviteNavigation'
+import type { WeChatCoupleSpaceAutoInviteDetail } from './coupleSpace/coupleSpaceInviteNavigation'
+import { isCoupleSpaceBound } from './coupleSpace/coupleSpaceTypes'
+import { useCoupleSpaceStore } from './coupleSpace/useCoupleSpaceStore'
+import type { WeChatCoupleSpaceInvitePayload } from './newFriendsPersona/types'
 import {
   buildMiniGameAcceptPayload,
   buildMiniGameDeclinePayload,
@@ -773,6 +811,7 @@ import {
   stripEmotionTagsForTts,
   voiceTranscriptDuplicatesPlainTexts,
 } from './wechatVoiceScript'
+import { resolveVoiceMessageSynthPrefs } from './voiceMessageSynthPrefs'
 
 type RoundDanmakuInlineConfig = {
   enabled: true
@@ -949,6 +988,19 @@ function itemsToTranscript(items: ChatItem[], opts?: { groupSpeakerLabel?: (m: C
           }
         }
       }
+      if (m.coupleSpaceInvite) {
+        const cs = m.coupleSpaceInvite
+        return {
+          id: m.id,
+          from: m.from,
+          text:
+            m.from === 'self'
+              ? formatUserCoupleSpaceInviteTranscriptLine(m.id, cs)
+              : formatCharacterCoupleSpaceInviteTranscriptLine(m.id, cs),
+          replyTo: m.replyTo,
+          speakerLabel,
+        }
+      }
       if (m.listenCommentShare) {
         const lc = m.listenCommentShare
         return {
@@ -1117,6 +1169,7 @@ function mapWeChatMessagesToChatItems(msgs: WeChatChatMessage[]): ChatMsg[] {
         voice: m.voice,
         musicSync: m.musicSync,
         miniGameInvite: m.miniGameInvite,
+        coupleSpaceInvite: m.coupleSpaceInvite,
         listenCommentShare: m.listenCommentShare,
         listenProfileShare: m.listenProfileShare,
         listenTrackShare: m.listenTrackShare,
@@ -1138,9 +1191,45 @@ function mapWeChatMessagesToChatItems(msgs: WeChatChatMessage[]): ChatMsg[] {
     let bodyText = m.content
     if (
       m.type === 'character' &&
+      !m.coupleSpaceInvite &&
+      typeof bodyText === 'string' &&
+      isCharacterCoupleSpaceInviteDirectiveArtifactLine(bodyText)
+    ) {
+      const act = parseCharacterCoupleSpaceInviteDirectiveFromArtifactLine(bodyText)
+      if (act) {
+        const invite = buildCharacterCoupleSpaceInvitePayload({
+          inviteId: m.id,
+          replyText: act.replyText,
+          title: act.title,
+          subtitle: act.subtitle,
+        })
+        mapped.push({
+          id: m.id,
+          kind: 'msg',
+          from: 'other',
+          text: '[情侣空间邀请]',
+          thinking: m.thinking,
+          timestamp: m.timestamp,
+          storyTimeLabel: m.storyTimeLabel,
+          replyTo: m.replyTo,
+          coupleSpaceInvite: invite,
+          originalText: m.originalContent,
+          isRecalled: m.isRecalled,
+          recallTimestamp: m.recallTimestamp,
+          recalledBy: mapDbRecalledByToChatUi(m),
+          status: 'sent',
+          senderCharacterId: m.characterId,
+        })
+        continue
+      }
+      continue
+    }
+    if (
+      m.type === 'character' &&
       !m.musicSync &&
       !m.locationShare &&
       !m.takeoutOrder &&
+      !m.coupleSpaceInvite &&
       typeof bodyText === 'string' &&
       (isMusicSyncDirectiveArtifactLine(bodyText) ||
         isCharacterMusicSyncDirectiveArtifactLine(bodyText) ||
@@ -1206,6 +1295,7 @@ function mapWeChatMessagesToChatItems(msgs: WeChatChatMessage[]): ChatMsg[] {
       innerOs: m.innerOs,
       musicSync: m.musicSync,
       miniGameInvite: m.miniGameInvite,
+      coupleSpaceInvite: m.coupleSpaceInvite,
       listenCommentShare: m.listenCommentShare,
       listenProfileShare: m.listenProfileShare,
       listenTrackShare: m.listenTrackShare,
@@ -1273,7 +1363,7 @@ function rebuildChatItemsWithTimestamps(msgs: ChatMsg[], formatWxTimeLabel: (ts:
 function messagePlainPreview(
   msg: Pick<
     ChatMsg,
-    'text' | 'images' | 'imageGenPending' | 'imageGenAwaitingConfirm' | 'imageGenFailed' | 'redPacket' | 'transfer' | 'callStatus' | 'voice' | 'musicSync' | 'miniGameInvite' | 'listenCommentShare' | 'listenProfileShare' | 'listenTrackShare' | 'locationShare' | 'takeoutOrder' | 'pulseShare' | 'sharedRecord' | 'chatHistory' | 'isRecalled' | 'isGroupEventStrip'
+    'text' | 'images' | 'imageGenPending' | 'imageGenAwaitingConfirm' | 'imageGenFailed' | 'redPacket' | 'transfer' | 'callStatus' | 'voice' | 'musicSync' | 'miniGameInvite' | 'coupleSpaceInvite' | 'listenCommentShare' | 'listenProfileShare' | 'listenTrackShare' | 'locationShare' | 'takeoutOrder' | 'pulseShare' | 'sharedRecord' | 'chatHistory' | 'isRecalled' | 'isGroupEventStrip'
   >,
 ): string {
   if (msg.isGroupEventStrip && msg.text?.trim()) return msg.text.trim()
@@ -1285,6 +1375,16 @@ function messagePlainPreview(
   if (ms?.kind === 'music_invite') return `[音乐共听] ${ms.trackTitle}`
   if (ms?.kind === 'music_accept') return '[频率已接轨]'
   if (ms?.kind === 'music_decline') return '[错失的波段]'
+  if (msg.coupleSpaceInvite) {
+    const inv = msg.coupleSpaceInvite
+    if (inv.userResponded === 'accepted' || inv.charResponded === 'accepted') {
+      return '[情侣空间邀请] · 已接受'
+    }
+    if (inv.userResponded === 'declined' || inv.charResponded === 'declined') {
+      return '[情侣空间邀请] · 已婉拒'
+    }
+    return '[情侣空间邀请]'
+  }
   const mg = msg.miniGameInvite
   if (mg?.kind === 'game_invite') {
     const outcome = playerSideMatchOutcome(mg.matchResult)
@@ -1451,6 +1551,10 @@ function bubbleLineNeedsSpecialBubbleHandler(line: string): boolean {
   if (isMusicSyncDirectiveArtifactLine(t)) return true
   if (parseMiniGameInviteActionDirective(t)) return true
   if (isMiniGameDirectiveArtifactLine(t)) return true
+  if (parseCoupleSpaceInviteActionDirective(t)) return true
+  if (isCoupleSpaceDirectiveArtifactLine(t)) return true
+  if (parseCharacterCoupleSpaceInviteDirectiveFromArtifactLine(t)) return true
+  if (isCharacterCoupleSpaceInviteDirectiveArtifactLine(t)) return true
   if (parseCharacterMiniGameInviteDirectiveFromArtifactLine(t)) return true
   if (isCharacterMiniGameInviteDirectiveArtifactLine(t)) return true
   if (parseCharacterMusicSyncDirectiveFromArtifactLine(t)) return true
@@ -2034,6 +2138,7 @@ type ChatMsg = {
   innerOs?: string
   musicSync?: WeChatMusicSyncPayload
   miniGameInvite?: WeChatMiniGamePayload
+  coupleSpaceInvite?: WeChatCoupleSpaceInvitePayload
   listenCommentShare?: WeChatListenCommentSharePayload
   listenProfileShare?: WeChatListenProfileSharePayload
   listenTrackShare?: WeChatListenTrackSharePayload
@@ -2672,6 +2777,8 @@ export function ChatRoomInner({
   peerNotifyTitle = '',
   /** 会话设置：自定义聊天区背景（URL / dataURL） */
   chatBackgroundUrl,
+  /** 会话设置：聊天背景模糊强度（px） */
+  chatBackgroundBlurPx = 0,
   /** 主题：无单会话壁纸时的聊天室默认背景 */
   chatRoomDefaultBg = DEFAULT_WECHAT_CHAT_ROOM_BG,
   /** 会话设置：弹幕模式 */
@@ -2712,6 +2819,7 @@ export function ChatRoomInner({
   onPsycheRadarOpenChange,
   onCheckPhoneOpenChange,
   onMiniGameOverlayOpenChange,
+  onCoupleSpaceOpenChange,
   onVoiceCallOverlayOpenChange,
   /** 悬浮球展开时：切回该会话聊天页，避免通话层被停靠 ChatRoom 的 opacity-0 挡住 */
   onRequestShowForVoiceCall,
@@ -2744,6 +2852,8 @@ export function ChatRoomInner({
   peerAvatarUrl?: string
   peerNotifyTitle?: string
   chatBackgroundUrl?: string
+  /** 聊天背景模糊强度（px，0 = 关） */
+  chatBackgroundBlurPx?: number
   chatRoomDefaultBg?: WeChatChatRoomBg
   danmakuEnabled?: boolean
   thinkingChainEnabled?: boolean
@@ -2806,6 +2916,8 @@ export function ChatRoomInner({
   onCheckPhoneOpenChange?: (open: boolean) => void
   /** 小游戏全屏层打开时通知上层隐藏微信聊天顶栏，避免与「一起玩游戏」标题重叠 */
   onMiniGameOverlayOpenChange?: (open: boolean) => void
+  /** 情侣空间 / 契约揭晓全屏时隐藏微信聊天顶栏，避免双标题栏 */
+  onCoupleSpaceOpenChange?: (open: boolean) => void
   /** 语音通话全屏（拨打/来电/通话中）时隐藏微信聊天顶栏 */
   onVoiceCallOverlayOpenChange?: (open: boolean) => void
   /** 点击悬浮通话球：请求上层打开对应会话聊天页 */
@@ -3049,10 +3161,10 @@ export function ChatRoomInner({
     [wechatTheme, conversationCharacterId],
   )
   const bubbleSkinKey = useMemo(() => wechatBubbleSkinKey(bubble), [bubble])
+  /** X / iMessage / Telegram 等私信风默认关头像；群聊必须能辨认发言人，对方侧强制开 */
   const showAvatarOtherEnabled =
-    resolveBubbleShowAvatar(bubble, 'other') && !isTwitterXPresetActive(wechatTheme)
-  const showAvatarSelfEnabled =
-    resolveBubbleShowAvatar(bubble, 'self') && !isTwitterXPresetActive(wechatTheme)
+    roomType === 'group' ? true : resolveBubbleShowAvatar(bubble, 'other')
+  const showAvatarSelfEnabled = resolveBubbleShowAvatar(bubble, 'self')
   const showAvatar = showAvatarOtherEnabled || showAvatarSelfEnabled
   /** css 引擎：清空主题尾巴差异，特殊消息走结构壳 + scopedCss */
   const liquidGlassActive = isLiquidGlassMinimalPackActive(wechatTheme)
@@ -3236,10 +3348,14 @@ export function ChatRoomInner({
           recentPrivateAiRounds: '',
           recentOfflineAiRounds: '',
           recentMeetAiRounds: '',
+          offlineUnsummarizedForPrompt: '',
           storyTimeline: '',
           crossChannelTimeline: '',
           traceCrossAccountPrivate: '',
           traceCurrentLinePrivate: '',
+          dedupePrivateRecentOmitted: false,
+          dedupeMeetRecentOmitted: false,
+          dedupeOfflineRecentOmitted: false,
           vectorRecall: emptyMemoryVectorRecallStatus({ detail: '非私聊人设回合' }),
         }
       }
@@ -3254,10 +3370,14 @@ export function ChatRoomInner({
           recentPrivateAiRounds: '',
           recentOfflineAiRounds: '',
           recentMeetAiRounds: '',
+          offlineUnsummarizedForPrompt: '',
           storyTimeline: '',
           crossChannelTimeline: '',
           traceCrossAccountPrivate: '',
           traceCurrentLinePrivate: '',
+          dedupePrivateRecentOmitted: false,
+          dedupeMeetRecentOmitted: false,
+          dedupeOfflineRecentOmitted: false,
           vectorRecall: emptyMemoryVectorRecallStatus({ detail: '无人设角色' }),
         }
       }
@@ -3496,6 +3616,19 @@ export function ChatRoomInner({
           detail: e instanceof Error ? e.message : String(e),
         })
       }
+      // 情侣空间：查询层按 memoryShare 模块总闸硬过滤
+      try {
+        const coupleBlock = await buildCoupleSpaceMemoryInjection({
+          accountId: currentAccountId,
+          characterId: pc,
+          queryText: hay,
+        })
+        if (coupleBlock.trim()) {
+          memory = [memory, coupleBlock.trim()].filter(Boolean).join('\n\n')
+        }
+      } catch {
+        /* 情侣空间注入失败不阻断主记忆 */
+      }
       if (memory && isolateStrangerLine && !memory.includes('分线阅读')) {
         memory = wrapStrangerContactLongTermMemoryBlock(memory)
       }
@@ -3544,6 +3677,7 @@ export function ChatRoomInner({
   const [items, setItems] = useState<ChatItem[]>([])
   const [musicInviteRespondBusy, setMusicInviteRespondBusy] = useState(false)
   const [miniGameInviteRespondBusy, setMiniGameInviteRespondBusy] = useState(false)
+  const [coupleSpaceInviteRespondBusy, setCoupleSpaceInviteRespondBusy] = useState(false)
   const itemsRef = useRef(items)
   itemsRef.current = items
   const pendingImageGenUiPatchesRef = useRef(new Map<string, WeChatImageGenUiPatch>())
@@ -3580,7 +3714,12 @@ export function ChatRoomInner({
     translationAutoExpand?: boolean
     heartWhisperSyncEnabled?: boolean
     innerOsSyncEnabled?: boolean
+    voiceSynthToneTokensEnabled?: boolean
+    voiceSynthEmotionEnabled?: boolean
   }>({})
+  const resolveLiveVoiceMessageSynthPrefs = useCallback(() => {
+    return resolveVoiceMessageSynthPrefs(convReplyLangRef.current)
+  }, [])
   /** 心语面板开关（与会话设置同步，驱动面板勾选态） */
   const [heartWhisperSyncEnabled, setHeartWhisperSyncEnabled] = useState(false)
   const [innerOsSyncEnabled, setInnerOsSyncEnabled] = useState(false)
@@ -3741,8 +3880,11 @@ export function ChatRoomInner({
       const task = (async () => {
         const voiceCharacterId = opts?.voiceCharacterId?.trim() || ''
         const rawScript = String(voice.ttsScript || '').trim()
-        const emotion = pickVoiceEmotionForTts(rawScript)
-        const playableScript = stripEmotionTagsForTts(rawScript)
+        const synthPrefs = resolveLiveVoiceMessageSynthPrefs()
+        const emotion = pickVoiceEmotionForTts(rawScript, { allowEmotion: synthPrefs.allowEmotion })
+        const playableScript = stripEmotionTagsForTts(rawScript, {
+          allowToneTokens: synthPrefs.allowToneTokens,
+        })
         if (!playableScript) return ''
         if (!voiceCharacterId) return ''
         const synthesizedAudioUrl = await synthCharacterVoiceAudioUrl(voiceCharacterId, playableScript, emotion)
@@ -3789,7 +3931,7 @@ export function ChatRoomInner({
         voiceSynthesisPromiseRef.current.delete(msgId)
       }
     },
-    [extractMessages, logger, rebuildWithCurrentTime, synthCharacterVoiceAudioUrl],
+    [extractMessages, logger, rebuildWithCurrentTime, resolveLiveVoiceMessageSynthPrefs, synthCharacterVoiceAudioUrl],
   )
   const mergeIncomingMessage = useCallback(
     (prev: ChatItem[], incoming: ChatMsg) => {
@@ -4773,6 +4915,64 @@ export function ChatRoomInner({
     [conversationCharacterId, conversationKey, getCurrentTimeMs, playerIdentityId],
   )
 
+  const createCharacterCoupleSpaceInviteRevealJob = useCallback(
+    (
+      invite: WeChatCoupleSpaceInvitePayload,
+      replyText?: string,
+      characterId?: string,
+      messageId?: string,
+    ): OpponentRevealJob => {
+      const charId = characterId?.trim() || conversationCharacterId
+      const ts = getCurrentTimeMs()
+      const msgId = messageId?.trim() || `wxm-${ts}-csi-${Math.random().toString(36).slice(2, 8)}`
+      // 正文固定占位；卡片 UI 走 coupleSpaceInvite，收束语写在 payload.replyText
+      const body = '[情侣空间邀请]'
+      const trimmedReply = replyText?.trim() || invite.replyText?.trim() || ''
+      const payload: WeChatCoupleSpaceInvitePayload = {
+        ...invite,
+        inviteId: invite.inviteId?.trim() || msgId,
+        ...(trimmedReply ? { replyText: trimmedReply.slice(0, 500) } : {}),
+      }
+      const ackMsg: ChatMsg = {
+        id: msgId,
+        kind: 'msg',
+        from: 'other',
+        senderCharacterId: charId,
+        text: body,
+        timestamp: ts,
+        status: 'sent',
+        otherAnimated: true,
+        coupleSpaceInvite: payload,
+      }
+      return {
+        forConversationKey: conversationKey,
+        msg: ackMsg,
+        opponentRevealFlushSync: true,
+        persist: () => {
+          void (async () => {
+            try {
+              await personaDb.appendWeChatChatMessage({
+                id: msgId,
+                characterId: charId,
+                playerIdentityId,
+                type: 'character',
+                content: body,
+                coupleSpaceInvite: payload,
+                timestamp: ackMsg.timestamp,
+                isRead: true,
+                conversationKey,
+              })
+              emitWeChatStorageChanged()
+            } catch {
+              /* ignore */
+            }
+          })()
+        },
+      }
+    },
+    [conversationCharacterId, conversationKey, getCurrentTimeMs, playerIdentityId],
+  )
+
   const appendCallStatusBubble = useCallback(
     async (
       payload: {
@@ -5114,6 +5314,8 @@ export function ChatRoomInner({
         translationAutoExpand: convSt?.translationAutoExpand === true,
         heartWhisperSyncEnabled: convSt?.heartWhisperSyncEnabled === true,
         innerOsSyncEnabled: convSt?.innerOsSyncEnabled === true,
+        voiceSynthToneTokensEnabled: convSt?.voiceSynthToneTokensEnabled === true,
+        voiceSynthEmotionEnabled: convSt?.voiceSynthEmotionEnabled === true,
       }
       setHeartWhisperSyncEnabled(convSt?.heartWhisperSyncEnabled === true)
       setInnerOsSyncEnabled(convSt?.innerOsSyncEnabled === true)
@@ -5590,6 +5792,7 @@ export function ChatRoomInner({
   const stubPanelRef = useRef<null | 'emoji'>(null)
   stubPanelRef.current = stubPanel
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
+  const [cotQuickAdjustOpen, setCotQuickAdjustOpen] = useState(false)
   const [screenShareConfirmOpen, setScreenShareConfirmOpen] = useState(false)
   const [screenShareStarting, setScreenShareStarting] = useState(false)
   const [groupLive, setGroupLive] = useState<GroupChatRow | null>(null)
@@ -6103,6 +6306,7 @@ export function ChatRoomInner({
     }
     const fill = keyboardInsetFillRef.current
     if (bar) {
+      bar.style.transition = 'none'
       if (insetPx > 0) {
         bar.style.transform = `translate3d(0, -${insetPx}px, 0)`
         bar.style.willChange = 'transform'
@@ -6157,6 +6361,7 @@ export function ChatRoomInner({
   /** React 重绘会覆盖 scroll/inputBar 的内联 style，每帧末把键盘抬升量写回 DOM */
   useLayoutEffect(() => {
     syncComposerInsetFromRefs()
+    syncWeChatChatHeaderPinFromViewport()
   })
 
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([])
@@ -6184,6 +6389,26 @@ export function ChatRoomInner({
   const [gameLobbyOpen, setGameLobbyOpen] = useState(false)
   const [miniGameSession, setMiniGameSession] = useState<MiniGameSession | null>(null)
   const miniGameOverlayOpen = gameLobbyOpen || miniGameSession != null
+  const [coupleReveal, setCoupleReveal] = useState<{
+    userName: string
+    charName: string
+    userAvatarUrl?: string
+    charAvatarUrl?: string
+    outcome: CoupleSpaceInviteOutcome
+    /** 角色邀约·用户接受时覆盖四档程度文案 */
+    panelCopyOverride?: string
+    boundAt: number
+  } | null>(null)
+  const [coupleSpaceOpen, setCoupleSpaceOpen] = useState(false)
+  const applyCoupleSpaceInviteOutcomeRef = useRef<
+    (params: {
+      outcome: CoupleSpaceInviteOutcome
+      inviteMsgId: string
+      invitePayload: WeChatCoupleSpaceInvitePayload
+      spokenReplyText?: string
+    }) => void
+  >(() => {})
+  const coupleOverlayOpen = coupleSpaceOpen || coupleReveal != null
 
   useEffect(() => {
     onCheckPhoneOpenChange?.(checkPhoneOpen)
@@ -6200,6 +6425,14 @@ export function ChatRoomInner({
   useEffect(() => {
     return () => onMiniGameOverlayOpenChange?.(false)
   }, [onMiniGameOverlayOpenChange])
+
+  useEffect(() => {
+    onCoupleSpaceOpenChange?.(coupleOverlayOpen)
+  }, [coupleOverlayOpen, onCoupleSpaceOpenChange])
+
+  useEffect(() => {
+    return () => onCoupleSpaceOpenChange?.(false)
+  }, [onCoupleSpaceOpenChange])
 
   const voiceCallSessionActive = callingOpen || incomingCallOpen || voiceCallOpen
   const voiceCallOverlayOpen = voiceCallSessionActive && !callMinimized
@@ -7134,6 +7367,7 @@ export function ChatRoomInner({
             playerDisplayName: playerDisplayName.trim() || state.profile.displayName.trim() || '用户',
             playerAvatarUrl: playerAvatarResolved || undefined,
             pulseDmScreenshotEnabled: pulseDmScreenshotEnabled === true,
+            voiceSynth: resolveLiveVoiceMessageSynthPrefs(),
           },
           recentStickerRefs,
         )
@@ -7900,13 +8134,98 @@ export function ChatRoomInner({
     ],
   )
 
+  const handleRespondToCharacterCoupleSpaceInvite = useCallback(
+    async (
+      messageId: string,
+      invite: WeChatCoupleSpaceInvitePayload,
+      response: 'accept' | 'decline',
+    ) => {
+      if (invite.userResponded || coupleSpaceInviteRespondBusy) return
+      const msgId = messageId.trim()
+      if (!msgId) return
+      setCoupleSpaceInviteRespondBusy(true)
+      const updatedInvite: WeChatCoupleSpaceInvitePayload = {
+        ...invite,
+        userResponded: response === 'accept' ? 'accepted' : 'declined',
+      }
+      try {
+        setItems((prev) => {
+          const next = rebuildWithCurrentTime(
+            extractMessages(prev).map((msg) =>
+              msg.id === msgId ? { ...msg, coupleSpaceInvite: updatedInvite } : msg,
+            ),
+          )
+          itemsRef.current = next
+          return next
+        })
+        await personaDb.patchWeChatChatMessageById(msgId, { coupleSpaceInvite: updatedInvite })
+        emitWeChatStorageChanged()
+
+        if (response === 'accept') {
+          const charId = conversationCharacterId.trim()
+          const userName =
+            playerDisplayName.trim() || state.profile.displayName.trim() || '我'
+          const charName = peerNotifyTitle.trim() || '对方'
+          const boundAt = Date.now()
+          if (charId) {
+            const acc = currentAccountId?.trim() || null
+            if (acc) await useCoupleSpaceStore.getState().bindAccount(acc)
+            useCoupleSpaceStore.getState().completeBinding({
+              characterId: charId,
+              acceptedReplyText: invite.replyText?.trim() || '已接受情侣空间邀请',
+              userDisplayName: userName,
+              charDisplayName: charName,
+              boundAt,
+            })
+          }
+          setCoupleReveal({
+            userName,
+            charName,
+            userAvatarUrl: playerAvatarResolved,
+            charAvatarUrl: peerAvatarResolved,
+            outcome: 'full_accept',
+            panelCopyOverride: COUPLE_SPACE_USER_ACCEPTED_PANEL_COPY,
+            boundAt,
+          })
+          showComposerToast('已开通情侣空间')
+        } else {
+          showComposerToast('已拒绝情侣空间邀请')
+        }
+      } catch (err) {
+        logger.log(
+          'error',
+          `角色情侣空间邀约回应失败 id=${msgId} err=${err instanceof Error ? err.message : String(err)}`,
+        )
+        showComposerToast('操作失败，请稍后再试')
+      } finally {
+        setCoupleSpaceInviteRespondBusy(false)
+      }
+    },
+    [
+      conversationCharacterId,
+      coupleSpaceInviteRespondBusy,
+      currentAccountId,
+      extractMessages,
+      logger,
+      peerAvatarResolved,
+      peerNotifyTitle,
+      playerAvatarResolved,
+      playerDisplayName,
+      rebuildWithCurrentTime,
+      showComposerToast,
+      state.profile.displayName,
+    ],
+  )
+
   useEffect(() => {
     return () => {
       if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current)
     }
   }, [])
 
-  // iOS/移动端键盘：visualViewport + DOM 直写（无 setState）；监听 scroll/geometrychange 与旧版一致
+  const scheduleKeyboardMeasureRef = useRef<() => void>(() => {})
+
+  // iOS/移动端键盘：与 Lumi-Phone 仓库一致 —— visualViewport 缺口 + overlap，DOM 直写
   useEffect(() => {
     const vv = window.visualViewport
     if (!vv) return
@@ -7927,6 +8246,7 @@ export function ChatRoomInner({
       const inset = Math.max(0, Math.round(Math.max(fromVv, overlap)))
       const prevInset = keyboardInsetRef.current
       const insetStable = Math.abs(prevInset - inset) < 4
+      syncWeChatChatHeaderPinFromViewport()
       /** 键盘从 0 弹起时 inset 可能先是很小的值，不能因 <4px 而跳过贴底 */
       if (insetStable && !(prevInset <= 0 && inset > 0)) return
       keyboardInsetRef.current = inset
@@ -7946,6 +8266,8 @@ export function ChatRoomInner({
       rafId = window.requestAnimationFrame(measureAndCommit)
     }
 
+    scheduleKeyboardMeasureRef.current = scheduleMeasure
+
     measureAndCommit()
     vv.addEventListener('resize', scheduleMeasure)
     vv.addEventListener('scroll', scheduleMeasure)
@@ -7954,6 +8276,7 @@ export function ChatRoomInner({
 
     return () => {
       if (rafId != null) window.cancelAnimationFrame(rafId)
+      scheduleKeyboardMeasureRef.current = () => {}
       vv.removeEventListener('resize', scheduleMeasure)
       vv.removeEventListener('scroll', scheduleMeasure)
       virtualKeyboard?.removeEventListener?.('geometrychange', scheduleMeasure)
@@ -7982,11 +8305,13 @@ export function ChatRoomInner({
       }
       ta.focus({ preventScroll: true })
       scheduleStickChatScrollToBottom()
+      scheduleKeyboardMeasureRef.current()
       window.setTimeout(() => syncChatScrollForKeyboardRef.current(), 0)
     }
 
     const onFocus = () => {
       scheduleStickChatScrollToBottom()
+      scheduleKeyboardMeasureRef.current()
       window.setTimeout(() => syncChatScrollForKeyboardRef.current(), 0)
       window.setTimeout(() => syncChatScrollForKeyboardRef.current(), 120)
     }
@@ -9143,6 +9468,8 @@ export function ChatRoomInner({
         let mutualFriendAllowedPeerIds = new Set<string>()
         let mutualFriendChainNotes: string | undefined
         let roundUserImageForProfile: { base64: string; mime: WeChatImageMime } | null = null
+        /** 提升到 try 外：思维溯源发布时读取本轮是否开链 */
+        let includeThinkingChainForTrace = thinkingChainEnabled === true
         try {
           const hasApi =
             !!apiConfig?.apiUrl?.trim() &&
@@ -9209,6 +9536,7 @@ export function ChatRoomInner({
             } catch {
               /* 读失败则沿用 props */
             }
+            includeThinkingChainForTrace = includeThinkingChain
             const reversed = [...extractMessages(transcriptItems)].reverse()
             const lastOther = reversed.find((x) => x.kind === 'msg' && x.from === 'other') as ChatMsg | undefined
             const lastSelfVoice = reversed.find((x) => x.kind === 'msg' && x.from === 'self' && !!x.voice) as ChatMsg | undefined
@@ -9325,6 +9653,18 @@ export function ChatRoomInner({
                   .filter((x) => x.trim())
                   .join('\n\n')
               }
+              const pendingCoupleSpaceInvite = findLatestPendingCoupleSpaceInvite(
+                extractMessages(itemsRef.current),
+              )
+              if (pendingCoupleSpaceInvite) {
+                const csBias = buildCoupleSpaceInviteReplyBias({
+                  messageId: pendingCoupleSpaceInvite.messageId,
+                  invite: pendingCoupleSpaceInvite.invite,
+                })
+                traceReplyBias = [traceReplyBias, csBias, WECHAT_COUPLE_SPACE_INVITE_OUTPUT_BLOCK]
+                  .filter((x) => x.trim())
+                  .join('\n\n')
+              }
               const pendingSharedRecord = findLatestSelfSharedRecordInBurst(reversed)
               if (pendingSharedRecord) {
                 const srBias = await buildSharedRecordReplyBias({
@@ -9387,6 +9727,23 @@ export function ChatRoomInner({
               traceReplyBias = [traceReplyBias, WECHAT_CHARACTER_MINI_GAME_INVITE_OUTPUT_BLOCK]
                 .filter((x) => x.trim())
                 .join('\n\n')
+              const coupleRoomSnap = useCoupleSpaceStore.getState().getRoom(personaCharacterId)
+              const coupleAlreadyBound = isCoupleSpaceBound(coupleRoomSnap)
+              const characterCoupleSpaceStateBias = buildCharacterCoupleSpaceInviteStateBias(
+                extractMessages(buildChatItemsForAiTranscript()),
+                { alreadyBound: coupleAlreadyBound },
+              )
+              if (characterCoupleSpaceStateBias.trim()) {
+                traceReplyBias = [traceReplyBias, characterCoupleSpaceStateBias]
+                  .filter((x) => x.trim())
+                  .join('\n\n')
+              }
+              // 已绑定或用户刚发来待回应邀约时，不注入「角色主动邀约」协议（避免与四档裁决冲突）
+              if (!coupleAlreadyBound && !pendingCoupleSpaceInvite) {
+                traceReplyBias = [traceReplyBias, WECHAT_CHARACTER_COUPLE_SPACE_INVITE_OUTPUT_BLOCK]
+                  .filter((x) => x.trim())
+                  .join('\n\n')
+              }
               traceReplyBias = [traceReplyBias, WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX]
                 .filter((x) => x.trim())
                 .join('\n\n')
@@ -9587,6 +9944,8 @@ export function ChatRoomInner({
                   translationAutoExpand: freshConv?.translationAutoExpand === true,
                   heartWhisperSyncEnabled: freshConv?.heartWhisperSyncEnabled === true,
                   innerOsSyncEnabled: freshConv?.innerOsSyncEnabled === true,
+                  voiceSynthToneTokensEnabled: freshConv?.voiceSynthToneTokensEnabled === true,
+                  voiceSynthEmotionEnabled: freshConv?.voiceSynthEmotionEnabled === true,
                 }
                 setHeartWhisperSyncEnabled(freshConv?.heartWhisperSyncEnabled === true)
                 setInnerOsSyncEnabled(freshConv?.innerOsSyncEnabled === true)
@@ -10061,6 +10420,8 @@ export function ChatRoomInner({
                 translationDedicatedApi: translationDedicatedApiRef.current === true,
                 innerOsSyncEnabled: convReplyLangRef.current.innerOsSyncEnabled === true,
                 heartWhisperSyncEnabled: convReplyLangRef.current.heartWhisperSyncEnabled === true,
+                voiceSynthToneTokensEnabled: convReplyLangRef.current.voiceSynthToneTokensEnabled === true,
+                voiceSynthEmotionEnabled: convReplyLangRef.current.voiceSynthEmotionEnabled === true,
               })
               const grpWbExtra = buildAggregateGroupChatAfterPatchItemsSection(groupMemberCharactersForWbPatch)
               if (grpWbExtra.trim()) systemContentFinal += `\n\n${grpWbExtra}`
@@ -10213,6 +10574,8 @@ export function ChatRoomInner({
                 translationDedicatedApi: translationDedicatedApiRef.current === true,
                 innerOsSyncEnabled: convReplyLangRef.current.innerOsSyncEnabled === true,
                 heartWhisperSyncEnabled: convReplyLangRef.current.heartWhisperSyncEnabled === true,
+                voiceSynthToneTokensEnabled: convReplyLangRef.current.voiceSynthToneTokensEnabled === true,
+                voiceSynthEmotionEnabled: convReplyLangRef.current.voiceSynthEmotionEnabled === true,
                 includeForwardHistoryCard,
                 includePulseDmScreenshot,
                 includeProfileImageChange,
@@ -10336,6 +10699,8 @@ export function ChatRoomInner({
                 translationDedicatedApi: translationDedicatedApiRef.current === true,
                 innerOsSyncEnabled: convReplyLangRef.current.innerOsSyncEnabled === true,
                 heartWhisperSyncEnabled: convReplyLangRef.current.heartWhisperSyncEnabled === true,
+                voiceSynthToneTokensEnabled: convReplyLangRef.current.voiceSynthToneTokensEnabled === true,
+                voiceSynthEmotionEnabled: convReplyLangRef.current.voiceSynthEmotionEnabled === true,
                 includeForwardHistoryCard,
                 includePulseDmScreenshot,
                 includeProfileImageChange,
@@ -10419,6 +10784,9 @@ export function ChatRoomInner({
           continue
         }
         if (aiRequestFailed) continue
+
+        // 主回复刚完成时冻结 API token，避免尾声二次请求覆盖思维溯源用量
+        const replyChatApiUsage: ChatApiTokenUsage | null = snapshotLastChatApiUsage()
 
         let worldBookAfterUpdated = false
         let worldBookAfterAppliedPatchCount = 0
@@ -11048,6 +11416,7 @@ export function ChatRoomInner({
         let pendingMusicSyncSeeksThisRound: PendingCharacterMusicSyncSeek[] = []
         let pendingMusicSyncPlaysThisRound: PendingCharacterMusicSyncPlay[] = []
         let pendingCharacterMiniGameInvitesThisRound: PendingCharacterMiniGameInvite[] = []
+        let pendingCharacterCoupleSpaceInvitesThisRound: PendingCharacterCoupleSpaceInvite[] = []
         if (roomType !== 'group' && !lumiAssistantChat && pm === 'persona') {
           const musicPre = await preprocessCharacterMusicSyncBubblesForChat({
             bubbles,
@@ -11162,6 +11531,24 @@ export function ChatRoomInner({
           } else if ((aiReply.bubbles ?? []).some((b) => /\[MINI_GAME_INVITE\]/i.test(String(b ?? '')))) {
             logConsole('ai', '[mini_game] 模型输出了 MINI_GAME_INVITE 但未能生成邀约卡（请检查 gameType）')
           }
+          const coupleSpacePre = preprocessCharacterCoupleSpaceInviteBubblesForChat({ bubbles })
+          bubbles = coupleSpacePre.bubbles
+          rebuildOrderedSegmentsFromBubbles(bubbles)
+          pendingCharacterCoupleSpaceInvitesThisRound = coupleSpacePre.pendingInvites
+          if (coupleSpacePre.pendingInvites.length) {
+            for (const p of coupleSpacePre.pendingInvites) {
+              logConsole(
+                'ai',
+                `[couple_space] 计划在第 ${p.insertAfterBubbleStep} 条气泡后插入情侣空间邀约卡`,
+              )
+            }
+          } else if (
+            (aiReply.bubbles ?? []).some((b) =>
+              /【情侣空间邀请】|\[情侣空间邀请\]|\[COUPLE_SPACE_INVITE\]/i.test(String(b ?? '')),
+            )
+          ) {
+            logConsole('ai', '[couple_space] 模型输出了情侣空间邀请指令但未能生成邀约卡')
+          }
         }
         const danmakuLinesCollected = [
           ...(aiReply.danmakuLines ?? []).map((s) => String(s ?? '').trim()).filter(Boolean),
@@ -11252,6 +11639,8 @@ export function ChatRoomInner({
             replyBubbles: bubbles,
             worldBookPatches: aiReply.worldBookPatches,
             worldBookAfterApplied: worldBookAfterUpdated,
+            thinkingChainEnabled: includeThinkingChainForTrace === true,
+            chatApiUsage: replyChatApiUsage,
           }).catch((err) => {
             console.warn('[Lumi] private memory trace publish failed', err)
           })
@@ -11273,6 +11662,8 @@ export function ChatRoomInner({
             patchRulesIncluded: traceGroupChatAfterPatchRules,
             worldBookPatches: groupWorldBookPatches,
             worldBookAfterApplied: worldBookAfterUpdated,
+            thinkingChainEnabled: includeThinkingChainForTrace === true,
+            chatApiUsage: replyChatApiUsage,
           }).catch((err) => {
             console.warn('[Lumi] group memory trace publish failed', err)
           })
@@ -11647,10 +12038,12 @@ export function ChatRoomInner({
         let pendingCharacterMusicSyncSeeks = pendingMusicSyncSeeksThisRound
         let pendingCharacterMusicSyncPlays = pendingMusicSyncPlaysThisRound
         let pendingCharacterMiniGameInvites = pendingCharacterMiniGameInvitesThisRound
+        let pendingCharacterCoupleSpaceInvites = pendingCharacterCoupleSpaceInvitesThisRound
         const flushedCharacterMusicSyncInviteIdx = new Set<number>()
         const flushedCharacterMusicSyncSeekIdx = new Set<number>()
         const flushedCharacterMusicSyncPlayIdx = new Set<number>()
         const flushedCharacterMiniGameInviteIdx = new Set<number>()
+        const flushedCharacterCoupleSpaceInviteIdx = new Set<number>()
         let bubbleRevealStepCount = 0
         const flushCharacterMusicSyncPlayAt = (pending: PendingCharacterMusicSyncPlay, idx: number) => {
           if (flushedCharacterMusicSyncPlayIdx.has(idx)) return
@@ -11802,11 +12195,68 @@ export function ChatRoomInner({
             enqueueCharacterMiniGameInviteAt(pendingCharacterMiniGameInvites[pi]!, pi)
           }
         }
+        const enqueueCharacterCoupleSpaceInviteAt = (
+          pending: PendingCharacterCoupleSpaceInvite,
+          idx: number,
+        ) => {
+          if (flushedCharacterCoupleSpaceInviteIdx.has(idx)) return
+          flushedCharacterCoupleSpaceInviteIdx.add(idx)
+          const charId = persistCharacterId.trim()
+          if (charId) {
+            const room = useCoupleSpaceStore.getState().getRoom(charId)
+            if (isCoupleSpaceBound(room)) {
+              logConsole('ai', '[couple_space] 已绑定，跳过角色主动邀约卡')
+              return
+            }
+          }
+          const msgsNow = extractMessages(itemsRef.current)
+          if (
+            findLatestPendingCoupleSpaceInvite(msgsNow) ||
+            findLatestPendingCharacterCoupleSpaceInvite(msgsNow)
+          ) {
+            logConsole('ai', '[couple_space] 已有待回应邀约，跳过重复发卡')
+            return
+          }
+          const replyText =
+            pending.replyText?.trim() ||
+            (() => {
+              const order = emittedMessageOrderThisRound
+              for (let oi = order.length - 1; oi >= 0; oi -= 1) {
+                const mid = order[oi]!
+                const meta = emittedMessageMetaThisRound.get(mid)
+                if (meta?.preview?.trim()) return meta.preview.trim()
+              }
+              return ''
+            })()
+          const invite = pending.invite
+          const msgId = `wxm-${getCurrentTimeMs()}-csi-${Math.random().toString(36).slice(2, 8)}`
+          const payload: WeChatCoupleSpaceInvitePayload = {
+            ...invite,
+            inviteId: invite.inviteId?.trim() || msgId,
+          }
+          logConsole('ai', `[couple_space] 情侣空间邀约卡入队（inviteId=${payload.inviteId}）`)
+          enqueueOpponentMessagesSequential([
+            createCharacterCoupleSpaceInviteRevealJob(payload, replyText, persistCharacterId, msgId),
+          ])
+        }
+        const flushCharacterCoupleSpaceInvitesThroughStep = (step: number) => {
+          for (let pi = 0; pi < pendingCharacterCoupleSpaceInvites.length; pi += 1) {
+            const pending = pendingCharacterCoupleSpaceInvites[pi]!
+            if (pending.insertAfterBubbleStep !== step) continue
+            enqueueCharacterCoupleSpaceInviteAt(pending, pi)
+          }
+        }
+        const flushRemainingCharacterCoupleSpaceInvites = () => {
+          for (let pi = 0; pi < pendingCharacterCoupleSpaceInvites.length; pi += 1) {
+            enqueueCharacterCoupleSpaceInviteAt(pendingCharacterCoupleSpaceInvites[pi]!, pi)
+          }
+        }
 
         let pendingReplyMessageId: string | undefined
         let thinkingAttached = false
         let musicSyncDirectiveHandledThisRound = false
         let miniGameDirectiveHandledThisRound = false
+        let coupleSpaceDirectiveHandledThisRound = false
         const characterPlainTextsThisRound: string[] = [] // 同轮已发出气泡正文（含文字与语音转写）
         const emittedThisRound = new Set<string>()
         const emittedMessageIdsThisRound = new Set<string>()
@@ -11888,6 +12338,7 @@ export function ChatRoomInner({
           flushCharacterMusicSyncSeeksThroughStep(step)
           flushCharacterMusicSyncPlaysThroughStep(step)
           flushCharacterMiniGameInvitesThroughStep(step)
+          flushCharacterCoupleSpaceInvitesThroughStep(step)
         }
         const enqueueMusicSyncRoundCompletionJob = () => {
           enqueueOpponentMessagesSequential([
@@ -11908,6 +12359,7 @@ export function ChatRoomInner({
                 flushRemainingCharacterMusicSyncSeeks()
                 flushRemainingCharacterMusicSyncPlays()
                 flushRemainingCharacterMiniGameInvites()
+                flushRemainingCharacterCoupleSpaceInvites()
               },
             },
           ])
@@ -12116,7 +12568,38 @@ export function ChatRoomInner({
                 }
                 continue
               }
+              const coupleSpaceActInBatch = parseCoupleSpaceInviteActionDirective(String(segForStore))
+              if (coupleSpaceActInBatch && roomType !== 'group') {
+                const inviteMsgId = resolvePendingCoupleSpaceInviteMessageId({
+                  messageIdHint: coupleSpaceActInBatch.messageId,
+                  msgs: extractMessages(itemsRef.current),
+                })
+                if (inviteMsgId) {
+                  const inviteRow = extractMessages(itemsRef.current).find((x) => x.id === inviteMsgId)
+                  const invitePayload = inviteRow?.coupleSpaceInvite
+                  if (invitePayload?.kind === 'couple_space_invite') {
+                    coupleSpaceDirectiveHandledThisRound = true
+                    const replyText =
+                      coupleSpaceActInBatch.replyText?.trim() ||
+                      plans.map((p) => p.text.trim()).filter(Boolean).slice(-1)[0] ||
+                      ''
+                    applyCoupleSpaceInviteOutcomeRef.current({
+                      outcome: coupleSpaceActInBatch.outcome,
+                      inviteMsgId,
+                      invitePayload,
+                      spokenReplyText: replyText,
+                    })
+                    logConsole(
+                      'ai',
+                      `[couple_space] 模型裁决：${coupleSpaceActInBatch.outcome} msg=${inviteMsgId}`,
+                    )
+                  }
+                }
+                continue
+              }
               if (isMusicSyncDirectiveArtifactLine(String(segForStore)) || isMiniGameDirectiveArtifactLine(String(segForStore))) continue
+              if (isCoupleSpaceDirectiveArtifactLine(String(segForStore))) continue
+              if (isCharacterCoupleSpaceInviteDirectiveArtifactLine(String(segForStore))) continue
               if (isCharacterMusicSyncDirectiveArtifactLine(String(segForStore))) continue
               if (isCharacterMiniGameInviteDirectiveArtifactLine(String(segForStore))) continue
               if (isLocationShareDirectiveArtifactLine(String(segForStore))) continue
@@ -12248,7 +12731,8 @@ export function ChatRoomInner({
                 pendingCharacterMusicSyncInvites.length > 0 ||
                 pendingCharacterMusicSyncSeeks.length > 0 ||
                 pendingCharacterMusicSyncPlays.length > 0 ||
-                pendingCharacterMiniGameInvites.length > 0
+                pendingCharacterMiniGameInvites.length > 0 ||
+                pendingCharacterCoupleSpaceInvites.length > 0
               ) {
                 enqueueMusicSyncRoundCompletionJob()
               }
@@ -12361,7 +12845,8 @@ export function ChatRoomInner({
               }
               const rawScript = String(voiceLineMatch[1] ?? '').trim()
               if (!rawScript) continue
-              const normalizedScript = normalizeVoiceScriptForTts(rawScript)
+              const synthPrefs = resolveLiveVoiceMessageSynthPrefs()
+              const normalizedScript = normalizeVoiceScriptForTts(rawScript, synthPrefs)
               const seg = sanitizeVoiceTranscriptDisplay(normalizedScript)
               if (
                 characterPlainTextsThisRound.length > 0 &&
@@ -12821,6 +13306,126 @@ export function ChatRoomInner({
                     }
                   }
                 }
+              }
+              continue
+            }
+            const coupleSpaceAct = parseCoupleSpaceInviteActionDirective(currentLine)
+            if (coupleSpaceAct && roomType !== 'group') {
+              const inviteMsgId = resolvePendingCoupleSpaceInviteMessageId({
+                messageIdHint: coupleSpaceAct.messageId,
+                msgs: extractMessages(itemsRef.current),
+              })
+              if (inviteMsgId) {
+                const inviteRow = extractMessages(itemsRef.current).find((x) => x.id === inviteMsgId)
+                const invitePayload = inviteRow?.coupleSpaceInvite
+                if (invitePayload?.kind === 'couple_space_invite') {
+                  coupleSpaceDirectiveHandledThisRound = true
+                  const replyText =
+                    coupleSpaceAct.replyText?.trim() ||
+                    (() => {
+                      const order = emittedMessageOrderThisRound
+                      for (let oi = order.length - 1; oi >= 0; oi -= 1) {
+                        const mid = order[oi]!
+                        const meta = emittedMessageMetaThisRound.get(mid)
+                        if (meta?.preview?.trim()) return meta.preview.trim()
+                      }
+                      return ''
+                    })()
+                  applyCoupleSpaceInviteOutcomeRef.current({
+                    outcome: coupleSpaceAct.outcome,
+                    inviteMsgId,
+                    invitePayload,
+                    spokenReplyText: replyText,
+                  })
+                  logConsole(
+                    'ai',
+                    `[couple_space] 模型裁决：${coupleSpaceAct.outcome} msg=${inviteMsgId}`,
+                  )
+                }
+              }
+              continue
+            }
+            if (isCoupleSpaceDirectiveArtifactLine(currentLine)) {
+              continue
+            }
+            if (isCharacterCoupleSpaceInviteDirectiveArtifactLine(currentLine) && roomType !== 'group') {
+              const characterCoupleInviteAct =
+                parseCharacterCoupleSpaceInviteDirectiveFromArtifactLine(currentLine)
+              // 口语与指令粘在同一行时，先吐出口语气泡
+              const embedMatch = /(?:【情侣空间邀请】|\[情侣空间邀请\]|\[COUPLE_SPACE_INVITE\])/i.exec(currentLine)
+              if (embedMatch && embedMatch.index != null && embedMatch.index > 0) {
+                const oralBefore = currentLine.slice(0, embedMatch.index).trim()
+                if (oralBefore && !isCharacterCoupleSpaceInviteDirectiveArtifactLine(oralBefore)) {
+                  // 把口语塞回本轮后续处理：直接入队一条普通气泡
+                  const tsOral = getCurrentTimeMs()
+                  const oidOral = `wxm-${tsOral}-o-csi-oral-${Math.random().toString(36).slice(2, 6)}`
+                  const oralMsg: ChatMsg = {
+                    id: oidOral,
+                    kind: 'msg',
+                    from: 'other',
+                    senderCharacterId: persistCharacterId,
+                    text: oralBefore,
+                    timestamp: tsOral,
+                    status: 'sent',
+                    otherAnimated: true,
+                  }
+                  const oralStep = markEmittedThisRound(oidOral, tsOral, oralBefore)
+                  enqueueOpponentMessagesSequential([
+                    {
+                      forConversationKey: revealConvKey,
+                      msg: oralMsg,
+                      persist: () => {
+                        void personaDb
+                          .appendWeChatChatMessage({
+                            id: oidOral,
+                            characterId: persistCharacterId,
+                            playerIdentityId,
+                            type: 'character',
+                            content: oralBefore,
+                            timestamp: tsOral,
+                            isRead: true,
+                            conversationKey: revealConvKey,
+                          })
+                          .catch(() => {})
+                      },
+                      afterReveal: withMusicSyncFlushOnBubbleRevealed(oralStep),
+                    },
+                  ])
+                }
+              }
+              const charId = persistCharacterId.trim()
+              const room = charId ? useCoupleSpaceStore.getState().getRoom(charId) : null
+              const msgsNow = extractMessages(itemsRef.current)
+              const canIssue =
+                !!characterCoupleInviteAct &&
+                !!charId &&
+                !isCoupleSpaceBound(room) &&
+                !findLatestPendingCoupleSpaceInvite(msgsNow) &&
+                !findLatestPendingCharacterCoupleSpaceInvite(msgsNow)
+              if (canIssue && characterCoupleInviteAct) {
+                const replyText =
+                  characterCoupleInviteAct.replyText?.trim() ||
+                  (() => {
+                    const order = emittedMessageOrderThisRound
+                    for (let oi = order.length - 1; oi >= 0; oi -= 1) {
+                      const mid = order[oi]!
+                      const meta = emittedMessageMetaThisRound.get(mid)
+                      if (meta?.preview?.trim()) return meta.preview.trim()
+                    }
+                    return ''
+                  })()
+                const invite = buildCharacterCoupleSpaceInvitePayload({
+                  replyText: characterCoupleInviteAct.replyText,
+                  title: characterCoupleInviteAct.title,
+                  subtitle: characterCoupleInviteAct.subtitle,
+                })
+                const msgId = `wxm-${getCurrentTimeMs()}-csi-${Math.random().toString(36).slice(2, 8)}`
+                logConsole('ai', `[couple_space] 流式兜底发卡（inviteId=${invite.inviteId}）`)
+                enqueueOpponentMessagesSequential([
+                  createCharacterCoupleSpaceInviteRevealJob(invite, replyText, persistCharacterId, msgId),
+                ])
+              } else {
+                logConsole('ai', '[couple_space] 流式见到邀请指令但跳过发卡（已绑定/已有待回应/无法解析）')
               }
               continue
             }
@@ -13365,6 +13970,8 @@ export function ChatRoomInner({
                 : seg
             if (!String(segForStore).trim()) continue
             if (isMusicSyncDirectiveArtifactLine(String(segForStore)) || isMiniGameDirectiveArtifactLine(String(segForStore))) continue
+            if (isCoupleSpaceDirectiveArtifactLine(String(segForStore))) continue
+            if (isCharacterCoupleSpaceInviteDirectiveArtifactLine(String(segForStore))) continue
             if (isCharacterMusicSyncDirectiveArtifactLine(String(segForStore))) continue
             if (isCharacterMiniGameInviteDirectiveArtifactLine(String(segForStore))) continue
             if (isLocationShareDirectiveArtifactLine(String(segForStore))) continue
@@ -13530,7 +14137,8 @@ export function ChatRoomInner({
           pendingCharacterMusicSyncInvites.length > 0 ||
           pendingCharacterMusicSyncSeeks.length > 0 ||
           pendingCharacterMusicSyncPlays.length > 0 ||
-          pendingCharacterMiniGameInvites.length > 0
+          pendingCharacterMiniGameInvites.length > 0 ||
+          pendingCharacterCoupleSpaceInvites.length > 0
         ) {
           enqueueMusicSyncRoundCompletionJob()
         }
@@ -13616,6 +14224,26 @@ export function ChatRoomInner({
                   pendingMiniGame.messageId,
                 ),
               ])
+            }
+          }
+        }
+        if (
+          roomType !== 'group' &&
+          !coupleSpaceDirectiveHandledThisRound &&
+          characterPlainTextsThisRound.length > 0
+        ) {
+          const pendingCouple = findLatestPendingCoupleSpaceInvite(extractMessages(itemsRef.current))
+          if (pendingCouple) {
+            const combined = characterPlainTextsThisRound.join(' ').trim()
+            const verdict = adjudicateCoupleSpaceFromCharacterText(combined)
+            if (verdict) {
+              applyCoupleSpaceInviteOutcomeRef.current({
+                outcome: verdict,
+                inviteMsgId: pendingCouple.messageId,
+                invitePayload: pendingCouple.invite,
+                spokenReplyText: combined.slice(0, 500),
+              })
+              logConsole('ai', `[couple_space] 口语兜底裁决：${verdict} msg=${pendingCouple.messageId}`)
             }
           }
         }
@@ -14121,6 +14749,208 @@ export function ChatRoomInner({
       showComposerToast,
     ],
   )
+
+  const applyCoupleSpaceInviteOutcome = useCallback(
+    (params: {
+      outcome: CoupleSpaceInviteOutcome
+      inviteMsgId: string
+      invitePayload: WeChatCoupleSpaceInvitePayload
+      spokenReplyText?: string
+    }) => {
+      const { outcome, inviteMsgId, invitePayload } = params
+      const charResponded = coupleSpaceOutcomeToCharResponded(outcome)
+      const updatedInvite: WeChatCoupleSpaceInvitePayload = {
+        ...invitePayload,
+        outcome,
+        charResponded,
+      }
+      setItems((prev) => {
+        const next = prev.map((it) =>
+          it.kind === 'msg' && it.id === inviteMsgId
+            ? { ...it, coupleSpaceInvite: updatedInvite }
+            : it,
+        )
+        itemsRef.current = next
+        return next
+      })
+      void (async () => {
+        try {
+          await personaDb.patchWeChatChatMessageById(inviteMsgId, {
+            coupleSpaceInvite: updatedInvite,
+          })
+          emitWeChatStorageChanged()
+        } catch {
+          /* ignore */
+        }
+      })()
+
+      if (!isCoupleSpaceAcceptOutcome(outcome)) {
+        const userName =
+          playerDisplayName.trim() || state.profile.displayName.trim() || '我'
+        const charName = peerNotifyTitle.trim() || '对方'
+        setCoupleReveal({
+          userName,
+          charName,
+          userAvatarUrl: playerAvatarResolved,
+          charAvatarUrl: peerAvatarResolved,
+          outcome,
+          boundAt: Date.now(),
+        })
+        return
+      }
+
+      const charId = conversationCharacterId.trim()
+      if (!charId) return
+      const userName =
+        playerDisplayName.trim() || state.profile.displayName.trim() || '我'
+      const charName = peerNotifyTitle.trim() || '对方'
+      const boundAt = Date.now()
+      const panelCopy = getCoupleSpaceOutcomePanelCopy(outcome)
+      useCoupleSpaceStore.getState().completeBinding({
+        characterId: charId,
+        acceptedReplyText: params.spokenReplyText?.trim() || panelCopy,
+        userDisplayName: userName,
+        charDisplayName: charName,
+        boundAt,
+      })
+      setCoupleReveal({
+        userName,
+        charName,
+        userAvatarUrl: playerAvatarResolved,
+        charAvatarUrl: peerAvatarResolved,
+        outcome,
+        boundAt,
+      })
+    },
+    [
+      conversationCharacterId,
+      peerAvatarResolved,
+      peerNotifyTitle,
+      playerAvatarResolved,
+      playerDisplayName,
+      state.profile.displayName,
+    ],
+  )
+
+  applyCoupleSpaceInviteOutcomeRef.current = applyCoupleSpaceInviteOutcome
+
+  const handleInviteCoupleSpace = useCallback(() => {
+    if (roomType !== 'private' || useLumiProjectAssistantPrompt || isSelfMemoChat) {
+      showComposerToast('请在角色私聊中使用情侣空间')
+      return
+    }
+    const charId = conversationCharacterId.trim()
+    if (!charId) return
+
+    const msgsForPending = extractMessages(itemsRef.current)
+    const pending =
+      findLatestPendingCoupleSpaceInvite(msgsForPending) ||
+      findLatestPendingCharacterCoupleSpaceInvite(msgsForPending)
+    if (pending) {
+      showComposerToast('已有待回应的情侣空间邀请')
+      return
+    }
+
+    void (async () => {
+      try {
+        const acc = currentAccountId?.trim() || null
+        if (acc) await useCoupleSpaceStore.getState().bindAccount(acc)
+        const room = useCoupleSpaceStore.getState().ensureRoom(charId)
+        if (isCoupleSpaceBound(room)) {
+          setCoupleSpaceOpen(true)
+          return
+        }
+
+        const inviteText = '[情侣空间邀请]'
+        const invitePayload: WeChatCoupleSpaceInvitePayload = {
+          kind: 'couple_space_invite',
+          inviteId: '',
+          title: '开通我们的情侣空间',
+          subtitle: '一起写日记 · 记纪念日 · 留专属称呼',
+        }
+        const ts = getCurrentTimeMs()
+        const inviteId = `wxm-${ts}-cs-inv-${Math.random().toString(36).slice(2, 8)}`
+        invitePayload.inviteId = inviteId
+        const inviteMsg: ChatMsg = {
+          id: inviteId,
+          kind: 'msg',
+          from: 'self',
+          text: inviteText,
+          timestamp: ts,
+          status: 'sent',
+          selfAnimated: true,
+          coupleSpaceInvite: invitePayload,
+        }
+        setItems((prev) => {
+          const next = rebuildWithCurrentTime([...extractMessages(prev), inviteMsg])
+          itemsRef.current = next
+          return next
+        })
+        scrollToBottomSmooth()
+        try {
+          await personaDb.appendWeChatChatMessage({
+            id: inviteId,
+            characterId: charId,
+            playerIdentityId,
+            type: 'player',
+            content: inviteText,
+            timestamp: ts,
+            isRead: true,
+            conversationKey,
+            coupleSpaceInvite: invitePayload,
+          })
+          emitWeChatStorageChanged()
+        } catch {
+          /* ignore */
+        }
+        showComposerToast('已发送情侣空间邀请')
+        // 与小游戏邀约一致：发出后不自动拉模型，由用户正常触发线上回复；模型自判四档
+      } catch {
+        showComposerToast('发送邀请失败')
+      }
+    })()
+  }, [
+    conversationCharacterId,
+    conversationKey,
+    currentAccountId,
+    extractMessages,
+    getCurrentTimeMs,
+    isSelfMemoChat,
+    playerIdentityId,
+    rebuildWithCurrentTime,
+    roomType,
+    scrollToBottomSmooth,
+    showComposerToast,
+    useLumiProjectAssistantPrompt,
+  ])
+
+  useEffect(() => {
+    const tryAutoInvite = (sourceCharId?: string) => {
+      const charId = conversationCharacterId.trim()
+      if (!charId) return
+      if (sourceCharId && sourceCharId.trim() !== charId) return
+      if (roomType !== 'private' || useLumiProjectAssistantPrompt || isSelfMemoChat) return
+      if (!consumeCoupleSpaceAutoInvite(charId)) return
+      window.setTimeout(() => {
+        handleInviteCoupleSpace()
+      }, 80)
+    }
+    tryAutoInvite()
+    const onAuto = (ev: Event) => {
+      const detail = (ev as CustomEvent<WeChatCoupleSpaceAutoInviteDetail>).detail
+      tryAutoInvite(detail?.characterId)
+    }
+    window.addEventListener(WECHAT_COUPLE_SPACE_AUTO_INVITE_EVENT, onAuto as EventListener)
+    return () => {
+      window.removeEventListener(WECHAT_COUPLE_SPACE_AUTO_INVITE_EVENT, onAuto as EventListener)
+    }
+  }, [
+    conversationCharacterId,
+    handleInviteCoupleSpace,
+    isSelfMemoChat,
+    roomType,
+    useLumiProjectAssistantPrompt,
+  ])
 
   /** 大富翁调试：跳过邀约卡，本地直接开局 */
 
@@ -15561,6 +16391,7 @@ export function ChatRoomInner({
                   type: 'player',
                   content: messagePlainPreview(m),
                   miniGameInvite: m.miniGameInvite,
+                  coupleSpaceInvite: m.coupleSpaceInvite,
                   musicSync: m.musicSync,
                   timestamp: m.timestamp,
                   isRead: true,
@@ -15702,6 +16533,12 @@ export function ChatRoomInner({
           showComposerToast('控制台已打开')
           logger.log('frontend', '点击加号菜单：控制台日志')
           break
+        case 'thinking_chain':
+          setStubPanel(null)
+          setPlusMenuOpen(false)
+          setCotQuickAdjustOpen(true)
+          logger.log('frontend', '点击加号菜单：思维链调整')
+          break
         case 'screen_share':
           if (roomType !== 'private' || useLumiProjectAssistantPrompt || isSelfMemoChat) {
             showComposerToast('请在角色私聊中使用一起刷')
@@ -15722,6 +16559,29 @@ export function ChatRoomInner({
           setGameLobbyOpen(true)
           logger.log('frontend', '点击加号菜单：小游戏')
           break
+        case 'reply_token': {
+          setStubPanel(null)
+          setPlusMenuOpen(false)
+          const ck = conversationKey.trim()
+          if (!ck) {
+            showComposerToast('当前会话无法呼出 Token 悬浮钮')
+            break
+          }
+          const chatRef =
+            roomType === 'group' && groupId?.trim()
+              ? ({ kind: 'group' as const, groupId: groupId.trim() })
+              : roomType === 'private' && conversationCharacterId.trim()
+                ? ({ kind: 'persona' as const, characterId: conversationCharacterId.trim() })
+                : ({ kind: 'other' as const })
+          const already = showReplyTokenFab({
+            conversationKey: ck,
+            peerLabel: peerNotifyTitle.trim() || '聊天',
+            chatRef,
+          })
+          showComposerToast(already ? 'Token 悬浮钮已呼出' : '已呼出 Token 悬浮钮，可拖动；点击查看用量')
+          logger.log('frontend', '点击加号菜单：回复 Token')
+          break
+        }
         case 'check_phone':
           setStubPanel(null)
           setPlusMenuOpen(false)
@@ -15734,11 +16594,15 @@ export function ChatRoomInner({
     },
     [
       conversationCharacterId,
+      conversationKey,
+      groupId,
       isSelfMemoChat,
       logger,
       onOpenLumiTransfer,
       onOpenSendRedPacket,
       openConsole,
+      openHeartWhisperPanel,
+      peerNotifyTitle,
       roomType,
       showComposerToast,
       triggerManualCharacterReply,
@@ -16059,6 +16923,7 @@ export function ChatRoomInner({
         actionPanelTargetMsg?.transfer ||
         actionPanelTargetMsg?.callStatus ||
         actionPanelTargetMsg?.miniGameInvite ||
+        actionPanelTargetMsg?.coupleSpaceInvite ||
         actionPanelTargetMsg?.musicSync ||
         actionPanelTargetMsg?.listenTrackShare ||
         actionPanelTargetMsg?.listenProfileShare ||
@@ -16082,6 +16947,7 @@ export function ChatRoomInner({
     actionPanelTargetMsg?.transfer,
     actionPanelTargetMsg?.callStatus,
     actionPanelTargetMsg?.miniGameInvite,
+    actionPanelTargetMsg?.coupleSpaceInvite,
     actionPanelTargetMsg?.musicSync,
     actionPanelTargetMsg?.listenTrackShare,
     actionPanelTargetMsg?.listenProfileShare,
@@ -16375,7 +17241,8 @@ export function ChatRoomInner({
       if (!reply) return null
       if (bubbleTailStyle === 'telegram' || bubbleTailStyle === 'talkmaker') return null
 
-      const inset = showAvatar ? 24 + 40 + 12 : 24
+      const rowAvatarPx = bubbleTailStyle === 'wechat' ? WECHAT_CLASSIC_AVATAR_SIZE_PX : 40
+      const inset = showAvatar ? 24 + rowAvatarPx + 12 : 24
       const sideStyle = isSelf ? { marginRight: `${inset}px` } : { marginLeft: `${inset}px` }
       const content = reply.recalled ? '该消息已撤回' : reply.deleted ? '该消息已被删除' : reply.content
       const id = m.replyTo?.messageId?.trim()
@@ -16466,7 +17333,8 @@ export function ChatRoomInner({
         return null
       }
       const expanded = expandedThinkingIds.has(m.id)
-      const inset = showAvatar ? 24 + 40 + 12 : 24
+      const rowAvatarPx = bubbleTailStyle === 'wechat' ? WECHAT_CLASSIC_AVATAR_SIZE_PX : 40
+      const inset = showAvatar ? 24 + rowAvatarPx + 12 : 24
       const sideStyle = isSelf ? { marginRight: `${inset}px` } : { marginLeft: `${inset}px` }
       return (
         <div className={`mb-1 flex w-full max-w-full overflow-x-hidden ${isSelf ? 'justify-end' : 'justify-start'}`}>
@@ -16517,6 +17385,10 @@ export function ChatRoomInner({
       if (mem?.role === 'owner' || mem?.role === 'admin') return mem.role
       return null
     }
+    const twitterRowAvatarPx = bubbleTailStyle === 'wechat' ? WECHAT_CLASSIC_AVATAR_SIZE_PX : 40
+    /** 末条时间 / 已读与气泡外缘对齐：有头像时让出头像列 + 12px 间距 */
+    const twitterMetaEdgeInset = (selfSide: boolean) =>
+      (selfSide ? showAvatarSelfEnabled : showAvatarOtherEnabled) ? twitterRowAvatarPx + 12 : 0
     return visibleItems.map((m, i) => {
       const gap = messageBlockSpacing(
         visibleItems,
@@ -16824,6 +17696,7 @@ export function ChatRoomInner({
                     showRead={twitterShowRead}
                     align="end"
                     night={twitterDmNight}
+                    edgeInsetPx={twitterMetaEdgeInset(true)}
                   />
                 )
               : !isSelf && twitterLastOtherMsgId === m.id
@@ -16832,6 +17705,7 @@ export function ChatRoomInner({
                       timeLabel={formatTwitterDmTime(m.timestamp)}
                       align="start"
                       night={twitterDmNight}
+                      edgeInsetPx={twitterMetaEdgeInset(false)}
                     />
                   )
                 : null
@@ -16861,6 +17735,7 @@ export function ChatRoomInner({
                 translatedText: m.translatedText,
                 translationExpanded: m.translationExpanded,
                 miniGameInvite: m.miniGameInvite,
+                coupleSpaceInvite: m.coupleSpaceInvite,
               })
             : undefined
         const twitterMetaStamp =
@@ -16869,7 +17744,7 @@ export function ChatRoomInner({
             : ''
         const textFingerprint =
           baseFingerprint && (twitterMeta || twitterTapTime)
-            ? `${baseFingerprint}\0twr:${twitterShowRead ? '1' : '0'}\0twn:${twitterDmNight ? '1' : '0'}\0twt:${twitterTapTimeMsgId === m.id ? '1' : '0'}\0twmeta:${twitterMetaStamp}`
+            ? `${baseFingerprint}\0twr:${twitterShowRead ? '1' : '0'}\0twn:${twitterDmNight ? '1' : '0'}\0twt:${twitterTapTimeMsgId === m.id ? '1' : '0'}\0twmeta:${twitterMetaStamp}\0twedge:${twitterMetaEdgeInset(isSelf)}`
             : baseFingerprint
         return (
           <MemoizedMessageItem
@@ -17093,25 +17968,25 @@ export function ChatRoomInner({
           isSelf ? (
             <div className="flex w-full max-w-full shrink-0 items-end justify-end overflow-x-visible px-4">
               {!effectiveShowAvatar && !msAvatar ? (
-                <div className="w-fit min-w-0 max-w-[75%]">{bubbleNode}</div>
+                <div className="w-fit max-w-[75%]">{bubbleNode}</div>
               ) : showAvatarVisual || msAvatar ? (
-                <div className="flex w-fit min-w-0 max-w-[75%] flex-row items-start gap-[12px]">
+                <div className="flex w-fit max-w-[75%] flex-row items-start gap-[12px]">
                   {bubbleNode}
                   {wrapVoiceRankOnAvatar(sharedMsgProps.chatSelfAvatarUrl ? avatarNodeRaw : selfGrayAvatar)}
                 </div>
               ) : reserveAvatarGutter ? (
-                <div className="flex w-fit min-w-0 max-w-[75%] flex-row items-start gap-[12px]">
+                <div className="flex w-fit max-w-[75%] flex-row items-start gap-[12px]">
                   {bubbleNode}
                   {wrapVoiceRankOnAvatar(avatarPlaceholder)}
                 </div>
               ) : (
-                <div className="w-fit min-w-0 max-w-[75%]">{bubbleNode}</div>
+                <div className="w-fit max-w-[75%]">{bubbleNode}</div>
               )}
             </div>
           ) : (
             <div className="w-full max-w-full shrink-0 overflow-x-visible">
               {!effectiveShowAvatar && !msAvatar ? (
-                <div className="ml-[24px] mr-[24px] w-fit min-w-0 max-w-[75%]">{bubbleNode}</div>
+                <div className="ml-[24px] mr-[24px] w-fit max-w-[75%]">{bubbleNode}</div>
               ) : showAvatarVisual || msAvatar ? (
                 <div className="ml-[24px] mr-[24px] flex max-w-full flex-row items-start gap-[12px]">
                   {wrapVoiceRankOnAvatar(sharedRowProps.chatOtherAvatarUrl ? avatarNodeRaw : otherGrayAvatar)}
@@ -17133,7 +18008,7 @@ export function ChatRoomInner({
                   </div>
                 </div>
               ) : (
-                <div className="ml-[24px] mr-[24px] w-fit min-w-0 max-w-[75%]">{bubbleNode}</div>
+                <div className="ml-[24px] mr-[24px] w-fit max-w-[75%]">{bubbleNode}</div>
               )}
             </div>
           )
@@ -17178,6 +18053,50 @@ export function ChatRoomInner({
             rowInner
           )
         return wrap(rowWrapped, renderDetachedReply(m, isSelf))
+      }
+
+      if (m.coupleSpaceInvite) {
+        const coupleData = m.coupleSpaceInvite
+        const rowInner = (
+          <CoupleSpaceInviteChatRow
+            id={m.id}
+            isSelf={isSelf}
+            data={coupleData}
+            bubble={bubble}
+            showAvatar={effectiveShowAvatar}
+            showAvatarColumn={isSelf ? showAvatarColumnSelf : showAvatarColumnOther}
+            chatSelfAvatarUrl={sharedMsgProps.chatSelfAvatarUrl}
+            chatOtherAvatarUrl={sharedRowProps.chatOtherAvatarUrl}
+            chatOtherSenderNickname={chatOtherSenderNickname}
+            chatOtherAvatarRankBadge={chatOtherAvatarRankBadge}
+            groupRankShowBesideNickname={sharedMsgProps.groupRankShowBesideNickname}
+            selected={specialCardSelected}
+            multiSelectAvatar={msAvatar}
+            peerName={peerNotifyTitle}
+            onOpenSpace={() => setCoupleSpaceOpen(true)}
+            coupleSpaceInviteRespondBusy={coupleSpaceInviteRespondBusy}
+            onRespondToCharacterInvite={handleRespondToCharacterCoupleSpaceInvite}
+            onLongPress={specialCardLongPress}
+          />
+        )
+        const rowWrapped =
+          !isSelf && m.otherAnimated ? (
+            <ChatMessageEnter isSelf={false}>{rowInner}</ChatMessageEnter>
+          ) : isSelf && m.selfAnimated ? (
+            <ChatMessageEnter isSelf>{rowInner}</ChatMessageEnter>
+          ) : (
+            rowInner
+          )
+        const coupleFingerprint = chatMsgRenderFingerprint({
+          id: m.id,
+          status: m.status,
+          text: m.text,
+          isRecalled: m.isRecalled,
+          otherAnimated: m.otherAnimated,
+          selfAnimated: m.selfAnimated,
+          coupleSpaceInvite: coupleData,
+        })
+        return wrap(rowWrapped, renderDetachedReply(m, isSelf), coupleFingerprint)
       }
 
       if (m.miniGameInvite) {
@@ -17728,6 +18647,7 @@ export function ChatRoomInner({
             onOtherAvatarClick={sharedRowProps.onOtherAvatarClick}
             multiSelectAvatar={msAvatar}
             selected={actionPanelOpen && actionMessageId === m.id}
+            disableImagePreview={isMultiSelectMode}
             canRegenerate={canRegen}
             regenPrompt={canRegen ? resolveCharacterImageGenPromptForApi(m) : undefined}
             onRegenerate={
@@ -17791,6 +18711,7 @@ export function ChatRoomInner({
             onOtherAvatarClick={sharedRowProps.onOtherAvatarClick}
             multiSelectAvatar={msAvatar}
             selected={actionPanelOpen && actionMessageId === m.id}
+            disableImagePreview={isMultiSelectMode}
             onLongPress={
               isMultiSelectMode
                 ? undefined
@@ -17831,7 +18752,7 @@ export function ChatRoomInner({
               bubbleSelected={actionPanelOpen && actionMessageId === m.id}
               bubbleCluster={rowBubbleCluster}
               twitterStyle={twitterDmActive}
-              avatarSizePx={twitterDmActive ? 28 : bubbleTailStyle === 'wechat' ? WECHAT_CLASSIC_AVATAR_SIZE_PX : undefined}
+              avatarSizePx={bubbleTailStyle === 'wechat' ? WECHAT_CLASSIC_AVATAR_SIZE_PX : undefined}
               onBubbleTap={() => onOtherBubbleTap(m)}
               onBubbleLongPress={
                 isMultiSelectMode
@@ -17869,7 +18790,7 @@ export function ChatRoomInner({
             bubbleSelected={actionPanelOpen && actionMessageId === m.id}
             bubbleCluster={rowBubbleCluster}
             twitterStyle={twitterDmActive}
-            avatarSizePx={twitterDmActive ? 28 : bubbleTailStyle === 'wechat' ? WECHAT_CLASSIC_AVATAR_SIZE_PX : undefined}
+            avatarSizePx={bubbleTailStyle === 'wechat' ? WECHAT_CLASSIC_AVATAR_SIZE_PX : undefined}
             onBubbleTap={twitterDmActive ? () => toggleTwitterTapTime(m.id) : undefined}
             onBubbleLongPress={
               isMultiSelectMode
@@ -18007,6 +18928,10 @@ export function ChatRoomInner({
 
   const bgUrl = chatBackgroundUrl?.trim()
   const resolvedBgUrl = bgUrl ? resolvePublicImageUrl(bgUrl) : ''
+  const bgBlurPx =
+    typeof chatBackgroundBlurPx === 'number' && Number.isFinite(chatBackgroundBlurPx)
+      ? Math.max(0, Math.min(40, Math.round(chatBackgroundBlurPx)))
+      : 0
   const defaultRoomBgStyle = useMemo(
     () => wechatChatRoomBgToStyle(chatRoomDefaultBg, resolvePublicImageUrl),
     [chatRoomDefaultBg],
@@ -18024,6 +18949,16 @@ export function ChatRoomInner({
     }
     return defaultRoomBgStyle
   }, [resolvedBgUrl, chatScrollThemeFallback, defaultRoomBgStyle])
+
+  const roomBgLayerStyle = useMemo((): CSSProperties => {
+    if (bgBlurPx <= 0) return roomBgStyle
+    return {
+      ...roomBgStyle,
+      filter: `blur(${bgBlurPx}px)`,
+      transform: 'scale(1.08)',
+      transformOrigin: 'center center',
+    }
+  }, [roomBgStyle, bgBlurPx])
 
   const showDmOverlay = danmakuEnabled && !(effectiveDm?.skipCharacter)
   const dmZoneStyle = useMemo((): CSSProperties => {
@@ -18063,11 +18998,9 @@ export function ChatRoomInner({
       {chatSkinScopedCss ? (
         <style dangerouslySetInnerHTML={{ __html: wrapWeChatChatSkinScopedCss(chatSkinScopedCss) }} />
       ) : null}
-      <div
-        className="pointer-events-none absolute inset-0 z-0"
-        style={roomBgStyle}
-        aria-hidden
-      />
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden>
+        <div className="absolute inset-0" style={roomBgLayerStyle} />
+      </div>
       {wechatClassicNight || twitterDmNight ? (
         <div
           className="pointer-events-none absolute inset-0 z-0"
@@ -18222,7 +19155,8 @@ export function ChatRoomInner({
                     paddingRight: 12,
                     paddingTop: 8,
                     paddingBottom: 0,
-                    transition: 'transform 220ms ease-out',
+                    /** 键盘抬升跟 visualViewport 逐帧对齐，禁止 transition，否则会拖尾抖 */
+                    transition: 'none',
                   }
                 : {
                     backgroundColor: imessageComposer
@@ -18253,7 +19187,7 @@ export function ChatRoomInner({
                     paddingBottom: wechatComposer
                       ? 'max(18px, calc(env(safe-area-inset-bottom, 0px) + 10px))'
                       : 'max(12px, env(safe-area-inset-bottom, 0px))',
-                    transition: 'transform 220ms ease-out',
+                    transition: 'none',
                   }
             }
           >
@@ -18535,12 +19469,15 @@ export function ChatRoomInner({
                   onClick={() => {
                     const text = mockVoiceInputDraft.trim()
                     if (!text) return
-                    const normalizedScript = normalizeVoiceScriptForTts(text)
+                    const synthPrefs = resolveLiveVoiceMessageSynthPrefs()
+                    const normalizedScript = normalizeVoiceScriptForTts(text, synthPrefs)
                     void appendVoiceMessage({
                       durationSec: estimateVoiceDurationSecFromScript(text),
                       transcriptText: text,
                       ttsScript: normalizedScript,
-                      emotion: pickVoiceEmotionForTts(normalizedScript),
+                      emotion: pickVoiceEmotionForTts(normalizedScript, {
+                        allowEmotion: synthPrefs.allowEmotion,
+                      }),
                     }).then(() => {
                       setMockVoiceInputDraft('')
                       setMockVoiceInputOpen(false)
@@ -18603,6 +19540,11 @@ export function ChatRoomInner({
           setCallMinimized(false)
           setCallingOpen(true)
         }}
+      />
+      <CotQuickAdjustSheet
+        open={cotQuickAdjustOpen}
+        onClose={() => setCotQuickAdjustOpen(false)}
+        scene="online"
       />
       <ScreenShareConfirmSheet
         open={screenShareConfirmOpen}
@@ -18870,132 +19812,186 @@ export function ChatRoomInner({
           return await synthCharacterVoiceAudioUrl(cid, text, emotion, voiceId)
         }}
         onRequestAiReply={async (text, opts) => {
-          let character: Character | null = null
-          let worldBackgroundPrompt: string | undefined
-          const pcid = personaCharacterId?.trim()
-          const lumiAssistantChat = useLumiProjectAssistantPrompt
-          if (!lumiAssistantChat && pcid) {
-            try {
-              character = await personaDb.getCharacter(pcid)
-              if (character?.worldBackgroundEnabled !== false && character?.worldBackgroundId?.trim()) {
-                const wbg = await personaDb.getWorldBackground(character.worldBackgroundId.trim())
-                const block = formatWorldBackgroundForPrompt(wbg)
-                if (block.trim()) worldBackgroundPrompt = block
+          const VOICE_CALL_MEM_TIMEOUT_MS = 12_000
+          const VOICE_CALL_AI_TIMEOUT_MS = 55_000
+          const abort = new AbortController()
+          const abortTimer = window.setTimeout(() => abort.abort(), VOICE_CALL_AI_TIMEOUT_MS)
+          try {
+            let character: Character | null = null
+            let worldBackgroundPrompt: string | undefined
+            const pcid = personaCharacterId?.trim()
+            const lumiAssistantChat = useLumiProjectAssistantPrompt
+            if (!lumiAssistantChat && pcid) {
+              try {
+                character = await personaDb.getCharacter(pcid)
+                if (character?.worldBackgroundEnabled !== false && character?.worldBackgroundId?.trim()) {
+                  const wbg = await personaDb.getWorldBackground(character.worldBackgroundId.trim())
+                  const block = formatWorldBackgroundForPrompt(wbg)
+                  if (block.trim()) worldBackgroundPrompt = block
+                }
+              } catch {
+                character = null
               }
-            } catch {
-              character = null
             }
-          }
 
-          let playerIdentity: PlayerIdentity | null = null
-          let loadPidVc = playerIdentityId.trim()
-          if (!lumiAssistantChat && character?.playerIdentityId?.trim()) {
-            const b = character.playerIdentityId.trim()
-            if (b && b !== '__none__') loadPidVc = b
-          }
-          if (!lumiAssistantChat && loadPidVc && loadPidVc !== '__none__') {
-            try {
-              playerIdentity = await personaDb.getPlayerIdentityForWechatAccount(
-                loadPidVc,
-                currentAccountId,
-              )
-            } catch {
-              playerIdentity = null
+            let playerIdentity: PlayerIdentity | null = null
+            let loadPidVc = playerIdentityId.trim()
+            if (!lumiAssistantChat && character?.playerIdentityId?.trim()) {
+              const b = character.playerIdentityId.trim()
+              if (b && b !== '__none__') loadPidVc = b
             }
-          }
+            if (!lumiAssistantChat && loadPidVc && loadPidVc !== '__none__') {
+              try {
+                playerIdentity = await personaDb.getPlayerIdentityForWechatAccount(
+                  loadPidVc,
+                  currentAccountId,
+                )
+              } catch {
+                playerIdentity = null
+              }
+            }
 
-          const peerName = playerDisplayName.trim() || state.profile.displayName.trim() || '朋友'
-          const promptMode = lumiAssistantChat ? 'lumi-assistant' : 'persona'
-          const offlineDatingPlotsContext =
-            promptMode === 'persona' && pcid
-              ? await loadOfflineDatingPlotsPromptBlock(pcid, character?.name ?? null)
-              : ''
+            const peerName = playerDisplayName.trim() || state.profile.displayName.trim() || '朋友'
+            const promptMode = lumiAssistantChat ? 'lumi-assistant' : 'persona'
+            const offlineDatingPlotsContext =
+              promptMode === 'persona' && pcid
+                ? await loadOfflineDatingPlotsPromptBlock(pcid, character?.name ?? null)
+                : ''
 
-          const isConnectedOpening = opts?.callEvent === 'connected_opening'
-          const initiator =
-            opts?.callInitiator === 'self' || opts?.callInitiator === 'other'
-              ? opts.callInitiator
-              : activeCallInitiator
-          const connectedOpeningPrompt =
-            initiator === 'other'
-              ? [
-                  '【系统事件·通话接通｜你打给对方，对方刚接听】',
-                  '请立刻开口，像真电话接通那样自然说话。',
-                  '可连说多句：用换行拆成多条短语音条（建议 2～6 行台词，可夹环境音/语气括号行）。',
-                  '可急着说事、吐槽对方终于接了、先寒暄再切入正题等，贴合人设与近期私聊上下文。',
-                  '禁止只吐一句空洞开场白；禁止半截自我介绍；禁止输出「语音通话 开场=」指令行。',
-                  '除非你此刻真想结束，否则不要输出「语音通话 挂断」。',
-                ].join('\n')
-              : [
-                  '【系统事件·通话接通｜对方打给你，你刚接起】',
-                  '请立刻开口，像真电话接通那样自然说话。',
-                  '可连说多句：用换行拆成多条短语音条（建议 2～6 行台词，可夹环境音/语气括号行）。',
-                  '例如先「喂」再点名/说明自己刚忙完或在干什么，再问对方突然打电话有什么事；按人设与上下文变化，勿套模板。',
-                  '禁止只回一句机械「喂」；禁止半截自我介绍；禁止输出「语音通话 开场=」指令行。',
-                  '除非你此刻真想结束，否则不要输出「语音通话 挂断」。',
-                ].join('\n')
-
-          const callTurns = voiceCallMessagesToChatTurns(opts?.callMessages ?? [])
-          const transcript: ChatTranscriptTurn[] = [
-            ...itemsToTranscript(buildChatItemsForAiTranscript()),
-            ...(isConnectedOpening
-              ? [{ from: 'self' as const, text: connectedOpeningPrompt }]
-              : callTurns.length
-                ? callTurns
+            const isConnectedOpening = opts?.callEvent === 'connected_opening'
+            const initiator =
+              opts?.callInitiator === 'self' || opts?.callInitiator === 'other'
+                ? opts.callInitiator
+                : activeCallInitiator
+            const connectedOpeningPrompt =
+              initiator === 'other'
+                ? [
+                    '【系统事件·通话接通｜你打给对方，对方刚接听】',
+                    '请立刻开口，像真电话接通那样自然说话。',
+                    '可连说多句：用换行拆成多条短语音条（建议 2～6 行台词，可夹环境音/语气括号行）。',
+                    '可急着说事、吐槽对方终于接了、先寒暄再切入正题等，贴合人设与近期私聊上下文。',
+                    '禁止只吐一句空洞开场白；禁止半截自我介绍；禁止输出「语音通话 开场=」指令行。',
+                    '除非你此刻真想结束，否则不要输出「语音通话 挂断」。',
+                  ].join('\n')
                 : [
-                    {
-                      from: 'self' as const,
-                      text:
-                        opts?.fromVoice && opts.voiceEmotion
-                          ? `（这是一条用户语音转写；识别到的情绪倾向：${opts.voiceEmotion}。请先按该情绪理解用户状态，再给出有情绪承接的回复。）\n${text}`
-                          : text,
-                    },
-                  ]),
-          ]
-          const groupRef = await loadPrivateGroupChatsRecentReference()
-          const vMem = await buildPrivateMemoryInjectionForAi(
-            transcript,
-            isConnectedOpening ? connectedOpeningPrompt : text,
-          )
-          if (vMem.vectorRecall) {
-            logConsole('ai', `${formatMemoryVectorRecallConsoleLine(vMem.vectorRecall)} · 语音通话`)
-          }
-          let worldBookPlaceholderIdMapVc: Record<string, string> | undefined
-          if (character?.generatedForCharacterId?.trim()) {
-            try {
-              const rid = character.generatedForCharacterId.trim()
-              const rootCh = await personaDb.getCharacter(rid)
-              const rootNm = rootCh?.name?.trim()
-              if (rootNm) worldBookPlaceholderIdMapVc = { [rid]: rootNm }
-            } catch {
-              /* ignore */
+                    '【系统事件·通话接通｜对方打给你，你刚接起】',
+                    '请立刻开口，像真电话接通那样自然说话。',
+                    '可连说多句：用换行拆成多条短语音条（建议 2～6 行台词，可夹环境音/语气括号行）。',
+                    '例如先「喂」再点名/说明自己刚忙完或在干什么，再问对方突然打电话有什么事；按人设与上下文变化，勿套模板。',
+                    '禁止只回一句机械「喂」；禁止半截自我介绍；禁止输出「语音通话 开场=」指令行。',
+                    '除非你此刻真想结束，否则不要输出「语音通话 挂断」。',
+                  ].join('\n')
+
+            const callTurns = voiceCallMessagesToChatTurns(opts?.callMessages ?? [])
+            const transcript: ChatTranscriptTurn[] = [
+              ...itemsToTranscript(buildChatItemsForAiTranscript()),
+              ...(isConnectedOpening
+                ? [{ from: 'self' as const, text: connectedOpeningPrompt }]
+                : callTurns.length
+                  ? callTurns
+                  : [
+                      {
+                        from: 'self' as const,
+                        text:
+                          opts?.fromVoice && opts.voiceEmotion
+                            ? `（这是一条用户语音转写；识别到的情绪倾向：${opts.voiceEmotion}。请先按该情绪理解用户状态，再给出有情绪承接的回复。）\n${text}`
+                            : text,
+                      },
+                    ]),
+            ]
+            const groupRef = await loadPrivateGroupChatsRecentReference()
+            // 记忆注入（含向量）挂起时不得拖死通话开口：超时则跳过记忆仍打模型
+            const emptyVoiceMem = {
+              memory: '',
+              momentImageUrls: [] as string[],
+              unsPrivate: '',
+              unsGroup: '',
+              unsMeet: '',
+              recentPrivateAiRounds: '',
+              recentOfflineAiRounds: '',
+              recentMeetAiRounds: '',
+              offlineUnsummarizedForPrompt: '',
+              storyTimeline: '',
+              crossChannelTimeline: '',
+              traceCrossAccountPrivate: '',
+              traceCurrentLinePrivate: '',
+              dedupePrivateRecentOmitted: false,
+              dedupeMeetRecentOmitted: false,
+              dedupeOfflineRecentOmitted: false,
+              vectorRecall: emptyMemoryVectorRecallStatus({ detail: '通话记忆超时跳过' }),
             }
+            let vMem = emptyVoiceMem
+            try {
+              vMem = await Promise.race([
+                buildPrivateMemoryInjectionForAi(
+                  transcript,
+                  isConnectedOpening ? connectedOpeningPrompt : text,
+                ),
+                new Promise<never>((_, reject) => {
+                  window.setTimeout(
+                    () => reject(new Error('voice_call_memory_timeout')),
+                    VOICE_CALL_MEM_TIMEOUT_MS,
+                  )
+                }),
+              ])
+            } catch (memErr) {
+              console.warn('[语音通话] 记忆注入超时或失败，跳过记忆继续开口', memErr)
+              vMem = emptyVoiceMem
+            }
+            if (vMem.vectorRecall) {
+              logConsole('ai', `${formatMemoryVectorRecallConsoleLine(vMem.vectorRecall)} · 语音通话`)
+            }
+            let worldBookPlaceholderIdMapVc: Record<string, string> | undefined
+            if (character?.generatedForCharacterId?.trim()) {
+              try {
+                const rid = character.generatedForCharacterId.trim()
+                const rootCh = await personaDb.getCharacter(rid)
+                const rootNm = rootCh?.name?.trim()
+                if (rootNm) worldBookPlaceholderIdMapVc = { [rid]: rootNm }
+              } catch {
+                /* ignore */
+              }
+            }
+            if (abort.signal.aborted) {
+              throw new Error('通话回复超时，请再点「回复」试试')
+            }
+            return await requestWeChatVoiceCallReplyText({
+              apiConfig,
+              character,
+              playerIdentity,
+              playerDisplayName: peerName,
+              transcript,
+              promptMode,
+              longTermMemoryNotes: vMem.memory || undefined,
+              storyTimelineNotes: vMem.storyTimeline || undefined,
+              worldBackgroundPrompt,
+              offlineDatingPlotsContext: offlineDatingPlotsContext || undefined,
+              recentGroupChatsReference: groupRef || undefined,
+              unsummarizedPrivateNotes: vMem.unsPrivate || undefined,
+              unsummarizedGroupNotes: vMem.unsGroup || undefined,
+              crossChannelTimelineNotes: vMem.crossChannelTimeline || undefined,
+              recentPrivateAiRoundsNotes: vMem.recentPrivateAiRounds || undefined,
+              recentOfflineAiRoundsNotes: vMem.recentOfflineAiRounds || undefined,
+              recentMeetAiRoundsNotes: vMem.recentMeetAiRounds || undefined,
+              currentTimeMs: getCurrentTimeMs(),
+              timePerceptionEnabled: roomType === 'private' ? timePerceptionEnabled : true,
+              globalWechatPlate: roomType === 'group' ? 'group_chat' : 'private_chat',
+              worldBookPlaceholderIdMap: worldBookPlaceholderIdMapVc,
+              allowSynthToneTokens: opts?.allowSynthToneTokens === true,
+              allowSynthEmotion: opts?.allowSynthEmotion === true,
+              signal: abort.signal,
+            })
+          } catch (e) {
+            if (abort.signal.aborted) {
+              throw new Error('通话回复超时，请再点「回复」试试')
+            }
+            if (e instanceof Error && /abort|超时/i.test(e.message)) {
+              throw new Error('通话回复超时，请再点「回复」试试')
+            }
+            throw e
+          } finally {
+            window.clearTimeout(abortTimer)
           }
-          return await requestWeChatVoiceCallReplyText({
-            apiConfig,
-            character,
-            playerIdentity,
-            playerDisplayName: peerName,
-            transcript,
-            promptMode,
-            longTermMemoryNotes: vMem.memory || undefined,
-            storyTimelineNotes: vMem.storyTimeline || undefined,
-            worldBackgroundPrompt,
-            offlineDatingPlotsContext: offlineDatingPlotsContext || undefined,
-            recentGroupChatsReference: groupRef || undefined,
-            unsummarizedPrivateNotes: vMem.unsPrivate || undefined,
-            unsummarizedGroupNotes: vMem.unsGroup || undefined,
-            crossChannelTimelineNotes: vMem.crossChannelTimeline || undefined,
-            recentPrivateAiRoundsNotes: vMem.recentPrivateAiRounds || undefined,
-            recentOfflineAiRoundsNotes: vMem.recentOfflineAiRounds || undefined,
-            recentMeetAiRoundsNotes: vMem.recentMeetAiRounds || undefined,
-            currentTimeMs: getCurrentTimeMs(),
-            timePerceptionEnabled: roomType === 'private' ? timePerceptionEnabled : true,
-            globalWechatPlate: roomType === 'group' ? 'group_chat' : 'private_chat',
-            worldBookPlaceholderIdMap: worldBookPlaceholderIdMapVc,
-            allowSynthToneTokens: opts?.allowSynthToneTokens === true,
-            allowSynthEmotion: opts?.allowSynthEmotion === true,
-          })
         }}
         onTranscribeAudio={async (audioBlob) => {
           return await requestSiliconflowTranscription(voiceAsrRequestConfigRef.current, audioBlob)
@@ -19668,6 +20664,44 @@ export function ChatRoomInner({
         onCloseGame={() => setMiniGameSession(null)}
         onGameFinished={handleMiniGameFinished}
       />
+      {coupleReveal ? (
+        <CoupleContractReveal
+          open
+          userName={coupleReveal.userName}
+          charName={coupleReveal.charName}
+          userAvatarUrl={coupleReveal.userAvatarUrl}
+          charAvatarUrl={coupleReveal.charAvatarUrl}
+          outcome={coupleReveal.outcome}
+          panelCopyOverride={coupleReveal.panelCopyOverride}
+          boundAt={coupleReveal.boundAt}
+          onFinished={() => {
+            const accepted = isCoupleSpaceAcceptOutcome(coupleReveal.outcome)
+            setCoupleReveal(null)
+            if (accepted) setCoupleSpaceOpen(true)
+          }}
+        />
+      ) : null}
+      {coupleSpaceOpen ? (
+        <div className="fixed inset-0 z-[1200] bg-[#FDF8F5]">
+          <CoupleSpaceApp
+            onBack={() => setCoupleSpaceOpen(false)}
+            personaContacts={[
+              {
+                id: `persona-${conversationCharacterId}`,
+                characterId: conversationCharacterId,
+                remarkName: peerNotifyTitle.trim() || '对方',
+                avatarUrl: peerAvatarResolved || undefined,
+              },
+            ]}
+            userDisplayName={
+              playerDisplayName.trim() || state.profile.displayName.trim() || '我'
+            }
+            userAvatarUrl={playerAvatarResolved || undefined}
+            wechatAccountId={currentAccountId}
+            selectedCharacterId={conversationCharacterId}
+          />
+        </div>
+      ) : null}
       <CheckPhoneFlow
         open={checkPhoneOpen}
         characterId={conversationCharacterId}

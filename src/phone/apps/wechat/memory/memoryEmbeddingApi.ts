@@ -65,6 +65,8 @@ export async function fetchEmbeddingVector(
       model: modelId.trim() || DEFAULT_MEMORY_EMBEDDING_MODEL,
       input: t.slice(0, EMBEDDING_INPUT_CHAR_LIMIT),
     }),
+    // 避免向量接口挂起时拖死通话开口 / 私聊首包
+    signal: AbortSignal.timeout(12_000),
   })
   const data = (await resp.json()) as {
     error?: { message?: string }
@@ -99,6 +101,7 @@ export async function fetchEmbeddingVectorsBatch(
       model: modelId.trim() || DEFAULT_MEMORY_EMBEDDING_MODEL,
       input: trimmed.length === 1 ? trimmed[0] : trimmed,
     }),
+    signal: AbortSignal.timeout(12_000),
   })
   const data = (await resp.json()) as {
     error?: { message?: string }

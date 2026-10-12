@@ -57,3 +57,12 @@ export function isWeChatDefaultChatBackgroundPath(url: string): boolean {
   const canon = canonicalPublicImagePath(url.trim())
   return listWeChatDefaultChatBackgroundPresets().some((p) => p.storagePath === canon)
 }
+
+/** 聊天背景模糊 0–40px */
+export const CHAT_BACKGROUND_BLUR_MAX = 40
+
+export function clampChatBackgroundBlur(n: unknown): number {
+  const v = typeof n === 'number' ? n : Number(n)
+  if (!Number.isFinite(v) || v <= 0) return 0
+  return Math.max(0, Math.min(CHAT_BACKGROUND_BLUR_MAX, Math.round(v)))
+}

@@ -21,8 +21,8 @@ export const WECHAT_CLASSIC = {
   textNight: '#FFFFFF',
   mutedNight: 'rgba(255,255,255,0.45)',
   otherBubbleNight: '#2C2C2C',
-  /** 夜间己方气泡：比日间 #95EC69 更沉，避免暗底下过亮 */
-  selfBubbleNight: '#28C445',
+  /** 夜间己方气泡：用户吸色定稿 */
+  selfBubbleNight: '#27B561',
   borderNight: 'rgba(255,255,255,0.08)',
   /** 夜间壁纸压暗遮罩（叠在背景图上） */
   wallpaperDimNight: 'rgba(0, 0, 0, 0.52)',
@@ -66,13 +66,16 @@ export function wechatClassicSpecialSkinOverrides(night: boolean): Record<string
     '--wx-special-voice-border-self': 'transparent',
     '--wx-special-voice-border-other': 'transparent',
     '--wx-special-voice-play-bg': night ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.06)',
-    /** 夜间语音条 / 转文字面板正文：统一白字（对方深灰气泡尤其依赖） */
-    '--wx-special-voice-text-self': night ? '#FFFFFF' : WECHAT_CLASSIC.text,
-    '--wx-special-voice-text-other': night ? '#FFFFFF' : WECHAT_CLASSIC.text,
-    '--wx-special-voice-wave-active-self': night ? '#FFFFFF' : WECHAT_CLASSIC.text,
+    /**
+     * 己方语音条日夜都是绿色底 → 波形 / 秒数 / 转写跟文本气泡一样用深色字；
+     * 对方夜间是深灰底 → 用浅色字。
+     */
+    '--wx-special-voice-text-self': WECHAT_CLASSIC.text,
+    '--wx-special-voice-text-other': text,
+    '--wx-special-voice-wave-active-self': WECHAT_CLASSIC.text,
     '--wx-special-voice-wave-active-other': text,
     '--wx-special-voice-wave-idle': night ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.22)',
-    '--wx-special-voice-duration': night ? '#FFFFFF' : muted,
+    '--wx-special-voice-duration': WECHAT_CLASSIC.text,
     '--wx-special-voice-toggle-bg': night ? 'rgba(255,255,255,0.14)' : '#E5E5E5',
     '--wx-special-voice-toggle-text': night ? '#FFFFFF' : '#4B5563',
     '--wx-special-voice-panel-border-self': night ? 'rgba(255,255,255,0.12)' : '#7ed957',
@@ -949,9 +952,13 @@ export function WechatRedPacketBubbleFace({
   kind: 'unclaimed' | 'claimed' | 'expired'
   isSelf: boolean
 }) {
-  const bg = kind === 'unclaimed' ? '#FA9D3B' : kind === 'claimed' ? '#FCE4C5' : '#E8D0BC'
-  const dividerCls = kind === 'unclaimed' ? 'border-white/20' : 'border-white/30'
+  // 对齐真微信：未领亮橙；已领/过期仍为可衬白字的暗橙/灰橙（勿用过浅米色，否则祝福语与「已领取」发虚）
+  const bg = kind === 'unclaimed' ? '#FA9D3B' : kind === 'claimed' ? '#E09A4E' : '#C9A07A'
+  const dividerCls = kind === 'unclaimed' ? 'border-white/20' : 'border-white/25'
+  const statusOpacity = kind === 'unclaimed' ? 'text-white/90' : 'text-white/95'
+  const footerOpacity = kind === 'unclaimed' ? 'text-white/70' : 'text-white/80'
 
+  // 真微信两侧卡片均显示「已领取」；发出侧与收取侧不再拆成「已被领取」
   let statusLabel: string | null = null
   if (kind === 'claimed') statusLabel = '已领取'
   else if (kind === 'expired') statusLabel = '已过期'
@@ -977,14 +984,14 @@ export function WechatRedPacketBubbleFace({
             {remark}
           </p>
           {statusLabel ? (
-            <p data-wx-special-part="status" className="mt-0.5 text-[12px] leading-snug text-white/90">
+            <p data-wx-special-part="status" className={`mt-0.5 text-[12px] leading-snug ${statusOpacity}`}>
               {statusLabel}
             </p>
           ) : null}
         </div>
       </div>
       <div data-wx-special-part="footer" className={`border-t px-3 py-1.5 ${dividerCls}`}>
-        <p className="text-[11px] leading-none text-white/70">微信红包</p>
+        <p className={`text-[11px] leading-none ${footerOpacity}`}>微信红包</p>
       </div>
     </div>
   )

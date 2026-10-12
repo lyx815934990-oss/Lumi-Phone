@@ -1723,7 +1723,7 @@ export function EncounterChatRoom({ npc, onBack }: { npc: EncounterNPC; onBack: 
             paddingTop: 12,
             paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))',
             transform: composerInsetPx > 0 ? `translate3d(0, -${composerInsetPx}px, 0)` : undefined,
-            transition: 'transform 220ms ease-out',
+            transition: 'none',
             willChange: composerInsetPx > 0 ? 'transform' : undefined,
           }}
         >

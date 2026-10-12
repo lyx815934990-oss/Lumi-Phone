@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Save, Upload, User, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, FileUp, Plus, Save, Upload, User, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { emitWeChatStorageChanged, personaDb } from './idb'
@@ -82,6 +82,11 @@ import { usePersonaRoster } from './personaRoster/usePersonaRoster'
 import type { PersonaRosterTabId } from './personaRoster/personaRosterTypes'
 import { WeChatThemePageBackdrop } from './WeChatThemePageBackdrop'
 import { PersonaAiGeneratePage } from './PersonaAiGeneratePage'
+import {
+  buildWorldBooksFromImportedDoc,
+  extractTextFromPersonaDoc,
+  personaDocBaseName,
+} from './importWorldBookDoc'
 
 const bg = '#F7F7F9'
 const text = '#262626'
@@ -300,11 +305,15 @@ function CharacterCreateModeModal({
   onClose,
   onPickCustom,
   onPickAi,
+  onPickDocImport,
+  docImportBusy = false,
 }: {
   open: boolean
   onClose: () => void
   onPickCustom: () => void
   onPickAi: () => void
+  onPickDocImport: () => void
+  docImportBusy?: boolean
 }) {
   if (!open) return null
   return (
@@ -318,7 +327,7 @@ function CharacterCreateModeModal({
           新建角色人设
         </p>
         <p className="mt-2 text-center text-[13px] leading-relaxed" style={{ color: sub, fontWeight: 300 }}>
-          选择创建方式：自定义编辑，或由 AI 根据预设一键生成立体人设与世界书。
+          选择创建方式：自定义编辑、AI 生成，或导入设定文档自动写入世界书。
         </p>
         <div className="mt-4 flex flex-col gap-2">
           <button
@@ -336,6 +345,21 @@ function CharacterCreateModeModal({
           >
             AI 生成
           </button>
+          <button
+            type="button"
+            disabled={docImportBusy}
+            onClick={onPickDocImport}
+            className="rounded-xl border bg-white py-3 text-[14px] font-semibold transition-all duration-200 ease-out hover:bg-[#fafafa] disabled:opacity-50"
+            style={{ borderColor: border, color: text }}
+          >
+            <span className="inline-flex items-center justify-center gap-2">
+              <FileUp className="size-4 shrink-0" strokeWidth={2} />
+              {docImportBusy ? '导入中…' : '导入设定文档'}
+            </span>
+          </button>
+          <p className="px-1 text-center text-[11px] leading-relaxed" style={{ color: sub }}>
+            导入设定文档：先绑定身份，再选 txt / docx，全文写入一条世界书
+          </p>
           <button type="button" onClick={onClose} className="rounded-xl py-2 text-[13px]" style={{ color: sub }}>
             取消
           </button>
@@ -1122,7 +1146,7 @@ export function NewFriendsPersonaApp({
   const [deleteTargetDetachHint, setDeleteTargetDetachHint] = useState<string | null>(null)
   const [identityPickOpen, setIdentityPickOpen] = useState(false)
   const [createModeOpen, setCreateModeOpen] = useState(false)
-  const [pendingCreateMode, setPendingCreateMode] = useState<'custom' | 'ai' | null>(null)
+  const [pendingCreateMode, setPendingCreateMode] = useState<'custom' | 'ai' | 'doc-import' | null>(null)
   const [mainPickOpen, setMainPickOpen] = useState(false)
   const [identityLoading, setIdentityLoading] = useState(false)
   const [pendingNewDraft, setPendingNewDraft] = useState<Character | null>(null)
@@ -1130,6 +1154,10 @@ export function NewFriendsPersonaApp({
   const runtimeImportInputRef = useRef<HTMLInputElement | null>(null)
   const runtimeImportTargetRootRef = useRef('')
   const [runtimeImportPickOpen, setRuntimeImportPickOpen] = useState(false)
+  const docImportInputRef = useRef<HTMLInputElement | null>(null)
+  const docImportDraftRef = useRef<Character | null>(null)
+  const [docImportConsentOpen, setDocImportConsentOpen] = useState(false)
+  const [docImportBusy, setDocImportBusy] = useState(false)
   const [aiGeneratingWechat, setAiGeneratingWechat] = useState(false)
   const [aiRemarkCandidates, setAiRemarkCandidates] = useState<Character[] | null>(null)
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null)
@@ -1717,10 +1745,12 @@ export function NewFriendsPersonaApp({
 
         <CharacterCreateModeModal
           open={createModeOpen}
+          docImportBusy={docImportBusy}
           onClose={() => {
             setCreateModeOpen(false)
             setPendingNewDraft(null)
             setPendingCreateMode(null)
+            docImportDraftRef.current = null
           }}
           onPickCustom={async () => {
             setCreateModeOpen(false)
@@ -1734,6 +1764,14 @@ export function NewFriendsPersonaApp({
             setIdentityPickOpen(true)
             await refreshIdentities()
           }}
+          onPickDocImport={async () => {
+            if (docImportBusy) return
+            setCreateModeOpen(false)
+            if (!pendingNewDraft) setPendingNewDraft(newCharacter())
+            setPendingCreateMode('doc-import')
+            setIdentityPickOpen(true)
+            await refreshIdentities()
+          }}
         />
 
         <IdentityPickModal
@@ -1744,11 +1782,13 @@ export function NewFriendsPersonaApp({
             setIdentityPickOpen(false)
             setPendingNewDraft(null)
             setPendingCreateMode(null)
+            docImportDraftRef.current = null
           }}
           onCreateNew={() => {
             setIdentityPickOpen(false)
             setPendingNewDraft(null)
             setPendingCreateMode(null)
+            docImportDraftRef.current = null
             onOpenIdentityManager?.()
           }}
           onPick={async (identityId) => {
@@ -1756,9 +1796,16 @@ export function NewFriendsPersonaApp({
             const draft = currentAccountId ? stampWechatAccountOwner(base, currentAccountId) : base
             await setActivePlayerIdentityForCurrentAccount(identityId)
             setIdentityPickOpen(false)
-            setPendingNewDraft(null)
             const mode = pendingCreateMode ?? 'custom'
             setPendingCreateMode(null)
+            if (mode === 'doc-import') {
+              setPendingNewDraft(null)
+              docImportDraftRef.current = draft
+              setDocImportConsentOpen(true)
+              return
+            }
+            setPendingNewDraft(null)
+            docImportDraftRef.current = null
             if (mode === 'ai') {
               setPage({ name: 'ai-generate', draft, playerIdentityId: identityId })
               return
@@ -1766,6 +1813,93 @@ export function NewFriendsPersonaApp({
             setPage({ name: 'edit', id: draft.id, isNew: true, draft })
           }}
         />
+
+        <input
+          ref={docImportInputRef}
+          type="file"
+          accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          className="hidden"
+          onChange={(e) => {
+            const input = e.currentTarget
+            void (async () => {
+              const f = input.files?.[0]
+              input.value = ''
+              const draftBase = docImportDraftRef.current
+              docImportDraftRef.current = null
+              if (!f || !draftBase) return
+              setDocImportBusy(true)
+              try {
+                const text = await extractTextFromPersonaDoc(f)
+                if (!text) {
+                  window.alert('文件没有可读文字内容')
+                  return
+                }
+                const entryName = personaDocBaseName(f.name)
+                const draft: Character = {
+                  ...draftBase,
+                  name: draftBase.name?.trim() || entryName.slice(0, 32),
+                  worldBooks: buildWorldBooksFromImportedDoc({ entryName, content: text }),
+                  updatedAt: Date.now(),
+                }
+                setPage({ name: 'edit', id: draft.id, isNew: true, draft })
+              } catch (err) {
+                window.alert(err instanceof Error && err.message.trim() ? err.message : '导入失败')
+              } finally {
+                setDocImportBusy(false)
+              }
+            })()
+          }}
+        />
+
+        {docImportConsentOpen ? (
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/45 px-4 backdrop-blur-[2px]">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="roster-doc-import-consent-title"
+              className="w-full max-w-[400px] rounded-[22px] border border-white/70 bg-white/95 p-6 shadow-2xl backdrop-blur-xl"
+            >
+              <p
+                id="roster-doc-import-consent-title"
+                className="text-center text-[17px] font-semibold text-stone-900"
+              >
+                导入前请确认
+              </p>
+              <div className="mt-3 space-y-2.5 text-[13px] leading-relaxed text-stone-600">
+                <p>
+                  导入文件前，请确认你已征得
+                  <strong className="font-semibold text-stone-800">原创作者同意</strong>
+                  ，有权将内容用于本机人设世界书。
+                </p>
+                <p>
+                  请勿导入通过非正规途径获取的文件资源；违规内容引发的版权与合规风险由用户自行承担。
+                </p>
+              </div>
+              <div className="mt-8 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocImportConsentOpen(false)
+                    docImportDraftRef.current = null
+                  }}
+                  className="flex-1 rounded-full border border-stone-200 py-3 text-[14px] text-stone-700 transition-colors hover:bg-stone-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocImportConsentOpen(false)
+                    window.setTimeout(() => docImportInputRef.current?.click(), 80)
+                  }}
+                  className="flex-1 rounded-full bg-stone-900 py-3 text-[14px] font-medium text-white"
+                >
+                  我已了解，继续
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <MainCharacterPickModal
           open={mainPickOpen}

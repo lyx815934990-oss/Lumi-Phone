@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
 import TextareaAutosize from 'react-textarea-autosize'
-import { CircleHelp, Heart, Send } from 'lucide-react'
+import { BrainCircuit, CircleHelp, Heart, Send } from 'lucide-react'
 import { DATING_STORY_COACH_TARGET_ATTR } from '../../../phone/apps/wechat/dating/datingStoryLayoutCoach'
 import { useStoryRpgStore } from '../../store/useStoryRpgStore'
 import { applyTextareaCursor, insertPairAtCursor } from '../../utils/insertAtCursor'
@@ -37,6 +37,8 @@ type Props = {
   activeDirectorActions?: Partial<Record<DirectorActionId, boolean>>
   onDirectorAction?: (id: DirectorActionId) => void
   onOpenAdvanced?: () => void
+  /** 打开文心快捷面板（线下提示词 / 思维链） */
+  onOpenWenxin?: () => void
   onHeartWhisper?: () => void
   /** 打开上帝 / 导演 / 侧写等模式说明 */
   onOpenModeHelp?: () => void
@@ -256,6 +258,7 @@ export function DirectorConsole({
   activeDirectorActions,
   onDirectorAction,
   onOpenAdvanced,
+  onOpenWenxin,
   onHeartWhisper,
   onOpenModeHelp,
   pendingControlTags,
@@ -304,15 +307,29 @@ export function DirectorConsole({
       />
       <PendingControlTagStrip tags={pendingControlTags ?? []} />
       <div className="flex items-end gap-2">
-        <button
-          type="button"
-          onClick={() => (onOpenAdvanced ? onOpenAdvanced() : storeOpenAdvanced(true))}
-          className="mb-1 flex size-10 shrink-0 items-center justify-center rounded-full border border-[var(--sr-border)] bg-[var(--sr-glass)] text-lg text-[var(--sr-gold)] transition hover:bg-[var(--sr-glass-strong)]"
-          aria-label="高级场控"
-          {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-advanced' }}
-        >
-          ⌘
-        </button>
+        <div className="mb-1 flex shrink-0 flex-col items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => (onOpenAdvanced ? onOpenAdvanced() : storeOpenAdvanced(true))}
+            className="flex size-10 items-center justify-center rounded-full border border-[var(--sr-border)] bg-[var(--sr-glass)] text-lg text-[var(--sr-gold)] transition hover:bg-[var(--sr-glass-strong)]"
+            aria-label="高级场控"
+            {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-advanced' }}
+          >
+            ⌘
+          </button>
+          {onOpenWenxin ? (
+            <button
+              type="button"
+              onClick={onOpenWenxin}
+              className="flex size-10 items-center justify-center rounded-full border border-[var(--sr-border)] bg-[var(--sr-glass)] text-[var(--sr-gold)] transition hover:bg-[var(--sr-glass-strong)]"
+              aria-label="文心"
+              title="文心 · 提示词与思维链"
+              {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-wenxin' }}
+            >
+              <BrainCircuit className="size-4" strokeWidth={1.75} />
+            </button>
+          ) : null}
+        </div>
         <div className="min-w-0 flex-1">
           <QuickInputBar
             onSend={onSend}

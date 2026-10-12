@@ -113,6 +113,15 @@ export function chatMsgRenderFingerprint(m: {
     replyText?: string
     matchResult?: string
   }
+  coupleSpaceInvite?: {
+    kind?: string
+    inviteId?: string
+    charResponded?: string
+    userResponded?: string
+    outcome?: string
+    title?: string
+    replyText?: string
+  }
 }): string {
   const img0 = m.images?.[0]
   const mediaKey = [
@@ -124,7 +133,11 @@ export function chatMsgRenderFingerprint(m: {
   ].join(':')
   const tr = `${(m.translatedText ?? '').length}:${m.translationExpanded ? 1 : 0}:${(m.translatedText ?? '').slice(0, 24)}`
   const base = `${m.id}|${m.status ?? ''}|${m.isRecalled ? 1 : 0}|${m.otherAnimated ? 1 : 0}|${m.selfAnimated ? 1 : 0}|${(m.text ?? '').length}|${mediaKey}|tr:${tr}`
+  const cs = m.coupleSpaceInvite
+  const withCs = cs
+    ? `${base}|cs:${cs.kind ?? ''}:${cs.inviteId ?? ''}:${cs.charResponded ?? ''}:${cs.userResponded ?? ''}:${cs.outcome ?? ''}:${(cs.title ?? '').slice(0, 24)}:${(cs.replyText ?? '').slice(0, 24)}`
+    : base
   const mg = m.miniGameInvite
-  if (!mg) return base
-  return `${base}|mg:${mg.kind ?? ''}:${mg.inviteId ?? ''}:${mg.charResponded ?? ''}:${mg.userResponded ?? ''}:${mg.matchResult ?? ''}:${(mg.replyText ?? '').slice(0, 48)}`
+  if (!mg) return withCs
+  return `${withCs}|mg:${mg.kind ?? ''}:${mg.inviteId ?? ''}:${mg.charResponded ?? ''}:${mg.userResponded ?? ''}:${mg.matchResult ?? ''}:${(mg.replyText ?? '').slice(0, 48)}`
 }

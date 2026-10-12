@@ -93,14 +93,26 @@ import {
 import { LUMI_ASSISTANT_SYSTEM_PROMPT } from './lumiAssistantPrompt'
 import {
   WECHAT_LUMI_ASSISTANT_OUTPUT_APPENDIX,
-  buildWechatReplyOutputAppendix,
+  buildWechatReplyFormatAppendix,
+  buildWechatReplyStyleAppendix,
   buildWechatThinkingChainAppendix,
   WECHAT_FORWARD_HISTORY_FORGER_APPENDIX,
   LUMI_SYSTEM_OVERRIDE_APPENDIX,
+  type WechatReplyAppendixOptions,
+  type WechatThinkingChainFeatureToggles,
 } from './wechatReplyOutputPrompt'
+import {
+  resolveOnlineReplyStyleAppendix,
+  resolveOnlineThinkingChainAppendix,
+} from '../thinkingChain/cotAssemble'
+import { getActivePresetForScene } from '../thinkingChain/cotStore'
+import { recordLastPromptMaterial } from './lastPromptMaterialStore'
+import type { LoreArchiveBuiltinPresetToggles } from '../../worldbook/loreArchiveBuiltinPresets'
 import {
   buildWechatReplyOutputLanguageAppendix,
   buildWechatSyncTranslationAppendix,
+  looksLikeJapaneseBubbleText,
+  stripJapaneseTrailingLaughMarker,
 } from './wechatChatLanguage'
 import { buildWechatInnerOsSyncAppendix } from './wechatInnerOsSync'
 import { buildWeChatPulseDmScreenshotOutputBlock } from './pulse/pulseDmScreenshotAiDirective'
@@ -113,6 +125,43 @@ import {
   type RelationshipStage,
 } from './wechatChatPrompt'
 import { PROACTIVE_INITIATION_USER_NUDGE } from './proactivePrivateMessageTypes'
+
+/** 开启思维链时：启用自定义预设则整段替换内置，否则回落内置 */
+function resolveWechatThinkingChainAppendix(
+  toggles?: LoreArchiveBuiltinPresetToggles | null,
+  features?: WechatThinkingChainFeatureToggles | null,
+): string {
+  return resolveOnlineThinkingChainAppendix() ?? buildWechatThinkingChainAppendix(toggles, features)
+}
+
+/** 溯源用：当轮文心「回复提示词」快照字段 */
+function onlineUserRoleplayTraceFields(): {
+  userRoleplayText?: string
+  userRoleplayPresetName?: string
+} {
+  const userRoleplayText = resolveOnlineReplyStyleAppendix()?.trim() || ''
+  const userRoleplayPresetName =
+    getActivePresetForScene('online', 'replyStyle')?.name?.trim() || ''
+  return {
+    ...(userRoleplayText ? { userRoleplayText } : {}),
+    ...(userRoleplayPresetName ? { userRoleplayPresetName } : {}),
+  }
+}
+
+/**
+ * 输出附录：自定义回复提示词已接到主壳位（替换 WECHAT_CORE）时，此处只拼格式指令；
+ * 未启用自定义时仍拼内置文风 + 格式。沙盒在 buildSystemContent 的 fictionCot，永不由此替换。
+ */
+function buildWechatStylePlusFormatAppendix(
+  toggles?: LoreArchiveBuiltinPresetToggles | null,
+  options?: WechatReplyAppendixOptions,
+): string {
+  const userRoleplay = resolveOnlineReplyStyleAppendix()
+  if (userRoleplay) {
+    return buildWechatReplyFormatAppendix(options)
+  }
+  return `${buildWechatReplyStyleAppendix(toggles, options)}\n\n${buildWechatReplyFormatAppendix(options)}`
+}
 
 /**
  * Gemini 等网关：`Requests ending with a model turn are not supported`
@@ -266,8 +315,9 @@ function resolveWorldbookLoreByTier(params: {
   return buildWorldbookContextByTier(ids, getWorldbookLoreEntriesSnapshot(), params.globalWechatPlate)
 }
 
+/** 档案室用户条目与系统内置预设用 --- 隔开，便于溯源分列（勿粘成「内置恋爱」一类） */
 function joinArchiveTierBlocks(...parts: Array<string | undefined | null>): string {
-  return parts.map((p) => String(p ?? '').trim()).filter(Boolean).join('\n\n')
+  return parts.map((p) => String(p ?? '').trim()).filter(Boolean).join('\n\n---\n\n')
 }
 
 function resolveChatWorldbookMemberIds(
@@ -1120,9 +1170,14 @@ export function buildSystemContent(params: {
   /**
    * 效力层级（高→低）：
    * 重新回复偏向（若有）→ 输出规范 → 档案室档1 → 角色档案/侧写/账本/人设世界书/档案室档2 → 档案室档3 → …
+   *
+   * 扮演主壳：用户「回复提示词」预设整段替换 WECHAT_CORE；
+   * 永不替换：沙盒（fictionCot / LUMI_SYSTEM_OVERRIDE）与输出格式（earlyOutput 内 format 层）。
    */
-  const roleplayPrompt =
-    params.promptMode === 'persona' && params.character && params.relationshipStage
+  const userRoleplayOverride = resolveOnlineReplyStyleAppendix()?.trim() || ''
+  const roleplayPrompt = userRoleplayOverride
+    ? userRoleplayOverride
+    : params.promptMode === 'persona' && params.character && params.relationshipStage
       ? buildWeChatSystemPrompt(params.relationshipStage)
       : WECHAT_ROLEPLAY_SYSTEM_PROMPT
   const rawMain =
@@ -1433,21 +1488,35 @@ function logWeChatAiReplyDebug(
 }
 
 function extractThinkingBlock(raw: string): { visible: string; thinking?: string } {
-  const src = String(raw ?? '')
-  // 兼容常见写法：<thinking>、<think>、```thinking fenced block
-  const tagMatch = src.match(/<(thinking|think)\b[^>]*>([\s\S]*?)<\/\1>/i)
-  if (tagMatch) {
-    const thinking = String(tagMatch[2] ?? '').trim()
-    const visible = src.replace(tagMatch[0], '').trim()
-    return { visible, thinking: thinking || undefined }
+  let src = String(raw ?? '')
+  const thinkings: string[] = []
+  // 兼容常见写法：<thinking>、<think>、```thinking fenced block；可多段
+  for (;;) {
+    const tagMatch = src.match(/<(thinking|think)\b[^>]*>([\s\S]*?)<\/\1>/i)
+    if (!tagMatch) break
+    const t = String(tagMatch[2] ?? '').trim()
+    if (t) thinkings.push(t)
+    src = src.replace(tagMatch[0], '\n').trim()
   }
-  const fencedMatch = src.match(/```(?:thinking|think|analysis)\s*([\s\S]*?)```/i)
-  if (fencedMatch) {
-    const thinking = String(fencedMatch[1] ?? '').trim()
-    const visible = src.replace(fencedMatch[0], '').trim()
-    return { visible, thinking: thinking || undefined }
+  for (;;) {
+    const fencedMatch = src.match(/```(?:thinking|think|analysis)\s*([\s\S]*?)```/i)
+    if (!fencedMatch) break
+    const t = String(fencedMatch[1] ?? '').trim()
+    if (t) thinkings.push(t)
+    src = src.replace(fencedMatch[0], '\n').trim()
   }
-  return { visible: src }
+  // 未闭合思维链：网关/推理模型常把全文塞进 <thinking> 且不写闭合 → 可见正文为空
+  const unclosed = src.match(/<(thinking|think)\b[^>]*>/i)
+  if (unclosed && unclosed.index != null) {
+    const rest = src.slice(unclosed.index + unclosed[0].length).trim()
+    if (rest) thinkings.push(rest)
+    src = src.slice(0, unclosed.index).trim()
+  }
+  src = src.replace(/<\/(?:thinking|think)>/gi, '').trim()
+  return {
+    visible: src,
+    thinking: thinkings.length ? thinkings.join('\n\n') : undefined,
+  }
 }
 
 export type WeChatPeerReplyOrderedSegment =
@@ -1643,9 +1712,15 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
       return r.text.trim() ? { kind: 'bubble' as const, text: r.text.trim() } : null
     })
     .filter((seg): seg is WeChatPeerReplyOrderedSegment => seg != null)
+  const stripJaLaugh = (text: string) =>
+    looksLikeJapaneseBubbleText(text) ? stripJapaneseTrailingLaughMarker(text) : text
+  const jaCleanBubbles = (mfStrip.bubbles.length ? mfStrip.bubbles : sanitizedBubbles).map(stripJaLaugh)
+  const jaCleanSegs = (mfSegs.length ? mfSegs : sanitizedSegments)
+    .map((seg) => (seg.kind === 'bubble' ? { ...seg, text: stripJaLaugh(seg.text) } : seg))
+    .filter((seg) => seg.kind !== 'bubble' || !!seg.text.trim())
   return {
-    bubbles: mfStrip.bubbles.length ? mfStrip.bubbles : sanitizedBubbles,
-    orderedSegments: mfSegs.length ? mfSegs : sanitizedSegments,
+    bubbles: jaCleanBubbles,
+    orderedSegments: jaCleanSegs,
     thinking,
     danmakuLines: danmakuMerged,
     worldBookPatches,
@@ -1731,9 +1806,14 @@ function buildWechatOutputProtocolAppendix(
   innerOsSyncEnabled?: boolean,
   heartWhisperSyncEnabled?: boolean,
   heartWhisperKind: 'private' | 'group' = 'private',
+  voiceSynth?: { toneTokens?: boolean; emotion?: boolean },
 ): string {
   const toggles = getLoreArchiveBuiltinPresetTogglesSnapshot()
-  const output = buildWechatReplyOutputAppendix(toggles, { omitRomance: true })
+  const output = buildWechatStylePlusFormatAppendix(toggles, {
+    omitRomance: true,
+    voiceSynthToneTokensEnabled: voiceSynth?.toneTokens === true,
+    voiceSynthEmotionEnabled: voiceSynth?.emotion === true,
+  })
   const lang = buildWechatReplyOutputLanguageAppendix(replyOutputLanguage, replyVoiceLanguage, {
     translationSyncEnabled,
     translationLanguage,
@@ -1753,7 +1833,7 @@ function buildWechatOutputProtocolAppendix(
     heartWhisperSyncEnabled === true ? buildWechatHeartWhisperInlineSyncAppendix(heartWhisperKind) : ''
   const withLang = [output, lang, syncOs, syncTr, syncHw].filter(Boolean).join('\n\n')
   if (!includeThinkingChain) return withLang
-  return `${withLang}\n\n${buildWechatThinkingChainAppendix(toggles)}`
+  return `${withLang}\n\n${resolveWechatThinkingChainAppendix(toggles)}`
 }
 
 function appendWorldBookAfterPatchOutputRules(
@@ -1791,13 +1871,16 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   innerOsSyncEnabled?: boolean
   /** 每轮主回复末尾同轮产出心语 XML */
   heartWhisperSyncEnabled?: boolean
+  /** 语音消息：是否允许合成语气词 / 情绪标签（默认关） */
+  voiceSynthToneTokensEnabled?: boolean
+  voiceSynthEmotionEnabled?: boolean
 }): string {
   const profileBlock = params.characterWechatProfileBlock?.trim()
   const pinCatalog = params.characterMomentsPinCatalog?.trim()
   const userMomentsCatalog = params.userMomentsViewerCatalog?.trim()
   const toggles = getLoreArchiveBuiltinPresetTogglesSnapshot()
   const thinkingBlock = params.includeThinkingChain
-    ? `\n\n${buildWechatThinkingChainAppendix(toggles, {
+    ? `\n\n${resolveWechatThinkingChainAppendix(toggles, {
         busyEnabled: params.includeBusyDirective === true,
         forwardHistoryCardEnabled: params.includeForwardHistoryCard === true,
         pulseDmScreenshotEnabled: params.includePulseDmScreenshot === true,
@@ -1866,7 +1949,11 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   return appendWorldBookAfterPatchOutputRules(
     params.character,
     false,
-    `${buildWechatReplyOutputAppendix(toggles, { omitRomance: true })}${forwardBlock}${pulseDmShotBlock}${thinkingBlock}${profileImageBlock}${profileStateBlock}${memeLexiconBlock}${mimicStyleBlock}${langAppend}\n\n${WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX}${pinCatalog ? `\n\n${pinCatalog}` : ''}${userMomentsCatalog ? `\n\n${userMomentsCatalog}` : ''}\n\n${WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_PIN_APPENDIX}\n\n${WECHAT_CHARACTER_PRESENCE_MURMUR_APPENDIX}`,
+    `${buildWechatStylePlusFormatAppendix(toggles, {
+      omitRomance: true,
+      voiceSynthToneTokensEnabled: params.voiceSynthToneTokensEnabled === true,
+      voiceSynthEmotionEnabled: params.voiceSynthEmotionEnabled === true,
+    })}${forwardBlock}${pulseDmShotBlock}${thinkingBlock}${profileImageBlock}${profileStateBlock}${memeLexiconBlock}${mimicStyleBlock}${langAppend}\n\n${WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX}${pinCatalog ? `\n\n${pinCatalog}` : ''}${userMomentsCatalog ? `\n\n${userMomentsCatalog}` : ''}\n\n${WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_PIN_APPENDIX}\n\n${WECHAT_CHARACTER_PRESENCE_MURMUR_APPENDIX}`,
   )
 }
 
@@ -2110,6 +2197,9 @@ export async function requestWeChatPeerReplyBubbles(params: {
   includeProfileImageChange?: boolean
   includeInternetMemeLexicon?: boolean
   includeMimicUserSpeakingStyle?: boolean
+  /** 语音消息合成：语气词 / 情绪标签（默认关） */
+  voiceSynthToneTokensEnabled?: boolean
+  voiceSynthEmotionEnabled?: boolean
   currentTimeMs?: number
   timePerceptionEnabled?: boolean
   danmakuConfig?: WeChatDanmakuInlineConfig
@@ -2280,6 +2370,8 @@ export async function requestWeChatPeerReplyBubbles(params: {
           includeProfileImageChange: params.includeProfileImageChange === true,
           includeInternetMemeLexicon: params.includeInternetMemeLexicon === true,
           includeMimicUserSpeakingStyle: params.includeMimicUserSpeakingStyle === true,
+          voiceSynthToneTokensEnabled: params.voiceSynthToneTokensEnabled === true,
+          voiceSynthEmotionEnabled: params.voiceSynthEmotionEnabled === true,
         })
   let earlyOutputAppendix = outputAppendix
   if (
@@ -2391,7 +2483,8 @@ export async function requestWeChatPeerReplyBubbles(params: {
     ? `\n\n---\n${WECHAT_USER_CHAT_AVATAR_APPENDIX}\n`
     : ''
   // 输出协议已经 earlyOutputAppendix 插入 base 前部；末尾仅留媒体/贴纸等附属指令
-  const system = `${busyPrefix ? `${busyPrefix}\n\n` : ''}${base}${selfProfileImagesAppendix}${userChatAvatarAppendix}${memoryImagesAppendix}${recallGuide ? `\n\n${recallGuide}` : ''}${mediaFreqBlock ? `\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n${danmakuInstruction}` : ''}\n\n${stickerBlock}${imageGenBlock ? `\n\n${imageGenBlock}` : ''}`
+  // 忙碌前缀用 --- 隔开，避免溯源把整段开篇协议误算进「忙碌模式」
+  const system = `${busyPrefix ? `${busyPrefix.trim()}\n\n---\n\n` : ''}${base}${selfProfileImagesAppendix}${userChatAvatarAppendix}${memoryImagesAppendix}${recallGuide ? `\n\n---\n\n${recallGuide}` : ''}${mediaFreqBlock ? `\n\n---\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n---\n\n${danmakuInstruction}` : ''}\n\n---\n\n${stickerBlock}${imageGenBlock ? `\n\n---\n\n${imageGenBlock}` : ''}`
 
   const history = transcriptToMessages(params.transcript, { groupChat: params.groupChatTranscript })
   const messages: OpenAiCompatibleMessage[] = [{ role: 'system', content: system }, ...history]
@@ -2409,6 +2502,15 @@ export async function requestWeChatPeerReplyBubbles(params: {
     messages,
     params.proactiveInitiationNudge?.trim() || undefined,
   )
+  recordLastPromptMaterial({
+    systemText: system,
+    messagesText: messages
+      .filter((m) => m.role !== 'system')
+      .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`)
+      .join('\n'),
+    source: params.groupChatTranscript ? 'group' : 'private',
+    ...onlineUserRoleplayTraceFields(),
+  })
 
   const text = await callWeChatPeerReplyChat(cfg, messages, {
     memoryMomentImages,
@@ -2482,10 +2584,15 @@ export async function requestWeChatVoiceCallReplyText(params: {
   allowSynthEmotion?: boolean
   /** @deprecated 请用 allowSynthToneTokens / allowSynthEmotion */
   allowSynthToneEmotion?: boolean
+  /** 取消在途请求（超时 / 挂断） */
+  signal?: AbortSignal
 }): Promise<string> {
   const cfg = params.apiConfig
   if (!cfg?.apiUrl?.trim() || !cfg.apiKey?.trim() || !cfg.modelId?.trim()) {
     throw new Error('未配置 AI API')
+  }
+  if (params.signal?.aborted) {
+    throw new Error('通话回复已取消')
   }
   const allowToneTokens =
     params.allowSynthToneTokens === true ||
@@ -2526,10 +2633,13 @@ export async function requestWeChatVoiceCallReplyText(params: {
   const text = await openAiCompatibleChat(cfg, messages, {
     temperature: params.promptMode === 'lumi-assistant' ? 0.55 : 0.78,
     max_tokens: 800,
+    signal: params.signal,
   })
   const cleaned = stripAssistantFence(text)
   const { rest } = extractWorldBookAfterPatchBlock(cleaned)
-  return sanitizeVoiceDisplayText(rest) || '…'
+  // 推理模型常把正文放进 reasoning / <thinking>；通话通道必须只上屏可见台词
+  const { visible } = extractThinkingBlock(rest)
+  return sanitizeVoiceDisplayText(visible) || '…'
 }
 
 export type VoiceCallDecision = {
@@ -2658,11 +2768,13 @@ const WECHAT_IMAGE_REPLY_APPENDIX = `
 `.trim()
 
 const WECHAT_STICKER_IMAGE_REPLY_APPENDIX = `
-用户发来的是一张**表情包**（聊天小图），用来更形象地表达当下心情或态度，**没有**其它隐含任务或深层谜语。
-请你以[角色姓名]的身份自然接话，像微信真人一样回应这份心情。
+用户发来的是一张**表情包**（聊天小图），用来更形象地表达**内心感受**或**缓和气氛**，**没有**其它隐含任务或深层谜语。
+请你以[角色姓名]的身份自然接话；**不要把表情包的意思太当真**。
 硬性要求（必须遵守）：
-- **描述/引用名只表示画面内容，不等于字面意思**（如「送戒指」≠ 真的求婚，常见只是表达喜欢或开玩笑）；须结合语境理解，禁止据此单方面升级重大剧情。
-- **不要**像评图一样逐像素长描，**不要**罗列大量琐碎视觉细节，**不要**写长段「解读表情包含义」；把它当成对方的心情标点即可。
+- **哭/流泪包 ≠ 真的在哭**：默认只是难过/无语/撒娇装哭等感受标点；除非对方**明文**说自己在哭，禁止当成真哭去过度心疼或连环追问「你哭了吗」。
+- **描述/引用名只表示画面，不等于字面行为**（「送戒指」≠ 求婚；暴怒脸 ≠ 绝交）；须结合文字语境，禁止据此单方面升级重大剧情。
+- 表情包更多起**缓和聊天氛围**的作用；接**情绪方向**即可，勿做司法式字面认定。
+- **不要**像评图一样逐像素长描，**不要**罗列大量琐碎视觉细节，**不要**写长段「解读表情包含义」；把它当成心情标点即可。
 - 用 **1～2 句**口语接住心情（可带 **1 个**轻追问），把对话推进下去即可。
 - 若你能从画面里轻点 **1 个**不夸张的细节来承接（可选），不要超过 **1 句**、不要堆砌。
 - 若实际上没有收到图片、无法看图或看不清：必须直接说明「没看清/没收到」，引导对方用文字说一句；严禁假装看懂了细节。
@@ -2749,6 +2861,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   applyClassicEmojiDefault?: boolean
   classicEmojiBannedNames?: string[]
   voiceRoundTriggerPercent?: number
+  voiceSynthToneTokensEnabled?: boolean
+  voiceSynthEmotionEnabled?: boolean
   imageRoundTriggerPercent?: number
   imageRoundCountMin?: number
   imageRoundCountMax?: number
@@ -2918,6 +3032,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
         includeProfileImageChange: params.includeProfileImageChange === true,
         includeInternetMemeLexicon: params.includeInternetMemeLexicon === true,
         includeMimicUserSpeakingStyle: params.includeMimicUserSpeakingStyle === true,
+        voiceSynthToneTokensEnabled: params.voiceSynthToneTokensEnabled === true,
+        voiceSynthEmotionEnabled: params.voiceSynthEmotionEnabled === true,
       })
   const imageAppendixTitle = params.userImageIsScreenShare ? '【一起刷·屏幕画面附加要求】' : '【图片消息附加要求】'
   // 与纯文字链路一致：头像/记忆配图须先转成 data URL，否则站内相对路径会拖垮整次识图请求
@@ -2925,10 +3041,10 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   if (!visionPolicy.enabled) {
     logConsole('ai', `[识图] 已跳过用户发图识图 · ${visionPolicy.reason}`)
     const historySkip = transcriptToMessages(params.transcript, { groupChat: params.groupChatTranscript })
-    const skipSystem = `${busyPrefix ? `${busyPrefix}\n\n` : ''}${base}\n\n${recallGuide}\n\n---\n${imageAppendixTitle}\n${imgRules}\n\n${outputAppendix}${
+    const skipSystem = `${busyPrefix ? `${busyPrefix.trim()}\n\n---\n\n` : ''}${base}\n\n${recallGuide}\n\n---\n${imageAppendixTitle}\n${imgRules}\n\n${outputAppendix}${
       params.userImageIsScreenShare
         ? ''
-        : `${mediaFreqBlock ? `\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n${danmakuInstruction}` : ''}\n\n${stickerBlock}${imageGenBlock ? `\n\n${imageGenBlock}` : ''}`
+        : `${mediaFreqBlock ? `\n\n---\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n---\n\n${danmakuInstruction}` : ''}\n\n---\n\n${stickerBlock}${imageGenBlock ? `\n\n---\n\n${imageGenBlock}` : ''}`
     }`
     const fallbackMessages: OpenAiCompatibleMessage[] = [
       { role: 'system', content: skipSystem },
@@ -2988,10 +3104,10 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   const userChatAvatarAppendix = playerWechatAvatarUrl
     ? `\n\n---\n${WECHAT_USER_CHAT_AVATAR_APPENDIX}\n`
     : ''
-  const system = `${busyPrefix ? `${busyPrefix}\n\n` : ''}${base}${userChatAvatarAppendix}${memoryImagesAppendix}\n\n${recallGuide}\n\n---\n${imageAppendixTitle}\n${imgRules}\n\n${outputAppendix}${
+  const system = `${busyPrefix ? `${busyPrefix.trim()}\n\n---\n\n` : ''}${base}${userChatAvatarAppendix}${memoryImagesAppendix}\n\n---\n\n${recallGuide}\n\n---\n${imageAppendixTitle}\n${imgRules}\n\n${outputAppendix}${
     params.userImageIsScreenShare
       ? ''
-      : `${mediaFreqBlock ? `\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n${danmakuInstruction}` : ''}\n\n${stickerBlock}${imageGenBlock ? `\n\n${imageGenBlock}` : ''}`
+      : `${mediaFreqBlock ? `\n\n---\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n---\n\n${danmakuInstruction}` : ''}\n\n---\n\n${stickerBlock}${imageGenBlock ? `\n\n---\n\n${imageGenBlock}` : ''}`
   }`
 
   const history = transcriptToMessages(params.transcript, { groupChat: params.groupChatTranscript })
@@ -3028,6 +3144,20 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       ],
     },
   ]
+  recordLastPromptMaterial({
+    systemText: system,
+    messagesText: [
+      ...history.map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : '[多模态]'}`),
+      params.perRoundMemoryAppendix?.trim()
+        ? `user: ${params.perRoundMemoryAppendix.trim()}`
+        : '',
+      `user: ${visionUserText}`,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    source: params.groupChatTranscript ? 'group' : 'private',
+    ...onlineUserRoleplayTraceFields(),
+  })
 
   const clipVisionErr = (err: unknown) => {
     const raw = err instanceof Error ? err.message : String(err)
@@ -5234,6 +5364,8 @@ export function buildWeChatGroupMultiSpeakerSystem(params: {
   translationDedicatedApi?: boolean
   innerOsSyncEnabled?: boolean
   heartWhisperSyncEnabled?: boolean
+  voiceSynthToneTokensEnabled?: boolean
+  voiceSynthEmotionEnabled?: boolean
 }): string {
   const isLumi = params.promptMode === 'lumi-assistant'
   const archiveInject = resolveWorldbookLoreInjection({
@@ -5319,13 +5451,19 @@ export function buildWeChatGroupMultiSpeakerSystem(params: {
         params.innerOsSyncEnabled === true,
         params.heartWhisperSyncEnabled === true,
         'group',
+        {
+          toneTokens: params.voiceSynthToneTokensEnabled === true,
+          emotion: params.voiceSynthEmotionEnabled === true,
+        },
       )
 
   if (isLumi) {
     return `${LUMI_ASSISTANT_SYSTEM_PROMPT}\n\n${loreLead}${core}${groupUnsum}${offline}${bias}${time}${playerScheduleBlock}\n${params.playerSection}${recallGuide ? `\n\n${recallGuide}` : ''}\n\n${outputAppendix}${danmakuInstr ? `\n\n${danmakuInstr}` : ''}\n\n${stickerCat}`
   }
   const fictionCot = `\n\n${LUMI_SYSTEM_OVERRIDE_APPENDIX}\n`
-  return `${loreLead}【群聊多角色输出协议（多角色与 SPEAKER 格式；与上文「档案与世界书」冲突时以档案为准）】\n${core}${groupUnsum}${offline}${bias}\n\n----------\n${WECHAT_ROLEPLAY_SYSTEM_PROMPT}${fictionCot}\n${params.playerSection}${playerScheduleBlock}${time}\n\n${recallGuide}\n\n${outputAppendix}${danmakuInstr ? `\n\n${danmakuInstr}` : ''}\n\n${stickerCat}`
+  const groupRoleplay =
+    resolveOnlineReplyStyleAppendix()?.trim() || WECHAT_ROLEPLAY_SYSTEM_PROMPT
+  return `${loreLead}【群聊多角色输出协议（多角色与 SPEAKER 格式；与上文「档案与世界书」冲突时以档案为准）】\n${core}${groupUnsum}${offline}${bias}\n\n----------\n${groupRoleplay}${fictionCot}\n${params.playerSection}${playerScheduleBlock}${time}\n\n${recallGuide}\n\n${outputAppendix}${danmakuInstr ? `\n\n${danmakuInstr}` : ''}\n\n${stickerCat}`
 }
 
 /** 单行是否以群管家/群助手名义开头（与 ChatRoom emit 推断一致） */
@@ -5647,10 +5785,19 @@ export async function requestWeChatGroupMultiSpeakerReplyBubbles(params: {
     ? `\n\n---\n${WECHAT_MEMORY_MOMENT_IMAGES_APPENDIX}\n`
     : ''
   const history = transcriptToMessages(params.transcript, { groupChat: true })
+  const systemText = `${params.systemContent}${memoryImagesAppendix}`
   const messages: OpenAiCompatibleMessage[] = [
-    { role: 'system', content: `${params.systemContent}${memoryImagesAppendix}` },
+    { role: 'system', content: systemText },
     ...history,
   ]
+  recordLastPromptMaterial({
+    systemText,
+    messagesText: history
+      .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : ''}`)
+      .join('\n'),
+    source: 'group',
+    ...onlineUserRoleplayTraceFields(),
+  })
   const text = await callWeChatPeerReplyChat(cfg, messages, {
     memoryMomentImages,
     temperature: params.promptMode === 'lumi-assistant' ? 0.62 : 0.82,
@@ -5691,8 +5838,9 @@ export async function requestWeChatGroupMultiSpeakerReplyBubblesWithImage(params
       `${memoryMomentImages.length ? ` · 记忆配图 ${memoryMomentImages.length} 张` : ''}` +
       ` · ${cfg.apiUrl}`,
   )
+  const systemText = `${params.systemContent}${memoryImagesAppendix}`
   const visionMessages: unknown[] = [
-    { role: 'system', content: `${params.systemContent}${memoryImagesAppendix}` },
+    { role: 'system', content: systemText },
     ...(memoryMomentImages.length ? [buildMemoryMomentImagesUserMessage(memoryMomentImages)] : []),
     ...history,
     {
@@ -5703,6 +5851,15 @@ export async function requestWeChatGroupMultiSpeakerReplyBubblesWithImage(params
       ],
     },
   ]
+  recordLastPromptMaterial({
+    systemText,
+    messagesText: [
+      ...history.map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : '[多模态]'}`),
+      `user: ${visionUserText}`,
+    ].join('\n'),
+    source: 'group',
+    ...onlineUserRoleplayTraceFields(),
+  })
   const allowed = new Set(params.allowedCharIds.map((x) => x.trim()).filter(Boolean))
   const parse = (txt: string) => parseWeChatGroupMultiSpeakerModelText(txt, { allowedCharIds: allowed, nickToId: params.nickToId })
 

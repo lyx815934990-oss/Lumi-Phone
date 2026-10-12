@@ -51,50 +51,51 @@ function PresetNameBlock({
   onChange: (name: string) => void
 }) {
   return (
-    <div className="mx-4 mt-4 rounded-2xl bg-white p-5" style={{ boxShadow: apiTheme.shadow }}>
-      <p className="text-[14px]" style={{ color: apiTheme.subText }}>
-        预设名称
-      </p>
-      <input
-        value={name}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="给预设起个名字（如：我的GPT-4o）"
-        className="mt-3 w-full rounded-xl bg-white px-4 py-3 text-[16px] outline-none transition-all duration-200 ease-out"
-        style={{ border: `1px solid ${apiTheme.border}`, color: apiTheme.text }}
-        onFocus={(e) => (e.currentTarget.style.borderColor = apiTheme.accent)}
-        onBlur={(e) => (e.currentTarget.style.borderColor = apiTheme.border)}
-      />
+    <div className="mx-4 mt-3 rounded-2xl bg-white px-4 py-3" style={{ boxShadow: apiTheme.shadow }}>
+      <label className="block">
+        <span className="text-[12px] font-medium" style={{ color: apiTheme.subText }}>
+          预设名称
+        </span>
+        <input
+          value={name}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="例如：茉莉冰茶、主力模型"
+          className="mt-1.5 w-full rounded-xl bg-white px-3.5 py-2.5 text-[15px] outline-none transition-all duration-200 ease-out"
+          style={{ border: `1px solid ${apiTheme.border}`, color: apiTheme.text }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = apiTheme.accent)}
+          onBlur={(e) => (e.currentTarget.style.borderColor = apiTheme.border)}
+        />
+      </label>
     </div>
   )
 }
 
 function EditTabBar({ activeTab, onChange }: { activeTab: EditTab; onChange: (tab: EditTab) => void }) {
   return (
-    <div className="mx-4 mt-3 shrink-0 rounded-2xl bg-white p-1" style={{ boxShadow: apiTheme.shadow }}>
-      <div className="flex overflow-x-auto">
-        {EDIT_TABS.map((tab) => {
-          const active = activeTab === tab.id
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => onChange(tab.id)}
-              className="relative min-w-[4.5rem] flex-1 shrink-0 rounded-xl px-1.5 py-2.5 text-center text-[13px] font-medium transition-colors"
-              style={{
-                color: active ? apiTheme.text : apiTheme.subText,
-                background: active ? apiTheme.bg : 'transparent',
-              }}
-            >
-              {tab.label}
-              {active ? (
-                <span
-                  className="absolute bottom-1 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full"
-                  style={{ background: apiTheme.accent }}
-                />
-              ) : null}
-            </button>
-          )
-        })}
+    <div
+      className="sticky top-0 z-20 border-b px-4 py-2"
+      style={{ background: apiTheme.bg, borderColor: 'transparent' }}
+    >
+      <div className="rounded-2xl bg-white p-1" style={{ boxShadow: apiTheme.shadow }}>
+        <div className="flex">
+          {EDIT_TABS.map((tab) => {
+            const active = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onChange(tab.id)}
+                className="relative min-w-0 flex-1 rounded-xl px-1.5 py-2.5 text-center text-[13px] font-medium transition-colors"
+                style={{
+                  color: active ? apiTheme.onAccent : apiTheme.subText,
+                  background: active ? apiTheme.accent : 'transparent',
+                }}
+              >
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
@@ -256,38 +257,46 @@ export function ApiPresetEditPage() {
           <button
             type="button"
             onClick={save}
-            className="rounded-lg px-2 py-1 text-[16px] font-semibold transition-all duration-200 ease-out hover:opacity-80"
-            style={{ color: apiTheme.accent }}
+            className="rounded-lg px-2 py-1 text-[15px] font-semibold transition-all duration-200 ease-out hover:opacity-80"
+            style={{ color: dirty ? apiTheme.accent : apiTheme.subText }}
           >
-            保存
+            {dirty ? '保存*' : '保存'}
           </button>
         }
       />
 
       <EditTabBar activeTab={activeTab} onChange={changeTab} />
 
-      <div className="min-h-0 flex-1 overflow-y-auto pb-[calc(20px+env(safe-area-inset-bottom,0px))] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto pb-[calc(88px+env(safe-area-inset-bottom,0px))] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <PresetNameBlock name={draft.name} onChange={(name) => setField('name', name)} />
 
         {activeTab === 'main' ? (
           <ApiConfigBlock
-            title="主接口（全局默认）"
+            title="主接口"
             config={draft.main}
             onChange={(next) => setField('main', next)}
             showTest
+            showWebsiteUrl
           />
         ) : null}
 
         {activeTab === 'sub' ? (
           <>
-            <p className="mx-4 mt-2 text-[14px]" style={{ color: apiTheme.subText, fontWeight: 300 }}>
-              副接口可选，启用后将优先于主接口用于对应场景。语音识别与通话页共用同一份地址和密钥。
+            <p className="mx-4 mt-2 text-[12px] leading-relaxed" style={{ color: apiTheme.subText, fontWeight: 300 }}>
+              副接口可选；启用后对应场景优先走副接口。语音识别与通话共用同一套凭证。
             </p>
-            <div className="mx-4 mt-3 rounded-2xl bg-white p-5" style={{ boxShadow: apiTheme.shadow }}>
+            <div
+              className="mx-4 mt-3 rounded-2xl p-5"
+              style={{
+                background: apiTheme.card,
+                border: `1px solid ${apiTheme.borderSoft}`,
+                boxShadow: apiTheme.shadow,
+              }}
+            >
               <p className="text-[16px] font-semibold" style={{ color: apiTheme.text }}>
                 语音识别
               </p>
-              <p className="mt-1 text-[14px]" style={{ color: apiTheme.subText, fontWeight: 300 }}>
+              <p className="mt-1 text-[14px]" style={{ color: apiTheme.subText }}>
                 用于私聊按住说话和语音通话转写。模型固定 FunAudioLLM/SenseVoiceSmall。
               </p>
               <VoiceAsrCredentialEditor
@@ -331,13 +340,21 @@ export function ApiPresetEditPage() {
                 }))
               }
               return (
-                <div key={k} className="mx-4 mt-3 rounded-2xl bg-white p-5" style={{ boxShadow: apiTheme.shadow }}>
+                <div
+                  key={k}
+                  className="mx-4 mt-3 rounded-2xl p-5"
+                  style={{
+                    background: apiTheme.card,
+                    border: `1px solid ${apiTheme.borderSoft}`,
+                    boxShadow: apiTheme.shadow,
+                  }}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1 pr-2">
                       <p className="text-[16px] font-semibold" style={{ color: apiTheme.text }}>
                         {meta.title}
                       </p>
-                      <p className="mt-1 text-[14px]" style={{ color: apiTheme.subText, fontWeight: 300 }}>
+                      <p className="mt-1 text-[14px]" style={{ color: apiTheme.subText }}>
                         {meta.desc}
                       </p>
                     </div>
@@ -555,9 +572,9 @@ export function ApiPresetEditPage() {
                   ) : null}
 
                   {k !== 'translation' && !sub.useMainApi ? (
-                    <div className="mt-4">
+                    <div className="mt-4 border-t pt-4" style={{ borderColor: apiTheme.border }}>
                       <ApiConfigBlock
-                        title="独立配置"
+                        title=""
                         config={sub.apiConfig}
                         onChange={(next) => {
                           setDirty(true)
@@ -577,6 +594,7 @@ export function ApiPresetEditPage() {
                         }}
                         showTest
                         mode="full"
+                        embedded
                       />
                     </div>
                   ) : null}
@@ -589,6 +607,23 @@ export function ApiPresetEditPage() {
         {activeTab === 'imageGen' ? (
           <ApiPresetImageGenSection imageGen={draft.imageGen} onPatch={patchImageGen} />
         ) : null}
+      </div>
+
+      <div
+        className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 px-4"
+        style={{
+          paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+          background: 'linear-gradient(to top, rgba(250,250,249,0.98) 55%, rgba(250,250,249,0))',
+        }}
+      >
+        <button
+          type="button"
+          onClick={save}
+          className="pointer-events-auto w-full rounded-xl px-4 py-3 text-[15px] font-semibold text-white transition-all duration-200 ease-out hover:brightness-105"
+          style={{ background: apiTheme.accent, opacity: dirty ? 1 : 0.75 }}
+        >
+          {dirty ? '保存修改' : '已保存'}
+        </button>
       </div>
 
       <ConfirmDialog

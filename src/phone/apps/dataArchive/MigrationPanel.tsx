@@ -164,7 +164,7 @@ export function MigrationPanel() {
 
   const runLocalCleanup = useCallback(async () => {
     const ok = window.confirm(
-      '将清理本机可重建缓存，以及已不在剧情里引用的约会附图。\n\n不会删除聊天记录、人设、仍在用的图片/字体。\n\n继续？',
+      '将清理本机可重建缓存，以及已不在剧情里引用的约会附图、已删除角色留下的字体文件。\n\n不会删除聊天记录、人设、仍在用的图片/字体。\n\n继续？',
     )
     if (!ok) return
     setBusy('cleanup')
@@ -180,12 +180,19 @@ export function MigrationPanel() {
       } else {
         window.alert(
           `已清理 ${result.removedKeys} 项，约释放 ${formatFreedBytes(result.approxFreedBytes)}。\n` +
-            `其中：缓存 ${result.cacheKeys}、孤儿剧情图 ${result.orphanPlotImages}、本地标记 ${result.localStorageKeys}。\n` +
+            `其中：缓存 ${result.cacheKeys}、孤儿剧情图 ${result.orphanPlotImages}、孤儿字体 ${result.orphanFonts}、本地标记 ${result.localStorageKeys}。\n` +
             `饼图将稍后刷新；可点右上角刷新查看最新占用。`,
         )
       }
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : '清理失败')
+      const msg = e instanceof Error ? e.message : '清理失败'
+      if (/quota|setItem|Storage/i.test(msg)) {
+        window.alert(
+          '本机小仓库（localStorage）空间不够，约会剧情已改存 IndexedDB。\n请再点一次「压缩本机数据」清理旧副本；数据不会因此丢失。',
+        )
+      } else {
+        window.alert(msg)
+      }
     } finally {
       setBusy(null)
     }
@@ -240,10 +247,25 @@ export function MigrationPanel() {
       await finishImportCeremony()
       const parts = [`已恢复 ${result.keysRestored} 项本地键`]
       if (result.indexedDbRestored) parts.push('并已写入 IndexedDB 快照')
+      if (result.keysSkippedIdbMirror > 0) {
+        parts.push(`${result.keysSkippedIdbMirror} 项大键已改由 IndexedDB 承载（未再写入小仓库）`)
+      }
+      if (result.keysSkippedQuota > 0) {
+        parts.push(
+          `${result.keysSkippedQuota} 项因本机小仓库空间不足已跳过（聊天/人设等主数据不受影响，可再点「压缩本机数据」腾空间）`,
+        )
+      }
       setImportSuccessDetail(`${parts.join('，')}。相关界面将自动同步，无需重启。`)
       setImportSuccessOpen(true)
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : '导入失败')
+      const raw = e instanceof Error ? e.message : '导入失败'
+      if (/quota|exceeded|存储空间|空间不足/i.test(raw)) {
+        window.alert(
+          '本机小仓库（localStorage）空间不足，部分数据未能写入。\n请先点「压缩本机数据 · 清理冗余缓存」，再重新导入。\n若已写入 IndexedDB，刷新后通讯录等主数据仍可能已恢复。',
+        )
+      } else {
+        window.alert(raw)
+      }
     } finally {
       setBusy(null)
     }

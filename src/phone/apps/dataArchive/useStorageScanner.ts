@@ -20,13 +20,14 @@ export function useStorageScanner(pollMs = 8000) {
   const [segmentsMerged, setSegmentsMerged] = useState<StorageSegment[]>([])
   const [indexedDbTotalBytes, setIndexedDbTotalBytes] = useState(0)
   const [localStorageTotalBytes, setLocalStorageTotalBytes] = useState(0)
+  const [rebuildableCacheBytes, setRebuildableCacheBytes] = useState(0)
   const [tokensTotal, setTokensTotal] = useState(0)
   const refreshGen = useRef(0)
 
   const refresh = useCallback(async () => {
     const id = ++refreshGen.current
     const ls = scanLocalStorageSegments()
-    let idb = { segments: [] as StorageSegment[], totalBytes: 0 }
+    let idb = { segments: [] as StorageSegment[], totalBytes: 0, rebuildableCacheBytes: 0 }
     try {
       idb = await scanWeChatPersonaIndexedDbSegments()
     } catch {
@@ -39,6 +40,7 @@ export function useStorageScanner(pollMs = 8000) {
     setSegmentsMerged(mergeStorageSegments([...ls.segments, ...idb.segments]))
     setIndexedDbTotalBytes(idb.totalBytes)
     setLocalStorageTotalBytes(ls.totalBytes)
+    setRebuildableCacheBytes(idb.rebuildableCacheBytes)
     setTokensTotal(readTokensTotal())
   }, [])
 
@@ -67,6 +69,7 @@ export function useStorageScanner(pollMs = 8000) {
     segmentsMerged,
     indexedDbTotalBytes,
     localStorageTotalBytes,
+    rebuildableCacheBytes,
     tokensTotal,
     refresh,
   }

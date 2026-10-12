@@ -1,9 +1,9 @@
 import { personaDb } from './newFriendsPersona/idb'
 
-const FONT_KV_PREFIX = 'wechat-bubble-side-font-v1::'
+export const WECHAT_BUBBLE_SIDE_FONT_KV_PREFIX = 'wechat-bubble-side-font-v1::'
 
 export function wechatBubbleSideFontKvKey(fontId: string): string {
-  return `${FONT_KV_PREFIX}${fontId.trim()}`
+  return `${WECHAT_BUBBLE_SIDE_FONT_KV_PREFIX}${fontId.trim()}`
 }
 
 export async function persistWeChatBubbleSideFontDataUrl(fontId: string, dataUrl: string): Promise<void> {

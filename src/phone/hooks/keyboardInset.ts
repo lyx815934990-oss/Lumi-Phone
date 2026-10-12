@@ -3,6 +3,9 @@ import { isIOSWebKit } from '../utils/platform'
 /**
  * 与微信 ChatRoom 一致的软键盘遮挡高度估算（visualViewport baseline）。
  * @see src/phone/apps/wechat/ChatRoom.tsx 内 keyboardInsetPx effect
+ *
+ * 实现与 github.com/lyx815934990-oss/Lumi-Phone 对齐：只信 vv 缺口 + overlap，
+ * 不做 iOS 启发式硬抬（硬抬易悬空 / 抖 / 挤掉键盘）。
  */
 
 export function computeWeChatStyleKeyboardInset(baselineRef: { current: number }): number {
@@ -219,7 +222,8 @@ export function keyboardLiftStyle(insetPx: number): { transform?: string; transi
   if (insetPx <= 0 || isIOSWebKit()) return {}
   return {
     transform: `translate3d(0, -${insetPx}px, 0)`,
-    transition: 'transform 220ms ease-out',
+    /** 跟键盘几何逐帧对齐，禁止缓动，否则 inset 微调会拖成抖动 */
+    transition: 'none',
     willChange: 'transform',
   }
 }

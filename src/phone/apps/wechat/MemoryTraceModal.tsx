@@ -108,6 +108,76 @@ function timelineRowTitle(row: MemoryTraceStoryTimelineInjectRow): string | null
   return title
 }
 
+export function TokenUsagePanel({ usage }: { usage: NonNullable<MemoryTraceData['tokenUsage']> }) {
+  const fmt = (n: number) => n.toLocaleString()
+  const maxShare = Math.max(...usage.sections.map((s) => s.sharePercent), 1)
+  return (
+    <div className="rounded-2xl border border-neutral-100/90 bg-gradient-to-b from-[#F3F7FB] to-white p-4 shadow-sm">
+      <p className="text-[10px] font-medium uppercase tracking-[0.28em] text-neutral-400">Token</p>
+      <p className="mt-1 text-[13px] font-semibold text-neutral-800">最新一次回复 · 用量</p>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="rounded-xl bg-white/80 px-2.5 py-2 ring-1 ring-neutral-100">
+          <p className="text-[10px] text-neutral-400">输入</p>
+          <p className="mt-0.5 font-mono text-[15px] font-semibold tabular-nums text-neutral-900">
+            {fmt(usage.promptTokens)}
+          </p>
+        </div>
+        <div className="rounded-xl bg-white/80 px-2.5 py-2 ring-1 ring-neutral-100">
+          <p className="text-[10px] text-neutral-400">输出</p>
+          <p className="mt-0.5 font-mono text-[15px] font-semibold tabular-nums text-neutral-900">
+            {fmt(usage.completionTokens)}
+          </p>
+        </div>
+        <div className="rounded-xl bg-white/80 px-2.5 py-2 ring-1 ring-neutral-100">
+          <p className="text-[10px] text-neutral-400">合计</p>
+          <p className="mt-0.5 font-mono text-[15px] font-semibold tabular-nums text-neutral-900">
+            {fmt(usage.totalTokens)}
+          </p>
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+        {usage.fromApi
+          ? '顶部输入/输出来自接口 usage；下方按来源合并展示（本地粗估）。同名规则重复注入会合成一条。若仍有差额，底部仅为「分词差额」。'
+          : '接口未返回 usage，输入/输出与板块均为本地粗估（中英混合启发式）。'}
+        {typeof usage.estimatedInputSum === 'number' &&
+        usage.fromApi &&
+        usage.estimatedInputSum > 0
+          ? ` · 已拆板块粗估合计 ≈ ${usage.estimatedInputSum.toLocaleString()}`
+          : ''}
+        {usage.thinkingChainEnabled === false ? ' · 本轮未开启思维链' : ''}
+      </p>
+      {usage.sections.length ? (
+        <div className="mt-3 space-y-2">
+          <p className="text-[11px] font-medium text-neutral-600">输入占比 · 按板块</p>
+          <ul className="space-y-2.5">
+            {usage.sections.map((s) => (
+              <li key={s.id}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12px] font-medium leading-snug text-neutral-800">{s.label}</p>
+                    {s.detail ? (
+                      <p className="mt-0.5 text-[10px] leading-relaxed text-neutral-400">{s.detail}</p>
+                    ) : null}
+                  </div>
+                  <p className="shrink-0 pt-0.5 font-mono text-[11px] tabular-nums text-neutral-600">
+                    {fmt(s.tokens)} · {s.sharePercent}%
+                  </p>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                  <div
+                    className="h-full rounded-full bg-sky-400/80"
+                    style={{ width: `${Math.max(2, (s.sharePercent / maxShare) * 100)}%` }}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function InjectionOverview(props: {
   summary: NonNullable<MemoryTraceData['injectionSummary']> | null | undefined
   counts: {
@@ -672,7 +742,7 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                 <div className="flex flex-col items-center justify-center px-2 py-16 text-center">
                   <p className="text-[15px] font-semibold text-neutral-800">暂无思维溯源记录</p>
                   <p className="mt-3 max-w-[300px] text-[13px] leading-relaxed text-neutral-500">
-                    生成一轮 AI 回复后，这里会按记忆注入、角色档案与人生账本、世界书与尾声延展展示本轮实际注入的参考内容。
+                    生成一轮 AI 回复后，这里会展示最新回复的输入/输出 token、各板块输入占比，以及记忆注入、角色档案与世界书等内容。
                   </p>
                 </div>
               ) : null}
@@ -684,6 +754,15 @@ export function MemoryTraceModal({ open, onClose, data }: MemoryTraceModalProps)
                   animate="show"
                   className="flex flex-col gap-5 pt-3"
                 >
+                  {data.tokenUsage &&
+                  (data.tokenUsage.promptTokens > 0 ||
+                    data.tokenUsage.completionTokens > 0 ||
+                    data.tokenUsage.sections.length > 0) ? (
+                    <motion.div variants={itemVariants}>
+                      <TokenUsagePanel usage={data.tokenUsage} />
+                    </motion.div>
+                  ) : null}
+
                   <motion.div variants={itemVariants}>
                     <InjectionOverview
                       summary={data.injectionSummary}

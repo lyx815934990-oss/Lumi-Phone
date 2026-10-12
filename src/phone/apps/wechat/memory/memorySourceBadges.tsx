@@ -14,6 +14,8 @@ export type ParsedMemoryWithSources = {
   hasPulseTag: boolean
   /** 来自私语档案潜意识日记 */
   hasDiaryTag: boolean
+  /** 来自查手机·镜像微信通讯录/私聊摘要 */
+  hasAddressBookTag: boolean
   body: string
 }
 
@@ -28,6 +30,7 @@ export function parseMemorySourcePrefix(raw: string): ParsedMemoryWithSources {
   let hasMomentTag = false
   let hasPulseTag = false
   let hasDiaryTag = false
+  let hasAddressBookTag = false
   if (s.startsWith('[遇见]')) {
     hasMeetTag = true
     s = s.slice('[遇见]'.length)
@@ -38,6 +41,10 @@ export function parseMemorySourcePrefix(raw: string): ParsedMemoryWithSources {
   } else if (s.startsWith('[日记]')) {
     hasDiaryTag = true
     s = s.slice('[日记]'.length)
+  }
+  if (s.startsWith('[通讯录]')) {
+    hasAddressBookTag = true
+    s = s.slice('[通讯录]'.length)
   }
   if (s.startsWith('[私聊]')) {
     hasOnlineTag = true
@@ -76,6 +83,7 @@ export function parseMemorySourcePrefix(raw: string): ParsedMemoryWithSources {
     hasMomentTag,
     hasPulseTag,
     hasDiaryTag,
+    hasAddressBookTag,
     body,
   }
 }
@@ -91,6 +99,7 @@ type MemorySourcePrefixFlags = Pick<
   | 'hasMomentTag'
   | 'hasPulseTag'
   | 'hasDiaryTag'
+  | 'hasAddressBookTag'
 >
 
 export function composeMemoryWithSourcePrefix(
@@ -100,6 +109,7 @@ export function composeMemoryWithSourcePrefix(
   let s = ''
   if (flags.hasMeetTag) s += '[遇见]'
   if (flags.hasDiaryTag) s += '[日记]'
+  if (flags.hasAddressBookTag) s += '[通讯录]'
   if (flags.hasOnlineTag) s += '[私聊]'
   if (flags.hasGroupChatTag) s += '[群聊]'
   if (flags.hasOfflineTag) s += '[线下]'
@@ -172,6 +182,9 @@ export function MemorySourceLegendStrip({ className }: { className?: string }) {
       <span className={chip} style={BADGE_DIARY}>
         日记
       </span>
+      <span className={chip} style={{ background: '#0284c7', color: '#ffffff' }}>
+        通讯录
+      </span>
     </div>
   )
 }
@@ -192,11 +205,31 @@ export function MemoryContentWithSourceBadges({
   /** 正文去标签后为空时的占位（不传则保持空字符串） */
   emptyBodyFallback?: string
 }) {
-  const { hasOnlineTag, hasGroupChatTag, hasOfflineTag, hasLinkedOfflineTag, hasMeetTag, hasDiaryTag, hasPulseTag, body } =
-    parseMemorySourcePrefix(content)
+  const {
+    hasOnlineTag,
+    hasGroupChatTag,
+    hasOfflineTag,
+    hasLinkedOfflineTag,
+    hasMeetTag,
+    hasDiaryTag,
+    hasPulseTag,
+    hasAddressBookTag,
+    body,
+  } = parseMemorySourcePrefix(content)
   const sc = size === 'md' ? 'px-2 py-0.5 text-[12px] rounded-md' : 'px-[6px] py-[2px] text-[11px] rounded-[6px]'
 
   const badges: ReactNode[] = []
+  if (hasAddressBookTag) {
+    badges.push(
+      <span
+        key="addr"
+        className={`mr-1 inline-block shrink-0 align-middle font-semibold leading-tight shadow-sm ${sc}`}
+        style={{ background: '#0284c7', color: '#ffffff' }}
+      >
+        通讯录
+      </span>,
+    )
+  }
   if (hasOnlineTag) {
     badges.push(
       <span

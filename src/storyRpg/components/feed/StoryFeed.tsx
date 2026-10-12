@@ -259,6 +259,7 @@ export function StoryFeed({
                 node.kind === 'player' ? followAiMap.get(node.id) ?? null : null
               const canRegenerate =
                 !!onRegeneratePlot &&
+                !node.fromInteractive &&
                 ((node.kind === 'ai' && node.id === lastAiPlotId) ||
                   (node.kind === 'player' && !!followAiId))
               const regenerateTargetId =
@@ -282,6 +283,8 @@ export function StoryFeed({
                   canRegenerate={canRegenerate}
                   isRegenerating={isRegenerating}
                   interactionLocked={interactionLocked}
+                  characterName={characterName}
+                  characterAvatarUrl={characterAvatarUrl}
                   onEdit={onEditPlot ? () => onEditPlot(node.id) : undefined}
                   onRegenerate={
                     canRegenerate && onRegeneratePlot != null && regenerateTargetId

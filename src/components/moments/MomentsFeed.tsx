@@ -22,6 +22,8 @@ type MomentsFeedProps = {
   replyingAuthorName?: string | null
   replyingTargetName?: string | null
   highlightCommentId?: string | null
+  /** 空列表文案；默认引导用户发布 */
+  emptyMessage?: string
   onOpenFloatingInput?: (momentId: string, replyTo?: string) => void
   onToggleLike?: (momentId: string, liked: boolean) => void | Promise<void>
   onCharacterMomentInteractionsUnlocked?: (momentId: string) => void
@@ -54,6 +56,7 @@ export function MomentsFeed({
   replyingAuthorName,
   replyingTargetName,
   highlightCommentId,
+  emptyMessage = '暂无动态，点击右上角相机发布第一条朋友圈',
   onOpenFloatingInput,
   onToggleLike,
   onCharacterMomentInteractionsUnlocked,
@@ -74,7 +77,7 @@ export function MomentsFeed({
     <section className="mt-22 pt-4 divide-y divide-black/5">
       {!moments.length ? (
         <p className="px-6 py-16 text-center text-[13px] leading-relaxed text-[#9CA3AF]">
-          暂无动态，点击右上角相机发布第一条朋友圈
+          {emptyMessage}
         </p>
       ) : null}
       {moments.map((item, idx) => (

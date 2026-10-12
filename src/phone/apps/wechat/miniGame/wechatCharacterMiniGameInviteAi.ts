@@ -257,8 +257,8 @@ export const WECHAT_CHARACTER_MINI_GAME_INVITE_OUTPUT_BLOCK = `
 【小游戏：角色主动邀约（对用户不可见）】
 ---------------------
 - 想约用户开局时，先有 1～3 句符合人设的口语，再**单独一行**输出：
-  - \`[MINI_GAME_INVITE]{"gameType":"gomoku","replyText":"收束语","gomokuSession":{…}}\`
-- 当前仅 **五子棋（gomoku）** 可玩；\`gameType\` 须为 \`gomoku\`。
+  - \`[MINI_GAME_INVITE]{"gameType":"gomoku"|"monopoly","replyText":"收束语","gomokuSession":{…}}\`
+- 当前可玩：\`gomoku\`（五子棋）、\`monopoly\`（大富翁）；其它类型勿邀。
 - 五子棋邀约时 **gomokuSession 必填**，须与口语、指令**同一次回复一并输出**（各局面台词、开局对白、难度等）；**difficulty 仅写在 JSON 内，禁止在口语/replyText/台词里提及**。
   - difficulty: 整数 1～5
   - thinkDelayMinSec / thinkDelayMaxSec: 每步落子前思考秒数 1～10，min≤max
@@ -266,6 +266,7 @@ export const WECHAT_CHARACTER_MINI_GAME_INVITE_OUTPUT_BLOCK = `
   - reactions: 对象，键为 ${GOMOKU_PREGEN_REACTION_KEYS_DOC}，每个键对应 5 句口语对白
   ${GOMOKU_DIFFICULTY_PERSONA_GUIDE}
   ${GOMOKU_REACTION_SITUATION_RULES}
+- 大富翁（monopoly）邀约只需 \`gameType\`+\`replyText\`，无需 gomokuSession。
 - 指令行会生成**游戏邀约卡**；用户点击接受/拒绝后状态写入聊天记录，你再据此接话。
 - **禁止**只用口语说「来下棋」却不输出 \`[MINI_GAME_INVITE]\`；禁止在用户**未接受**时假装已对局。
 - 用户主动发来的邀约仍用 \`[MINI_GAME_ACCEPT]\` / \`[MINI_GAME_DECLINE]\` 回应，与本节不同。

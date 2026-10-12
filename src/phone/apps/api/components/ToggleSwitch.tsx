@@ -15,7 +15,7 @@ export function ToggleSwitch({
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className="relative h-8 w-[52px] shrink-0 self-center rounded-full transition-colors duration-200 ease-out"
-      style={{ background: checked ? apiTheme.accent : '#cccccc' }}
+      style={{ background: checked ? apiTheme.accent : apiTheme.borderStrong }}
     >
       <span
         className="absolute top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-[left] duration-200 ease-out"

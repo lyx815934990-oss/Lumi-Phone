@@ -25,6 +25,7 @@ export function RecycleBinApp({ onBack }: Props) {
   const pageStyle = state.appPageStyles.recycleBin
   const [entries, setEntries] = useState<IndexedTrashEntry[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [clearAllBusy, setClearAllBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [clock, setClock] = useState(0)
   const [detailEntry, setDetailEntry] = useState<IndexedTrashEntry | null>(null)
@@ -85,6 +86,28 @@ export function RecycleBinApp({ onBack }: Props) {
     }
   }
 
+  const handleClearAll = async () => {
+    if (rows.length === 0 || clearAllBusy || busyId) return
+    const ok =
+      typeof window !== 'undefined' &&
+      window.confirm(
+        `确认永久删除回收站全部 ${rows.length} 条？此操作不可恢复，也无法再从回收站还原。`,
+      )
+    if (!ok) return
+    setClearAllBusy(true)
+    setToast(null)
+    setDetailEntry(null)
+    try {
+      const n = await personaDb.clearAllIndexedTrashEntries()
+      setToast(n > 0 ? `已清空回收站（${n} 条）` : '回收站已是空的')
+    } catch {
+      setToast('清空失败，请稍后重试')
+    } finally {
+      setClearAllBusy(false)
+      await refresh()
+    }
+  }
+
   return (
     <div
       className="flex h-full min-h-0 flex-col overflow-hidden"
@@ -129,6 +152,16 @@ export function RecycleBinApp({ onBack }: Props) {
           <h1 className="truncate text-[17px] font-semibold">回收站</h1>
           <p className="truncate text-[11px] opacity-70">本地 IndexedDB 删除快照 · 超期自动清空</p>
         </div>
+        {rows.length > 0 ? (
+          <button
+            type="button"
+            disabled={clearAllBusy || !!busyId}
+            onClick={() => void handleClearAll()}
+            className="relative z-[1] shrink-0 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-medium text-red-700 disabled:opacity-50"
+          >
+            {clearAllBusy ? '清空中…' : '一键清空'}
+          </button>
+        ) : null}
       </header>
 
       <div className="relative z-[1] min-h-0 flex-1 overflow-y-auto px-4 pb-28 pt-4">

@@ -1,9 +1,9 @@
 import { personaDb } from './apps/wechat/newFriendsPersona/idb'
 
-const FONT_KV_PREFIX = 'phone-global-font-v1::'
+export const PHONE_GLOBAL_FONT_KV_PREFIX = 'phone-global-font-v1::'
 
 export function phoneGlobalFontKvKey(fontId: string): string {
-  return `${FONT_KV_PREFIX}${fontId.trim()}`
+  return `${PHONE_GLOBAL_FONT_KV_PREFIX}${fontId.trim()}`
 }
 
 export async function persistPhoneGlobalFontDataUrl(fontId: string, dataUrl: string): Promise<void> {

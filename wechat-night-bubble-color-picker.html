@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>微信夜间气泡色盘</title>
+  <style>
+    :root {
+      --bg: #111111;
+      --panel: #1c1c1c;
+      --muted: #8a8a8a;
+      --text: #f2f2f2;
+      --self: #66BA66;
+      --other: #2c2c2c;
+      --day: #95ec69;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: radial-gradient(1200px 600px at 20% 0%, #1a1a1a, #0b0b0b);
+      color: var(--text);
+      padding: 24px;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+    }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 340px) minmax(280px, 1fr) minmax(240px, 320px);
+      gap: 16px;
+      align-items: start;
+      max-width: 1280px;
+    }
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 760px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      font-weight: 650;
+      color: #e8e8e8;
+    }
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    label { font-size: 12px; color: var(--muted); min-width: 72px; }
+    input[type="color"] {
+      width: 56px;
+      height: 40px;
+      border: none;
+      padding: 0;
+      background: transparent;
+      cursor: pointer;
+    }
+    input[type="text"], input[type="range"], select {
+      accent-color: var(--self);
+    }
+    input[type="text"] {
+      flex: 1;
+      min-width: 140px;
+      background: #101010;
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 15px;
+      letter-spacing: 0.04em;
+    }
+    select {
+      background: #101010;
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+    .sliders label { min-width: 28px; }
+    .sliders .row { margin-bottom: 8px; }
+    input[type="range"] { flex: 1; }
+    .val {
+      width: 42px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      color: #cfcfcf;
+    }
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .swatch {
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 10px 8px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 11px;
+      color: #111;
+      font-weight: 600;
+      min-height: 54px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 4px;
+    }
+    .swatch span {
+      background: rgba(0,0,0,0.35);
+      color: #fff;
+      border-radius: 999px;
+      padding: 2px 6px;
+      font-weight: 500;
+      font-size: 10px;
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 12px;
+    }
+    .meta div {
+      background: #101010;
+      border-radius: 8px;
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .meta b { display: block; color: var(--muted); font-weight: 500; margin-bottom: 4px; }
+    .btn {
+      appearance: none;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      background: var(--self);
+      color: #111;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .btn.secondary {
+      background: #2a2a2a;
+      color: #eee;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .btn.active {
+      outline: 2px solid #fff;
+      outline-offset: 1px;
+    }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .preview {
+      position: relative;
+      border-radius: 18px;
+      overflow: hidden;
+      min-height: 280px;
+      background:
+        linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.55)),
+        radial-gradient(circle at 30% 20%, #2a3340, #111 55%);
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 18px 14px 20px;
+      margin-top: 12px;
+    }
+    .preview-title {
+      text-align: center;
+      font-size: 13px;
+      margin-bottom: 16px;
+      color: #ddd;
+    }
+    .msg {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      align-items: flex-start;
+    }
+    .msg.self { flex-direction: row-reverse; }
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      background: #3a3a3a;
+      flex: 0 0 auto;
+    }
+    .bubble {
+      max-width: 72%;
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-size: 15px;
+      line-height: 1.35;
+      position: relative;
+      word-break: break-word;
+    }
+    .bubble.other {
+      background: var(--other);
+      color: #e8e8e8;
+    }
+    .bubble.self {
+      background: var(--self);
+      color: #191919;
+    }
+    .bubble.self::after,
+    .bubble.other::before {
+      content: "";
+      position: absolute;
+      top: 12px;
+      width: 0;
+      height: 0;
+      border-style: solid;
+    }
+    .bubble.self::after {
+      right: -6px;
+      border-width: 5px 0 5px 6px;
+      border-color: transparent transparent transparent var(--self);
+    }
+    .bubble.other::before {
+      left: -6px;
+      border-width: 5px 6px 5px 0;
+      border-color: transparent var(--other) transparent transparent;
+    }
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .chip {
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 12px;
+      color: #111;
+      font-weight: 700;
+    }
+    .chip small { display: block; margin-top: 4px; font-weight: 500; opacity: 0.75; }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%) translateY(20px);
+      background: #222;
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: .2s ease;
+      z-index: 20;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* 参考图吸色区 */
+    .dropzone {
+      border: 1.5px dashed rgba(255,255,255,0.18);
+      border-radius: 12px;
+      min-height: 180px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      cursor: pointer;
+      transition: .15s ease;
+      background: #141414;
+      position: relative;
+    }
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--self);
+      background: #181818;
+      color: #ddd;
+    }
+    .dropzone.has-image {
+      padding: 0;
+      cursor: crosshair;
+      overflow: auto;
+      max-height: 70vh;
+      align-items: flex-start;
+      justify-content: flex-start;
+    }
+    .canvas-wrap {
+      position: relative;
+      display: inline-block;
+      line-height: 0;
+      max-width: 100%;
+    }
+    #refCanvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      image-rendering: auto;
+      cursor: crosshair;
+    }
+    .loupe {
+      position: fixed;
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      border: 3px solid #fff;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      pointer-events: none;
+      display: none;
+      z-index: 30;
+      overflow: hidden;
+      background: #000;
+    }
+    .loupe canvas { width: 100%; height: 100%; display: block; }
+    .loupe .cross {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .loupe .cross::before,
+    .loupe .cross::after {
+      content: "";
+      position: absolute;
+      background: rgba(255,255,255,0.85);
+    }
+    .loupe .cross::before { left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-50%); }
+    .loupe .cross::after { top: 50%; left: 0; right: 0; height: 1px; transform: translateY(-50%); }
+    .loupe .ring {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      margin: -5px 0 0 -5px;
+      border: 1.5px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+    }
+    .picked-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .picked {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.15);
+      cursor: pointer;
+      position: relative;
+    }
+    .picked[title]::after {
+      content: attr(data-hex);
+      position: absolute;
+      left: 50%;
+      bottom: -18px;
+      transform: translateX(-50%);
+      font-size: 9px;
+      color: #aaa;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .picked:hover::after { opacity: 1; }
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.45;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+    .live-sample {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: #ccc;
+    }
+    .live-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: #333;
+      flex: 0 0 auto;
+    }
+    #fileInput { display: none; }
+  </style>
+</head>
+<body>
+  <h1>微信夜间气泡色盘</h1>
+  <p class="sub">可调 HSL、系统吸色、导入参考图后点击取色。满意后复制色号发给我。</p>
+
+  <div class="layout">
+    <section class="card">
+      <h2>色盘调节</h2>
+      <div class="row">
+        <label>取色器</label>
+        <input id="picker" type="color" value="#66BA66" />
+        <button class="btn secondary" type="button" id="resetBtn">重置</button>
+      </div>
+      <div class="row">
+        <label>HEX</label>
+        <input id="hex" type="text" value="#66BA66" spellcheck="false" />
+      </div>
+
+      <div class="sliders">
+        <div class="row">
+          <label>H</label>
+          <input id="h" type="range" min="0" max="360" value="120" />
+          <div class="val" id="hVal">120°</div>
+        </div>
+        <div class="row">
+          <label>S</label>
+          <input id="s" type="range" min="0" max="100" value="40" />
+          <div class="val" id="sVal">40%</div>
+        </div>
+        <div class="row">
+          <label>L</label>
+          <input id="l" type="range" min="0" max="100" value="56" />
+          <div class="val" id="lVal">56%</div>
+        </div>
+      </div>
+
+      <div class="meta">
+        <div><b>HEX</b><span id="hexOut">#66BA66</span></div>
+        <div><b>RGB</b><span id="rgbOut">102, 186, 102</span></div>
+        <div><b>HSL</b><span id="hslOut">120°, 40%, 56%</span></div>
+        <div><b>相对日间</b><span id="deltaOut">—</span></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn" type="button" id="copyBtn">复制色号</button>
+        <button class="btn secondary" type="button" id="copyAllBtn">复制完整描述</button>
+        <button class="btn secondary" type="button" id="eyeDropperBtn">系统吸色</button>
+      </div>
+
+      <p class="sub" style="margin:16px 0 8px">快捷参考色</p>
+      <div class="swatches" id="swatches"></div>
+
+      <div class="compare">
+        <div class="chip" style="background:#95EC69">日间 #95EC69<small>微信白天己方</small></div>
+        <div class="chip" id="nightChip" style="background:#66BA66">夜间当前<small id="nightChipHex">#66BA66</small></div>
+      </div>
+
+      <div class="preview" id="preview">
+        <div class="preview-title">夜间预览</div>
+        <div class="msg">
+          <div class="avatar"></div>
+          <div class="bubble other">可以，你慢慢来。</div>
+        </div>
+        <div class="msg self">
+          <div class="avatar"></div>
+          <div class="bubble self">你中午要迟点到吗</div>
+        </div>
+        <div class="msg self">
+          <div class="avatar"></div>
+          <div class="bubble self">我感觉最近睡得有点晚</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>参考图吸色</h2>
+      <div class="toolbar">
+        <button class="btn" type="button" id="importBtn">导入参考图</button>
+        <button class="btn secondary" type="button" id="clearImgBtn">清除图片</button>
+        <label style="min-width:auto">取样半径</label>
+        <select id="sampleRadius">
+          <option value="0">1×1 单点</option>
+          <option value="1" selected>3×3 平均</option>
+          <option value="2">5×5 平均</option>
+          <option value="3">7×7 平均</option>
+        </select>
+      </div>
+      <input id="fileInput" type="file" accept="image/*" />
+
+      <div class="dropzone" id="dropzone">
+        <div id="dropHint">
+          点击选择图片，或把截图拖到这里<br />
+          导入后在图上点击即可吸色<br />
+          <span style="opacity:.75">也支持 Ctrl+V 粘贴剪贴板截图</span>
+        </div>
+        <div class="canvas-wrap" id="canvasWrap" hidden>
+          <canvas id="refCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="live-sample">
+        <div class="live-dot" id="liveDot"></div>
+        <div>
+          悬停预览：<b id="liveHex">—</b>
+          <span id="liveRgb" style="color:var(--muted)"></span>
+        </div>
+      </div>
+      <p class="hint">点击图片：套用该色到左侧色盘。吸到的历史色会出现在下方，可再点选用。</p>
+      <div class="picked-list" id="pickedList"></div>
+    </section>
+
+    <section class="card">
+      <h2>系统吸色说明</h2>
+      <p class="hint" style="margin-top:0">
+        「系统吸色」调用浏览器 EyeDropper，可吸取屏幕任意位置（含其他窗口）。Chrome / Edge 支持较好；若不支持会提示改用参考图吸色。
+      </p>
+      <div class="actions" style="margin-top:10px">
+        <button class="btn" type="button" id="eyeDropperBtn2">开始系统吸色</button>
+      </div>
+      <div class="meta" style="margin-top:14px">
+        <div><b>最近系统吸色</b><span id="sysPickOut">—</span></div>
+        <div><b>最近图片吸色</b><span id="imgPickOut">—</span></div>
+      </div>
+      <p class="hint">
+        建议：把真机微信夜间截图导入右侧，点绿色气泡中间取色；取样半径选 3×3 可减少压缩噪点。
+      </p>
+    </section>
+  </div>
+
+  <div class="loupe" id="loupe">
+    <canvas id="loupeCanvas" width="110" height="110"></canvas>
+    <div class="cross"></div>
+    <div class="ring"></div>
+  </div>
+  <div class="toast" id="toast">已复制</div>
+
+  <script>
+    const PRESETS = [
+      { hex: '#66BA66', name: '当前参考' },
+      { hex: '#57B169', name: '偏灰版' },
+      { hex: '#3EBF5C', name: '中间版' },
+      { hex: '#28C445', name: '旧霓虹' },
+      { hex: '#95EC69', name: '日间绿' },
+      { hex: '#4CAF50', name: 'Material' },
+      { hex: '#07C160', name: '微信绿标' },
+      { hex: '#5FCF6A', name: '偏亮夜' },
+    ]
+
+    const picker = document.getElementById('picker')
+    const hexInput = document.getElementById('hex')
+    const hEl = document.getElementById('h')
+    const sEl = document.getElementById('s')
+    const lEl = document.getElementById('l')
+    const toast = document.getElementById('toast')
+    const dropzone = document.getElementById('dropzone')
+    const dropHint = document.getElementById('dropHint')
+    const canvasWrap = document.getElementById('canvasWrap')
+    const canvas = document.getElementById('refCanvas')
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    const loupe = document.getElementById('loupe')
+    const loupeCanvas = document.getElementById('loupeCanvas')
+    const loupeCtx = loupeCanvas.getContext('2d')
+    const fileInput = document.getElementById('fileInput')
+    const sampleRadiusEl = document.getElementById('sampleRadius')
+    const pickedList = document.getElementById('pickedList')
+    let syncing = false
+    let imgNatural = null
+    const pickedHistory = []
+
+    function clamp(n, a, b) { return Math.min(b, Math.max(a, n)) }
+
+    function hexToRgb(hex) {
+      let h = hex.trim().replace('#', '')
+      if (h.length === 3) h = h.split('').map((c) => c + c).join('')
+      if (!/^[0-9a-fA-F]{6}$/.test(h)) return null
+      return {
+        r: parseInt(h.slice(0, 2), 16),
+        g: parseInt(h.slice(2, 4), 16),
+        b: parseInt(h.slice(4, 6), 16),
+      }
+    }
+
+    function rgbToHex({ r, g, b }) {
+      const to = (n) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, '0')
+      return `#${to(r)}${to(g)}${to(b)}`.toUpperCase()
+    }
+
+    function rgbToHsl({ r, g, b }) {
+      const R = r / 255, G = g / 255, B = b / 255
+      const max = Math.max(R, G, B), min = Math.min(R, G, B)
+      const l = (max + min) / 2
+      let h = 0, s = 0
+      if (max !== min) {
+        const d = max - min
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+        switch (max) {
+          case R: h = (G - B) / d + (G < B ? 6 : 0); break
+          case G: h = (B - R) / d + 2; break
+          default: h = (R - G) / d + 4
+        }
+        h /= 6
+      }
+      return { h: h * 360, s: s * 100, l: l * 100 }
+    }
+
+    function hslToRgb({ h, s, l }) {
+      const H = ((h % 360) + 360) % 360 / 360
+      const S = clamp(s, 0, 100) / 100
+      const L = clamp(l, 0, 100) / 100
+      if (S === 0) {
+        const v = L * 255
+        return { r: v, g: v, b: v }
+      }
+      const q = L < 0.5 ? L * (1 + S) : L + S - L * S
+      const p = 2 * L - q
+      const hue2rgb = (t) => {
+        let T = t
+        if (T < 0) T += 1
+        if (T > 1) T -= 1
+        if (T < 1 / 6) return p + (q - p) * 6 * T
+        if (T < 1 / 2) return q
+        if (T < 2 / 3) return p + (q - p) * (2 / 3 - T) * 6
+        return p
+      }
+      return {
+        r: hue2rgb(H + 1 / 3) * 255,
+        g: hue2rgb(H) * 255,
+        b: hue2rgb(H - 1 / 3) * 255,
+      }
+    }
+
+    function relativeDayDelta(hex) {
+      const a = hexToRgb(hex)
+      const b = hexToRgb('#95EC69')
+      if (!a || !b) return '—'
+      const dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b
+      const dist = Math.round(Math.sqrt(dr * dr + dg * dg + db * db))
+      return `ΔRGB ${dist}`
+    }
+
+    function applyHex(hex, { fromSliders = false, source } = {}) {
+      const rgb = hexToRgb(hex)
+      if (!rgb) return
+      const clean = rgbToHex(rgb)
+      const hsl = rgbToHsl(rgb)
+      syncing = true
+      document.documentElement.style.setProperty('--self', clean)
+      picker.value = clean
+      hexInput.value = clean
+      if (!fromSliders) {
+        hEl.value = String(Math.round(hsl.h))
+        sEl.value = String(Math.round(hsl.s))
+        lEl.value = String(Math.round(hsl.l))
+      }
+      document.getElementById('hVal').textContent = `${Math.round(hsl.h)}°`
+      document.getElementById('sVal').textContent = `${Math.round(hsl.s)}%`
+      document.getElementById('lVal').textContent = `${Math.round(hsl.l)}%`
+      document.getElementById('hexOut').textContent = clean
+      document.getElementById('rgbOut').textContent = `${Math.round(rgb.r)}, ${Math.round(rgb.g)}, ${Math.round(rgb.b)}`
+      document.getElementById('hslOut').textContent =
+        `${Math.round(hsl.h)}°, ${Math.round(hsl.s)}%, ${Math.round(hsl.l)}%`
+      document.getElementById('deltaOut').textContent = relativeDayDelta(clean)
+      document.getElementById('nightChip').style.background = clean
+      document.getElementById('nightChipHex').textContent = clean
+      if (source === 'system') document.getElementById('sysPickOut').textContent = clean
+      if (source === 'image') document.getElementById('imgPickOut').textContent = clean
+      syncing = false
+    }
+
+    function applyFromSliders() {
+      if (syncing) return
+      const rgb = hslToRgb({
+        h: Number(hEl.value),
+        s: Number(sEl.value),
+        l: Number(lEl.value),
+      })
+      applyHex(rgbToHex(rgb), { fromSliders: true })
+    }
+
+    function showToast(msg) {
+      toast.textContent = msg
+      toast.classList.add('show')
+      clearTimeout(showToast._t)
+      showToast._t = setTimeout(() => toast.classList.remove('show'), 1400)
+    }
+
+    async function copyText(text, okMsg) {
+      try {
+        await navigator.clipboard.writeText(text)
+        showToast(okMsg)
+      } catch {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        ta.remove()
+        showToast(okMsg)
+      }
+    }
+
+    function pushHistory(hex) {
+      const clean = hex.toUpperCase()
+      if (pickedHistory[0] === clean) return
+      pickedHistory.unshift(clean)
+      if (pickedHistory.length > 16) pickedHistory.pop()
+      pickedList.innerHTML = ''
+      pickedHistory.forEach((h) => {
+        const el = document.createElement('button')
+        el.type = 'button'
+        el.className = 'picked'
+        el.style.background = h
+        el.title = h
+        el.dataset.hex = h
+        el.addEventListener('click', () => {
+          applyHex(h, { source: 'image' })
+          showToast('已套用 ' + h)
+        })
+        pickedList.appendChild(el)
+      })
+    }
+
+    async function startEyeDropper() {
+      if (!window.EyeDropper) {
+        showToast('当前浏览器不支持系统吸色，请用参考图')
+        return
+      }
+      try {
+        const dropper = new EyeDropper()
+        const result = await dropper.open()
+        applyHex(result.sRGBHex, { source: 'system' })
+        pushHistory(result.sRGBHex)
+        showToast('系统吸色 ' + result.sRGBHex.toUpperCase())
+      } catch (e) {
+        if (e && e.name !== 'AbortError') showToast('吸色取消或失败')
+      }
+    }
+
+    function loadImageFile(file) {
+      if (!file || !file.type.startsWith('image/')) {
+        showToast('请选择图片文件')
+        return
+      }
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        imgNatural = img
+        const maxW = Math.min(img.width, 1400)
+        const scale = maxW / img.width
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        dropHint.hidden = true
+        canvasWrap.hidden = false
+        dropzone.classList.add('has-image')
+        URL.revokeObjectURL(url)
+        showToast('参考图已加载，点击取色')
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        showToast('图片加载失败')
+      }
+      img.src = url
+    }
+
+    function clearImage() {
+      imgNatural = null
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      canvas.width = 0
+      canvas.height = 0
+      dropHint.hidden = false
+      canvasWrap.hidden = true
+      dropzone.classList.remove('has-image')
+      loupe.style.display = 'none'
+      document.getElementById('liveHex').textContent = '—'
+      document.getElementById('liveRgb').textContent = ''
+      document.getElementById('liveDot').style.background = '#333'
+    }
+
+    function canvasPointFromEvent(e) {
+      const rect = canvas.getBoundingClientRect()
+      const scaleX = canvas.width / rect.width
+      const scaleY = canvas.height / rect.height
+      const x = Math.floor((e.clientX - rect.left) * scaleX)
+      const y = Math.floor((e.clientY - rect.top) * scaleY)
+      return { x, y, rect }
+    }
+
+    function sampleAt(x, y) {
+      const r = Number(sampleRadiusEl.value) || 0
+      const x0 = clamp(x - r, 0, canvas.width - 1)
+      const y0 = clamp(y - r, 0, canvas.height - 1)
+      const x1 = clamp(x + r, 0, canvas.width - 1)
+      const y1 = clamp(y + r, 0, canvas.height - 1)
+      const w = x1 - x0 + 1
+      const h = y1 - y0 + 1
+      const data = ctx.getImageData(x0, y0, w, h).data
+      let sr = 0, sg = 0, sb = 0, n = 0
+      for (let i = 0; i < data.length; i += 4) {
+        // 跳过全透明
+        if (data[i + 3] < 8) continue
+        sr += data[i]
+        sg += data[i + 1]
+        sb += data[i + 2]
+        n++
+      }
+      if (!n) return null
+      return { r: sr / n, g: sg / n, b: sb / n }
+    }
+
+    function updateLoupe(e, x, y) {
+      const zoom = 8
+      const size = 110
+      const src = Math.ceil(size / zoom)
+      loupeCtx.imageSmoothingEnabled = false
+      loupeCtx.clearRect(0, 0, size, size)
+      loupeCtx.drawImage(
+        canvas,
+        x - Math.floor(src / 2),
+        y - Math.floor(src / 2),
+        src,
+        src,
+        0,
+        0,
+        size,
+        size,
+      )
+      loupe.style.display = 'block'
+      const pad = 18
+      let left = e.clientX + pad
+      let top = e.clientY + pad
+      if (left + 110 > window.innerWidth) left = e.clientX - 110 - pad
+      if (top + 110 > window.innerHeight) top = e.clientY - 110 - pad
+      loupe.style.left = left + 'px'
+      loupe.style.top = top + 'px'
+    }
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (!imgNatural) return
+      const { x, y } = canvasPointFromEvent(e)
+      if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) {
+        loupe.style.display = 'none'
+        return
+      }
+      const rgb = sampleAt(x, y)
+      if (!rgb) return
+      const hex = rgbToHex(rgb)
+      document.getElementById('liveHex').textContent = hex
+      document.getElementById('liveRgb').textContent =
+        `  RGB ${Math.round(rgb.r)}, ${Math.round(rgb.g)}, ${Math.round(rgb.b)}`
+      document.getElementById('liveDot').style.background = hex
+      updateLoupe(e, x, y)
+    })
+
+    canvas.addEventListener('mouseleave', () => {
+      loupe.style.display = 'none'
+    })
+
+    canvas.addEventListener('click', (e) => {
+      if (!imgNatural) return
+      const { x, y } = canvasPointFromEvent(e)
+      const rgb = sampleAt(x, y)
+      if (!rgb) return
+      const hex = rgbToHex(rgb)
+      applyHex(hex, { source: 'image' })
+      pushHistory(hex)
+      showToast('图片吸色 ' + hex)
+    })
+
+    dropzone.addEventListener('click', (e) => {
+      if (e.target.closest('#refCanvas')) return
+      if (!imgNatural) fileInput.click()
+    })
+    document.getElementById('importBtn').addEventListener('click', () => fileInput.click())
+    document.getElementById('clearImgBtn').addEventListener('click', clearImage)
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files && fileInput.files[0]
+      if (f) loadImageFile(f)
+      fileInput.value = ''
+    })
+
+    ;['dragenter', 'dragover'].forEach((ev) => {
+      dropzone.addEventListener(ev, (e) => {
+        e.preventDefault()
+        dropzone.classList.add('dragover')
+      })
+    })
+    ;['dragleave', 'drop'].forEach((ev) => {
+      dropzone.addEventListener(ev, (e) => {
+        e.preventDefault()
+        dropzone.classList.remove('dragover')
+      })
+    })
+    dropzone.addEventListener('drop', (e) => {
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]
+      if (f) loadImageFile(f)
+    })
+
+    window.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items
+      if (!items) return
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const f = item.getAsFile()
+          if (f) {
+            e.preventDefault()
+            loadImageFile(f)
+          }
+          break
+        }
+      }
+    })
+
+    const swatches = document.getElementById('swatches')
+    PRESETS.forEach((p) => {
+      const el = document.createElement('button')
+      el.type = 'button'
+      el.className = 'swatch'
+      el.style.background = p.hex
+      el.innerHTML = `${p.name}<span>${p.hex}</span>`
+      el.addEventListener('click', () => applyHex(p.hex))
+      swatches.appendChild(el)
+    })
+
+    picker.addEventListener('input', () => applyHex(picker.value))
+    hexInput.addEventListener('change', () => applyHex(hexInput.value))
+    hexInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') applyHex(hexInput.value)
+    })
+    ;[hEl, sEl, lEl].forEach((el) => el.addEventListener('input', applyFromSliders))
+    document.getElementById('resetBtn').addEventListener('click', () => applyHex('#66BA66'))
+    document.getElementById('copyBtn').addEventListener('click', () => {
+      copyText(document.getElementById('hexOut').textContent, '色号已复制')
+    })
+    document.getElementById('copyAllBtn').addEventListener('click', () => {
+      const hex = document.getElementById('hexOut').textContent
+      const rgb = document.getElementById('rgbOut').textContent
+      const hsl = document.getElementById('hslOut').textContent
+      copyText(`微信夜间己方气泡：${hex}（RGB ${rgb} / HSL ${hsl}）`, '完整描述已复制')
+    })
+    document.getElementById('eyeDropperBtn').addEventListener('click', startEyeDropper)
+    document.getElementById('eyeDropperBtn2').addEventListener('click', startEyeDropper)
+
+    if (!window.EyeDropper) {
+      document.getElementById('eyeDropperBtn').disabled = true
+      document.getElementById('eyeDropperBtn2').disabled = true
+      document.getElementById('eyeDropperBtn').title = '当前浏览器不支持 EyeDropper'
+      document.getElementById('eyeDropperBtn2').title = '当前浏览器不支持 EyeDropper'
+    }
+
+    applyHex('#66BA66')
+  </script>
+</body>
+</html>

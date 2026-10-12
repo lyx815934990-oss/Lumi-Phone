@@ -771,44 +771,74 @@ export function VoiceCallPanel({
     return () => window.clearInterval(id)
   }, [beginSession, open, resetSession, setElapsedSec, stopCenterAudio])
 
-  // 接通后首轮：一律请求模型开口（可多句），不用本地/指令里的开场白文案
+  // 回调用 ref：ChatRoom 内联 onRequestAiReply 每帧换新引用，不能放进 deps，
+  // 否则会 cancel 掉进行中的开口且因 openingRequestedRef 无法重试 → 永久「组织语言」。
+  const onRequestAiReplyRef = useRef(onRequestAiReply)
+  onRequestAiReplyRef.current = onRequestAiReply
+  const commitCharacterSegmentsRef = useRef(commitCharacterSegments)
+  commitCharacterSegmentsRef.current = commitCharacterSegments
+  const schedulePeerHangupAfterRevealRef = useRef(schedulePeerHangupAfterReveal)
+  schedulePeerHangupAfterRevealRef.current = schedulePeerHangupAfterReveal
+  const showToastRef = useRef(showToast)
+  showToastRef.current = showToast
+
+  // 接通后首轮：请求模型开口；仅随 open / sessionId 触发一次
   useEffect(() => {
-    if (!open || !sessionStartedRef.current) return
+    if (!open || !sessionId) return
     if (openingRequestedRef.current || seededRef.current || inflightRef.current) return
     openingRequestedRef.current = true
     inflightRef.current = true
     setPeerReplying(true)
+    const OPENING_HARD_TIMEOUT_MS = 60_000
+    const runForSession = sessionId
     void (async () => {
       try {
-        const got = await Promise.resolve(
-          onRequestAiReply('', {
-            callEvent: 'connected_opening',
-            callInitiator: callInitiatorRef.current,
-            allowSynthToneTokens: synthToneTokensRef.current,
-            allowSynthEmotion: synthEmotionRef.current,
-            callMessages: [],
+        const got = await Promise.race([
+          Promise.resolve(
+            onRequestAiReplyRef.current('', {
+              callEvent: 'connected_opening',
+              callInitiator: callInitiatorRef.current,
+              allowSynthToneTokens: synthToneTokensRef.current,
+              allowSynthEmotion: synthEmotionRef.current,
+              callMessages: [],
+            }),
+          ),
+          new Promise<string>((_, reject) => {
+            window.setTimeout(
+              () => reject(new Error('通话回复超时，请再点「回复」试试')),
+              OPENING_HARD_TIMEOUT_MS,
+            )
           }),
-        )
-        if (!openRef.current) return
+        ])
+        if (!openRef.current || useVoiceCallSessionStore.getState().sessionId !== runForSession) {
+          return
+        }
         const raw = sanitizeVoiceDisplayText(String(got ?? ''))
         const { speech, hangup: peerHangup } = splitVoiceCallHangupDirective(raw)
-        const reply = speech || (peerHangup ? '' : '…')
+        const reply = speech || (peerHangup ? '' : '喂？')
         if (reply) {
           seededRef.current = true
-          commitCharacterSegments(reply, true)
+          commitCharacterSegmentsRef.current(reply, true)
         }
-        if (peerHangup) schedulePeerHangupAfterReveal(reply)
+        if (peerHangup) schedulePeerHangupAfterRevealRef.current(reply)
       } catch (err) {
-        if (!openRef.current) return
+        if (!openRef.current || useVoiceCallSessionStore.getState().sessionId !== runForSession) {
+          return
+        }
         const detail = err instanceof Error ? err.message.trim() : ''
         console.warn('[语音通话] 接通开口失败', err)
-        showToast(detail || '接通后开口失败，可先说话再点「回复」', 2800)
+        // 失败也落一句兜底，避免永久停在「对方正在组织语言」
+        if (!seededRef.current) {
+          seededRef.current = true
+          commitCharacterSegmentsRef.current('喂？', true)
+        }
+        showToastRef.current(detail || '接通后开口失败，可先说话再点「回复」', 2800)
       } finally {
         inflightRef.current = false
         if (openRef.current) setPeerReplying(false)
       }
     })()
-  }, [commitCharacterSegments, onRequestAiReply, open, schedulePeerHangupAfterReveal, showToast])
+  }, [open, sessionId, setPeerReplying])
 
   useEffect(() => {
     return () => {
@@ -941,21 +971,29 @@ export function VoiceCallPanel({
         showToast('没有可回复的内容', 1800)
         return
       }
-      const got = await Promise.resolve(
-        onRequestAiReply(promptText, {
-          fromVoice: isVoice,
-          voiceEmotion: last.voiceEmotion,
-          allowSynthToneTokens: synthToneTokensRef.current,
-          allowSynthEmotion: synthEmotionRef.current,
-          callMessages: messagesRef.current.map((m) => ({
-            role: m.role,
-            text: m.text,
-            asrText: m.asrText,
-            voiceEmotion: m.voiceEmotion,
-            source: m.source,
-          })),
+      const got = await Promise.race([
+        Promise.resolve(
+          onRequestAiReply(promptText, {
+            fromVoice: isVoice,
+            voiceEmotion: last.voiceEmotion,
+            allowSynthToneTokens: synthToneTokensRef.current,
+            allowSynthEmotion: synthEmotionRef.current,
+            callMessages: messagesRef.current.map((m) => ({
+              role: m.role,
+              text: m.text,
+              asrText: m.asrText,
+              voiceEmotion: m.voiceEmotion,
+              source: m.source,
+            })),
+          }),
+        ),
+        new Promise<string>((_, reject) => {
+          window.setTimeout(
+            () => reject(new Error('通话回复超时，请再点「回复」试试')),
+            60_000,
+          )
         }),
-      )
+      ])
       const raw = sanitizeVoiceDisplayText(String(got ?? ''))
       const { speech, hangup: peerHangup } = splitVoiceCallHangupDirective(raw)
       const reply = speech || (peerHangup ? '' : '…')
@@ -969,6 +1007,7 @@ export function VoiceCallPanel({
       showToast(detail || '回复失败，请稍后重试', 2800)
     } finally {
       inflightRef.current = false
+      setPeerReplying(false)
     }
   }, [
     commitCharacterSegments,

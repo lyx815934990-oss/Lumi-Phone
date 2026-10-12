@@ -82,7 +82,8 @@ export const WECHAT_APP_CLASSIC_NIGHT_BUBBLE_PRESET: WeChatBubblePreset = {
   description: WECHAT_APP_CLASSIC_BUBBLE_PRESET.description,
   bubble: {
     ...WECHAT_APP_CLASSIC_BUBBLE_PRESET.bubble,
-    selfBubbleBg: '#28C445',
+    // 夜间己方绿：用户吸色定稿
+    selfBubbleBg: '#27B561',
     otherBubbleBg: '#2C2C2C',
   },
   selfBubbleText: '#191919',

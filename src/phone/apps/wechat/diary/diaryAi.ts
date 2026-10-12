@@ -9,7 +9,7 @@ import {
   ensureDiaryInUniverseTimeHasYear,
   loadDiaryStoryYearHint,
 } from './diaryInUniverseTime'
-import { parseDiaryAiModelText } from './parseDiaryAiResponse'
+import { buildDiaryOutputFormatSpec, parseDiaryAiModelText } from './parseDiaryAiResponse'
 import {
   buildDiaryOutputLanguageAppendix,
   isDiaryWritingChinese,
@@ -34,12 +34,12 @@ function buildDiarySystemAppendix(params: {
   const writingChinese = isDiaryWritingChinese(params.diaryOutputLanguage)
   const langAppendix = buildDiaryOutputLanguageAppendix(params.diaryOutputLanguage)
   const fontLine = params.needsFontBinding
-    ? `- 当前尚未绑定笔迹（或笔迹已重置）。请在 JSON 中返回最符合你文化水平与人设的 font_style 代号：
+    ? `- 当前尚未绑定笔迹（或笔迹已重置）。请在 <<<DIARY>>> 块内用一行「笔迹：代号」返回最符合你文化水平与人设的笔迹：
   · 文化水平正常或偏高：只能选 sharp / neat / wild
     - neat（楷体）：系统会从楷体库随机绑定一款（鸿雷拙书简体、平方江南体、手书体等）
     - sharp / wild（行书）：系统会从行书库随机绑定一款
   · 文盲、学历很低、不常写字：只能选 lazy / elegant（潦草字体库），勿选 neat / sharp / wild`
-    : '- 字体已永久绑定，不要返回 font_style 字段。'
+    : '- 字体已永久绑定，不要输出「笔迹」行。'
 
   const writingQuality = writingChinese
     ? `- 【书写质感】正文必须以中文汉字为主书写，像正常人写日记一样。
@@ -70,26 +70,21 @@ ${langAppendix ? `\n${langAppendix}\n` : ''}
 - 不要重复你最近写过的心声；若情绪相近，写出新的细节或转折。
 - 【时间顺序】以【剧情时间轴·当前状态】与【日记书写锚点】为故事「现在」。先写更早的事、后写更近的事；user 里「往事·未总结私聊」只能回溯，**禁止**在正文后半又写回「即将分别 / 还没回来」等已被线下推进否定的状态。勿因某段情绪更强就打乱时序或倒回旧线上时刻。
 - 正文须写完整、自然收束，最后一句语义完整，不要写到一半戛然而止。
-- 【自然段】content 须像手写日记一样自然分段，**禁止**整篇挤成一大段。段与段之间用 \\n\\n（空一行）；分段数量与节奏由你按内容自行判断（如按事件、情绪转折、时空切换等落笔），勿机械凑段。
-- inUniverseTime 必须包含公历年份（格式如 2026年7月2日 傍晚），须与【剧情时间轴·当前状态】/线下摘要中的故事日期一致，勿写真实落库日期；通常应贴近「现在」锚点。
+- 【自然段】「正文」须像手写日记一样自然分段，**禁止**整篇挤成一大段。段与段之间空一行；分段数量与节奏由你按内容自行判断（如按事件、情绪转折、时空切换等落笔），勿机械凑段。
+- 「时间」必须包含公历年份（格式如 2026年7月2日 傍晚），须与【剧情时间轴·当前状态】/线下摘要中的故事日期一致，勿写真实落库日期；通常应贴近「现在」锚点。
 ${writingQuality}
 ${fontLine}
-- 严格返回 JSON，不要 Markdown，不要解释。
-- JSON 合法性（重要）：content 在 JSON 里仍是一个字符串；段间换行写成 \\n\\n，句内不要无故硬换行；双引号写成 \\"；[涂]错字|正字 格式可原样保留。
-- 同一次输出须包含 memory_summary（供长期记忆入库的摘要表，**禁止抄写日记 content 原文**）：
-  · memory_summary.row_title：4～10 字检索标题（概括本篇私密情绪或事件）
-  · memory_summary.row_keywords：3～5 个检索词，每条 ≤5 个汉字
-  · memory_summary.content：60～200 字**第三人称**备忘正文；{{char}} 指写日记的角色本人，{{user}} 指玩家；禁止第一人称「我」；禁止粘贴或大段复述日记原文
-{
-  "title": "符合你性格的日记标题（极简）",
-  "inUniverseTime": "须含年份的剧情时间（如：2026年7月2日 傍晚，赶往公爵府的路上；或 2026年7月3日 凌晨三点，雨）",
-  "content": "第一段……\\n\\n第二段……（共 ${DIARY_CONTENT_MIN_CHARS}-${DIARY_CONTENT_MAX_CHARS} 字；按文意用 \\n\\n 自然分段）",
-  "memory_summary": {
-    "row_title": "摘要短标题",
-    "row_keywords": ["词1", "词2", "词3"],
-    "content": "第三人称摘要备忘（60-200字）"
-  }${params.needsFontBinding ? ',\n  "font_style": "neat"' : ''}
-}
+- 对白只用中文引号「」，**禁止**英文双引号 "。
+- 同一次输出须含 <<<SUMMARY>>> 摘要块（供长期记忆入库，**禁止抄写日记正文**）：
+  · 摘要标题：4～10 字检索标题
+  · 关键词：3～5 个，每条 ≤5 个汉字，用顿号或逗号分隔
+  · 摘要：60～200 字**第三人称**备忘；{{char}} 指写日记的角色本人，{{user}} 指玩家；禁止第一人称「我」
+
+${buildDiaryOutputFormatSpec({
+  needsFontBinding: params.needsFontBinding,
+  contentMin: DIARY_CONTENT_MIN_CHARS,
+  contentMax: DIARY_CONTENT_MAX_CHARS,
+})}
 
 【你最近写过的日记标题（避免重复）】
 ${params.recentDiarySnippet || '（尚无）'}
@@ -180,7 +175,6 @@ ${recentContext ? `\n${recentContext}` : ''}`
 
   const chatOpts = { temperature: 0.78, max_tokens: 6500 }
   let raw = await openAiCompatibleChat(cfg, messages, chatOpts)
-  let parsed = parseDiaryAiModelText(raw, { allowFontStyle: needsFontBinding })
 
   const looksTruncated = (content: string) => {
     const t = content.trim()
@@ -195,32 +189,44 @@ ${recentContext ? `\n${recentContext}` : ''}`
     return latin > 60 && han < latin * 0.35
   }
 
+  const formatReminder = `请严格按标签格式重输（不要 JSON、不要解释、不要代码块）：从 <<<DIARY>>> 到 <<<END>>>。字段含标题/时间/正文，以及 <<<SUMMARY>>> 的摘要标题/关键词/摘要。`
+
   const retryForContent = async (reason: string) => {
     const retryMessages: OpenAiCompatibleMessage[] = [
       ...messages,
       { role: 'assistant', content: raw },
-      { role: 'user', content: reason },
+      { role: 'user', content: `${reason}\n\n${formatReminder}` },
     ]
     raw = await openAiCompatibleChat(cfg, retryMessages, chatOpts)
+  }
+
+  let parsed
+  try {
+    parsed = parseDiaryAiModelText(raw, { allowFontStyle: needsFontBinding })
+  } catch {
+    await retryForContent('上一版无法解析（未按 <<<DIARY>>> 标签格式输出，或缺少摘要块）。')
     parsed = parseDiaryAiModelText(raw, { allowFontStyle: needsFontBinding })
   }
 
   if (looksTruncated(parsed.content)) {
     await retryForContent(
-      `上一版 content 写到一半被截断了。请重新输出完整 JSON：正文写满 ${DIARY_CONTENT_MIN_CHARS}-${DIARY_CONTENT_MAX_CHARS} 字并自然收尾，保持时间顺序不变，不要重复已写句子。`,
+      `上一版「正文」写到一半被截断了。请重新输出完整标签块：正文写满 ${DIARY_CONTENT_MIN_CHARS}-${DIARY_CONTENT_MAX_CHARS} 字并自然收尾，保持时间顺序不变，不要重复已写句子。`,
     )
+    parsed = parseDiaryAiModelText(raw, { allowFontStyle: needsFontBinding })
   }
 
   if (writingChinese && isMostlyPinyinRomanization(parsed.content)) {
     await retryForContent(
-      '上一版几乎全是拼音罗马音，不符合文盲手写习惯。请重新输出 JSON：正文以中文汉字为主，仅对少数不会写的难字用拼音（全文 3～6 处），禁止整句拼音。',
+      '上一版几乎全是拼音罗马音，不符合文盲手写习惯。请重新输出：正文以中文汉字为主，仅对少数不会写的难字用拼音（全文 3～6 处），禁止整句拼音。',
     )
+    parsed = parseDiaryAiModelText(raw, { allowFontStyle: needsFontBinding })
   }
 
   if (!parsed.memorySummary?.content?.trim()) {
     await retryForContent(
-      '上一版缺少 memory_summary 或摘要正文为空。请重新输出完整 JSON：必须含 memory_summary（row_title、row_keywords、content），摘要为第三人称备忘，禁止抄写日记 content 原文。',
+      '上一版缺少 <<<SUMMARY>>> 或「摘要」为空。请补全：摘要标题、关键词、摘要（第三人称备忘，禁止抄写日记正文）。',
     )
+    parsed = parseDiaryAiModelText(raw, { allowFontStyle: needsFontBinding })
   }
 
   const result: DiaryAiResult = {

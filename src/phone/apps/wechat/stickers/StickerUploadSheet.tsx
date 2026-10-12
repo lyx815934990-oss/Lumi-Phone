@@ -43,10 +43,32 @@ function linkDisplayName(url: string, index: number): string {
   return label || `链接${index + 1}`
 }
 
-/** 单行：URL；可选 Tab / | / 首个逗号 后接描述 */
+/**
+ * 单行解析：
+ * - 名称：URL / 名称:URL（中英文冒号；名称可含 / ? ! …）
+ * - URL 在前：可选 Tab / | / 首个逗号 后接描述
+ */
 function splitLinkLine(line: string): { url: string; description: string } {
   const trimmed = line.trim()
   if (!trimmed) return { url: '', description: '' }
+
+  // 名称：https://...（优先；避免把 https: 里的冒号当成分隔）
+  const named = trimmed.match(
+    /^(.+?)\s*[：:]\s*((?:https?:\/\/|data:image\/|\/)\S+)\s*$/i,
+  )
+  if (named) {
+    const description = named[1]!.trim()
+    const url = named[2]!.trim()
+    // 防止「http」被当成名称（半角冒号撞上 https:）
+    if (
+      description &&
+      !/^https?$/i.test(description) &&
+      !/^data$/i.test(description) &&
+      isLikelyStickerUrl(url)
+    ) {
+      return { url, description }
+    }
+  }
 
   const tabIdx = trimmed.indexOf('\t')
   if (tabIdx > 0) {
@@ -78,7 +100,8 @@ function parseLinkLines(text: string): BatchRow[] {
   for (let i = 0; i < lines.length; i += 1) {
     const { url, description } = splitLinkLine(lines[i]!)
     if (!url || !isLikelyStickerUrl(url)) continue
-    rows.push({ name: linkDisplayName(url, i), url, description })
+    const label = description.trim() || linkDisplayName(url, i)
+    rows.push({ name: label, url, description: description.trim() })
   }
   return rows
 }
@@ -89,7 +112,8 @@ function serializeLinkRows(rows: BatchRow[]): string {
       const u = r.url.trim()
       const d = r.description.trim()
       if (!u) return ''
-      return d ? `${u}|${d}` : u
+      // 优先还原「名称：URL」，便于再编辑
+      return d ? `${d}：${u}` : u
     })
     .filter(Boolean)
     .join('\n')
@@ -243,12 +267,16 @@ export function StickerUploadSheet({ open, onClose, onSave }: Props) {
                 <textarea
                   value={linkInput}
                   onChange={(e) => onLinkInputChange(e.target.value)}
-                  placeholder={'每行一个图片 URL\n批量示例：\nhttps://example.com/a.png\nhttps://example.com/b.webp|开心\nhttps://example.com/c.gif,委屈'}
+                  placeholder={
+                    '每行一条；推荐「名称：URL」\n拜拜：https://example.com/a.png\n？/疑惑：https://example.com/b.webp\n或旧写法：https://example.com/c.gif|开心'
+                  }
                   rows={linkRows.length > 1 ? 4 : 2}
                   className="mt-2 min-h-[52px] w-full resize-y border-0 bg-transparent text-[13px] text-black outline-none placeholder:text-gray-400"
                 />
                 <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
-                  多行即批量导入；同一行可用 Tab、竖线 <span className="font-mono">|</span> 或逗号分隔描述（URL 须以 http(s) 或 data:image 开头）。
+                  多行即批量导入。推荐 <span className="font-mono">名称：URL</span>（中/英文冒号均可，名称可含{' '}
+                  <span className="font-mono">/</span>）；也可用 URL 在前 + Tab /{' '}
+                  <span className="font-mono">|</span> / 逗号跟描述。
                 </p>
               </label>
             )}

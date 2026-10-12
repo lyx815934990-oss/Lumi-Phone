@@ -12,12 +12,14 @@ import {
   formatStoryTimeClockFromMs,
   isPreferSystemClockDespiteStoryFloor,
   isWeChatClockAlignedWithStoryFloor,
+  isWeChatClockNearChatFloor,
   looksLikeRealWallClockMs,
   resetOnlineClockToSystemTime,
   resolveCharacterChatMessageTimeFloor,
   resolveCharacterStoryTimeFloor,
   restoreOnlineClockToStoryTime,
   syncStoryTimelineNowFromOnlineClock,
+  writeStoryTimelineNowMs,
   type StoryTimeFloorInfo,
 } from '../time/applyOnlineChatTimeFusion'
 import {
@@ -401,6 +403,31 @@ export function ChatTimeSettingsScreen({
           hint = '已将剧情轴「当前锚点」同步到线上时间'
           const nextFloor = await resolveCharacterStoryTimeFloor(cid)
           setStoryFloor(nextFloor.hasFloor ? nextFloor : floor)
+        } else if (
+          chatFloor.hasFloor &&
+          chatFloor.floorMs != null &&
+          isWeChatClockNearChatFloor(config, chatFloor.floorMs)
+        ) {
+          // 用户刚「对齐到最新线上对话」：允许相对更高剧情锚点回退，禁止再抬回旧「现在」
+          const target = chatFloor.floorMs
+          const chatLabel = new Date(target).toLocaleString('zh-CN', { hour12: false })
+          config = normalizeWeChatTimeConfig({
+            ...config,
+            mode: 'custom',
+            customBaseTime: target,
+            customAnchorRealTime: Date.now(),
+          })
+          try {
+            await writeStoryTimelineNowMs(cid, target)
+          } catch {
+            /* ignore */
+          }
+          hint = `已对齐到最新线上对话时间：${chatLabel}`
+          setStoryFloor({
+            label: chatLabel,
+            floorMs: target,
+            hasFloor: true,
+          })
         } else {
           // 有剧情锚点时，线上「现在」须落在剧情日历上（默认=锚点）；不能拿真实墙钟 Math.max 糊弄
           config = normalizeWeChatTimeConfig({

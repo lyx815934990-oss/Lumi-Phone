@@ -57,10 +57,27 @@ export function plotItemToStoryNode(plot: PlotItem, opts?: PlotSummaryTitleOptio
     htmlVisual,
     versionCount: versionMeta ? Math.max(1, versionMeta.versions.length) : undefined,
     currentVersionIndex: versionMeta?.currentVersionIndex,
+    generationDurationMs:
+      plot.type === 'ai' &&
+      typeof plot.generationDurationMs === 'number' &&
+      Number.isFinite(plot.generationDurationMs) &&
+      plot.generationDurationMs >= 0
+        ? Math.round(plot.generationDurationMs)
+        : undefined,
     createdAt: plot.timestamp,
     activeControlTags:
       plot.type === 'player' && Array.isArray(plot.activeControlTags) && plot.activeControlTags.length > 0
         ? plot.activeControlTags.map((t) => ({ id: t.id, label: t.label }))
+        : undefined,
+    fromInteractive: plot.fromInteractive === true ? true : undefined,
+    interactiveBubbles:
+      plot.fromInteractive === true && Array.isArray(plot.interactiveBubbles) && plot.interactiveBubbles.length > 0
+        ? plot.interactiveBubbles.map((b) => ({
+            id: String(b.id || '').trim() || `b-${plot.id}`,
+            kind:
+              b.kind === 'dialogue' || b.kind === 'thought' || b.kind === 'action' ? b.kind : 'action',
+            text: String(b.text ?? '').trim(),
+          })).filter((b) => b.text)
         : undefined,
   }
 }

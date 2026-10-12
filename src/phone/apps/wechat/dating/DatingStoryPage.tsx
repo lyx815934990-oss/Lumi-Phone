@@ -756,6 +756,8 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     [currentArchive.plotPace],
   )
 
+  const plotsForStoryFeed = currentArchive.plots
+
   useEffect(() => {
     const v = currentArchive.datingLengthTargetChars
     if (typeof v === 'number' && Number.isFinite(v)) {
@@ -3083,8 +3085,8 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
       generateParallelOnSend: !!currentArchive.generateParallelOnSend,
       generateIfLineOnSend: !!currentArchive.generateIfLineOnSend,
       thinkingChainEnabled: currentArchive.thinkingChainEnabled !== false,
-      commentModeEnabled: currentArchive.commentModeEnabled !== false,
-      plotArtifactVisualEnabled: currentArchive.plotArtifactVisualEnabled !== false,
+      commentModeEnabled: currentArchive.commentModeEnabled === true,
+      plotArtifactVisualEnabled: currentArchive.plotArtifactVisualEnabled === true,
       plotArtifactVisualPresetId: currentArchive.plotArtifactVisualPresetId?.trim() || 'random',
       plotPace,
       ...(styleTuning.stylePrompt.trim() ? { stylePrompt: styleTuning.stylePrompt.trim() } : {}),
@@ -3311,7 +3313,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     floorsMax,
     currentCharacter,
     currentArchive,
-    plots: currentArchive.plots,
+    plots: plotsForStoryFeed,
     displayAvatarUrl,
     regeneratingPlotId,
     branchesLoading,
@@ -3410,6 +3412,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     plotImageGenEnabled,
     plotPace,
     plotTailVisible,
+    plotsForStoryFeed,
     regenerateAiPlot,
     regeneratingPlotId,
     saveEditedPlotBody,
@@ -3464,7 +3467,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
               {vnToast}
             </div>
           ) : null}
-          <div className="absolute inset-x-0 top-0 z-[40] flex justify-center pt-[max(8px,env(safe-area-inset-top))]">
+          <div className="absolute inset-x-0 top-0 z-[40] flex items-center justify-center gap-2 pt-[max(8px,env(safe-area-inset-top))]">
             <StoryModeSwitch
               mode="vn"
               variant="overlay"

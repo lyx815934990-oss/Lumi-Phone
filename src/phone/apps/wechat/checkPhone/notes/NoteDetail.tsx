@@ -1,9 +1,11 @@
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
 import { ChevronLeft } from 'lucide-react'
 
 import { Pressable } from '../../../../components/Pressable'
 import { MemoRenderer } from './MemoRenderer'
+import { MemoTranslationOverlay } from './MemoTranslationOverlay'
+import { memoHasTranslation } from './memoTranslation'
 import type { PrivateMemo } from './memoTypes'
 
 function paperStyleFor(memo: PrivateMemo): CSSProperties {
@@ -27,37 +29,60 @@ function paperStyleFor(memo: PrivateMemo): CSSProperties {
 
 export function NoteDetail({ memo, onBack }: { memo: PrivateMemo; onBack: () => void }) {
   const spring = { type: 'spring', stiffness: 200, damping: 25, mass: 0.5 } as const
+  const [translationOpen, setTranslationOpen] = useState(false)
+  const canTranslate = memoHasTranslation(memo)
 
   return (
-    <motion.div
-      layoutId={`memo-card-${memo.id}`}
-      className="mx-4 mb-5 mt-3 overflow-hidden rounded-[24px] border border-gray-200"
-      style={paperStyleFor(memo)}
-      initial={{ opacity: 0, scale: 0.98, boxShadow: '0 0 0px rgba(0,0,0,0)' }}
-      animate={{ opacity: 1, scale: 1, boxShadow: '0 10px 40px rgba(0,0,0,0.05)' }}
-      exit={{ opacity: 0, scale: 0.985, boxShadow: '0 0 0px rgba(0,0,0,0)' }}
-      transition={spring}
-    >
-      <div className="flex items-center justify-between border-b border-black/10 px-4 py-3">
-        <Pressable type="button" onClick={onBack} className="flex h-8 w-8 items-center justify-center rounded-full bg-black/[0.05] text-[#2c2c2c] active:scale-[0.98]">
-          <ChevronLeft size={18} />
-        </Pressable>
-        <div className="text-[11px] tracking-[0.12em] text-[#5c5c5c]">PRIVATE MEMO</div>
-        <div className="w-8" />
-      </div>
-
-      <div className="px-5 pb-8 pt-4">
-        <motion.h1 layoutId={`memo-title-${memo.id}`} className="text-[28px] leading-[1.2] text-[#141414]">
-          {memo.title}
-        </motion.h1>
-        <motion.div layoutId={`memo-date-${memo.id}`} className="mt-2 text-[12px] tracking-[0.08em] text-[#666]">
-          {memo.date}
-        </motion.div>
-        <div className="mt-5">
-          <MemoRenderer memo={memo} />
+    <>
+      <motion.div
+        layoutId={`memo-card-${memo.id}`}
+        className="mx-4 mb-5 mt-3 overflow-hidden rounded-[24px] border border-gray-200"
+        style={paperStyleFor(memo)}
+        initial={{ opacity: 0, scale: 0.98, boxShadow: '0 0 0px rgba(0,0,0,0)' }}
+        animate={{ opacity: 1, scale: 1, boxShadow: '0 10px 40px rgba(0,0,0,0.05)' }}
+        exit={{ opacity: 0, scale: 0.985, boxShadow: '0 0 0px rgba(0,0,0,0)' }}
+        transition={spring}
+      >
+        <div className="flex items-center justify-between border-b border-black/10 px-4 py-3">
+          <Pressable
+            type="button"
+            onClick={onBack}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-black/[0.05] text-[#2c2c2c] active:scale-[0.98]"
+          >
+            <ChevronLeft size={18} />
+          </Pressable>
+          <div className="text-[11px] tracking-[0.12em] text-[#5c5c5c]">PRIVATE MEMO</div>
+          {canTranslate ? (
+            <Pressable
+              type="button"
+              onClick={() => setTranslationOpen(true)}
+              className="rounded-full bg-black/[0.06] px-2.5 py-1 text-[11px] leading-none text-[#5c5c5c] active:scale-[0.98]"
+            >
+              翻译
+            </Pressable>
+          ) : (
+            <div className="w-8" />
+          )}
         </div>
-      </div>
-    </motion.div>
+
+        <div className="px-5 pb-8 pt-4">
+          <motion.h1 layoutId={`memo-title-${memo.id}`} className="text-[28px] leading-[1.2] text-[#141414]">
+            {memo.title}
+          </motion.h1>
+          <motion.div layoutId={`memo-date-${memo.id}`} className="mt-2 text-[12px] tracking-[0.08em] text-[#666]">
+            {memo.date}
+          </motion.div>
+          <div className="mt-5">
+            <MemoRenderer memo={memo} />
+          </div>
+        </div>
+      </motion.div>
+
+      <MemoTranslationOverlay
+        open={translationOpen}
+        memo={memo}
+        onClose={() => setTranslationOpen(false)}
+      />
+    </>
   )
 }
-

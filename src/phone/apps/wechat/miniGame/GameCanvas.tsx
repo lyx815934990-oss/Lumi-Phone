@@ -17,17 +17,20 @@ import { BubbleShooterGame } from './games/BubbleShooterGame'
 import { ClawMachineGame } from './games/ClawMachineGame'
 import { GomokuGame } from './games/GomokuGame'
 import { GravityMergeGame } from './games/GravityMergeGame'
+import { MonopolyGame } from './games/monopoly/MonopolyGame'
 import { SerpentGame } from './games/SerpentGame'
 import { StarMatchGame } from './games/StarMatchGame'
 import { TetrominoGame } from './games/TetrominoGame'
 
 const TURN_BASED_GAMES = new Set<MiniGameType>(['gomoku', 'claw'])
+const MATCH_RESULT_GAMES = new Set<MiniGameType>(['gomoku', 'claw', 'monopoly'])
 
 function resolveMatchResult(event: GameEvent): WeChatMiniGameMatchResult | null {
   if (event.type !== 'gameOver') return null
   if (event.detail?.includes('平')) return 'draw'
   if (event.won === true) return 'player_win'
   if (event.won === false) return 'char_win'
+  if (event.won === undefined && event.detail?.includes('平局')) return 'draw'
   return null
 }
 
@@ -35,6 +38,7 @@ function GameView({
   gameType,
   emitEvent,
   turnBasedProps,
+  monopolyProps,
 }: {
   gameType: MiniGameType
   emitEvent: ReturnType<typeof useGameReactionEngine>['emitEvent']
@@ -53,6 +57,13 @@ function GameView({
       turnIndex: number
       activePlayer: 1 | 2
     }) => void
+  }
+  monopolyProps?: {
+    charId?: string
+    charName?: string
+    avatarUrl?: string
+    playerAvatarUrl?: string
+    playerIdentityId?: string
   }
 }) {
   switch (gameType) {
@@ -84,6 +95,17 @@ function GameView({
           onScoreChange={turnBasedProps.onClawScoreChange}
         />
       ) : null
+    case 'monopoly':
+      return (
+        <MonopolyGame
+          emitEvent={emitEvent}
+          charId={monopolyProps?.charId}
+          charName={monopolyProps?.charName}
+          avatarUrl={monopolyProps?.avatarUrl}
+          playerAvatarUrl={monopolyProps?.playerAvatarUrl}
+          playerIdentityId={monopolyProps?.playerIdentityId}
+        />
+      )
     case 'serpent':
       return <SerpentGame emitEvent={emitEvent} />
     case 'tetromino':
@@ -104,6 +126,7 @@ export function GameCanvas({
   charName,
   avatarUrl,
   playerAvatarUrl,
+  playerIdentityId,
   conversationKey,
   inviteId,
   preloadedGomokuSetup,
@@ -116,6 +139,7 @@ export function GameCanvas({
   charName?: string
   avatarUrl?: string
   playerAvatarUrl?: string
+  playerIdentityId?: string
   conversationKey?: string
   inviteId?: string
   preloadedGomokuSetup?: GomokuSessionSetup
@@ -144,9 +168,11 @@ export function GameCanvas({
     conversationKey,
     peerDisplayName: charName,
     preloadedGomokuSetup,
+    playerIdentityId,
   })
 
   const isTurnBased = TURN_BASED_GAMES.has(gameType)
+  const isMonopoly = gameType === 'monopoly'
   const isGomoku = gameType === 'gomoku'
   const isClaw = gameType === 'claw'
   const [gomokuStoneCounts, setGomokuStoneCounts] = useState({ player: 0, ai: 0 })
@@ -250,12 +276,12 @@ export function GameCanvas({
         })
       }
       emitEvent(event)
-      if (isTurnBased && !settlementResult) {
+      if (MATCH_RESULT_GAMES.has(gameType) && !settlementResult) {
         const result = resolveMatchResult(event)
         if (result) setSettlementResult(result)
       }
     },
-    [emitEvent, isGomoku, isTurnBased, playerGoesFirst, settlementResult, syncGomokuContext],
+    [emitEvent, gameType, isGomoku, playerGoesFirst, settlementResult, syncGomokuContext],
   )
 
   const handleSettlementReturn = useCallback(() => {
@@ -304,7 +330,7 @@ export function GameCanvas({
           className="fixed inset-0 z-[1400] overflow-hidden bg-black"
         >
           <div className="flex h-full flex-col bg-[#F9FAFB]">
-            {!isTurnBased ? (
+            {!isTurnBased && !isMonopoly ? (
               <CompanionPod avatarUrl={avatarUrl} reactionText={reactionText} visible={reactionVisible} />
             ) : null}
 
@@ -330,7 +356,11 @@ export function GameCanvas({
               <div className="w-[52px]" />
             </div>
 
-            <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-3 pb-[max(16px,env(safe-area-inset-bottom))]">
+            <div
+              className={`relative flex min-h-0 flex-1 flex-col items-center px-3 pb-[max(16px,env(safe-area-inset-bottom))] ${
+                isMonopoly ? 'justify-stretch gap-2' : 'justify-center gap-5'
+              }`}
+            >
               {isGomoku ? (
                 <GomokuCompanionBar
                   playerAvatarUrl={playerAvatarUrl}
@@ -359,7 +389,13 @@ export function GameCanvas({
                   gameOver={showSettlement}
                 />
               ) : null}
-              <div className="relative flex w-full max-w-[min(88vw,400px)] items-center justify-center">
+              <div
+                className={`relative flex w-full items-center justify-center ${
+                  isMonopoly
+                    ? 'min-h-0 flex-1 max-w-[min(96vw,440px)]'
+                    : 'max-w-[min(88vw,400px)]'
+                }`}
+              >
                 {isTurnBased && firstMoveDrawDone ? (
                   <GameView
                     key={`${inviteId ?? gameType}-${playerGoesFirst ? 'player' : 'char'}`}
@@ -368,8 +404,22 @@ export function GameCanvas({
                     turnBasedProps={turnBasedProps}
                   />
                 ) : !isTurnBased ? (
-                  <div className="w-full">
-                    <GameView gameType={gameType} emitEvent={wrappedEmitEvent} />
+                  <div className={`w-full ${isMonopoly ? 'flex h-full min-h-0 flex-col' : ''}`}>
+                    <GameView
+                      gameType={gameType}
+                      emitEvent={wrappedEmitEvent}
+                      monopolyProps={
+                        isMonopoly
+                          ? {
+                              charId,
+                              charName,
+                              avatarUrl,
+                              playerAvatarUrl,
+                              playerIdentityId,
+                            }
+                          : undefined
+                      }
+                    />
                   </div>
                 ) : (
                   <div

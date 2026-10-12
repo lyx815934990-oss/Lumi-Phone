@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { DatingProvider } from './DatingContext'
+import { DatingProvider, useDating } from './DatingContext'
 import { DatingRoleSelectPage } from './DatingRoleSelectPage'
 import { DatingStoryPage } from './DatingStoryPage'
+import { useDatingInteractiveStore } from './useDatingInteractiveStore'
 
 type Page = 'select' | 'story'
 
@@ -13,6 +14,8 @@ function DatingSystemInner({
   onOpenPersonaManager?: () => void
 }) {
   const [page, setPage] = useState<Page>('select')
+  const { currentCharacter } = useDating()
+  const clearInteractiveSession = useDatingInteractiveStore((s) => s.clearSession)
 
   useEffect(() => {
     const hidden = page === 'story'
@@ -22,11 +25,20 @@ function DatingSystemInner({
     }
   }, [onVnChromeChange, page])
 
-  return page === 'select' ? (
-    <DatingRoleSelectPage onEnterStory={() => setPage('story')} onOpenPersonaManager={onOpenPersonaManager} />
-  ) : (
-    <DatingStoryPage onBackToSelect={() => setPage('select')} />
-  )
+  /** 互动模式已下线：清掉未收束会话，避免旧数据把用户锁回互动页 */
+  useEffect(() => {
+    clearInteractiveSession()
+  }, [clearInteractiveSession, currentCharacter.id])
+
+  if (page === 'select') {
+    return (
+      <DatingRoleSelectPage
+        onEnterStory={() => setPage('story')}
+        onOpenPersonaManager={onOpenPersonaManager}
+      />
+    )
+  }
+  return <DatingStoryPage onBackToSelect={() => setPage('select')} />
 }
 
 export function DatingSystem({
@@ -44,4 +56,3 @@ export function DatingSystem({
 }
 
 export default DatingSystem
-

@@ -27,8 +27,8 @@ export function buildDiaryOutputLanguageAppendix(diaryOutputLanguage?: string | 
 【日记书写语言 · 最高优先级之一】
 - 用户已指定：日记正文 title 与 content 一律使用 **${label}（${native}）** 书写。
 - 禁止默认改回简体中文正文（本条系统说明除外）。
-- memory_summary 仍须用**简体中文**第三人称撰写（供长期记忆检索），与正文语言无关。
-- inUniverseTime 可用简体中文标注剧情时间（含公历年份）。
+- 「摘要」块仍须用**简体中文**第三人称撰写（供长期记忆检索），与正文语言无关。
+- 「时间」可用简体中文标注剧情时间（含公历年份）。
 ${
   isTw
     ? '- 正文使用繁体汉字；文盲/低学历人设的拼音顶替规则仍适用（仅难字）。'

@@ -37,7 +37,11 @@ export function ConfirmDialog({
             type="button"
             onClick={onCancel}
             className="rounded-xl px-4 py-2 text-[14px] transition-all duration-200 ease-out"
-            style={{ border: `1px solid ${apiTheme.border}`, color: apiTheme.text, background: '#fff' }}
+            style={{
+              border: `1px solid ${apiTheme.border}`,
+              color: apiTheme.text,
+              background: apiTheme.card,
+            }}
           >
             {cancelText}
           </button>
@@ -45,7 +49,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             className="rounded-xl px-4 py-2 text-[14px] font-semibold text-white transition-all duration-200 ease-out"
-            style={{ background: danger ? '#8e8e8e' : apiTheme.accent }}
+            style={{ background: danger ? apiTheme.danger : apiTheme.accent }}
           >
             {confirmText}
           </button>

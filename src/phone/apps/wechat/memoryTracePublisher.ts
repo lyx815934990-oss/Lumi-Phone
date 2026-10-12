@@ -46,6 +46,30 @@ import type {
   MemoryTraceWorldBookAfterInjectedEntry,
   MemoryTraceWorldBookAfterPatchRow,
 } from './memoryTraceTypes'
+import type { ChatApiTokenUsage } from './chatApiUsage'
+import { peekLastChatApiUsage } from './chatApiUsage'
+import { buildMemoryTraceTokenUsage } from './memoryTraceTokenBreakdown'
+
+function attachTokenUsageToTrace(
+  data: MemoryTraceData,
+  opts?: {
+    apiUsage?: ChatApiTokenUsage | null
+    thinkingChainEnabled?: boolean
+    transcriptText?: string
+  },
+): MemoryTraceData {
+  try {
+    const tokenUsage = buildMemoryTraceTokenUsage({
+      data,
+      apiUsage: opts?.apiUsage ?? peekLastChatApiUsage(),
+      thinkingChainEnabled: opts?.thinkingChainEnabled === true,
+      transcriptText: opts?.transcriptText,
+    })
+    return { ...data, tokenUsage }
+  } catch {
+    return data
+  }
+}
 
 function traceOnlineUnsummarizedSnippetForDisplay(snippet: string): string {
   const raw = snippet.trim()
@@ -757,6 +781,10 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
   dedupeOfflineRecentOmitted?: boolean
   dedupeMeetRecentOmitted?: boolean
   conversationKey?: string | null
+  /** 本轮是否开启思维链（影响 token 板块归因） */
+  thinkingChainEnabled?: boolean
+  /** 主回复 API 用量快照（优先于全局 last usage） */
+  chatApiUsage?: ChatApiTokenUsage | null
 }): Promise<void> {
   let character = params.character
   let cid = character?.id?.trim() || params.characterId?.trim() || ''
@@ -1087,7 +1115,16 @@ export async function publishWeChatPrivatePersonaMemoryTrace(params: {
       },
     },
   }
-  setLastMemoryTrace(data)
+  setLastMemoryTrace(
+    attachTokenUsageToTrace(data, {
+      apiUsage: params.chatApiUsage,
+      thinkingChainEnabled: params.thinkingChainEnabled,
+      transcriptText: params.transcript
+        .slice(-40)
+        .map((t) => `${t.speakerLabel ?? ''} ${t.text}`)
+        .join('\n'),
+    }),
+  )
 }
 
 /** 群多角色：以首名 NPC 的长期记忆 trace 为主，并合并档案室与群级未总结摘录 */
@@ -1109,6 +1146,8 @@ export async function publishWeChatGroupMemoryTrace(params: {
   patchRulesIncluded?: boolean
   worldBookPatches?: WorldBookAfterPatch[] | null
   worldBookAfterApplied?: boolean
+  thinkingChainEnabled?: boolean
+  chatApiUsage?: ChatApiTokenUsage | null
 }): Promise<void> {
   const cid = params.primaryNpcCharacterId.trim()
   if (!cid) return
@@ -1218,7 +1257,16 @@ export async function publishWeChatGroupMemoryTrace(params: {
       },
     },
   }
-  setLastMemoryTrace(data)
+  setLastMemoryTrace(
+    attachTokenUsageToTrace(data, {
+      apiUsage: params.chatApiUsage,
+      thinkingChainEnabled: params.thinkingChainEnabled,
+      transcriptText: params.transcript
+        .slice(-40)
+        .map((t) => `${t.speakerLabel ?? ''} ${t.text}`)
+        .join('\n'),
+    }),
+  )
 }
 
 export async function publishDatingOfflineMemoryTrace(params: {
@@ -1250,6 +1298,8 @@ export async function publishDatingOfflineMemoryTrace(params: {
   apiConfig: { apiUrl?: string; apiKey?: string; modelId?: string } | null
   rawAssistantOutput: string
   worldBookAfterChat?: MemoryTraceWorldBookAfterChat | null
+  thinkingChainEnabled?: boolean
+  chatApiUsage?: ChatApiTokenUsage | null
 }): Promise<void> {
   const cid = params.characterId.trim()
   if (!cid) return
@@ -1468,5 +1518,11 @@ export async function publishDatingOfflineMemoryTrace(params: {
       },
     },
   }
-  setLastMemoryTrace(data)
+  setLastMemoryTrace(
+    attachTokenUsageToTrace(data, {
+      apiUsage: params.chatApiUsage,
+      thinkingChainEnabled: params.thinkingChainEnabled,
+      transcriptText: [params.userText, params.rawAssistantOutput].filter(Boolean).join('\n'),
+    }),
+  )
 }

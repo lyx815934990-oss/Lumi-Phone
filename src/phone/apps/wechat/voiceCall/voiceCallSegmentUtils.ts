@@ -30,6 +30,11 @@ export function sanitizeVoiceDisplayText(raw: string): string {
   s = s
     .replace(/^\s*\[(?:消息ID|引用)[:：][^\]]+\]\s*$/gim, '')
     .replace(/\s*\[(?:消息ID|引用)[:：][^\]]+\]\s*/gim, ' ')
+  // 通话字幕不应出现思维链标签（防御：上游未剥干净时）
+  s = s.replace(/<(thinking|think)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+  s = s.replace(/<(thinking|think)\b[^>]*>[\s\S]*$/gi, ' ')
+  s = s.replace(/<\/(?:thinking|think)>/gi, ' ')
+  s = s.replace(/```(?:thinking|think|analysis)\s*[\s\S]*?```/gi, ' ')
   // 模型常写全角（）；统一成半角，便于环境音拆分与 TTS 剔除
   s = s.replace(/（([^）]*)）/g, '($1)')
   return s.replace(/\n{3,}/g, '\n\n').trim()

@@ -3,6 +3,7 @@ export type MiniGameType =
   | 'gravity'
   | 'gomoku'
   | 'claw'
+  | 'monopoly'
   | 'serpent'
   | 'tetromino'
   | 'bubble'
@@ -54,6 +55,23 @@ export type ClawReactionKey =
   | 'draw'
   | 'gameStart'
 
+/** 大富翁局面反应键（见 monopolyBanter.ts） */
+export type MonopolyReactionKey =
+  | 'gameStart'
+  | 'goodRoll'
+  | 'badRoll'
+  | 'boughtProperty'
+  | 'playerBought'
+  | 'collectedRent'
+  | 'paidRent'
+  | 'usedItem'
+  | 'gotItem'
+  | 'eventTrigger'
+  | 'thinking'
+  | 'win'
+  | 'lose'
+  | 'closeGame'
+
 export interface GameEvent {
   type: GameEventType
   /** 人类可读细节，如「三连消」「棋盘将满」 */
@@ -64,6 +82,8 @@ export interface GameEvent {
   gomokuKey?: GomokuReactionKey
   /** 抓娃娃机：预置台词库索引键 */
   clawKey?: ClawReactionKey
+  /** 大富翁：预置台词库索引键 */
+  monopolyKey?: MonopolyReactionKey
 }
 
 export type GameEventEmitter = (event: GameEvent) => void

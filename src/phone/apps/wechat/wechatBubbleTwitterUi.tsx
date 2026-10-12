@@ -70,6 +70,7 @@ export function TwitterLastMsgMeta({
   showRead = false,
   align = 'end',
   night = false,
+  edgeInsetPx = 0,
 }: {
   timeLabel: string
   /** 仅己方：对方正在回复或已有后续回覆时显示「已读」 */
@@ -77,18 +78,27 @@ export function TwitterLastMsgMeta({
   /** 己方 end（右），对方 start（左） */
   align?: 'start' | 'end'
   night?: boolean
+  /**
+   * 头像列额外内缩（头像边长 + 与气泡间距）。
+   * 脚注贴气泡外缘，而不是贴屏幕边；无头像时为 0。
+   */
+  edgeInsetPx?: number
 }) {
   const label = timeLabel.trim()
   if (!label && !showRead) return null
   const muted = night ? TWITTER_X_COLORS.metaMutedNight : TWITTER_X_COLORS.muted
   const aria =
     label && showRead ? `${label} 已读` : showRead ? '已读' : label
-  // 边距与气泡行一致：对方 ml/mr 24px，己方 px-4
-  const insetCls = align === 'start' ? 'justify-start pl-[24px] pr-[24px]' : 'justify-end px-4'
+  // 与气泡行同一条边：对方 24px，己方 16px（px-4）；有头像再让出头像列
+  const edge = Math.max(0, edgeInsetPx ?? 0)
+  const padStart = align === 'start' ? 24 + edge : 16
+  const padEnd = align === 'end' ? 16 + edge : 24
   return (
     <div
-      className={`mt-1 flex w-full items-center gap-1.5 text-[12px] leading-none ${insetCls}`}
-      style={{ color: muted }}
+      className={`mt-1 flex w-full items-center gap-1.5 text-[12px] leading-none ${
+        align === 'start' ? 'justify-start' : 'justify-end'
+      }`}
+      style={{ color: muted, paddingLeft: padStart, paddingRight: padEnd }}
       aria-label={aria}
     >
       {label ? <PhoneMixedLatinNumText text={label} /> : null}

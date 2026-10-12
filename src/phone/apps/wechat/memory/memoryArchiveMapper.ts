@@ -62,6 +62,15 @@ export function memorySceneTagsFromRow(m: CharacterMemory): MemorySceneTag[] {
     m.id.startsWith('diary_')
   const tags: MemorySceneTag[] = []
   if (isDiary) tags.push('日记')
+  if (
+    parsed.hasAddressBookTag ||
+    category === '通讯录' ||
+    category === '通讯录私聊' ||
+    m.id.startsWith('mirrorWx.addressBookMem.') ||
+    m.id.startsWith('mirrorWx.chatMem')
+  ) {
+    tags.push('通讯录')
+  }
   if (parsed.hasMomentTag || m.memoryScope === 'moment') tags.push('朋友圈')
   if (parsed.hasPulseTag || m.memoryScope === 'pulse') tags.push('微博')
   if (parsed.hasMeetTag || m.memoryScope === 'meet') tags.push('遇见')
@@ -173,6 +182,7 @@ export function memoryTagsToPrefixFlags(tags: MemorySceneTag[]): ParsedMemoryWit
   return {
     hasMeetTag: set.has('遇见'),
     hasDiaryTag: set.has('日记'),
+    hasAddressBookTag: set.has('通讯录'),
     hasOnlineTag: set.has('私聊'),
     hasGroupChatTag: set.has('群聊'),
     hasOfflineTag: set.has('线下'),

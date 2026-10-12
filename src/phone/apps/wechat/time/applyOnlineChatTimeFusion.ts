@@ -242,9 +242,65 @@ export async function resetOnlineClockToSystemTime(
   return { chosenTimeMs: wallNow, clampedToLastMessage: false, wallNowMs: wallNow }
 }
 
+/** 显式把剧情轴「现在」写到指定毫秒（允许相对旧锚点回退；供对齐对话时间） */
+export async function writeStoryTimelineNowMs(
+  characterId: string,
+  nowMs: number,
+): Promise<{ storyDay: string; storyTime: string; storyLabel: string }> {
+  const cid = characterId.trim()
+  const chosen = Math.round(nowMs)
+  if (!cid || !Number.isFinite(chosen) || chosen <= 0) {
+    throw new Error('invalid_story_now')
+  }
+  const wallNow = Date.now()
+  const storyDay = formatGregorianStoryDayFromMs(chosen)
+  const storyTime = formatStoryTimeClockFromMs(chosen)
+  const prev = (await personaDb.getStoryTimelineState(cid)) ?? createEmptyStoryTimelineState(cid)
+  await personaDb.putStoryTimelineState({
+    ...prev,
+    characterId: cid,
+    updatedAt: wallNow,
+    currentStoryDay: storyDay,
+    currentStoryTime: storyTime,
+    todos: [],
+  })
+  try {
+    await syncNetworkStoryNowFromPrimary({
+      sourceCharacterId: cid,
+      storyDay,
+      storyTime,
+      storyNowMs: chosen,
+      syncOnlineClock: false,
+    })
+  } catch {
+    /* ignore */
+  }
+  const storyLabel = composeStoryTimelineCalendarAnchorLabel({
+    story_day: storyDay,
+    story_time: storyTime,
+  })
+  return { storyDay, storyTime, storyLabel }
+}
+
+/** 线上时钟是否贴着「最新对话 floor」（对齐对话后 load 勿再被更高剧情锚点抬回去） */
+export function isWeChatClockNearChatFloor(
+  config: WeChatTimeConfig,
+  chatFloorMs: number | null | undefined,
+  slackMs: number = 120_000,
+): boolean {
+  if (config.mode !== 'custom') return false
+  if (typeof chatFloorMs !== 'number' || !Number.isFinite(chatFloorMs) || chatFloorMs <= 0) return false
+  const base = config.customBaseTime
+  if (!Number.isFinite(base)) return false
+  return Math.abs(base - chatFloorMs) <= Math.max(0, slackMs)
+}
+
 /**
  * 将线上「现在」对齐到该角色私聊最后一条消息附近（默认最后一条 + 1 分钟）。
- * 用于无线上剧情锚点时：用户隔了几小时才回，墙钟已推很远，想接着上一句聊、不要显得晾了很久。
+ * 用于：用户隔了几小时才回，墙钟/剧情轴已推很远，想接着上一句聊、不要显得晾了很久。
+ *
+ * 必须同步回写剧情轴「现在」——否则设置页 load() 会按更高剧情锚点把时钟抬回去，
+ * 表现为「点对齐无效，得先重置系统时间才行」。
  */
 export async function alignOnlineClockToLatestChatTime(
   characterId: string,
@@ -269,9 +325,12 @@ export async function alignOnlineClockToLatestChatTime(
       timeMultiplier: settings?.config?.timeMultiplier ?? 1,
     }),
     timePerceptionEnabled: settings?.timePerceptionEnabled !== false,
-    // 无线上剧情锚点场景：保持可自定义；若之后又有剧情锚点，仍允许用户再选「对齐剧情」
+    // 对齐对话是主动拨钟：清掉「跟墙钟、脱离剧情」标记，避免随后又被当成系统时间
     preferSystemClockDespiteStoryFloor: false,
   })
+
+  // 允许相对旧剧情锚点回退，避免 load() / fusion 再钳到更晚的「现在」
+  await writeStoryTimelineNowMs(cid, chosen)
 
   const label = new Date(chosen).toLocaleString('zh-CN', { hour12: false })
   return { chosenTimeMs: chosen, label }

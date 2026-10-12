@@ -78,6 +78,20 @@ export function formatPlotGenerationTimeCompact(plot: PlotItem): string {
   return `${m}/${day} ${hh}:${mm}`
 }
 
+/** 卡片标签：模型生成耗时，如 `12.4s` / `1分23秒` */
+export function formatPlotGenerationDurationLabel(ms: number | null | undefined): string {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return ''
+  const n = Math.round(ms)
+  if (n < 1000) return `${Math.max(0.1, n / 1000).toFixed(1)}s`
+  if (n < 60_000) {
+    const s = n / 1000
+    return s >= 10 ? `${Math.round(s)}s` : `${s.toFixed(1)}s`
+  }
+  const mins = Math.floor(n / 60_000)
+  const secs = Math.round((n % 60_000) / 1000)
+  return `${mins}分${String(secs).padStart(2, '0')}秒`
+}
+
 /** prompt / 思维溯源前缀：优先故事内公历，无锚点则回退系统落库时刻 */
 export function formatPlotPromptTimeBracket(
   plot: PlotStoryTimeRef | PlotItem,

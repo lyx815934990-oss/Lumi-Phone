@@ -62,13 +62,14 @@ export function estimateSpeechDurationSec(text: string): number {
   return Math.max(1, Math.min(59, Math.round(t.length / 4)))
 }
 
+/** 通话时长：不足 1 小时 `MM:SS`；≥1 小时 `HH:MM:SS`（如 05:34:29） */
 export function fmtCallDuration(sec: number): string {
   const s = Math.max(0, Math.floor(sec))
   const h = Math.floor(s / 3600)
   const mm = Math.floor((s % 3600) / 60)
   const ss = s % 60
   const pad = (n: number) => String(n).padStart(2, '0')
-  if (h > 0) return `${h}:${pad(mm)}:${pad(ss)}`
+  if (h > 0) return `${pad(h)}:${pad(mm)}:${pad(ss)}`
   return `${pad(mm)}:${pad(ss)}`
 }
 

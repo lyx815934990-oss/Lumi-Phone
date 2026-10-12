@@ -4,6 +4,7 @@ export const MEMORY_SCENE_CHIP_CLASS: Record<MemorySceneTag, string> = {
   私聊: 'bg-[#07c160]/12 text-[#047857] ring-1 ring-[#07c160]/20',
   日记: 'bg-amber-500/15 text-amber-900 ring-1 ring-amber-500/30 font-semibold',
   群聊: 'bg-[#c2410c]/12 text-[#9a3412] ring-1 ring-[#c2410c]/20',
+  通讯录: 'bg-[#0ea5e9]/12 text-[#0369a1] ring-1 ring-[#0ea5e9]/25',
   线下: 'bg-[#6366f1]/12 text-[#4338ca] ring-1 ring-[#6366f1]/20',
   关联线下: 'bg-[#0d9488]/12 text-[#0f766e] ring-1 ring-[#0d9488]/20',
   遇见: 'bg-gray-900/10 text-gray-800 ring-1 ring-gray-900/10',
@@ -13,6 +14,7 @@ export const MEMORY_SCENE_CHIP_CLASS: Record<MemorySceneTag, string> = {
 
 export function memorySceneFilterLabel(tag: MemorySceneTag): string {
   if (tag === '遇见') return '遇见应用'
+  if (tag === '通讯录') return '微信通讯录'
   return tag
 }
 

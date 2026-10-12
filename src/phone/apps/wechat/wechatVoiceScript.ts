@@ -107,18 +107,41 @@ export function sanitizeVoiceControlForTextBubble(input: string): string {
     .trim()
 }
 
-export function normalizeVoiceScriptForTts(input: string): string {
+export type VoiceScriptNormalizeOptions = {
+  /**
+   * 是否保留 / 自动补全英文语气词。
+   * 未传时默认 true（兼容通话等旧调用）；聊天语音消息请显式传入会话开关（默认关）。
+   */
+  allowToneTokens?: boolean
+  /**
+   * 是否保留 / 自动包裹情绪标签。
+   * 未传时默认 true（兼容通话等旧调用）；聊天语音消息请显式传入会话开关（默认关）。
+   */
+  allowEmotion?: boolean
+}
+
+export function normalizeVoiceScriptForTts(
+  input: string,
+  opts?: VoiceScriptNormalizeOptions,
+): string {
+  const allowToneTokens = opts?.allowToneTokens !== false
+  const allowEmotion = opts?.allowEmotion !== false
   let s = String(input ?? '').replace(/\s+/g, ' ').trim()
-  if (!s) return '{neutral}(breath)<#0.4#>嗯。{/neutral}'
+  if (!s) {
+    if (allowEmotion) return '{neutral}(breath)<#0.4#>嗯。{/neutral}'
+    return allowToneTokens ? '(breath)<#0.4#>嗯。' : '<#0.4#>嗯。'
+  }
 
   s = s.replace(/\(([^)]*)\)/g, (_m, inner: string) => {
     const token = String(inner || '').trim().toLowerCase()
-    return VOICE_ALLOWED_TONE_TOKENS.has(token) ? `(${token})` : ' '
+    if (!VOICE_ALLOWED_TONE_TOKENS.has(token)) return ' '
+    return allowToneTokens ? `(${token})` : ' '
   })
 
   s = s.replace(/\{\/?([a-zA-Z]+)\}/g, (m, tag: string) => {
     const t = String(tag || '').toLowerCase()
-    return (VOICE_ALLOWED_EMOTIONS as readonly string[]).includes(t) ? m.toLowerCase() : ' '
+    if (!(VOICE_ALLOWED_EMOTIONS as readonly string[]).includes(t)) return ' '
+    return allowEmotion ? m.toLowerCase() : ' '
   })
 
   s = s.replace(
@@ -155,7 +178,7 @@ export function normalizeVoiceScriptForTts(input: string): string {
   }
 
   const hasEmotionTag = /\{(happy|sad|angry|fearful|disgusted|surprised|neutral|calm|fluent|whisper)\}/i.test(s)
-  if (!hasEmotionTag) {
+  if (allowEmotion && !hasEmotionTag) {
     const emo = guessEmotion()
     s = `{${emo}}${s}{/${emo}}`
   }
@@ -163,7 +186,11 @@ export function normalizeVoiceScriptForTts(input: string): string {
   return s.replace(/\s+/g, ' ').trim()
 }
 
-export function stripEmotionTagsForTts(input: string): string {
+export function stripEmotionTagsForTts(
+  input: string,
+  opts?: { allowToneTokens?: boolean },
+): string {
+  const allowToneTokens = opts?.allowToneTokens !== false
   let s = String(input ?? '')
     .replace(/\{\/?(happy|sad|angry|fearful|disgusted|surprised|neutral|calm|fluent|whisper)\}/gi, ' ')
     .replace(/\s+/g, ' ')
@@ -179,7 +206,8 @@ export function stripEmotionTagsForTts(input: string): string {
 
   s = s.replace(/\(([^)]*)\)/g, (_m, inner: string) => {
     const token = String(inner || '').trim().toLowerCase()
-    return VOICE_ALLOWED_TONE_TOKENS.has(token) ? `(${token})` : ' '
+    if (!VOICE_ALLOWED_TONE_TOKENS.has(token)) return ' '
+    return allowToneTokens ? `(${token})` : ' '
   })
 
   s = s.replace(/<(?!#\s*[\d.]+\s*#>)[^>]*>/g, ' ')
@@ -187,7 +215,11 @@ export function stripEmotionTagsForTts(input: string): string {
   return s.replace(/\s+/g, ' ').trim()
 }
 
-export function pickVoiceEmotionForTts(input: string): VoiceAllowedEmotion | undefined {
+export function pickVoiceEmotionForTts(
+  input: string,
+  opts?: { allowEmotion?: boolean },
+): VoiceAllowedEmotion | undefined {
+  if (opts?.allowEmotion === false) return undefined
   const s = String(input ?? '')
   const m = s.match(/\{(happy|sad|angry|fearful|disgusted|surprised|neutral|calm|fluent|whisper)\}/i)
   if (!m?.[1]) return undefined

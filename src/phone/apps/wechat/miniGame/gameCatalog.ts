@@ -16,6 +16,7 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
   { id: 'gravity', zh: '合成大西瓜', subtitle: '越合越大', available: false },
   { id: 'gomoku', zh: '五子棋', subtitle: '和角色对弈', available: true },
   { id: 'claw', zh: '抓娃娃机', subtitle: '和角色轮流抓', available: !CLAW_MACHINE_UNDER_DEV },
+  { id: 'monopoly', zh: '大富翁', subtitle: '买地收租对战', available: true },
   { id: 'serpent', zh: '贪吃蛇', subtitle: '吃豆变长', available: false },
   { id: 'tetromino', zh: '俄罗斯方块', subtitle: '消除整行', available: false },
   { id: 'bubble', zh: '泡泡龙', subtitle: '射泡泡消除', available: false },

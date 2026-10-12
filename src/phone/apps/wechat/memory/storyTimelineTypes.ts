@@ -2199,6 +2199,11 @@ export function resolveStoryTimelineRowEventSummary(row: StoryTimelinePlotRow): 
 export function resolveStoryTimelineRowVectorEmbedText(row: StoryTimelinePlotRow): string {
   const title = resolveStoryTimelineRowTitle(row)
   const keywords = resolveStoryTimelineRowKeywords(row)
+  // 侧幕行：勿把对主角色保密的细节编进向量，避免语义召回「闻到」秘密
+  if (row.sidePerspective === true) {
+    const redacted = formatStoryTimelineSidePerspectiveRedactedRow(row)
+    return [`【侧幕·非全知】${title}`, redacted].filter(Boolean).join('\n')
+  }
   const eventSummary = resolveStoryTimelineRowEventSummary(row)
   const parts: string[] = [title]
   if (keywords.length) parts.push(`关键词：${keywords.join('、')}`)
@@ -2271,7 +2276,7 @@ export function formatStoryTimelineRowForPromptInject(
 }
 
 export const STORY_TIMELINE_SIDE_PERSPECTIVE_KNOWLEDGE_RULES =
-  `【侧幕摘要·信息边界】标有「${STORY_TIMELINE_SIDE_PERSPECTIVE_REDACT_TAG}」的条目：{{char}} **未亲历**该段；不得写成全知旁观或复述用户与他人私下的具体对白/协议；仅可写寻踪、时段错位感或「你去哪了」类合理追问。`.trim()
+  `【侧幕摘要·信息边界】标有「${STORY_TIMELINE_SIDE_PERSPECTIVE_REDACT_TAG}」的条目：{{char}} **未亲历**该段；不得写成全知旁观或复述用户与他人私下的具体对白/协议/姓名；仅可写寻踪、时段错位感或「你去哪了」类合理追问。**在场名单 = 知情名单**：未列入者禁止知晓该段细节。`.trim()
 
 const STORY_TIMELINE_ROW_OBLIGATION_SECTION_HEADERS = new Set([
   '【服装变更】',

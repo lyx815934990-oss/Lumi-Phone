@@ -44,6 +44,216 @@ function stripJsonFence(raw: string): string {
   return m ? m[1].trim() : t
 }
 
+function stripModelNoise(raw: string): string {
+  return String(raw ?? '')
+    .replace(/^\uFEFF/, '')
+    .replace(/```(?:text|markdown|md)?\s*/gi, '')
+    .replace(/```/g, '')
+    .trim()
+}
+
+function splitListField(value: string): string[] {
+  return String(value ?? '')
+    .split(/[,，、;/|｜]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function parseKvBlock(body: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const line of String(body ?? '').split(/\r?\n/)) {
+    const m = /^\s*([^：:\n]{1,32})\s*[：:]\s*(.*)$/.exec(line)
+    if (!m) continue
+    const key = m[1]!.trim()
+    const val = (m[2] ?? '').trim()
+    if (!key || !val) continue
+    out[key] = val
+  }
+  return out
+}
+
+function pickKv(map: Record<string, string>, aliases: string[]): string {
+  for (const a of aliases) {
+    const hit = map[a]
+    if (hit?.trim()) return hit.trim()
+  }
+  // 宽松：去空格后匹配
+  const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase()
+  const aliasSet = new Set(aliases.map(norm))
+  for (const [k, v] of Object.entries(map)) {
+    if (aliasSet.has(norm(k)) && v.trim()) return v.trim()
+  }
+  return ''
+}
+
+/** 分段纯文本 → 与旧 JSON 同形；失败返回 null（再回退 JSON） */
+function parseNpcNetworkMarkup(raw: string): AiPayload | null {
+  const text = stripModelNoise(raw)
+  if (!text) return null
+
+  const sectionRe =
+    /(?:^|\n)\s*(?:===|【)\s*(NPC|关系|玩家连线|npcs?|relationships?|playerLinks?)\s*(?:===|】)\s*/gi
+  type Hit = { kind: 'npc' | 'rel' | 'player'; end: number; index: number }
+  const hits: Hit[] = []
+  let m: RegExpExecArray | null
+  while ((m = sectionRe.exec(text)) !== null) {
+    const token = m[1]!.toLowerCase()
+    let kind: Hit['kind'] | null = null
+    if (token === 'npc' || token === 'npcs') kind = 'npc'
+    else if (token === '关系' || token === 'relationship' || token === 'relationships') kind = 'rel'
+    else if (
+      token === '玩家连线' ||
+      token === 'playerlink' ||
+      token === 'playerlinks'
+    ) {
+      kind = 'player'
+    }
+    if (!kind) continue
+    hits.push({ kind, index: m.index, end: m.index + m[0].length })
+  }
+  if (!hits.length) return null
+
+  const npcs: AiNpcJson[] = []
+  const relationships: AiRelJson[] = []
+  const playerLinks: AiPlayerLinkJson[] = []
+
+  for (let i = 0; i < hits.length; i++) {
+    const h = hits[i]!
+    const body = text.slice(h.end, i + 1 < hits.length ? hits[i + 1]!.index : text.length).trim()
+    if (!body) continue
+
+    if (h.kind === 'npc') {
+      // 顶层键值 + 【条目】块
+      const blockRe = /【\s*([^】]+?)\s*】/g
+      const headers: { title: string; index: number; end: number }[] = []
+      let bm: RegExpExecArray | null
+      while ((bm = blockRe.exec(body)) !== null) {
+        headers.push({ title: bm[1]!.trim(), index: bm.index, end: bm.index + bm[0].length })
+      }
+      const headText = headers.length ? body.slice(0, headers[0]!.index) : body
+      const kv = parseKvBlock(headText)
+      const name = pickKv(kv, ['姓名', 'name', '名字'])
+      if (!name) continue
+      const ageRaw = pickKv(kv, ['年龄', 'age'])
+      const age = Number.parseInt(ageRaw.replace(/\D/g, ''), 10)
+      const interests = splitListField(pickKv(kv, ['兴趣', '兴趣爱好', 'interests']))
+      const painPoints = splitListField(pickKv(kv, ['雷点', 'painPoints', '痛点']))
+      let bio = pickKv(kv, ['简介', 'bio'])
+      if (!bio) {
+        const bioM = /(?:^|\n)\s*(?:简介|bio)\s*[：:]\s*([\s\S]*)$/i.exec(headText)
+        if (bioM) bio = bioM[1]!.trim()
+      }
+      const basicSettingEntries: { name: string; content: string }[] = []
+      const firstImpressionEntries: { name: string; content: string }[] = []
+      for (let j = 0; j < headers.length; j++) {
+        const title = headers[j]!.title
+        const content = body
+          .slice(headers[j]!.end, j + 1 < headers.length ? headers[j + 1]!.index : body.length)
+          .trim()
+        if (!content) continue
+        const t = title.replace(/\s+/g, '')
+        if (
+          /^当前对你的态度|^对你的态度|^firstImpression/i.test(t) ||
+          (/对你|态度/.test(t) && /当前|印象|态度/.test(t))
+        ) {
+          const entryName = title.includes('·') ? title.split('·').slice(1).join('·').trim() || '对你' : title
+          firstImpressionEntries.push({ name: entryName || '对你', content })
+          continue
+        }
+        if (/^基础设定|^背景|^相识|^固定人设|^basic/i.test(t) || t.includes('相识') || t.includes('人设')) {
+          const entryName = title.includes('·')
+            ? title.split('·').slice(1).join('·').trim() || title
+            : title.replace(/^基础设定[·・\-]*/, '').trim() || title
+          basicSettingEntries.push({ name: entryName || '设定', content })
+          continue
+        }
+        // 其它【块】默认进基础设定
+        basicSettingEntries.push({ name: title, content })
+      }
+      npcs.push({
+        name,
+        gender: pickKv(kv, ['性别', 'gender']) || 'other',
+        age: Number.isFinite(age) ? age : 0,
+        height: pickKv(kv, ['身高', 'height']),
+        weight: pickKv(kv, ['体重', 'weight']),
+        motto: pickKv(kv, ['座右铭', 'motto']),
+        birthdayMD: pickKv(kv, ['生日', 'birthdayMD', '生日MD']),
+        avatarCategory: (normalizeAvatarCategory(pickKv(kv, ['头像分类', 'avatarCategory'])) ||
+          '抽象搞笑男女通用') as AiNpcJson['avatarCategory'],
+        occupation: pickKv(kv, ['职业', '身份', 'occupation', 'identity']),
+        interests: interests.length ? interests.slice(0, 5) : ['阅读'],
+        painPoints: painPoints.length ? painPoints.slice(0, 5) : ['敷衍'],
+        mbti: pickKv(kv, ['MBTI', 'mbti']).toUpperCase(),
+        bio: bio || `${name}的简介待补充`,
+        basicSettingEntries,
+        firstImpressionEntries,
+      })
+      continue
+    }
+
+    if (h.kind === 'rel') {
+      const kv = parseKvBlock(body)
+      const fromName = pickKv(kv, ['from', 'fromName', '起点', '从', 'A'])
+      const toName = pickKv(kv, ['to', 'toName', '终点', '到', 'B'])
+      // 支持「方向：A→B」
+      if ((!fromName || !toName) && pickKv(kv, ['方向', 'direction'])) {
+        const dir = pickKv(kv, ['方向', 'direction'])
+        const parts = dir.split(/\s*(?:→|->|=>|＞|>|→)\s*/)
+        if (parts.length >= 2) {
+          relationships.push({
+            fromName: (fromName || parts[0]!).trim(),
+            toName: (toName || parts[1]!).trim(),
+            relation: pickKv(kv, ['关系词', 'relation', '关系']),
+            fromPerspective: pickKv(kv, ['视角正', 'fromPerspective', '正视角', 'A看B']),
+            toPerspective: pickKv(kv, ['视角反', 'toPerspective', '反视角', 'B看A']),
+            fromCallsTo: pickKv(kv, ['称呼', 'fromCallsTo', '怎么叫']),
+          })
+          continue
+        }
+      }
+      if (!fromName || !toName) continue
+      relationships.push({
+        fromName,
+        toName,
+        relation: pickKv(kv, ['关系词', 'relation', '关系']),
+        fromPerspective: pickKv(kv, ['视角正', 'fromPerspective', '正视角', 'from看to']),
+        toPerspective: pickKv(kv, ['视角反', 'toPerspective', '反视角', 'to看from']),
+        fromCallsTo: pickKv(kv, ['称呼', 'fromCallsTo', '怎么叫']),
+      })
+      continue
+    }
+
+    if (h.kind === 'player') {
+      const kv = parseKvBlock(body)
+      const characterName = pickKv(kv, ['角色', 'characterName', '姓名', 'name'])
+      if (!characterName) continue
+      playerLinks.push({
+        characterName,
+        relationThemToYou: pickKv(kv, ['对方看你关系词', 'relationThemToYou', '关系词']),
+        theySeeYou: pickKv(kv, ['对方看你', 'theySeeYou', '看法']),
+        theyCallYou: pickKv(kv, ['对方称呼你', 'theyCallYou', '称呼']),
+      })
+    }
+  }
+
+  if (!npcs.length) return null
+  return { npcs, relationships, playerLinks }
+}
+
+function parseNpcNetworkPayload(raw: string): AiPayload {
+  const markup = parseNpcNetworkMarkup(raw)
+  if (markup?.npcs?.length) return markup
+
+  // 兼容旧模型偶发 JSON
+  try {
+    const payload = JSON.parse(stripJsonFence(raw)) as AiPayload
+    if (payload?.npcs && Array.isArray(payload.npcs)) return payload
+  } catch {
+    /* fallthrough */
+  }
+  throw new Error('AI 返回无法解析（请重试；已改用分段纯文本，勿再输出 JSON）')
+}
+
 export type NpcGenerateInput = {
   main: Character
   playerIdentity?: PlayerIdentity | null
@@ -455,85 +665,80 @@ export async function generateNpcNetworkWithAi(
   /** 人脉 NPC 世界书中指「绑定根人设主角」须用的占位符（注入会话时替换为姓名） */
   const mainRootPh = `{{id:${main.id}}}`
 
-  const system = `你是中文小说向角色关系设计师。必须输出且仅输出一个合法 JSON 对象，不要 markdown，不要解释。
-JSON 顶层结构：{"npcs":[...],"relationships":[...],"playerLinks":[...]}。
-npcs 长度必须等于用户要求的数量。
+  const system = `你是中文小说向角色关系设计师。必须输出且仅输出**分段纯文本**（禁止 JSON、禁止 markdown 代码围栏、禁止解释前言）。
+
+输出骨架（严格按块，可重复）：
+===NPC===
+姓名：户籍式全名
+性别：男/女/其他
+年龄：数字
+身高：如 170cm
+体重：如 55kg
+座右铭：<=15字
+生日：MM-DD
+职业：……
+头像分类：必须从下列枚举选一——40岁以上长辈头像男 / 40岁以上长辈头像女 / 微信头像男E型阳光 / 微信头像男I型清冷 / 微信头像女清冷和御姐 / 抽象搞笑男女通用 / 微信头像女可爱活泼
+兴趣：恰好3个，用顿号分隔
+雷点：恰好2个，用顿号分隔
+MBTI：四字母大写
+简介：约100字第三人称；凡提绑定档案主角须用「${mainRootPh}」，禁止写汉字姓名「${main.name}」
+【基础设定·固定人设】
+……（第三人称；NPC本人用{{char}}；玩家身份用{{user}}；档案主角用${mainRootPh}）
+【基础设定·背景故事】
+……
+【基础设定·与主角相识】
+……（主角侧全程 ${mainRootPh}）
+【基础设定·与用户相识】
+……（玩家侧全程 {{user}}）
+【当前对你的态度·对你】
+……（只写该 NPC 对 {{user}} 的当前态度）
+
+===关系===
+from：真实姓名
+to：真实姓名
+关系词：箭头中间词（语义：to 是 from 的「关系词」）
+称呼：from当面怎么叫to（短词）
+视角正：【from看to】完整一句，必须出现双方姓名字面，禁用你/我/他/她
+视角反：【to看from】完整一句，必须出现双方姓名字面
+
+===玩家连线===
+角色：主角名或某NPC姓名
+对方看你关系词：……
+对方看你：完整一句
+对方称呼你：短称呼
+
+数量硬约束：
+- ===NPC=== 块数必须等于用户要求的数量。
+- 任意发生联系的 A/B：必须分别给 A→B 与 B→A 两条 ===关系===（关系词可不对称）。
+- ===玩家连线=== 必须覆盖「主角 ${main.name}」+ 每一个 NPC（条数 = 1 + NPC 数）；只写对方如何看你/称呼你，禁止写你如何看对方。
 
 ${NPC_NETWORK_AI_AGE_AND_BIRTHDAY_RULES}
 
-每个 npc 对象字段（缺一不可）：
-- name, gender（male/female/other 或 男/女）, age（数字）, height（身高字符串）, weight（体重字符串）, motto（座右铭，<=15字）, birthdayMD（"MM-DD"）, occupation（职业）,
-- avatarCategory（必须从以下枚举中选择且只能选一个：["40岁以上长辈头像男","40岁以上长辈头像女","微信头像男E型阳光","微信头像男I型清冷","微信头像女清冷和御姐","抽象搞笑男女通用","微信头像女可爱活泼"]；按该 NPC 性别/年龄/气质选：男清冷内向→男I型清冷，男阳光外向→男E型阳光，女御姐清冷→女清冷和御姐，女元气可爱→女可爱活泼，40+长辈→对应长辈池，沙雕梗头像→抽象搞笑）,
-- interests（字符串数组，恰好3个）, painPoints（字符串数组，恰好2个）,
-- mbti（四字母大写）,
-- bio（约100字中文第三人称简介）：凡提及绑定档案主角（根人设），须用「${mainRootPh}」，**禁止**出现汉字姓名「${main.name}」。
-- basicSettingEntries：数组，每项 {name, content}。必须覆盖并写清：固定人设、背景故事、该 NPC（本人须用「{{char}}」，勿写该 NPC 在 JSON 里的真实姓名）、与绑定档案主角相识的过程（主角侧**必须**全程使用占位符「${mainRootPh}」，**严禁**写汉字姓名「${main.name}」）、该 NPC 与玩家身份（须用「{{user}}」；勿用「玩家」）的相识过程（四个主题可分多条条目，不得遗漏后两项）。
-- firstImpressionEntries：数组，每项 {name, content}。对应世界书「当前对你的态度」（尾声延展 / priority=after）。必须至少一条，且只能描述该 NPC 对「{{user}}」的当前态度；禁止写成对档案主角的态度（主角侧若须提及仍只用「${mainRootPh}」，勿写「${main.name}」）。指 NPC 本人用「{{char}}」。
-- 写法要求（强约束）：第三人称旁白式叙述（与基础设定条目一致）；指 NPC 本人一律用「{{char}}」，指绑定的玩家身份一律用「{{user}}」；凡提及绑定档案主角一律用「${mainRootPh}」，**禁止**写汉字姓名「${main.name}」。全文禁止「玩家」二字。禁止 NPC 第一人称台词、内心独白、书信体。
+头像分类按性别/年龄/气质选：男清冷内向→男I型清冷；男阳光外向→男E型阳光；女御姐清冷→女清冷和御姐；女元气可爱→女可爱活泼；40+长辈→对应长辈池；沙雕梗→抽象搞笑。
 
 NPC 人设异质性（最高优先级，与姓名铁律并列）：
-- **严禁**生成与档案主角「换个名字就算新人」的 NPC：禁止照搬或轻度改写主角的职业、简介、MBTI、兴趣爱好（三项）、身高体重组合给任一 NPC；每个 NPC 须在「职业定位 / 年龄阶段矛盾 / 叙事功能」上至少一项与主角**显著不同**。
-- 禁止把主角的世界书或简介改几个词当作 NPC 的 bio；禁止输出与主角人设高度重合的「平行主角」式 NPC。
-- 自检：若某 NPC 与主角档案重叠度过高，须重写该 NPC 直至合格再输出 JSON。
+- **严禁**生成与档案主角「换个名字就算新人」的 NPC：禁止照搬或轻度改写主角的职业、简介、MBTI、兴趣爱好、身高体重组合；每个 NPC 须在「职业定位 / 年龄阶段矛盾 / 叙事功能」上至少一项与主角**显著不同**。
+- 禁止把主角的世界书或简介改几个词当作 NPC 简介；禁止「平行主角」式 NPC。
 
-姓名铁律（最高优先级，必须严格遵守）：
-- 所有 NPC 的 name 必须是**可独立建档的户籍式全名**（姓+名），默认 **2～4 个中文汉字**（外文名须完整姓+名，勿只给名或只给姓）；须按人设与场景现编，**禁止**复用提示词里的示范名或固定套路名。
-- **禁止小名/昵称/外号当 name**：如「阿木」「阿强」「小美」「二狗」；「阿×」「小×」一律不合格。
-- **禁止亲昵/辈分称呼当 name**：如「徐姐」「王哥」「李叔」「张姨」「陈总」；「姓+姐/哥/叔/婶/姨/总」一律不合格。
-- 严禁把称呼/头衔/关系词当姓名（老师、女士、经理、同学、阿姨、叔叔、学长、班主任、保安、店长、医生、前台，以及「姓+头衔」而无完整名）。
-- 严禁使用泛化占位名（某某、路人甲、神秘人、同事A、老师B、甲乙丙）。
-- **禁止**在输出中照抄常见偷懒名或本提示曾用过的示例姓名；每次生成应彼此区分、贴合年龄与地域感。
-- 若需要表达当面怎么叫，只写在 fromCallsTo / theyCallYou / relation 文案里；**name 字段本身必须是全名**，禁止把称呼习惯写进 name。
-- 自检：若某 name 读起来像外号、小名或「姓+称呼」而非户籍全名，必须先改成全名再输出最终 JSON。
-- 若输出中出现任何不合规姓名，必须先自我修正再输出最终 JSON。
+姓名铁律（最高优先级）：
+- name 必须是户籍式全名（姓+名），默认 2～4 个汉字；禁止小名/外号/「姓+姐哥叔姨总」当姓名；禁止老师/经理等头衔当姓名。
+- 当面怎么叫只写在「称呼 / 对方称呼你」里，禁止写进姓名。
 
 ${NPC_AI_HEIGHT_WEIGHT_MOTTO_RULES_CORE}
 ${npcNetworkAiMottoStyleTail(mainRootPh)}
 
-你与主角区分（强约束，禁止混写）：
-- 绑定档案主角在世界书/bio/motto 的正文中一律用「${mainRootPh}」，不得写汉字姓名「${main.name}」。操作者/玩家在正文里一律写作「{{user}}」，不得写「玩家」。
-- firstImpressionEntries 里禁止写成 NPC 对档案主角的态度，必须写对「{{user}}」的态度。
-- basicSettingEntries 中「与档案主角相识」与「与 {{user}} 相识」须分开写、不可互相替代。
+你与主角区分：
+- 正文提档案主角一律「${mainRootPh}」，不得写「${main.name}」；操作者一律「{{user}}」，禁止「玩家」二字。
+- 【当前对你的态度】只写对 {{user}}，禁止写成对档案主角。
+- 「与主角相识」与「与用户相识」须分开、不可互相替代。
 
-每个 relationships 对象：
-- fromName, toName（必须是主角「${main.name}」或某个 npc 的 name，精确匹配）,
-- relation：箭头 from→to 中间显示的词；语义表示「to 是 from 的 relation」（例：from=季靳川,to=安屿,relation=妹妹 表示安屿是季靳川的妹妹）,
-- fromPerspective：【fromName看toName】的完整一句第三人称描述（**必须出现 fromName 与 toName 的字面名字**，禁止用「你/我/他/她/TA/对方」代指双方）,
-- toPerspective：【toName看fromName】的完整一句第三人称描述（**必须出现 toName 与 fromName 的字面名字**，禁止用「你/我/他/她/TA/对方」代指双方）。
-- fromCallsTo：（必填，字符串）fromName **当面常用如何称呼** toName，短词或短语（如「哥」「李老师」「主任」）；非完整句子；若无特定称呼可写「」或直呼其名中的一二字昵称习惯。
-- fromName/toName 仅允许使用「主角名或 NPC 的真实姓名」，禁止写称呼（如“王老师/王女士/李经理”）替代姓名。
-
-重要：关系允许不对称，且必须体现不对称。
-- 对于任意一对发生联系的角色 A 与 B，必须分别给出 A→B 与 B→A 两条 relationships 记录（两条记录的 fromName/toName 方向相反）。
-- 这两条记录的 relation 可以不同（例如 A→B 为「暗恋」、B→A 为「讨厌」），用来支持“不同视角中心时，连线中间显示不同关系词”。示例（仅示例，不要照抄名字）：
-  - fromName=1,toName=2,relation=暗恋,fromPerspective=...,toPerspective=...
-  - fromName=2,toName=1,relation=讨厌,fromPerspective=...,toPerspective=...
-
-playerLinks 数组（必填）：只描述「图中每一名角色（主角与 NPC）如何看待操作者『你』」，禁止写「你如何看待对方」。
-- 必须为「主角 ${main.name}」以及每一个 npc 各写一条 playerLinks 项（条数 = 1 + npcs 长度）。
-- characterName：必须是主角「${main.name}」或某个 npc 的 name，精确匹配。
-- 每项仅含字段：characterName、relationThemToYou、theySeeYou、theyCallYou。**严禁**输出 relationYouToThem、youSeeThem、youCallThem 或其它字段（用户对对方的称呼只能由用户本人在客户端填写）。
-- relationThemToYou：在「该角色→你」的连线上显示的关系词；语义与 relationships.relation 一致。
-- theySeeYou：【该角色看你】的完整一句旁白描述。
-- theyCallYou：该角色**平时如何称呼操作者你**（短：如「老同学」「兄弟」「闺女」），与 relationThemToYou 不同侧：侧重「叫什么」。
-- 禁止生成「你看该角色」、禁止揣测操作者对角色的态度或称呼；全文禁止「玩家」，指操作者只用「你」；不要出现真实用户姓名。
-- characterName 必须是主角名或 NPC 的真实姓名，禁止使用称呼/头衔代替姓名。
-
-操作者身份一致性（硬性强约束，必须执行）：
-- 你将收到完整的「操作者身份参考」字段：姓名、性别、年龄、生日、星座、MBTI、职业/身份、兴趣爱好、雷点、所有世界书条目。
-- 生成时必须同时参考上述全部字段，不得忽略其中任意一类信息；严禁把“可选”“优先参考”当作执行策略。
-- NPC 对「你」的看法必须与身份参考整体一致，不得无铺垫地反向设定（例如身份明显开朗却直接写成“你一直很高冷”）。
-- 若需要出现反差评价，必须给出可自洽原因（如误会、道听途说、短期冲突、刻板印象未更新），并在 theySeeYou 或相关设定里明确写出成因。
+操作者身份一致性：必须完整参考用户消息里的操作者身份全部字段；NPC 对你的看法不得无铺垫反向设定。
 
 【周边NPC / 原著同作关系 · 硬约束】
-- 主角世界书若含「周边NPC」等条目：生成每位 NPC 时必须先检索该条是否写了该配角**对 {{user}} / 操作者对应人物**的关系与看法。
-- 若写明护短、亲近、敌视、同学/家人等（例如「护着宫野」「从小照顾」）：playerLinks.theySeeYou / relationThemToYou、firstImpressionEntries、basicSettingEntries「与 {{user}} 相识」**必须**落实同一态度，**禁止**改成互不相识、路人、或「只认识档案主角、当 {{user}} 不存在」。
-- 操作者身份姓名若与世界书中某原著人物对应（简称亦可）：视同 {{user}} 即该人物，配角对其的原著关系优先于「陌生人开局」模板。
-- 若「周边NPC」写明配角彼此关系（室友、好感、死党、前后辈等，如平野↔键浦）：生成对应 NPC 档案时须把该关系写入双方相关条目，禁止只各自挂主角线而彼此变路人。
+- 主角世界书若含「周边NPC」等：须落实该配角对 {{user}} / 配角彼此关系，禁止改成互不相识或只挂主角线。
 
-还需包含 NPC 之间合理间接关系（朋友的朋友等），保证全员与主角人设、世界书逻辑自洽。
-
-世界书条目行末若带有「本条代词」括注，必须按括注解读正文里的「我/你/他」，再推断职务、情感线与「档案主角 vs 操作者」；禁止忽略括注把「我」一律当成「${mainRootPh}」所指的档案主角。`
+还需包含 NPC 之间合理间接关系，保证全员与主角人设、世界书逻辑自洽。
+世界书条目行末若带「本条代词」括注，必须按括注解读「我/你/他」。`
 
   const user = `【主角人设】
 （NPC 世界书/bio 中指该主角须写占位符「${mainRootPh}」，勿写姓名汉字）
@@ -553,6 +758,7 @@ ${wbDump || '（主角暂无世界书正文，请仍基于姓名身份与世界�
 数量：${input.count}
 关系偏向（多选参考）：${input.relationBiases.join('、') || '无'}
 补充说明：${input.customNote.trim() || '无'}
+输出格式：分段纯文本（===NPC=== / ===关系=== / ===玩家连线===），禁止 JSON。
 
 【操作者身份参考（必须完整参考以下全部字段）】
 ${input.playerIdentity?.name ? `姓名：${input.playerIdentity.name}` : '姓名：你'}
@@ -592,14 +798,11 @@ ${input.playerIdentity?.worldBooks?.length ? `所有世界书条目：${(() => {
     { role: 'user', content: user },
   ])
 
-  let payload: AiPayload
-  try {
-    payload = JSON.parse(stripJsonFence(raw)) as AiPayload
-  } catch {
-    throw new Error('AI 返回 JSON 无法解析')
+  const payload = parseNpcNetworkPayload(raw)
+  if (!payload?.npcs || !Array.isArray(payload.npcs)) throw new Error('AI 返回缺少 NPC 分段')
+  if (!payload?.relationships || !Array.isArray(payload.relationships)) {
+    throw new Error('AI 返回缺少关系分段')
   }
-  if (!payload?.npcs || !Array.isArray(payload.npcs)) throw new Error('AI 返回缺少 npcs')
-  if (!payload?.relationships || !Array.isArray(payload.relationships)) throw new Error('AI 返回缺少 relationships')
   const rawPlayerLinks = Array.isArray(payload.playerLinks) ? payload.playerLinks : []
 
   const nameToCharacter = new Map<string, Character>()

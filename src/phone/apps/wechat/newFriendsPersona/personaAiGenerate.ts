@@ -332,11 +332,38 @@ export async function generatePersonaWithAi(params: {
   })
 
   const raw = await callPersonaAiText(cfg, system, user, params.signal)
-  const result = buildPersonaAiFromModelText(raw, {
+  let result = buildPersonaAiFromModelText(raw, {
     form: params.form,
     draft: params.draft,
     playerDisplayName: params.playerDisplayName,
   })
+
+  // 首轮写不完时自动补缺条 / 重写未闭合的条目，最多两轮，不再让用户手动点补全
+  for (let pass = 0; pass < 2; pass += 1) {
+    const missing = pickPersonaAiRepairIssues(result.issues, 'complete')
+    const cut = result.issues.filter(
+      (issue) => issue.kind === 'placeholder_field' && /截断/.test(issue.detail ?? ''),
+    )
+    if (!missing.length && !cut.length) break
+    try {
+      result = await repairPersonaAiWithAi({
+        apiConfig: cfg,
+        form: params.form,
+        draft: params.draft,
+        base: result,
+        mode: missing.length ? 'complete' : 'fix',
+        issueFilter: missing.length ? undefined : (issue) => cut.some((item) => item.id === issue.id),
+        playerDisplayName: params.playerDisplayName,
+        playerIdentity: params.playerIdentity,
+        worldBackgroundPrompt: params.worldBackgroundPrompt,
+        signal: params.signal,
+        refreshLifeLedger: false,
+      })
+    } catch (e) {
+      if (isPersonaAiAbortError(e)) throw e
+      break
+    }
+  }
 
   return attachLifeLedgers(result, {
     apiConfig: cfg,
@@ -357,6 +384,8 @@ export async function repairPersonaAiWithAi(params: {
   playerIdentity?: PlayerIdentity | null
   worldBackgroundPrompt?: string
   signal?: AbortSignal
+  /** 自动补全时先不写人生账本，由外层统一生成 */
+  refreshLifeLedger?: boolean
 }): Promise<PersonaAiGenerateResult> {
   const cfg = params.apiConfig
   if (!cfg?.apiUrl?.trim() || !cfg?.apiKey?.trim() || !cfg?.modelId?.trim()) {
@@ -426,7 +455,7 @@ export async function repairPersonaAiWithAi(params: {
     characterLifeSheet: params.base.characterLifeSheet,
     playerLifeSheet: params.base.playerLifeSheet,
   }
-  if (mergedIssues.length > 0) return result
+  if (mergedIssues.length > 0 || params.refreshLifeLedger === false) return result
   return attachLifeLedgers(result, {
     apiConfig: cfg,
     form: params.form,

@@ -162,6 +162,34 @@ export function IconEvolution(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+/** 情侣空间：圆角小窝 + 中心心形（空间感，非单心） */
+export function IconCoupleSpace(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M6.25 9.1 12 4.6l5.75 4.5v8.15a1.75 1.75 0 0 1-1.75 1.75H8a1.75 1.75 0 0 1-1.75-1.75V9.1z" />
+      <path
+        d="M12 15.15c-.22 0-3.05-1.9-3.05-3.75A1.68 1.68 0 0 1 12 9.9a1.68 1.68 0 0 1 3.05 1.5c0 1.85-2.83 3.75-3.05 3.75z"
+        opacity="0.92"
+      />
+    </svg>
+  )
+}
+
+/** 思维链：链路节点 + 连线（图鉴式推演意象） */
+export function IconThinkingChain(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="6.2" cy="7.2" r="2.1" />
+      <circle cx="12" cy="12" r="2.1" />
+      <circle cx="17.8" cy="16.8" r="2.1" />
+      <path d="M8.1 8.5 10.1 10.4" />
+      <path d="M13.9 13.6 15.9 15.5" />
+      <path d="M7.5 16.8h4.2" opacity="0.55" />
+      <path d="M16.2 7.2h.01" opacity="0.55" />
+    </svg>
+  )
+}
+
 const map = {
   wechat: IconWeChat,
   takeout: IconTakeout,
@@ -176,6 +204,8 @@ const map = {
   sandbox: IconSandbox,
   appearance: IconAppearance,
   evolution: IconEvolution,
+  coupleSpace: IconCoupleSpace,
+  thinkingChain: IconThinkingChain,
 } as const
 
 export function AppLineIcon({

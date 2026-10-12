@@ -44,6 +44,8 @@ export const PHONE_KV_CACHE_SKIP_PREFIX = [
   'listen-together-playlist-comments-',
   'listen-together-netease-profile-',
   'listen-together-player-session-',
+  'listen-together-song-playback-',
+  'listen-together-recent-songs-',
   'wechat-local-embedding-model-cache-',
   'wechat-dating-vn-line-voice-cache-v1:',
   'wechat-dating-vn-line-tts-req-v1:',

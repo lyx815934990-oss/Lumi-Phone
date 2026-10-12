@@ -85,6 +85,10 @@ import {
 } from './ChatEmojiProbabilitySettingsScreen'
 import { CreateGroupPickContactsSheet, type CreateGroupContactPick } from '../group/CreateGroupPickContactsSheet'
 import { ChatBackgroundPresetGrid } from './ChatBackgroundPresetGrid'
+import {
+  CHAT_BACKGROUND_BLUR_MAX,
+  clampChatBackgroundBlur,
+} from '../wechatDefaultChatBackgrounds'
 import { resolvePublicImageUrl } from '../../../../publicAssetUrl'
 import {
   compressAvatarDataUrl,
@@ -129,6 +133,71 @@ function SettingsSection({ title, children }: { title: string; children: React.R
       <p className="mx-6 mt-5 text-[13px] text-[#8e8e8e]">{title}</p>
       <SettingsListCard>{children}</SettingsListCard>
     </section>
+  )
+}
+
+type ChatSettingsTabId = 'look' | 'msg' | 'reply' | 'rhythm' | 'media'
+
+const CHAT_SETTINGS_TABS: { id: ChatSettingsTabId; label: string }[] = [
+  { id: 'look', label: '外观' },
+  { id: 'msg', label: '消息' },
+  { id: 'reply', label: '回复' },
+  { id: 'rhythm', label: '节奏' },
+  { id: 'media', label: '媒体' },
+]
+
+function ChatSettingsTabBar({
+  active,
+  onChange,
+}: {
+  active: ChatSettingsTabId
+  onChange: (tab: ChatSettingsTabId) => void
+}) {
+  const scrollerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const root = scrollerRef.current
+    if (!root) return
+    const btn = root.querySelector<HTMLElement>(`[data-settings-tab="${active}"]`)
+    btn?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
+  }, [active])
+
+  return (
+    <div
+      className="mx-4 mt-3 shrink-0 rounded-[12px] bg-white p-1"
+      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
+    >
+      <div
+        ref={scrollerRef}
+        className="flex gap-0.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        role="tablist"
+        aria-label="设置分区"
+      >
+        {CHAT_SETTINGS_TABS.map((tab) => {
+          const on = active === tab.id
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              data-settings-tab={tab.id}
+              aria-selected={on}
+              onClick={() => onChange(tab.id)}
+              className="relative min-w-[3.75rem] flex-1 shrink-0 rounded-[10px] px-2.5 py-2.5 text-center text-[13px] font-medium transition-colors"
+              style={{
+                color: on ? '#111111' : '#8e8e8e',
+                background: on ? '#f2f2f7' : 'transparent',
+              }}
+            >
+              {tab.label}
+              {on ? (
+                <span className="absolute bottom-1 left-1/2 h-0.5 w-7 -translate-x-1/2 rounded-full bg-black" aria-hidden />
+              ) : null}
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -261,6 +330,8 @@ export type ChatSettingsScreenProps = {
   onInviteCreateGroup?: (extraCharacterIds: string[]) => void | Promise<void>
   /** 顶栏在线状态圆点显示开关变更（可选，便于聊天页即时刷新） */
   onShowPresenceDotChange?: (on: boolean) => void
+  /** 打开时默认选中的设置 Tab（如从 Token 面板跳转到「回复」） */
+  initialTab?: ChatSettingsTabId
 }
 
 export function ChatSettingsScreen({
@@ -280,6 +351,7 @@ export function ChatSettingsScreen({
   personaContactsForGroup = [],
   onInviteCreateGroup,
   onShowPresenceDotChange,
+  initialTab = 'look',
 }: ChatSettingsScreenProps) {
   const { state } = useCustomization()
   const disableTransitions = state.ui.disablePageTransitions
@@ -294,6 +366,7 @@ export function ChatSettingsScreen({
   const [stub, setStub] = useState<StubKind | null>(null)
   const [chatBgDraft, setChatBgDraft] = useState('')
   const [chatBgCropSrc, setChatBgCropSrc] = useState<string | null>(null)
+  const [chatBgBlurDraft, setChatBgBlurDraft] = useState(0)
   const [chatAvatarCropSrc, setChatAvatarCropSrc] = useState<string | null>(null)
   const [clearOpen, setClearOpen] = useState(false)
   const [inviteGroupOpen, setInviteGroupOpen] = useState(false)
@@ -305,8 +378,18 @@ export function ChatSettingsScreen({
   const [showPresenceDot, setShowPresenceDot] = useState(false)
   const [peerPresenceAutoUpdate, setPeerPresenceAutoUpdate] = useState(false)
   const [lifeLedgerInlineSync, setLifeLedgerInlineSync] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<ChatSettingsTabId>(initialTab)
+  const settingsScrollRef = useRef<HTMLDivElement | null>(null)
   const chatBgFileRef = useRef<HTMLInputElement | null>(null)
   const chatAvatarFileRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    setSettingsTab(initialTab)
+  }, [conversationKey, initialTab])
+
+  useEffect(() => {
+    settingsScrollRef.current?.scrollTo({ top: 0 })
+  }, [settingsTab])
 
   const peerForInvite = inviteGroupFromPeerCharacterId?.trim() || ''
   const canInviteToGroup = !!peerForInvite && !!onInviteCreateGroup && personaContactsForGroup.length > 0
@@ -472,6 +555,7 @@ export function ChatSettingsScreen({
           | 'internetMemeLexiconEnabled'
           | 'mimicUserSpeakingStyleEnabled'
           | 'chatBackground'
+          | 'chatBackgroundBlur'
           | 'playerChatAvatarUrl'
           | 'stickerRoundTriggerPercent'
           | 'stickerTargetedModeEnabled'
@@ -481,6 +565,8 @@ export function ChatSettingsScreen({
           | 'classicEmojiRoundTriggerPercent'
           | 'classicEmojiBannedNames'
           | 'voiceRoundTriggerPercent'
+          | 'voiceSynthToneTokensEnabled'
+          | 'voiceSynthEmotionEnabled'
           | 'replyOutputLanguage'
           | 'replyVoiceLanguage'
           | 'translationSyncEnabled'
@@ -691,7 +777,8 @@ export function ChatSettingsScreen({
   useEffect(() => {
     if (stub !== 'chat-bg') return
     setChatBgDraft((effective.chatBackground ?? '').trim())
-  }, [stub, effective.chatBackground])
+    setChatBgBlurDraft(clampChatBackgroundBlur(effective.chatBackgroundBlur))
+  }, [stub, effective.chatBackground, effective.chatBackgroundBlur])
 
   const onPickChatBgFile = useCallback((file: File | null) => {
     if (!file) return
@@ -818,9 +905,20 @@ export function ChatSettingsScreen({
   if (stub === 'chat-bg') {
     const draftTrimmed = chatBgDraft.trim()
     const currentTrimmed = (effective.chatBackground ?? '').trim()
-    const canApply = draftTrimmed.length > 0 && draftTrimmed !== currentTrimmed
-    const canReset = currentTrimmed.length > 0
+    const canReset = currentTrimmed.length > 0 || chatBgBlurDraft > 0
     const previewBgUrl = draftTrimmed ? resolvePublicImageUrl(draftTrimmed) : ''
+    const blurPx = chatBgBlurDraft
+    const commitBlur = () => {
+      const next = clampChatBackgroundBlur(chatBgBlurDraft)
+      if (next === clampChatBackgroundBlur(effective.chatBackgroundBlur)) return
+      void patch({ chatBackgroundBlur: next })
+    }
+    const applyBackground = (nextBg: string) => {
+      const trimmed = nextBg.trim()
+      setChatBgDraft(trimmed)
+      if (trimmed === currentTrimmed) return
+      void patch({ chatBackground: trimmed })
+    }
     return (
       <div className="flex h-full min-h-0 flex-col bg-[#ededed]">
         <header
@@ -846,22 +944,56 @@ export function ChatSettingsScreen({
             <input
               value={draftTrimmed.startsWith('data:') ? '' : chatBgDraft}
               onChange={(e) => setChatBgDraft(e.target.value)}
+              onBlur={() => {
+                const t = chatBgDraft.trim()
+                if (!t || t.startsWith('data:')) return
+                if (t === currentTrimmed) return
+                void patch({ chatBackground: t })
+              }}
               placeholder="https://... 粘贴图片链接"
               className="mt-2 h-11 w-full rounded-[10px] border border-[#e5e5e5] bg-white px-3 text-[13px] text-black outline-none"
             />
             <p className="mt-2 text-[12px] text-[#8e8e8e]">
-              支持 URL、内置背景与本地上传；本地上传会进入 9:16 裁剪后应用到当前聊天。
+              支持 URL、内置背景与本地上传。选图 / 裁剪 / 点选预设后会立刻应用到本聊天，无需再点应用。
             </p>
             <ChatBackgroundPresetGrid
               selectedDraft={chatBgDraft}
-              onSelect={(storagePath) => setChatBgDraft(storagePath)}
+              onSelect={(storagePath) => applyBackground(storagePath)}
             />
             <div className="mt-3 overflow-hidden rounded-[10px] border border-[#e5e5e5] bg-[#f7f7f7]" style={{ aspectRatio: '9 / 16' }}>
               {previewBgUrl ? (
-                <img src={previewBgUrl} alt="" className="h-full w-full object-cover" />
+                <img
+                  src={previewBgUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  style={
+                    blurPx > 0
+                      ? { filter: `blur(${Math.min(blurPx, 24)}px)`, transform: 'scale(1.06)' }
+                      : undefined
+                  }
+                />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-[12px] text-[#8e8e8e]">当前使用默认聊天背景</div>
               )}
+            </div>
+            <div className="mt-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[15px] font-medium text-black">背景模糊</p>
+                <span className="tabular-nums text-[13px] text-[#8e8e8e]">{blurPx === 0 ? '关' : `${blurPx}px`}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={CHAT_BACKGROUND_BLUR_MAX}
+                step={1}
+                value={blurPx}
+                onChange={(e) => setChatBgBlurDraft(clampChatBackgroundBlur(Number(e.target.value)))}
+                onPointerUp={commitBlur}
+                onKeyUp={commitBlur}
+                className="mt-3 w-full accent-black"
+                aria-label="背景模糊强度"
+              />
+              <p className="mt-1.5 text-[12px] text-[#8e8e8e]">拖动即时生效；对自定义背景与默认主题背景都可用。</p>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               <Pressable
@@ -873,23 +1005,10 @@ export function ChatSettingsScreen({
               </Pressable>
               <Pressable
                 type="button"
-                disabled={!canApply}
-                onClick={() => {
-                  void (async () => {
-                    await patch({ chatBackground: draftTrimmed })
-                    setStub(null)
-                  })()
-                }}
-                className="inline-flex h-10 items-center justify-center rounded-[10px] border border-[#d0d0d0] bg-white px-4 text-[13px] text-black disabled:opacity-45"
-              >
-                应用到当前聊天
-              </Pressable>
-              <Pressable
-                type="button"
                 disabled={!canReset}
                 onClick={() => {
                   void (async () => {
-                    await patch({ chatBackground: '' })
+                    await patch({ chatBackground: '', chatBackgroundBlur: 0 })
                     setChatBgDraft('')
                     setStub(null)
                   })()
@@ -929,6 +1048,7 @@ export function ChatSettingsScreen({
                 }
                 setChatBgCropSrc(null)
                 setChatBgDraft(next)
+                await patch({ chatBackground: next })
               } catch {
                 window.alert('图片处理失败，请重试。')
               }
@@ -987,7 +1107,7 @@ export function ChatSettingsScreen({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <div className="shrink-0">
         {/* 聊天对象 */}
         <div
           className="mx-4 mt-4 rounded-[12px] bg-white px-5 py-5"
@@ -1048,7 +1168,15 @@ export function ChatSettingsScreen({
           </div>
         </div>
 
+        <ChatSettingsTabBar active={settingsTab} onChange={setSettingsTab} />
+      </div>
+
+      <div
+        ref={settingsScrollRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+      >
         {/* 外观 */}
+        {settingsTab === 'look' ? (
         <SettingsSection title="聊天外观">
           <ListRow onClick={() => setStub('chat-avatar')} borderBottom>
             <div className="min-w-0 flex-1">
@@ -1078,8 +1206,11 @@ export function ChatSettingsScreen({
             <WxSwitch on={peerPresenceAutoUpdate} onToggle={() => void togglePeerPresenceAutoUpdate()} />
           </ListRow>
         </SettingsSection>
+        ) : null}
 
         {/* 消息 */}
+        {settingsTab === 'msg' ? (
+        <>
         <SettingsSection title="消息与提醒">
           <ListRow onClick={() => setFindHistoryOpen(true)} borderBottom>
             <span className="text-[16px] text-black">查找聊天记录</span>
@@ -1106,7 +1237,35 @@ export function ChatSettingsScreen({
           </ListRow>
         </SettingsSection>
 
+        <SettingsSection title="聊天管理">
+          <ListRow
+            onClick={() => {
+              if (!personaEditTargetId) {
+                window.alert('当前会话未关联可编辑的人设角色（Lumi 需在通讯录绑定人设后编辑）')
+                return
+              }
+              onOpenPersonaEdit(personaEditTargetId)
+            }}
+            borderBottom
+          >
+            <span className="text-[16px] text-black">聊天设定</span>
+            <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
+          </ListRow>
+          <ListRow onClick={() => setClearOpen(true)} borderBottom>
+            <span className="text-[16px] text-black">清空聊天记录</span>
+            <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
+          </ListRow>
+          <ListRow onClick={() => setStub('complaint')}>
+            <span className="text-[16px] text-black">投诉</span>
+            <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
+          </ListRow>
+        </SettingsSection>
+        </>
+        ) : null}
+
         {/* 语言 */}
+        {settingsTab === 'reply' ? (
+        <>
         <SettingsSection title="回复语言">
           <ListRow stacked>
             <button
@@ -1141,8 +1300,12 @@ export function ChatSettingsScreen({
             ) : null}
           </ListRow>
         </SettingsSection>
+        </>
+        ) : null}
 
         {/* 节奏 */}
+        {settingsTab === 'rhythm' ? (
+        <>
         <SettingsSection title="角色节奏">
           <ListRow borderBottom>
             <span className="text-[16px] text-black">开启忙碌</span>
@@ -1284,8 +1447,11 @@ export function ChatSettingsScreen({
             />
           </ListRow>
         </SettingsSection>
+        </>
+        ) : null}
 
         {/* 回复能力 */}
+        {settingsTab === 'reply' ? (
         <SettingsSection title="回复能力">
           <ListRow borderBottom>
             <div className="min-w-0 flex-1">
@@ -1509,8 +1675,10 @@ export function ChatSettingsScreen({
             />
           </ListRow>
         </SettingsSection>
+        ) : null}
 
         {/* 媒体 */}
+        {settingsTab === 'media' ? (
         <SettingsSection title="媒体发送">
           <ListRow onClick={() => setEmojiProbOpen(true)} borderBottom>
             <div className="min-w-0 flex-1">
@@ -1532,6 +1700,38 @@ export function ChatSettingsScreen({
                 onResetDefault={() => void patch({ clearVoiceRoundTriggerPercent: true })}
               />
             </div>
+          </ListRow>
+          <ListRow borderBottom>
+            <div className="min-w-0 flex-1">
+              <span className="text-[16px] text-black">语音合成语气词</span>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                开启后脚本可插入 laughs / sighs 等英文语气词；部分音色不适配，默认关闭
+              </p>
+            </div>
+            <WxSwitch
+              on={effective.voiceSynthToneTokensEnabled === true}
+              onToggle={() =>
+                void patch({
+                  voiceSynthToneTokensEnabled: !(effective.voiceSynthToneTokensEnabled === true),
+                })
+              }
+            />
+          </ListRow>
+          <ListRow borderBottom>
+            <div className="min-w-0 flex-1">
+              <span className="text-[16px] text-black">语音合成情绪词</span>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#8e8e8e]">
+                开启后脚本可带 {'{happy}'} 等情绪标签并参与合成；部分音色不适配，默认关闭
+              </p>
+            </div>
+            <WxSwitch
+              on={effective.voiceSynthEmotionEnabled === true}
+              onToggle={() =>
+                void patch({
+                  voiceSynthEmotionEnabled: !(effective.voiceSynthEmotionEnabled === true),
+                })
+              }
+            />
           </ListRow>
           <ListRow borderBottom>
             <div className="min-w-0 flex-1">
@@ -1561,31 +1761,7 @@ export function ChatSettingsScreen({
             <Phone className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
           </ListRow>
         </SettingsSection>
-
-        {/* 管理 */}
-        <SettingsSection title="聊天管理">
-          <ListRow
-            onClick={() => {
-              if (!personaEditTargetId) {
-                window.alert('当前会话未关联可编辑的人设角色（Lumi 需在通讯录绑定人设后编辑）')
-                return
-              }
-              onOpenPersonaEdit(personaEditTargetId)
-            }}
-            borderBottom
-          >
-            <span className="text-[16px] text-black">聊天设定</span>
-            <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
-          </ListRow>
-          <ListRow onClick={() => setClearOpen(true)} borderBottom>
-            <span className="text-[16px] text-black">清空聊天记录</span>
-            <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
-          </ListRow>
-          <ListRow onClick={() => setStub('complaint')}>
-            <span className="text-[16px] text-black">投诉</span>
-            <ChevronRight className="size-4 shrink-0 text-[#c7c7cc]" aria-hidden />
-          </ListRow>
-        </SettingsSection>
+        ) : null}
 
         <div className="h-5 shrink-0" style={{ minHeight: 'max(20px, env(safe-area-inset-bottom, 0px))' }} />
       </div>

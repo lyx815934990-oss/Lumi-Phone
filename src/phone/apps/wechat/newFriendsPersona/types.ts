@@ -237,6 +237,11 @@ export type ChatConversationSettingsRow = {
   /** 聊天背景图 URL 或 dataURL，空为默认 */
   chatBackground: string
   /**
+   * 聊天背景模糊强度（px，0–40）；0 = 不模糊。
+   * 对自定义背景与主题默认背景均生效。
+   */
+  chatBackgroundBlur?: number
+  /**
    * 本聊天中用户（己方）展示的头像 URL/dataURL；空 = 跟随微信账号全局头像。
    * 气泡与角色侧「看到的用户头像」均优先用此字段。
    */
@@ -257,6 +262,16 @@ export type ChatConversationSettingsRow = {
   classicEmojiBannedNames?: string[]
   /** 角色每轮回复是否出现语音的目标概率 0–100（门槛，非条数上限；命中后仍可多条 [语音]）；缺省 = 不覆写系统协议（约 30%） */
   voiceRoundTriggerPercent?: number
+  /**
+   * 语音消息合成：是否允许脚本中的 MiniMax 英文语气词（laughs / sighs 等）。
+   * 缺省 / false = 关闭（部分音色不适配，默认关）。
+   */
+  voiceSynthToneTokensEnabled?: boolean
+  /**
+   * 语音消息合成：是否允许情绪标签 `{happy}` 及 API emotion 参数。
+   * 缺省 / false = 关闭（部分音色不适配，默认关）。
+   */
+  voiceSynthEmotionEnabled?: boolean
   /**
    * 本会话角色「文字气泡」输出语言（如 ja / en）；缺省或 zh-CN = 简体中文。
    * @see WECHAT_CHAT_LANGUAGE_OPTIONS
@@ -963,6 +978,29 @@ export type WeChatMiniGamePayload =
   | WeChatMiniGameAcceptPayload
   | WeChatMiniGameDeclinePayload
 
+/** 情侣空间绑定邀约 · 模型四档裁决（与小游戏 accept/decline 同路径） */
+export type WeChatCoupleSpaceInviteOutcome =
+  | 'full_accept'
+  | 'reluctant_accept'
+  | 'soft_reject'
+  | 'hard_reject'
+
+/** 情侣空间绑定邀约卡（持久化于 chatMessages.coupleSpaceInvite） */
+export type WeChatCoupleSpaceInvitePayload = {
+  kind: 'couple_space_invite'
+  inviteId: string
+  title: string
+  subtitle: string
+  /** 角色接受 / 婉拒后回写（用户发起路径） */
+  charResponded?: 'accepted' | 'declined'
+  /** 模型裁决的四档结果；有值时优先于 charResponded 展示文案 */
+  outcome?: WeChatCoupleSpaceInviteOutcome
+  /** 用户接受 / 拒绝后回写（角色主动发起路径） */
+  userResponded?: 'accepted' | 'declined'
+  /** 角色主动邀约时的口语收束（可作气泡正文） */
+  replyText?: string
+}
+
 export type WeChatLocationCoordSpace = 'world' | 'wgs84'
 
 export type WeChatLocationCharacterAnchor = 'psyche' | 'world_pin' | 'manual' | 'unknown'
@@ -1194,6 +1232,8 @@ export type WeChatChatMessage = {
   musicSync?: WeChatMusicSyncPayload
   /** 小游戏邀约 / 接受 / 拒绝卡片 */
   miniGameInvite?: WeChatMiniGamePayload
+  /** 情侣空间绑定邀约卡 */
+  coupleSpaceInvite?: WeChatCoupleSpaceInvitePayload
   /** 听一听评论分享卡片 */
   listenCommentShare?: WeChatListenCommentSharePayload
   listenProfileShare?: WeChatListenProfileSharePayload

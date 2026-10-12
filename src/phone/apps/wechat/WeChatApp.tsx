@@ -107,6 +107,12 @@ import { RedPacketDetailPage } from './redPacket/RedPacketDetailPage'
 import { RedPacketHistoryPage } from './redPacket/RedPacketHistoryPage'
 import { WeChatProfileEditModal } from './WeChatProfileEditModal'
 import { MemoryTraceModal } from './MemoryTraceModal'
+import { ReplyTokenFloatingButton } from './ReplyTokenFloatingButton'
+import { ReplyTokenUsageSheet } from './ReplyTokenUsageSheet'
+import {
+  getReplyTokenFabState,
+  subscribeReplyTokenFab,
+} from './replyTokenFabStore'
 import { WorldBookAfterPatchNoticeHost } from './WorldBookAfterPatchNoticeHost'
 import { LifeLedgerPatchNoticeHost } from './LifeLedgerPatchNoticeHost'
 import { ObservationNotesPatchNoticeHost } from './ObservationNotesPatchNoticeHost'
@@ -242,6 +248,10 @@ import { WeChatAuthGuard } from './WeChatAuthGuard'
 import { WeChatRegistration } from './WeChatRegistration'
 import { SwitchAccountPage } from './settings/SwitchAccountPage'
 import { WeChatWelcomeRevealLayer } from './WeChatWelcomeRevealLayer'
+import {
+  applyWeChatChatHeaderViewportPin,
+  readVisualViewportOffsetTop,
+} from './wechatChatHeaderViewportPin'
 import { wechatProfileToPhoneProfile } from './wechatAccountTypes'
 import { useWechatStore, WechatStoreProvider } from './useWechatStore'
 import { WeChatDanmakuConfigScreen } from './settings/WeChatDanmakuConfigScreen'
@@ -2917,6 +2927,9 @@ function ThemePanel({
                         <Pressable
                           onClick={() => {
                             const next = { ...activeBubble, showAvatar: true }
+                            // X 等预设会留下 showAvatarSelf/Other:false，只改总开关不够
+                            delete next.showAvatarSelf
+                            delete next.showAvatarOther
                             if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
                             else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
                           }}
@@ -2931,7 +2944,12 @@ function ThemePanel({
                         </Pressable>
                         <Pressable
                           onClick={() => {
-                            const next = { ...activeBubble, showAvatar: false }
+                            const next = {
+                              ...activeBubble,
+                              showAvatar: false,
+                              showAvatarSelf: false,
+                              showAvatarOther: false,
+                            }
                             if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
                             else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
                           }}
@@ -3628,9 +3646,14 @@ function WeChatAppInner({ onBack }: Props) {
   const [themeOpen, setThemeOpen] = useState(false)
   const [themePanelBoot, setThemePanelBoot] = useState<ThemePanelBoot>({})
   const [chatSettingsOpen, setChatSettingsOpen] = useState(false)
+  /** 打开聊天设置时默认 Tab（Token 面板「去关闭相关注入」→ reply） */
+  const [chatSettingsInitialTab, setChatSettingsInitialTab] = useState<
+    'look' | 'msg' | 'reply' | 'rhythm' | 'media'
+  >('look')
   const [chatTimeSettingsOpen, setChatTimeSettingsOpen] = useState(false)
   const [chatCheckPhoneOpen, setChatCheckPhoneOpen] = useState(false)
   const [chatMiniGameOverlayOpen, setChatMiniGameOverlayOpen] = useState(false)
+  const [chatCoupleSpaceOpen, setChatCoupleSpaceOpen] = useState(false)
   const [chatVoiceCallOverlayOpen, setChatVoiceCallOverlayOpen] = useState(false)
   const [psycheRadarOpen, setPsycheRadarOpen] = useState(false)
   const [messagesPlusMenuOpen, setMessagesPlusMenuOpen] = useState(false)
@@ -3654,6 +3677,9 @@ function WeChatAppInner({ onBack }: Props) {
   const [profileEditOpen, setProfileEditOpen] = useState(false)
   const [memoryTraceOpen, setMemoryTraceOpen] = useState(false)
   const memoryTraceSnapshot = useSyncExternalStore(subscribeLastMemoryTrace, getLastMemoryTrace, getLastMemoryTrace)
+  const replyTokenFab = useSyncExternalStore(subscribeReplyTokenFab, getReplyTokenFabState, getReplyTokenFabState)
+  const replyTokenSettingsNonceRef = useRef(0)
+  const replyTokenTraceNonceRef = useRef(0)
   useEffect(() => {
     void hydrateMemoryTraceFromIndexedDb()
   }, [])
@@ -3662,6 +3688,28 @@ function WeChatAppInner({ onBack }: Props) {
       setPsycheRadarOpen(false)
     }
   }, [route.name])
+
+  useEffect(() => {
+    const nonce = replyTokenFab.openSettingsReplyNonce
+    if (!nonce || nonce === replyTokenSettingsNonceRef.current) return
+    replyTokenSettingsNonceRef.current = nonce
+    const fab = getReplyTokenFabState()
+    const ref = fab.chatRef
+    if (ref?.kind === 'persona' && ref.characterId) {
+      setRoute({ name: 'chat', chat: { kind: 'persona', characterId: ref.characterId } })
+    } else if (ref?.kind === 'group' && ref.groupId) {
+      setRoute({ name: 'chat', chat: { kind: 'group', groupId: ref.groupId } })
+    }
+    setChatSettingsInitialTab('reply')
+    setChatSettingsOpen(true)
+  }, [replyTokenFab.openSettingsReplyNonce])
+
+  useEffect(() => {
+    const nonce = replyTokenFab.openFullTraceNonce
+    if (!nonce || nonce === replyTokenTraceNonceRef.current) return
+    replyTokenTraceNonceRef.current = nonce
+    setMemoryTraceOpen(true)
+  }, [replyTokenFab.openFullTraceNonce])
 
   const [hideDatingChrome, setHideDatingChrome] = useState(false)
   const [discoverMomentsOpen, setDiscoverMomentsOpen] = useState(false)
@@ -4707,6 +4755,9 @@ function WeChatAppInner({ onBack }: Props) {
   const [chatSkipBusySignal, setChatSkipBusySignal] = useState(0)
   const [chatMultiSelectActive, setChatMultiSelectActive] = useState(false)
   const [chatMultiSelectExitSignal, setChatMultiSelectExitSignal] = useState(0)
+  /** iOS 键盘顶起：顶栏钉位（DOM 直写，与 ChatRoom 输入栏同套路） */
+  const chatHeaderPinRef = useRef<HTMLDivElement>(null)
+  const chatViewportOffsetTopRef = useRef(0)
   const [chatHistoryRefreshSignal, setChatHistoryRefreshSignal] = useState(0)
   const [chatHistoryViewerOpen, setChatHistoryViewerOpen] = useState(false)
   const [chatHistoryViewerData, setChatHistoryViewerData] = useState<WeChatChatHistoryPayload | null>(null)
@@ -4926,6 +4977,7 @@ function WeChatAppInner({ onBack }: Props) {
     internetMemeLexicon: boolean
     mimicUserSpeakingStyle: boolean
     bg: string
+    bgBlur: number
     playerChatAvatarUrl: string
     showGroupMemberNicknameInChat: boolean
     showGroupRankBadgesInChat: boolean
@@ -4942,6 +4994,10 @@ function WeChatAppInner({ onBack }: Props) {
 
   useEffect(() => {
     if (route.name !== 'chat') setChatCheckPhoneOpen(false)
+  }, [route.name])
+
+  useEffect(() => {
+    if (route.name !== 'chat') setChatCoupleSpaceOpen(false)
   }, [route.name])
 
   useEffect(() => {
@@ -4974,6 +5030,10 @@ function WeChatAppInner({ onBack }: Props) {
           internetMemeLexicon: s?.internetMemeLexiconEnabled === true,
           mimicUserSpeakingStyle: s?.mimicUserSpeakingStyleEnabled === true,
           bg: (s?.chatBackground ?? '').trim(),
+          bgBlur:
+            typeof s?.chatBackgroundBlur === 'number' && Number.isFinite(s.chatBackgroundBlur)
+              ? Math.max(0, Math.min(40, Math.round(s.chatBackgroundBlur)))
+              : 0,
           playerChatAvatarUrl: (s?.playerChatAvatarUrl ?? '').trim(),
           showGroupMemberNicknameInChat: s?.showGroupMemberNicknameInChat !== false,
           showGroupRankBadgesInChat: !!s?.showGroupRankBadgesInChat,
@@ -4988,6 +5048,7 @@ function WeChatAppInner({ onBack }: Props) {
           prev.internetMemeLexicon === next.internetMemeLexicon &&
           prev.mimicUserSpeakingStyle === next.mimicUserSpeakingStyle &&
           prev.bg === next.bg &&
+          prev.bgBlur === next.bgBlur &&
           prev.playerChatAvatarUrl === next.playerChatAvatarUrl &&
           prev.showGroupMemberNicknameInChat === next.showGroupMemberNicknameInChat &&
           prev.showGroupRankBadgesInChat === next.showGroupRankBadgesInChat
@@ -5216,6 +5277,7 @@ function WeChatAppInner({ onBack }: Props) {
     (route.name === 'chat' && chatSettingsOpen) ||
     (route.name === 'chat' && chatCheckPhoneOpen) ||
     (route.name === 'chat' && chatMiniGameOverlayOpen) ||
+    (route.name === 'chat' && chatCoupleSpaceOpen) ||
     (route.name === 'chat' && chatVoiceCallOverlayOpen) ||
     (route.name === 'tabs' && newGroupFromMessagesOpen)
   const activeTabBgFill = useMemo(() => {
@@ -6092,6 +6154,97 @@ function WeChatAppInner({ onBack }: Props) {
     [chatSkinScopedCssOnRoot],
   )
 
+  // iOS 键盘顶起：visualViewport.offsetTop 用 DOM 直写钉顶栏（与输入栏同套路，避免 setState 掉帧）
+  const chatHeaderPinMode = liquidGlassChrome ? 'absolute' : 'flow'
+  const applyChatHeaderPinDom = useCallback(() => {
+    const onChat = route.name === 'chat'
+    const next = onChat ? readVisualViewportOffsetTop() : 0
+    chatViewportOffsetTopRef.current = next
+    applyWeChatChatHeaderViewportPin(chatHeaderPinRef.current, next, chatHeaderPinMode)
+  }, [chatHeaderPinMode, route.name])
+
+  useEffect(() => {
+    if (route.name !== 'chat') {
+      chatViewportOffsetTopRef.current = 0
+      applyChatHeaderPinDom()
+      return
+    }
+    const vv = window.visualViewport
+    if (!vv) return
+    let rafId: number | null = null
+    let remountTimers: number[] = []
+
+    const clearRemountTimers = () => {
+      for (const t of remountTimers) window.clearTimeout(t)
+      remountTimers = []
+    }
+
+    const measureAndCommit = () => {
+      rafId = null
+      const next = readVisualViewportOffsetTop()
+      const prev = chatViewportOffsetTopRef.current
+      chatViewportOffsetTopRef.current = next
+      applyWeChatChatHeaderViewportPin(chatHeaderPinRef.current, next, chatHeaderPinMode)
+      // 键盘动画期间 offsetTop 会连续变；补测几次吃掉滞后帧
+      if (next > 0 && (prev <= 0 || Math.abs(next - prev) > 8)) {
+        clearRemountTimers()
+        remountTimers = [
+          window.setTimeout(schedule, 50),
+          window.setTimeout(schedule, 120),
+          window.setTimeout(schedule, 280),
+        ]
+      }
+    }
+
+    const schedule = () => {
+      if (rafId != null) return
+      rafId = window.requestAnimationFrame(measureAndCommit)
+    }
+
+    const onFocusIn = (e: FocusEvent) => {
+      const t = e.target
+      if (!(t instanceof HTMLElement)) return
+      if (t.tagName !== 'TEXTAREA' && t.tagName !== 'INPUT' && !t.isContentEditable) return
+      schedule()
+      clearRemountTimers()
+      remountTimers = [
+        window.setTimeout(schedule, 0),
+        window.setTimeout(schedule, 80),
+        window.setTimeout(schedule, 200),
+      ]
+    }
+
+    measureAndCommit()
+    vv.addEventListener('resize', schedule)
+    vv.addEventListener('scroll', schedule)
+    window.addEventListener('orientationchange', schedule)
+    document.addEventListener('focusin', onFocusIn, true)
+    const nav = navigator as Navigator & {
+      virtualKeyboard?: {
+        addEventListener?: (type: 'geometrychange', listener: () => void) => void
+        removeEventListener?: (type: 'geometrychange', listener: () => void) => void
+      }
+    }
+    nav.virtualKeyboard?.addEventListener?.('geometrychange', schedule)
+
+    return () => {
+      if (rafId != null) window.cancelAnimationFrame(rafId)
+      clearRemountTimers()
+      vv.removeEventListener('resize', schedule)
+      vv.removeEventListener('scroll', schedule)
+      window.removeEventListener('orientationchange', schedule)
+      document.removeEventListener('focusin', onFocusIn, true)
+      nav.virtualKeyboard?.removeEventListener?.('geometrychange', schedule)
+      chatViewportOffsetTopRef.current = 0
+      applyWeChatChatHeaderViewportPin(chatHeaderPinRef.current, 0, chatHeaderPinMode)
+    }
+  }, [route.name, applyChatHeaderPinDom, chatHeaderPinMode])
+
+  /** React 重绘会清掉内联 transform；每帧末按最新 offsetTop 写回 */
+  useLayoutEffect(() => {
+    applyChatHeaderPinDom()
+  })
+
   return (
     <div
       className="relative flex h-full min-h-0 flex-col"
@@ -6118,7 +6271,9 @@ function WeChatAppInner({ onBack }: Props) {
       />
       <div className="relative z-[1] flex min-h-0 flex-1 flex-col">
       <WeChatWelcomeRevealLayer
+        ref={chatHeaderPinRef}
         slot="header"
+        data-wx-chat-header-pin={liquidGlassChrome ? 'absolute' : 'flow'}
         className={
           liquidGlassChrome
             ? 'pointer-events-none absolute inset-x-0 top-0 z-[45] [&_[data-wx-chat-header]]:pointer-events-auto'
@@ -6154,7 +6309,10 @@ function WeChatAppInner({ onBack }: Props) {
               : null
           }
           onBack={() => exitChatToMessages()}
-          onOpenSettings={() => setChatSettingsOpen(true)}
+          onOpenSettings={() => {
+            setChatSettingsInitialTab('look')
+            setChatSettingsOpen(true)
+          }}
           onOpenTimeSettings={
             route.name === 'chat' && wxDockChat?.kind === 'persona'
               ? () => setChatTimeSettingsOpen(true)
@@ -6169,7 +6327,10 @@ function WeChatAppInner({ onBack }: Props) {
           onCenterClick={
             chatMessengerHeaderVariant === 'twitter'
               ? undefined
-              : () => setChatSettingsOpen(true)
+              : () => {
+                  setChatSettingsInitialTab('look')
+                  setChatSettingsOpen(true)
+                }
           }
           titleAfterName={
             chatMessengerHeaderVariant === 'twitter' ? null : chatPeerPresenceDot
@@ -6266,7 +6427,14 @@ function WeChatAppInner({ onBack }: Props) {
           showRight={
             route.name === 'chat' || (route.name === 'tabs' && route.tab === 'messages')
           }
-          onOpenTheme={route.name === 'chat' ? () => setChatSettingsOpen(true) : openWeChatAppearance}
+          onOpenTheme={
+            route.name === 'chat'
+              ? () => {
+                  setChatSettingsInitialTab('look')
+                  setChatSettingsOpen(true)
+                }
+              : openWeChatAppearance
+          }
           customRight={
             route.name === 'chat' && chatMultiSelectActive ? (
               <Pressable
@@ -6293,7 +6461,10 @@ function WeChatAppInner({ onBack }: Props) {
                   type="button"
                   data-wx-chat-header-btn="more"
                   aria-label="当前聊天设置"
-                  onClick={() => setChatSettingsOpen(true)}
+                  onClick={() => {
+                    setChatSettingsInitialTab('look')
+                    setChatSettingsOpen(true)
+                  }}
                   className="flex h-9 w-9 items-center justify-center rounded-full"
                   style={{ color: 'var(--wx-chat-header-btn, var(--wx-chat-header-text, #111827))' }}
                 >
@@ -6438,6 +6609,7 @@ function WeChatAppInner({ onBack }: Props) {
                 peerAvatarUrl={chatPeerContact?.avatarUrl}
                 peerNotifyTitle={chatPeerContact?.remarkName ?? '聊天'}
                 chatBackgroundUrl={chatSessionPrefs?.bg || undefined}
+                chatBackgroundBlurPx={chatSessionPrefs?.bgBlur ?? 0}
                 chatRoomDefaultBg={wechatTheme.chatRoomDefaultBg}
                 danmakuEnabled={chatSessionPrefs?.danmaku ?? false}
                 thinkingChainEnabled={chatSessionPrefs?.thinkingChain ?? false}
@@ -6517,6 +6689,7 @@ function WeChatAppInner({ onBack }: Props) {
                 onPsycheRadarOpenChange={setPsycheRadarOpen}
                 onCheckPhoneOpenChange={setChatCheckPhoneOpen}
                 onMiniGameOverlayOpenChange={setChatMiniGameOverlayOpen}
+                onCoupleSpaceOpenChange={setChatCoupleSpaceOpen}
                 onVoiceCallOverlayOpenChange={setChatVoiceCallOverlayOpen}
                 onRequestShowForVoiceCall={focusChatForActiveVoiceCall}
                 chatRouteVisible={route.name === 'chat'}
@@ -6982,7 +7155,10 @@ function WeChatAppInner({ onBack }: Props) {
                     return
                   }
                   setRoute({ name: 'chat', chat: route.returnTo.chat })
-                  if (route.returnTo.reopenChatSettings) setChatSettingsOpen(true)
+                  if (route.returnTo.reopenChatSettings) {
+                    setChatSettingsInitialTab('look')
+                    setChatSettingsOpen(true)
+                  }
                 }}
                 onOpenChat={() => {
                   const t = route.target
@@ -7626,6 +7802,7 @@ function WeChatAppInner({ onBack }: Props) {
                   }
                   inviteGroupFromPeerCharacterId={route.chat.kind === 'persona' ? route.chat.characterId : null}
                   personaContactsForGroup={personaContactsForGroupPick}
+                  initialTab={chatSettingsInitialTab}
                   onInviteCreateGroup={async (extra) => {
                     if (route.name !== 'chat' || route.chat.kind !== 'persona' || !playerIdentityId) return
                     const peer = route.chat.characterId
@@ -7638,10 +7815,14 @@ function WeChatAppInner({ onBack }: Props) {
                       nickByCharacterId,
                     })
                     setChatSettingsOpen(false)
+                    setChatSettingsInitialTab('look')
                     await refreshMessageThreadsMeta()
                     setRoute({ name: 'chat', chat: { kind: 'group', groupId } })
                   }}
-                  onClose={() => setChatSettingsOpen(false)}
+                  onClose={() => {
+                    setChatSettingsOpen(false)
+                    setChatSettingsInitialTab('look')
+                  }}
                   onShowPresenceDotChange={setShowChatPresenceDot}
                   onHistoryCleared={() => {
                     setChatSettingsOpen(false)
@@ -7771,6 +7952,8 @@ function WeChatAppInner({ onBack }: Props) {
         }}
       />
       <MemoryTraceModal open={memoryTraceOpen} onClose={() => setMemoryTraceOpen(false)} data={memoryTraceSnapshot} />
+      <ReplyTokenFloatingButton />
+      <ReplyTokenUsageSheet />
       <WorldBookAfterPatchNoticeHost />
       <LifeLedgerPatchNoticeHost />
       <ObservationNotesPatchNoticeHost />

@@ -476,6 +476,8 @@ async function fireProactiveMessage(row: ChatConversationSettingsRow): Promise<v
         worldBookUserLineLabel: worldBookBinding?.lineLabel,
         stickerRoundTriggerPercent: activeRow.stickerRoundTriggerPercent,
         voiceRoundTriggerPercent: activeRow.voiceRoundTriggerPercent,
+        voiceSynthToneTokensEnabled: activeRow.voiceSynthToneTokensEnabled === true,
+        voiceSynthEmotionEnabled: activeRow.voiceSynthEmotionEnabled === true,
         ...(activeRow.classicEmojiRoundTriggerPercent !== undefined
           ? { classicEmojiRoundTriggerPercent: activeRow.classicEmojiRoundTriggerPercent }
           : { applyClassicEmojiDefault: true }),

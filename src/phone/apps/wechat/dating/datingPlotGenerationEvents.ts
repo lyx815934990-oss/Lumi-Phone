@@ -1,5 +1,7 @@
 /** 线下约会剧情后台生成：进行中计数 + 完成/失败全局提示 */
 
+import { DATING_PLOT_COMPLETION_TIMEOUT_MS } from './types'
+
 export const DATING_PLOT_GENERATION_COMPLETE_EVENT = 'dating-plot-generation-complete'
 export const DATING_PLOT_GENERATION_ERROR_EVENT = 'dating-plot-generation-error'
 
@@ -21,6 +23,10 @@ const pendingByChar = new Map<string, number>()
 const contentHintChars = new Set<string>()
 const genListeners = new Set<() => void>()
 const contentHintListeners = new Set<() => void>()
+/** 防卡死：整轮（记忆准备+completion+落库后处理）超时后强制解锁 loading */
+const watchdogByChar = new Map<string, number>()
+/** 记忆/时钟同步等预请求上限 + completion 上限 + 落库缓冲 */
+const GENERATION_WATCHDOG_MS = DATING_PLOT_COMPLETION_TIMEOUT_MS + 120_000
 
 function emitGenChange() {
   for (const fn of genListeners) fn()
@@ -28,6 +34,36 @@ function emitGenChange() {
 
 function emitContentHintChange() {
   for (const fn of contentHintListeners) fn()
+}
+
+function clearGenerationWatchdog(characterId: string) {
+  const id = characterId.trim()
+  if (!id) return
+  const t = watchdogByChar.get(id)
+  if (t != null) {
+    window.clearTimeout(t)
+    watchdogByChar.delete(id)
+  }
+}
+
+function armGenerationWatchdog(characterId: string) {
+  const id = characterId.trim()
+  if (!id || typeof window === 'undefined') return
+  clearGenerationWatchdog(id)
+  const t = window.setTimeout(() => {
+    watchdogByChar.delete(id)
+    if ((pendingByChar.get(id) ?? 0) <= 0) return
+    pendingByChar.delete(id)
+    contentHintChars.delete(id)
+    emitGenChange()
+    emitContentHintChange()
+    dispatchDatingPlotGenerationError({
+      characterId: id,
+      characterName: '约会角色',
+      message: `剧情生成卡住超时（>${Math.round(GENERATION_WATCHDOG_MS / 1000)}s），已强制结束。请降低目标字数、关闭思维链后重试，或检查 API 是否长时间无响应。`,
+    })
+  }, GENERATION_WATCHDOG_MS)
+  watchdogByChar.set(id, t)
 }
 
 export function subscribeDatingPlotGeneration(onStoreChange: () => void): () => void {
@@ -65,6 +101,7 @@ export function beginDatingPlotGeneration(characterId: string): void {
   const id = characterId.trim()
   if (!id) return
   pendingByChar.set(id, (pendingByChar.get(id) ?? 0) + 1)
+  armGenerationWatchdog(id)
   emitGenChange()
 }
 
@@ -72,8 +109,13 @@ export function endDatingPlotGeneration(characterId: string): void {
   const id = characterId.trim()
   if (!id) return
   const next = (pendingByChar.get(id) ?? 1) - 1
-  if (next <= 0) pendingByChar.delete(id)
-  else pendingByChar.set(id, next)
+  if (next <= 0) {
+    pendingByChar.delete(id)
+    clearGenerationWatchdog(id)
+  } else {
+    pendingByChar.set(id, next)
+    armGenerationWatchdog(id)
+  }
   emitGenChange()
 }
 

@@ -1964,9 +1964,50 @@ export async function buildPrivateChatPerRoundMemoryAppendixForTurn(params: {
   })
   if (!gather) return ''
 
+  return buildDatingTurnCombinedMemoryAppendixFromGather({
+    gather,
+    characterId: params.characterId,
+    characterRealName: params.characterRealName,
+    sessionPlayerIdentityId: params.sessionPlayerIdentityId,
+    summaryRoundDue: false,
+  })
+}
+
+/**
+ * 线下约会主回复：同轮在正文后追加记忆 / 剧情时间轴 markup（与私聊附录同结构）。
+ * 未输出时仍由 timeline 单独补救兜底。
+ */
+export async function buildDatingOfflineTurnMemoryAppendix(params: {
+  gather: UnifiedMemoryGatherResult
+  characterId: string
+  characterRealName: string
+  sessionPlayerIdentityId?: string | null
+  /** 重新生成等：仍只写 timeline，不写 primary 长文 */
+  summaryRoundDue?: boolean
+}): Promise<string> {
+  return buildDatingTurnCombinedMemoryAppendixFromGather({
+    gather: params.gather,
+    characterId: params.characterId,
+    characterRealName: params.characterRealName,
+    sessionPlayerIdentityId: params.sessionPlayerIdentityId,
+    summaryRoundDue: params.summaryRoundDue === true,
+  })
+}
+
+async function buildDatingTurnCombinedMemoryAppendixFromGather(params: {
+  gather: UnifiedMemoryGatherResult
+  characterId: string
+  characterRealName: string
+  sessionPlayerIdentityId?: string | null
+  summaryRoundDue: boolean
+}): Promise<string> {
+  const { gather } = params
   let roster = '（当前无可关联角色）'
   try {
-    roster = await buildEligibleLinkedMemoryRosterForDatingAppendix(gather.plotsArchiveId, params.characterId)
+    roster = await buildEligibleLinkedMemoryRosterForDatingAppendix(
+      gather.plotsArchiveId,
+      params.characterId,
+    )
   } catch {
     /* keep default */
   }
@@ -1977,30 +2018,38 @@ export async function buildPrivateChatPerRoundMemoryAppendixForTurn(params: {
     storyCalendarAnchor: resolveStoryCalendarAnchorFromPlots(gather.offlinePlotsPrior),
   })
 
+  let userDisplayName = ''
+  try {
+    const pid = params.sessionPlayerIdentityId?.trim()
+    if (pid && pid !== '__none__') {
+      const iden = await personaDb.getPlayerIdentity(pid)
+      userDisplayName =
+        String(iden?.wechatNickname ?? '').trim() ||
+        String(iden?.name ?? '').trim() ||
+        String(iden?.remark ?? '').trim()
+    }
+    if (!userDisplayName) {
+      const cur = await personaDb.getCurrentIdentity()
+      userDisplayName =
+        String(cur?.wechatNickname ?? '').trim() ||
+        String(cur?.name ?? '').trim() ||
+        String(cur?.remark ?? '').trim()
+    }
+  } catch {
+    userDisplayName = ''
+  }
+
   const identityRosterBlock = buildMemorySummaryIdentityRosterBlock({
     charDisplayName: params.characterRealName,
-    userDisplayName: await (async () => {
-      try {
-        const pid = params.sessionPlayerIdentityId?.trim()
-        if (pid && pid !== '__none__') {
-          const iden = await personaDb.getPlayerIdentity(pid)
-          const n =
-            String(iden?.wechatNickname ?? '').trim() ||
-            String(iden?.name ?? '').trim() ||
-            String(iden?.remark ?? '').trim()
-          if (n) return n
-        }
-        const cur = await personaDb.getCurrentIdentity()
-        return (
-          String(cur?.wechatNickname ?? '').trim() ||
-          String(cur?.name ?? '').trim() ||
-          String(cur?.remark ?? '').trim()
-        )
-      } catch {
-        return ''
-      }
-    })(),
+    userDisplayName,
   })
+
+  let priorOpenAnchorsBlock = ''
+  try {
+    priorOpenAnchorsBlock = await loadStoryTimelineOpenAnchorsBlockForSummary(params.characterId)
+  } catch {
+    priorOpenAnchorsBlock = ''
+  }
 
   return buildDatingCombinedMemoryUserAppendix({
     onlineTranscript: gather.onlineTranscript,
@@ -2009,9 +2058,10 @@ export async function buildPrivateChatPerRoundMemoryAppendixForTurn(params: {
     npcLinkedExcerptsBlock: gather.npcLinked.block,
     datingPeerCharacterId: params.characterId,
     eligibleLinkedNpcRoster: roster,
-    summaryRoundDue: false,
+    summaryRoundDue: params.summaryRoundDue,
     calendarContextBlock,
     identityRosterBlock,
+    priorOpenAnchorsBlock: priorOpenAnchorsBlock || undefined,
   })
 }
 

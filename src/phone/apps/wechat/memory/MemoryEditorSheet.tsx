@@ -54,7 +54,7 @@ import { MemoryStoryTimeFieldsEditor } from './MemoryStoryTimeFieldsEditor'
 const INK = ARCHIVE_INK
 const MUTED = ARCHIVE_MUTED
 
-const OWN_SCENE_TAGS: MemorySceneTag[] = ['私聊', '群聊', '线下', '遇见']
+const OWN_SCENE_TAGS: MemorySceneTag[] = ['私聊', '群聊', '通讯录', '线下', '遇见']
 const LINKED_SCENE_TAGS: MemorySceneTag[] = ['私聊', '线下']
 
 type MemoryEditorSheetTab = 'identity' | 'user' | 'content'

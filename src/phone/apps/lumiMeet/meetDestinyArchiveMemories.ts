@@ -53,6 +53,7 @@ export async function upsertMeetArchiveMemoryEntry(params: {
         hasMomentTag: false,
         hasPulseTag: false,
         hasDiaryTag: false,
+        hasAddressBookTag: false,
         body: '',
       }
   const content = composeMemoryWithSourcePrefix(

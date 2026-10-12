@@ -5,6 +5,14 @@ import type { Character, PlayerIdentity } from '../../newFriendsPersona/types'
 import { loadOfflineDatingPlotsPromptBlock } from '../../dating/loadOfflineDatingPlotsForWechatPrompt'
 import { formatWorldBackgroundForPrompt } from '../../newFriendsPersona/worldBackgroundFormat'
 import { buildSystemContent } from '../../wechatChatAi'
+import {
+  normalizeWeChatChatLanguageCode,
+  weChatChatLanguageLabel,
+  weChatChatLanguageNativeName,
+  WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE,
+  WECHAT_CHAT_DEFAULT_TRANSLATION_LANGUAGE,
+  type WeChatChatLanguageCode,
+} from '../../wechatChatLanguage'
 import type { PrivateMemo } from './memoTypes'
 import {
   isNotesSyncReady,
@@ -14,6 +22,47 @@ import {
 } from './notesMarkup'
 
 export type { NotesSyncResult }
+
+function buildNotesGenerateLanguageAppendix(opts: {
+  generateLanguage?: WeChatChatLanguageCode | string
+  syncTranslation?: boolean
+  translationLanguage?: WeChatChatLanguageCode | string
+}): string {
+  const lang = normalizeWeChatChatLanguageCode(opts.generateLanguage, WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE)
+  const native = weChatChatLanguageNativeName(lang)
+  const label = weChatChatLanguageLabel(lang)
+  const syncWanted = opts.syncTranslation === true
+  const trLang = normalizeWeChatChatLanguageCode(
+    opts.translationLanguage,
+    WECHAT_CHAT_DEFAULT_TRANSLATION_LANGUAGE,
+  )
+  const trNative = weChatChatLanguageNativeName(trLang)
+  const trLabel = weChatChatLanguageLabel(trLang)
+  const syncOn = syncWanted && trLang !== lang
+
+  const lines: string[] = [
+    `【生成语言 · 硬项】本轮备忘录可见正文语言为 **${label}（${native}）**。`,
+    `- 「标题」与所有「正文：」「h1/标题行」「小标题」「语音」转写正文必须用 ${native} 书写。`,
+    `- 字段名（标题：/ 正文：/ 日期：等）仍用中文标记；**字段值**用 ${native}。`,
+    `- 禁止把译文写成另一条「正文：」；译文只能用约定的译行格式。`,
+  ]
+  if (lang === 'ja') {
+    lines.push(
+      `- **日语禁句末「笑」口癖**：禁止默认在句末加「笑」「（笑）」「w/www」充当中文「哈哈」；普通碎念直接收句。`,
+    )
+  }
+  if (syncOn) {
+    lines.push(
+      `【同步翻译 · 硬项】已开启自带翻译（目标：${trLabel} / ${trNative}）。`,
+      `- 每条备忘录标题后写一行：\`译标题：……\`（${trNative} 译文）。`,
+      `- 每条「正文：」「h1/标题行」「小标题」「语音：时长|转写」之后，必须紧跟单独一行 \`[译]……\`（${trNative}，通顺忠于原文，不加戏）。`,
+      `- 文件行、图片行（无说明时可省略）**不要**跟 \`[译]\`；\`[译]\` 禁止写成「正文：」。`,
+    )
+  } else {
+    lines.push('- 禁止输出 `译标题：` / `[译]` / `【译】` / `[翻译]` 行。')
+  }
+  return lines.join('\n')
+}
 
 const NOTES_SYNC_SYSTEM_APPENDIX = `
 ---
@@ -94,6 +143,9 @@ export async function syncPrivateMemosWithAi(params: {
   count: number
   bias: string
   currentNotes: PrivateMemo[]
+  generateLanguage?: WeChatChatLanguageCode | string
+  syncTranslation?: boolean
+  translationLanguage?: WeChatChatLanguageCode | string
 }): Promise<NotesSyncResult> {
   const cfg = params.apiConfig
   if (!cfg?.apiUrl?.trim() || !cfg.apiKey?.trim() || !cfg.modelId?.trim()) {
@@ -143,6 +195,12 @@ export async function syncPrivateMemosWithAi(params: {
     .filter((x): x is string => !!x)
     .join('\n')
 
+  const langAppendix = buildNotesGenerateLanguageAppendix({
+    generateLanguage: params.generateLanguage,
+    syncTranslation: params.syncTranslation,
+    translationLanguage: params.translationLanguage,
+  })
+
   const count = Math.min(10, Math.max(1, Math.round(params.count)))
   const userTask = `请按标记块格式同步备忘录。期望变化条数：${count}。内容偏向：${params.bias.trim() || '情绪、关系与日常观察'}。
 
@@ -150,6 +208,8 @@ export async function syncPrivateMemosWithAi(params: {
 1) 主要用 <<NM_ADD>> 新建；若要改旧笔记用 <<NM_UPDATE>>（id 必须来自下方清单）；
 2) 删除可选，最多 2 条 <<NM_DELETE>>；
 3) 禁止 JSON；每条至少 4 行内容块。
+
+${langAppendix}
 
 【现有备忘录清单（仅 id/标题摘要，供 update/delete）】
 ${summarizeExistingNotes(params.currentNotes)}
@@ -160,7 +220,7 @@ ${recentChatDirectionAnchors || '（暂无）'}`
   return askMarkupWithRetry(
     cfg,
     [
-      { role: 'system', content: `${baseSystem}\n\n${NOTES_SYNC_SYSTEM_APPENDIX}` },
+      { role: 'system', content: `${baseSystem}\n\n${NOTES_SYNC_SYSTEM_APPENDIX}\n\n${langAppendix}` },
       { role: 'user', content: userTask },
     ],
     count,

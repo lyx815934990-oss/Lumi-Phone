@@ -94,7 +94,9 @@ export function MemoRenderer({ memo }: { memo: PrivateMemo }) {
                 key={key}
                 variants={item}
                 className={`my-2 text-[16px] leading-8 text-[#313131] ${textModifierClass(block.modifiers)}`}
-                style={normalizeTextColor(block.color) ? { color: normalizeTextColor(block.color) } : undefined}
+                style={
+                  normalizeTextColor(block.color) ? { color: normalizeTextColor(block.color) } : undefined
+                }
               >
                 {block.content}
               </motion.p>
@@ -108,8 +110,14 @@ export function MemoRenderer({ memo }: { memo: PrivateMemo }) {
                 whileTap={{ scale: 0.985 }}
                 className="my-4 block w-full overflow-hidden rounded-2xl border border-black/10 bg-black/5 text-left shadow-[0_12px_26px_rgba(0,0,0,0.12)]"
               >
-                <img src={block.url} alt={block.caption || '备忘录图片'} className="h-auto w-full object-cover" />
-                {block.caption ? <div className="px-3 py-2 text-[12px] text-[#666]">{block.caption}</div> : null}
+                <img
+                  src={block.url}
+                  alt={block.caption || '备忘录图片'}
+                  className="h-auto w-full object-cover"
+                />
+                {block.caption ? (
+                  <div className="px-3 py-2 text-[12px] text-[#666]">{block.caption}</div>
+                ) : null}
               </motion.button>
             )
           case 'voice':
@@ -131,4 +139,3 @@ export function MemoRenderer({ memo }: { memo: PrivateMemo }) {
     </motion.div>
   )
 }
-

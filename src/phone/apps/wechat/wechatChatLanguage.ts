@@ -61,6 +61,37 @@ function buildTraditionalChineseScriptHardRules(): string {
 - **歷史干擾**：上文若為簡體，那是舊設定；本輪起一律改為繁體，禁止跟著歷史簡體續寫。`.trim()
 }
 
+/**
+ * 日语气泡：中文「活人感」里的句尾「哈哈」常被模型硬套成句末「笑」口癖。
+ * 真日文聊天「笑」≈ lol，但默认每条末尾拖一个「笑」会非常假。
+ */
+function buildJapaneseChatStyleHardRules(): string {
+  return `
+- **日语口语硬项（禁句末「笑」口癖）**：
+  - **禁止**把中文「哈哈/哈哈哈」习惯迁移成日文气泡**默认句末**加「笑」「（笑）」「(笑)」「w」「ww」「www」。
+  - 普通陈述、答应、安抚、认真说话时，句末用自然终助词（ね / よ / な / か 等）或标点收束即可，**不要**为了「活人感」硬加「笑」。
+  - 仅当本句本身在讲笑话、接梗、明显在笑时，才可用「あはは」「ふふ」「くすっ」等**口头笑声**；仍优先写进语气，而不是机械挂尾「笑」。
+  - 错误例：「了解した笑」「うん笑」「大丈夫だよ笑」「わかった（笑）」。
+  - 合格例：「了解した」「うん」「大丈夫だよ」「わかった」。`.trim()
+}
+
+/** 剥日文气泡末尾机械挂上的「笑」/（笑）口癖（保留整条仅为「笑」或「爆笑」等词） */
+export function stripJapaneseTrailingLaughMarker(text: string): string {
+  const raw = String(text ?? '')
+  let t = raw.replace(/\s+$/u, '')
+  if (!t) return raw
+  // 整条就是笑声/笑词：保留
+  if (/^(?:笑|爆笑|苦笑|冷笑|干笑|偷笑|傻笑|あはは+|ふふ+|くすっ+|ははは+|www+|w+)$/u.test(t)) {
+    return t
+  }
+  const stripped = t
+    .replace(/[（(]\s*笑\s*[）)]\s*$/u, '')
+    .replace(/(?:^|(?<=[\u3040-\u30ff\u31f0-\u31ff。．！!？?…～~ー、，,!\?\s]))笑\s*$/u, '')
+    .replace(/(?<=[\u3040-\u30ff\u31f0-\u31ff。．！!？?…～~ー])\s*(?:w|ww|www)\s*$/iu, '')
+    .replace(/\s+$/u, '')
+  return stripped || t
+}
+
 /** 注入 system：文字气泡 / 语音脚本可分别指定语言（含默认简体，防止被历史繁体带偏） */
 export function buildWechatReplyOutputLanguageAppendix(
   replyLanguage: string | null | undefined,
@@ -96,7 +127,9 @@ export function buildWechatReplyOutputLanguageAppendix(
       ? `\n${buildSimplifiedChineseScriptHardRules()}`
       : textCode === 'zh-TW'
         ? `\n${buildTraditionalChineseScriptHardRules()}`
-        : ''
+        : textCode === 'ja'
+          ? `\n${buildJapaneseChatStyleHardRules()}`
+          : ''
 
   const syncHard = syncOn
     ? dedicated

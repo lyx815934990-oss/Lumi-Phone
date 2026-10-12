@@ -40,7 +40,7 @@ import {
 import {
   serializePersonaAiMarkup,
 } from './personaAiGenerateMarkup'
-import { buildPersonaAiEntryTagRulesBlock } from './personaAiEntryTagSpec'
+import { buildPersonaAiEntryTagRulesBlock, getPersonaAiEntryTagDef } from './personaAiEntryTagSpec'
 
 export type PersonaAiGenerateIssueKind =
   | 'parse'
@@ -153,6 +153,15 @@ const TOP_FIELD_AUDIT: { key: string; label: string; minLen?: number }[] = [
   { key: 'mbti', label: 'MBTI' },
   { key: 'orientation', label: '性取向' },
 ]
+
+function worldBookEntryTagUnclosed(name: string, content: string): boolean {
+  const root = getPersonaAiEntryTagDef(name)?.root
+  if (!root) return false
+  const lower = content.toLowerCase()
+  const opened = lower.includes(`<${root}`)
+  const closed = lower.includes(`</${root}>`)
+  return opened && !closed
+}
 
 function isWeakFieldValue(v: unknown, minLen = 4): boolean {
   const t = String(v ?? '').trim()
@@ -629,6 +638,13 @@ export function auditPersonaAiGenerateResult(
         kind: 'missing_epilogue',
         label: `世界书 · ${name}`,
         detail: '模型未返回或标题不匹配',
+      })
+    } else if (worldBookEntryTagUnclosed(name, content)) {
+      issues.push({
+        id: `wb-${name}`,
+        kind: 'placeholder_field',
+        label: `世界书 · ${name}`,
+        detail: '正文在标签闭合前被截断',
       })
     } else if (isWeakFieldValue(content, Math.floor(PERSONA_AI_COMPACT_ENTRY_TARGET_CHARS * 0.45))) {
       issues.push({

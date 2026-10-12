@@ -39,4 +39,3 @@ export function VoiceBlock({ duration, transcript }: { duration: string; transcr
     </div>
   )
 }
-

@@ -1,9 +1,11 @@
 import {
+  BookHeart,
   BookOpen,
   Camera,
   ChevronRight,
   Globe2,
   Headphones,
+  Heart,
   LayoutGrid,
   MessageCircleQuestionMark,
   Radio,
@@ -73,6 +75,16 @@ const ObservationNotesHubApp = lazyWithRetry(() =>
     default: m.ObservationNotesHubApp,
   })),
 )
+const WeChatDiscoverFanficForumApp = lazyWithRetry(() =>
+  import('../phone/apps/fanficForum/WeChatDiscoverFanficForumApp').then((m) => ({
+    default: m.WeChatDiscoverFanficForumApp,
+  })),
+)
+const WeChatDiscoverCoupleSpaceApp = lazyWithRetry(() =>
+  import('../phone/apps/wechat/coupleSpace/WeChatDiscoverCoupleSpaceApp').then((m) => ({
+    default: m.WeChatDiscoverCoupleSpaceApp,
+  })),
+)
 /**
  * 拼豆 / 3D家园：后续扩展功能，开屏与微信主包不预拉完整资源。
  * 开发中只挂轻量占位；开启后再按需 lazy 完整包（含 three 等）。
@@ -131,6 +143,8 @@ type DiscoverActionId =
   | 'lumi-live'
   | 'subconscious-archives'
   | 'observation-notes'
+  | 'fanfic-forum'
+  | 'couple-space'
   | 'jubensha'
   | 'bead-craft'
   | 'home-build'
@@ -177,6 +191,8 @@ const DISCOVER_ACTIONS: DiscoverAction[] = [
   { id: 'lumi-live', label: '浮光直播', icon: Radio },
   { id: 'subconscious-archives', label: '私语档案', icon: ScrollText },
   { id: 'observation-notes', label: '私藏侧写', icon: Feather },
+  { id: 'fanfic-forum', label: '同人论坛', icon: BookHeart },
+  { id: 'couple-space', label: '情侣空间', icon: Heart },
   { id: 'jubensha', label: '剧本杀馆', icon: BookOpen },
   { id: 'bead-craft', label: '一起拼豆', icon: LayoutGrid },
   { id: 'home-build', label: '3D家园', icon: Home },
@@ -213,6 +229,8 @@ export function WeChatDiscoverInstagram({
     | 'lumi-live'
     | 'subconscious-archives'
     | 'observation-notes'
+    | 'fanfic-forum'
+    | 'couple-space'
     | 'jubensha'
     | 'bead-craft'
     | 'home-build'
@@ -348,6 +366,34 @@ export function WeChatDiscoverInstagram({
       </DiscoverSuspense>
     )
   }
+  if (activeView === 'fanfic-forum') {
+    return (
+      <DiscoverSuspense onClose={() => setActiveView('list')}>
+        <WeChatDiscoverFanficForumApp
+          className={`h-full min-h-0 ${className}`}
+          onBack={() => setActiveView('list')}
+          personaContacts={personaContacts}
+          userDisplayName={currentUserName?.trim() || wechatNickname?.trim() || '我'}
+          wechatAccountId={wechatAccountId}
+          playerIdentityId={playerIdentityId}
+        />
+      </DiscoverSuspense>
+    )
+  }
+  if (activeView === 'couple-space') {
+    return (
+      <DiscoverSuspense onClose={() => setActiveView('list')}>
+        <WeChatDiscoverCoupleSpaceApp
+          className={`h-full min-h-0 ${className}`}
+          onBack={() => setActiveView('list')}
+          personaContacts={personaContacts}
+          userDisplayName={currentUserName?.trim() || wechatNickname?.trim() || '我'}
+          userAvatarUrl={wechatAvatarUrl}
+          wechatAccountId={wechatAccountId}
+        />
+      </DiscoverSuspense>
+    )
+  }
   if (activeView === 'jubensha') {
     return (
       <div className={`h-full min-h-0 ${className}`}>
@@ -449,6 +495,8 @@ export function WeChatDiscoverInstagram({
                       if (item.id === 'lumi-live') setActiveView('lumi-live')
                       if (item.id === 'subconscious-archives') setActiveView('subconscious-archives')
                       if (item.id === 'observation-notes') setActiveView('observation-notes')
+                      if (item.id === 'fanfic-forum') setActiveView('fanfic-forum')
+                      if (item.id === 'couple-space') setActiveView('couple-space')
                       if (item.id === 'jubensha') setActiveView('jubensha')
                       if (item.id === 'bead-craft') setActiveView('bead-craft')
                       if (item.id === 'home-build') setActiveView('home-build')

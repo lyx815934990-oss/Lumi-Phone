@@ -137,10 +137,13 @@ export function WeChatAvatarChromeWrap({
   side,
   children,
   className = '',
+  sizePx = 40,
 }: {
   side: WeChatAvatarChromeSide
   children: ReactNode
   className?: string
+  /** 与气泡行头像边长一致；外壳小于图片时头像会被挤小，占位行也会错位 */
+  sizePx?: number
 }) {
   const resolved = useResolvedWeChatAvatarChrome()
   const { state: customizationState } = useCustomization()
@@ -149,7 +152,7 @@ export function WeChatAvatarChromeWrap({
   const frameUrl = side === 'self' ? resolved.selfFrameUrl : resolved.otherFrameUrl
   const badge = side === 'self' ? resolved.selfBadge : resolved.otherBadge
   const hasStickers = avatarStickers.some((s) => s.imageDataUrl.trim())
-  const badgePx = Math.round(40 * (badge?.scale ?? 0.4))
+  const badgePx = Math.round(sizePx * (badge?.scale ?? 0.4))
 
   // 始终包一层 slot + chrome，便于皮肤 CSS 按侧覆盖大小 / 圆角 / 倾斜 / 相对气泡上下
   return (
@@ -158,8 +161,9 @@ export function WeChatAvatarChromeWrap({
       className={`relative inline-flex shrink-0 flex-col self-stretch overflow-visible ${className}`.trim()}
     >
       <div
-        className="relative inline-flex h-10 w-10 shrink-0 overflow-visible"
+        className="relative inline-flex shrink-0 overflow-visible"
         data-wx-avatar-chrome={side}
+        style={{ width: sizePx, height: sizePx }}
       >
         {children}
         {frameUrl ? (

@@ -76,6 +76,7 @@ export function CheckPhoneFlow({
               playerIdentityId={playerIdentityId}
               playerDisplayName={playerDisplayName}
               playerWechatAvatarUrl={playerWechatAvatarUrl}
+              playerWechatNickname={playerDisplayName}
               useLumiProjectAssistantPrompt={useLumiProjectAssistantPrompt}
               onToast={onToast}
               onExit={resetAndClose}

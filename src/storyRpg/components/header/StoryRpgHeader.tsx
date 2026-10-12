@@ -64,12 +64,23 @@ export function StoryRpgHeader({
   const actionBtn =
     '!size-8 !min-w-8 !shrink-0 !px-0'
 
+  const topPx = Math.max(0, viewportOffsetTop)
+
   return (
-    <header
-      className="fixed inset-x-0 z-[100] border-b border-[var(--sr-border)] backdrop-blur-md"
+    <>
+    <div
+      aria-hidden
+      className="pointer-events-none fixed inset-x-0 z-[99]"
       style={{
-        top: Math.max(0, viewportOffsetTop),
-        paddingTop: 'env(safe-area-inset-top, 0px)',
+        top: topPx,
+        height: 'env(safe-area-inset-top, 0px)',
+        background: 'var(--sr-header-bg)',
+      }}
+    />
+    <header
+      className="fixed inset-x-0 z-[100] border-b border-[var(--sr-border)]"
+      style={{
+        top: `calc(${topPx}px + env(safe-area-inset-top, 0px))`,
         background: 'var(--sr-header-bg)',
       }}
       {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-header' }}
@@ -188,5 +199,6 @@ export function StoryRpgHeader({
         )}
       </motion.div>
     </header>
+    </>
   )
 }

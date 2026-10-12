@@ -2,10 +2,13 @@ function pad2(n: number) {
   return String(n).padStart(2, '0')
 }
 
+/** 通话气泡时长：不足 1 小时 `MM:SS`（如 01:13、42:13）；≥1 小时 `HH:MM:SS`（如 05:34:29） */
 export function fmtCallStatusDuration(sec: number) {
   const s = Math.max(0, Math.floor(sec))
-  const mm = Math.floor(s / 60)
+  const h = Math.floor(s / 3600)
+  const mm = Math.floor((s % 3600) / 60)
   const ss = s % 60
+  if (h > 0) return `${pad2(h)}:${pad2(mm)}:${pad2(ss)}`
   return `${pad2(mm)}:${pad2(ss)}`
 }
 

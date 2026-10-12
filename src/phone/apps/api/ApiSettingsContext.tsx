@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { personaDb, pullPhoneKvWithLocalStorageLegacy } from '../wechat/newFriendsPersona/idb'
+import { normalizeApiModelUserMetaMap } from './apiModelUserMeta'
 import { createEmptyApiConfig, createEmptyPreset, newPresetId } from './mock'
 import { pickApiConfigSamplingFields } from './apiConfigSampling'
 import { normalizeApiVisionInputMode } from './apiModelVision'
@@ -42,8 +43,10 @@ function normalizeApiConfig(raw: unknown): ApiConfig {
     apiUrl: typeof r.apiUrl === 'string' ? r.apiUrl : '',
     apiKey: typeof r.apiKey === 'string' ? r.apiKey : '',
     modelId: typeof r.modelId === 'string' ? r.modelId : '',
+    websiteUrl: typeof r.websiteUrl === 'string' ? r.websiteUrl : '',
     modelList,
     modelPricingById: normalizeModelPricingMap(r.modelPricingById),
+    modelUserMetaById: normalizeApiModelUserMetaMap(r.modelUserMetaById),
     lastTest:
       r.lastTest && typeof r.lastTest === 'object'
         ? {

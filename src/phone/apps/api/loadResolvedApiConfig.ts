@@ -2,6 +2,7 @@ import { pullPhoneKvWithLocalStorageLegacy, personaDb } from '../wechat/newFrien
 import { normalizeModelPricingMap } from './modelPricingUtils'
 import type { ApiConfig, ApiPreset, ApiStore, SubApiType } from './types'
 import { normalizeVoiceAsrBuiltinFlag } from '../wechat/voiceCall/voiceAsrSettings'
+import { normalizeApiModelUserMetaMap } from './apiModelUserMeta'
 import { createEmptyApiConfig, createEmptyPreset } from './mock'
 import { migrateLegacyImageGenIntoStore, normalizeImageGenSettings } from './imageGenPresetUtils'
 import {
@@ -22,8 +23,10 @@ function normalizeApiConfig(raw: unknown): ApiConfig {
     apiUrl: typeof r.apiUrl === 'string' ? r.apiUrl : '',
     apiKey: typeof r.apiKey === 'string' ? r.apiKey : '',
     modelId: typeof r.modelId === 'string' ? r.modelId : '',
+    websiteUrl: typeof r.websiteUrl === 'string' ? r.websiteUrl : '',
     modelList,
     modelPricingById: normalizeModelPricingMap(r.modelPricingById),
+    modelUserMetaById: normalizeApiModelUserMetaMap(r.modelUserMetaById),
     lastTest:
       r.lastTest && typeof r.lastTest === 'object'
         ? {

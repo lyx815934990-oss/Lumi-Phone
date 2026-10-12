@@ -37,6 +37,7 @@ import {
   wbItemGenMaxTokensForTarget,
 } from './worldBookItemGenConstants'
 import { LUMI_SYSTEM_OVERRIDE_APPENDIX } from '../wechatReplyOutputPrompt'
+import { recordLastChatApiUsageFromResponse } from '../chatApiUsage'
 
 const WB_ITEM_PROMPT_CONTENT_CAP = 520
 const WB_EXISTING_CONTEXT_MAX_CHARS = 9000
@@ -161,6 +162,12 @@ function extractBillableCompletionTokens(data: unknown): number {
 
 /** chat/completions 成功后累加输出 token 到数据中心「灵感消耗」；同页触发刷新事件 */
 export function bumpLumiSysTokensFromChatResponse(data: unknown): void {
+  // 思维溯源：缓存最近一次 prompt/completion（与灵感消耗独立；即使无 completion 也记录）
+  try {
+    recordLastChatApiUsageFromResponse(data)
+  } catch {
+    /* ignore */
+  }
   if (typeof localStorage === 'undefined') return
   const add = extractBillableCompletionTokens(data)
   if (!add) return

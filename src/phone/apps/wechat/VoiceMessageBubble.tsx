@@ -21,6 +21,7 @@ import {
 } from './wechatBubbleWechatUi'
 import { formatTalkmakerExternalTime, TalkmakerExternalTimestamp } from './wechatBubbleTalkmakerUi'
 import { CssVoiceShell } from './cssSkinShells'
+import { bubbleSideFontFamilyCss } from './wechatBubbleSideFonts'
 
 export type VoiceMessageBubbleProps = {
   isUser: boolean
@@ -136,6 +137,7 @@ function VoiceTranscriptExpandedPanel({
   /** 独立圆角卡片（不贴在语音条下方衔接）；为 true 时四角同圆角并保留顶边 */
   detached = false,
   fitContent = false,
+  fontFamily,
 }: {
   open: boolean
   firstChar: string
@@ -147,6 +149,8 @@ function VoiceTranscriptExpandedPanel({
   detached?: boolean
   /** 微信：按转写内容收缩宽度，而非撑满父容器 */
   fitContent?: boolean
+  /** 与对应侧文本气泡同字体 */
+  fontFamily?: string
 }) {
   const radius = bottomRadiusPx
   return (
@@ -164,6 +168,7 @@ function VoiceTranscriptExpandedPanel({
             borderRadius: detached ? radius : undefined,
             borderBottomLeftRadius: detached ? undefined : radius,
             borderBottomRightRadius: detached ? undefined : radius,
+            fontFamily,
           }}
         >
           <div
@@ -473,6 +478,7 @@ export function VoiceMessageBubble({
       ? 'var(--wx-self-bubble-bg,#95EC69)'
       : 'var(--wx-other-bubble-bg,#FFFFFF)'
     const voiceTopRadius = isTranscribing ? `${wechatRadius}px ${wechatRadius}px 0 0` : `${wechatRadius}px`
+    const sideFontFamily = bubbleSideFontFamilyCss(isUser ? 'self' : 'other')
 
     const voiceShell = (
       <div
@@ -498,7 +504,7 @@ export function VoiceMessageBubble({
               whileTap={{ scale: 0.985 }}
               transition={SPRING}
               className={`relative flex h-10 shrink-0 items-center px-3 shadow-sm ${bubbleClass}`}
-              style={{ width: wechatVoiceWidth, borderRadius: voiceTopRadius }}
+              style={{ width: wechatVoiceWidth, borderRadius: voiceTopRadius, fontFamily: sideFontFamily }}
             >
               {showBubbleTail ? <WechatBubbleTail isSelf={isUser} bubbleColor={tailColor} /> : null}
               <div className="flex w-full items-center gap-2.5">
@@ -524,6 +530,7 @@ export function VoiceMessageBubble({
               firstChar={firstChar}
               restText={restText}
               fitContent
+              fontFamily={sideFontFamily}
               panelClassName={
                 isUser
                   ? 'border-[color:var(--wx-special-voice-panel-border-self,#7ed957)] bg-[var(--wx-self-bubble-bg,#95EC69)] text-[color:var(--wx-special-voice-text-self,var(--wx-self-bubble-text,#191919))]'

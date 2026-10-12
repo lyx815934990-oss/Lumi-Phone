@@ -620,6 +620,9 @@ export function PersonaNetworkSection({ main, apiConfig, onApiMissing, onOpenNpc
         }
       }
       await reload()
+    } catch (err) {
+      console.error('[persona] AI 智能拓扑失败', err)
+      window.alert(err instanceof Error ? err.message : 'AI 智能拓扑失败，请稍后重试')
     } finally {
       setGenerating(false)
     }

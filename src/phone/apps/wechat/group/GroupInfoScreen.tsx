@@ -22,6 +22,10 @@ import { CreateGroupPickContactsSheet, type CreateGroupContactPick } from './Cre
 import { GroupMemberAvatarWithRanks } from './GroupMemberAvatarWithRanks'
 import { compressAvatarDataUrl, MAX_AVATAR_DATA_URL_LEN, MAX_CHAT_BG_DATA_URL_LEN } from '../avatarCompress'
 import { ChatBackgroundPresetGrid } from '../chatSettings/ChatBackgroundPresetGrid'
+import {
+  CHAT_BACKGROUND_BLUR_MAX,
+  clampChatBackgroundBlur,
+} from '../wechatDefaultChatBackgrounds'
 import { resolvePublicImageUrl } from '../../../../publicAssetUrl'
 
 function Cell({
@@ -141,6 +145,7 @@ export function GroupInfoScreen({
   const [convSettings, setConvSettings] = useState<ChatConversationSettingsRow | null>(null)
   const [chatBgDraft, setChatBgDraft] = useState('')
   const [chatBgCropSrc, setChatBgCropSrc] = useState<string | null>(null)
+  const [chatBgBlurDraft, setChatBgBlurDraft] = useState(0)
 
   const loadConvSettings = useCallback(async () => {
     const row = await personaDb.getChatConversationSettings(conversationKey)
@@ -163,6 +168,7 @@ export function GroupInfoScreen({
         Pick<
           ChatConversationSettingsRow,
           | 'chatBackground'
+          | 'chatBackgroundBlur'
           | 'isDanmakuMode'
           | 'showGroupMemberNicknameInChat'
           | 'showGroupRankBadgesInChat'
@@ -185,7 +191,8 @@ export function GroupInfoScreen({
   useEffect(() => {
     if (sub !== 'chat-bg') return
     setChatBgDraft((convSettings?.chatBackground ?? '').trim())
-  }, [sub, convSettings?.chatBackground])
+    setChatBgBlurDraft(clampChatBackgroundBlur(convSettings?.chatBackgroundBlur))
+  }, [sub, convSettings?.chatBackground, convSettings?.chatBackgroundBlur])
 
   useEffect(() => {
     if (sub !== 'chat-bg') setChatBgCropSrc(null)
@@ -414,9 +421,20 @@ export function GroupInfoScreen({
   if (sub === 'chat-bg') {
     const draftTrimmed = chatBgDraft.trim()
     const currentTrimmed = (convSettings?.chatBackground ?? '').trim()
-    const canApply = draftTrimmed.length > 0 && draftTrimmed !== currentTrimmed
-    const canReset = currentTrimmed.length > 0
+    const canReset = currentTrimmed.length > 0 || chatBgBlurDraft > 0
     const previewBgUrl = draftTrimmed ? resolvePublicImageUrl(draftTrimmed) : ''
+    const blurPx = chatBgBlurDraft
+    const commitBlur = () => {
+      const next = clampChatBackgroundBlur(chatBgBlurDraft)
+      if (next === clampChatBackgroundBlur(convSettings?.chatBackgroundBlur)) return
+      void patchConvSettings({ chatBackgroundBlur: next })
+    }
+    const applyBackground = (nextBg: string) => {
+      const trimmed = nextBg.trim()
+      setChatBgDraft(trimmed)
+      if (trimmed === currentTrimmed) return
+      void patchConvSettings({ chatBackground: trimmed })
+    }
     return wrapWithPermPortal(
       <div className="flex h-full min-h-0 flex-col bg-[#F3F4F6]">
         <header
@@ -442,23 +460,57 @@ export function GroupInfoScreen({
             <input
               value={draftTrimmed.startsWith('data:') ? '' : chatBgDraft}
               onChange={(e) => setChatBgDraft(e.target.value)}
+              onBlur={() => {
+                const t = chatBgDraft.trim()
+                if (!t || t.startsWith('data:')) return
+                if (t === currentTrimmed) return
+                void patchConvSettings({ chatBackground: t })
+              }}
               placeholder="https://… 粘贴图片链接"
               className="mt-2 h-11 w-full rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-[13px] text-[#111827] outline-none focus:border-[#111827]"
             />
             <p className="mt-2 text-[12px] text-[#9CA3AF]">
-              支持 URL、内置背景与本地上传；本地上传会进入 9:16 裁剪后应用到当前群聊。
+              支持 URL、内置背景与本地上传。选图 / 裁剪 / 点选预设后会立刻应用到本群聊，无需再点应用。
             </p>
             <ChatBackgroundPresetGrid
               selectedDraft={chatBgDraft}
-              onSelect={(storagePath) => setChatBgDraft(storagePath)}
+              onSelect={(storagePath) => applyBackground(storagePath)}
               variant="group"
             />
             <div className="mt-3 overflow-hidden rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB]" style={{ aspectRatio: '9 / 16' }}>
               {previewBgUrl ? (
-                <img src={previewBgUrl} alt="" className="h-full w-full object-cover" />
+                <img
+                  src={previewBgUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  style={
+                    blurPx > 0
+                      ? { filter: `blur(${Math.min(blurPx, 24)}px)`, transform: 'scale(1.06)' }
+                      : undefined
+                  }
+                />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-[12px] text-[#9CA3AF]">当前使用默认聊天背景</div>
               )}
+            </div>
+            <div className="mt-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[15px] font-medium text-[#111827]">背景模糊</p>
+                <span className="tabular-nums text-[13px] text-[#9CA3AF]">{blurPx === 0 ? '关' : `${blurPx}px`}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={CHAT_BACKGROUND_BLUR_MAX}
+                step={1}
+                value={blurPx}
+                onChange={(e) => setChatBgBlurDraft(clampChatBackgroundBlur(Number(e.target.value)))}
+                onPointerUp={commitBlur}
+                onKeyUp={commitBlur}
+                className="mt-3 w-full accent-[#111827]"
+                aria-label="背景模糊强度"
+              />
+              <p className="mt-1.5 text-[12px] text-[#9CA3AF]">拖动即时生效；对自定义背景与默认主题背景都可用。</p>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               <Pressable
@@ -470,23 +522,10 @@ export function GroupInfoScreen({
               </Pressable>
               <Pressable
                 type="button"
-                disabled={!canApply}
-                onClick={() => {
-                  void (async () => {
-                    await patchConvSettings({ chatBackground: draftTrimmed })
-                    setSub('main')
-                  })()
-                }}
-                className="inline-flex h-10 items-center justify-center rounded-[10px] border border-[#E5E7EB] bg-white px-4 text-[13px] text-[#111827] disabled:opacity-45"
-              >
-                应用到当前聊天
-              </Pressable>
-              <Pressable
-                type="button"
                 disabled={!canReset}
                 onClick={() => {
                   void (async () => {
-                    await patchConvSettings({ chatBackground: '' })
+                    await patchConvSettings({ chatBackground: '', chatBackgroundBlur: 0 })
                     setChatBgDraft('')
                     setSub('main')
                   })()
@@ -526,6 +565,7 @@ export function GroupInfoScreen({
                 }
                 setChatBgCropSrc(null)
                 setChatBgDraft(next)
+                await patchConvSettings({ chatBackground: next })
               } catch {
                 window.alert('图片处理失败，请重试。')
               }

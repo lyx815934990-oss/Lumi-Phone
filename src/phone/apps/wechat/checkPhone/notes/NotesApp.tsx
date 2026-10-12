@@ -9,7 +9,7 @@ import type { PrivateMemo } from './memoTypes'
 import { syncPrivateMemosWithAi } from './notesAi'
 import { loadNotesState, saveNotesState, type NotesState } from './notesStorage'
 import { NotesDashboard } from './NotesDashboard'
-import { AIGenerateModal } from './AIGenerateModal'
+import { AIGenerateModal, type NotesGenerateSubmitParams } from './AIGenerateModal'
 
 export function NotesApp({
   onClose,
@@ -43,7 +43,7 @@ export function NotesApp({
     }
   }, [characterId])
 
-  const onGenerate = async (params: { count: number; bias: string }) => {
+  const onGenerate = async (params: NotesGenerateSubmitParams) => {
     setGenBusy(true)
     setError(null)
     try {
@@ -56,6 +56,9 @@ export function NotesApp({
         count: params.count,
         bias: params.bias,
         currentNotes: state.notes,
+        generateLanguage: params.generateLanguage,
+        syncTranslation: params.syncTranslation,
+        translationLanguage: params.translationLanguage,
       })
       const byId = new Map(state.notes.map((x) => [x.id, x] as const))
       for (const m of sync.update) byId.set(m.id, m)

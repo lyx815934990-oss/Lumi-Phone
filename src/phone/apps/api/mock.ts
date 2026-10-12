@@ -16,6 +16,7 @@ export function createEmptyApiConfig(): ApiConfig {
     apiUrl: '',
     apiKey: '',
     modelId: '',
+    websiteUrl: '',
     modelList: [],
   }
 }

@@ -111,6 +111,7 @@ html[data-phone-layout='fullscreen'] {
   padding: 0;
   overflow: hidden;
   overscroll-behavior: none;
+  background-color: var(--phone-bg, #f2f2f4);
 }
 
 html[data-phone-layout='fullscreen'] body {
@@ -124,6 +125,7 @@ html[data-phone-layout='fullscreen'] body {
   inset: 0;
   overflow: hidden;
   overscroll-behavior: none;
+  background-color: var(--phone-bg, #f2f2f4);
 }
 
 html[data-phone-layout='fullscreen'] #root {
@@ -253,4 +255,42 @@ input[inputmode='decimal'] {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/**
+ * API 设置内嵌生图面板：把朋友圈页沿用的冷灰黑 (#111827) 映射到暖石灰石色板。
+ * 仅在 MomentsImageGenSettingsPanel settingsContext="api" 时挂上 .api-ig-tone。
+ */
+.api-ig-tone {
+  --ig-ink: #3a3936;
+  --ig-accent: #6b6862;
+  --ig-muted: #9a9a95;
+  --ig-soft: #f7f5f1;
+  --ig-border: #e7e5e0;
+  --ig-chip: #f0eeea;
+}
+.api-ig-tone [class*='text-[#111827]'] {
+  color: var(--ig-ink) !important;
+}
+.api-ig-tone [class*='bg-[#111827]'] {
+  background-color: var(--ig-accent) !important;
+}
+.api-ig-tone [class*='border-[#111827]'] {
+  border-color: var(--ig-accent) !important;
+}
+.api-ig-tone [class*='text-[#9CA3AF]'],
+.api-ig-tone [class*='text-[#6B7280]'] {
+  color: var(--ig-muted) !important;
+}
+.api-ig-tone [class*='bg-[#F3F4F6]'],
+.api-ig-tone [class*='bg-[#F9FAFB]'],
+.api-ig-tone [class*='bg-[#FAFAFA]'] {
+  background-color: var(--ig-soft) !important;
+}
+.api-ig-tone [class*='border-[#F3F4F6]'],
+.api-ig-tone [class*='border-[#E5E7EB]'] {
+  border-color: var(--ig-border) !important;
+}
+.api-ig-tone [class*='bg-[#F3F4F6]'][class*='text-[#9CA3AF]'] {
+  background-color: var(--ig-chip) !important;
 }

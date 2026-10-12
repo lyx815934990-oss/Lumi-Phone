@@ -33,11 +33,27 @@ import {
 const ACCEPT =
   '.ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2,application/font-woff,application/font-woff2,application/x-font-ttf,application/x-font-otf'
 
-const REGION_OPTS: { id: DatingPlotFontRegion; label: string }[] = [
+const DEFAULT_REGION_OPTS: { id: DatingPlotFontRegion; label: string }[] = [
   { id: 'narrative', label: '正文' },
   { id: 'dialogue', label: '对白' },
   { id: 'innerOs', label: '内心OS' },
 ]
+
+/** 互动模式：三区映射仍是 narrative / dialogue / innerOs，仅改展示文案 */
+export const INTERACTIVE_FONT_REGION_LABELS: Record<DatingPlotFontRegion, string> = {
+  narrative: '动描',
+  dialogue: '角色对白',
+  innerOs: '你的对白',
+}
+
+export type DatingPlotFontRegionLabels = Partial<Record<DatingPlotFontRegion, string>>
+
+function resolveRegionOpts(labels?: DatingPlotFontRegionLabels) {
+  return DEFAULT_REGION_OPTS.map((r) => ({
+    id: r.id,
+    label: labels?.[r.id]?.trim() || r.label,
+  }))
+}
 
 type FontTab = 'library' | 'apply' | 'presets'
 
@@ -239,18 +255,22 @@ function ApplyTab({
   dataUrlById,
   onChange,
   onToast,
+  regionLabels,
 }: {
   settings: DatingPlotFontSettings
   dataUrlById: Record<string, string>
   onChange: (next: DatingPlotFontSettings) => void
   onToast: (msg: string) => void
+  regionLabels?: DatingPlotFontRegionLabels
 }) {
   const [presetName, setPresetName] = useState('')
+  const regionOpts = resolveRegionOpts(regionLabels)
+  const regionPhrase = regionOpts.map((r) => r.label).join('/')
 
   return (
     <div className="space-y-3 pt-1">
       <p className="text-[12px] leading-relaxed text-[var(--sr-text-muted)]">
-        「设为全局字体」会清空正文/对白/内心的分区覆盖，并开启跟随——三区都会用该字体。若只勾选某一区，则该区优先用勾选字体，其余区仍跟随全局。上方「剧情字号」滑杆会统一放大旁白、对白与内心，保存预设时一并记下。
+        「设为全局字体」会清空{regionPhrase}的分区覆盖，并开启跟随——三区都会用该字体。若只勾选某一区，则该区优先用勾选字体，其余区仍跟随全局。上方字号滑杆会统一放大三区，保存预设时一并记下。
       </p>
 
       <label className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-2.5">
@@ -305,7 +325,7 @@ function ApplyTab({
                   ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {REGION_OPTS.map((r) => {
+                  {regionOpts.map((r) => {
                     const on = regionUsesAsset(settings, a.id, r.id)
                     return (
                       <label
@@ -391,12 +411,18 @@ function PresetsTab({
   dataUrlById,
   onChange,
   onToast,
+  regionLabels,
 }: {
   settings: DatingPlotFontSettings
   dataUrlById: Record<string, string>
   onChange: (next: DatingPlotFontSettings) => void
   onToast: (msg: string) => void
+  regionLabels?: DatingPlotFontRegionLabels
 }) {
+  const regionOpts = resolveRegionOpts(regionLabels)
+  const labelOf = (id: DatingPlotFontRegion) =>
+    regionOpts.find((r) => r.id === id)?.label ?? id
+
   return (
     <div className="space-y-3 pt-1">
       <p className="text-[12px] leading-relaxed text-[var(--sr-text-muted)]">
@@ -417,9 +443,9 @@ function PresetsTab({
                 <p className="truncate text-[13px] font-medium text-[var(--sr-text)]">{p.name}</p>
                 <p className="mt-0.5 text-[10px] text-[var(--sr-text-faint)]">
                   {[
-                    p.narrativeAssetId ? '正文' : null,
-                    p.dialogueAssetId ? '对白' : null,
-                    p.innerOsAssetId ? '内心' : null,
+                    p.narrativeAssetId ? labelOf('narrative') : null,
+                    p.dialogueAssetId ? labelOf('dialogue') : null,
+                    p.innerOsAssetId ? labelOf('innerOs') : null,
                     p.globalAssetId ? '全局' : null,
                     `${clampDatingPlotFontSizePx(p.baseFontSizePx ?? DATING_PLOT_FONT_SIZE_DEFAULT)}px`,
                   ]
@@ -463,16 +489,22 @@ export function DatingPlotFontSettingsFields({
   dataUrlById,
   onChange,
   onDataUrlChange,
+  regionLabels,
+  sizeTitle = '剧情字号',
 }: {
   characterId: string
   value: DatingPlotFontSettings
   dataUrlById: Record<string, string>
   onChange: (next: DatingPlotFontSettings) => void
   onDataUrlChange: (next: Record<string, string>) => void
+  regionLabels?: DatingPlotFontRegionLabels
+  sizeTitle?: string
 }) {
   const settings = normalizeDatingPlotFontSettings(value)
   const [tab, setTab] = useState<FontTab>('library')
   const [toast, setToast] = useState<string | null>(null)
+  const regionOpts = resolveRegionOpts(regionLabels)
+  const regionPhrase = regionOpts.map((r) => r.label).join(' / ')
 
   useEffect(() => {
     if (!toast) return
@@ -491,9 +523,9 @@ export function DatingPlotFontSettingsFields({
       <div className="rounded-2xl border border-[var(--sr-border)] bg-[var(--sr-panel)] px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-[13px] font-medium text-[var(--sr-text)]">剧情字号</p>
+            <p className="text-[13px] font-medium text-[var(--sr-text)]">{sizeTitle}</p>
             <p className="mt-0.5 text-[11px] leading-snug text-[var(--sr-text-muted)]">
-              正文 / 对白 / 内心统一字号（默认 {DATING_PLOT_FONT_SIZE_DEFAULT}px）
+              {regionPhrase}统一字号（默认 {DATING_PLOT_FONT_SIZE_DEFAULT}px）
             </p>
           </div>
           <span className="shrink-0 font-mono text-[12px] text-[var(--sr-text-soft)]">
@@ -513,7 +545,7 @@ export function DatingPlotFontSettingsFields({
             })
           }
           className="mt-2.5 w-full accent-[var(--sr-gold)]"
-          aria-label="剧情字号"
+          aria-label={sizeTitle}
         />
         <div className="mt-1 flex justify-between text-[10px] text-[var(--sr-text-faint)]">
           <span>{DATING_PLOT_FONT_SIZE_MIN}</span>
@@ -557,6 +589,7 @@ export function DatingPlotFontSettingsFields({
           dataUrlById={dataUrlById}
           onChange={onChange}
           onToast={setToast}
+          regionLabels={regionLabels}
         />
       ) : null}
       {tab === 'presets' ? (
@@ -565,6 +598,7 @@ export function DatingPlotFontSettingsFields({
           dataUrlById={dataUrlById}
           onChange={onChange}
           onToast={setToast}
+          regionLabels={regionLabels}
         />
       ) : null}
     </div>
@@ -581,6 +615,9 @@ export function DatingPlotFontSettingsButton({
   iconOnly = false,
   storyHeader = false,
   themeStyle,
+  regionLabels,
+  sheetTitle = '剧情字体',
+  sizeTitle,
 }: {
   characterId: string
   value: DatingPlotFontSettings
@@ -593,6 +630,9 @@ export function DatingPlotFontSettingsButton({
   storyHeader?: boolean
   /** Portal 后需自带主题变量，否则 --sr-* 失效 */
   themeStyle?: CSSProperties
+  regionLabels?: DatingPlotFontRegionLabels
+  sheetTitle?: string
+  sizeTitle?: string
 }) {
   const [open, setOpen] = useState(false)
   const settings = normalizeDatingPlotFontSettings(value)
@@ -603,10 +643,10 @@ export function DatingPlotFontSettingsButton({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        title={`剧情字体 · ${summary}`}
+        title={`${sheetTitle} · ${summary}`}
         className={
           storyHeader
-            ? `inline-flex h-8 min-w-8 items-center justify-center rounded-full border border-[var(--sr-border)] bg-[var(--sr-glass)] px-2.5 font-[family-name:var(--sr-font-serif)] text-[12px] tracking-wide text-[var(--sr-text-muted)] backdrop-blur-sm transition hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-text)] ${className}`
+            ? `inline-flex h-8 min-w-8 items-center justify-center rounded-full border border-[var(--sr-border)] bg-[var(--sr-panel)] px-2.5 font-[family-name:var(--sr-font-serif)] text-[12px] tracking-wide text-[var(--sr-text-muted)] transition hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-text)] ${className}`
             : iconOnly
               ? `inline-flex items-center justify-center rounded-lg border border-white/20 bg-white/10 p-2 text-white/85 transition hover:bg-white/15 ${className}`
               : `inline-flex items-center gap-1 rounded-lg border border-[var(--sr-border)] bg-[var(--sr-glass)] px-2.5 py-1.5 text-[13px] text-[var(--sr-text-soft)] transition hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-text)] ${className}`
@@ -624,7 +664,7 @@ export function DatingPlotFontSettingsButton({
       <BottomSheet
         open={open}
         onOpenChange={setOpen}
-        title="剧情字体"
+        title={sheetTitle}
         subtitle={summary}
         themeStyle={themeStyle}
       >
@@ -634,6 +674,8 @@ export function DatingPlotFontSettingsButton({
           dataUrlById={dataUrlById}
           onChange={onChange}
           onDataUrlChange={onDataUrlChange}
+          regionLabels={regionLabels}
+          sizeTitle={sizeTitle}
         />
       </BottomSheet>
     </>

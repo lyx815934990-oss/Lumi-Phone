@@ -41,6 +41,7 @@ import type {
   WeChatVoicePayload,
   WeChatMusicSyncPayload,
   WeChatMiniGamePayload,
+  WeChatCoupleSpaceInvitePayload,
   WeChatListenCommentSharePayload,
   WeChatListenProfileSharePayload,
   WeChatListenTrackSharePayload,
@@ -1417,6 +1418,55 @@ function normalizeWeChatChatMessage(input: unknown): WeChatChatMessage | null {
     }
     return undefined
   })()
+  const rawCoupleSpaceInvite = (m as { coupleSpaceInvite?: unknown }).coupleSpaceInvite
+  const coupleSpaceInvite: WeChatCoupleSpaceInvitePayload | undefined = (() => {
+    if (!rawCoupleSpaceInvite || typeof rawCoupleSpaceInvite !== 'object') return undefined
+    const r = rawCoupleSpaceInvite as Record<string, unknown>
+    const kind = typeof r.kind === 'string' ? r.kind.trim() : ''
+    if (kind !== 'couple_space_invite') return undefined
+    const inviteId = typeof r.inviteId === 'string' ? r.inviteId.trim() : ''
+    if (!inviteId) return undefined
+    const title =
+      typeof r.title === 'string' && r.title.trim()
+        ? r.title.trim().slice(0, 64)
+        : '开通我们的情侣空间'
+    const subtitle =
+      typeof r.subtitle === 'string' && r.subtitle.trim()
+        ? r.subtitle.trim().slice(0, 120)
+        : '一起写日记 · 记纪念日 · 留专属称呼'
+    const charRespondedRaw = typeof r.charResponded === 'string' ? r.charResponded.trim() : ''
+    const charResponded =
+      charRespondedRaw === 'accepted' || charRespondedRaw === 'declined'
+        ? charRespondedRaw
+        : undefined
+    const userRespondedRaw = typeof r.userResponded === 'string' ? r.userResponded.trim() : ''
+    const userResponded =
+      userRespondedRaw === 'accepted' || userRespondedRaw === 'declined'
+        ? userRespondedRaw
+        : undefined
+    const replyText =
+      typeof r.replyText === 'string' && r.replyText.trim()
+        ? r.replyText.trim().slice(0, 500)
+        : undefined
+    const outcomeRaw = typeof r.outcome === 'string' ? r.outcome.trim() : ''
+    const outcome =
+      outcomeRaw === 'full_accept' ||
+      outcomeRaw === 'reluctant_accept' ||
+      outcomeRaw === 'soft_reject' ||
+      outcomeRaw === 'hard_reject'
+        ? outcomeRaw
+        : undefined
+    return {
+      kind: 'couple_space_invite' as const,
+      inviteId,
+      title,
+      subtitle,
+      ...(charResponded ? { charResponded } : {}),
+      ...(userResponded ? { userResponded } : {}),
+      ...(replyText ? { replyText } : {}),
+      ...(outcome ? { outcome } : {}),
+    }
+  })()
   const rawListenCommentShare = (m as { listenCommentShare?: unknown }).listenCommentShare
   const listenCommentShare: WeChatListenCommentSharePayload | undefined = (() => {
     if (!rawListenCommentShare || typeof rawListenCommentShare !== 'object') return undefined
@@ -1720,6 +1770,7 @@ function normalizeWeChatChatMessage(input: unknown): WeChatChatMessage | null {
     })(),
     musicSync,
     miniGameInvite,
+    coupleSpaceInvite,
     listenCommentShare,
     listenProfileShare,
     listenTrackShare,
@@ -1876,6 +1927,12 @@ function normalizeChatConversationSettingsRow(input: unknown): ChatConversationS
         ? !!(r as { showGroupRankBadgesInChat?: boolean }).showGroupRankBadgesInChat
         : false,
     chatBackground: typeof r.chatBackground === 'string' ? r.chatBackground : '',
+    ...((): Partial<ChatConversationSettingsRow> => {
+      const rawBlur = (r as { chatBackgroundBlur?: unknown }).chatBackgroundBlur
+      if (typeof rawBlur !== 'number' || !Number.isFinite(rawBlur)) return {}
+      const blur = Math.max(0, Math.min(40, Math.round(rawBlur)))
+      return blur > 0 ? { chatBackgroundBlur: blur } : {}
+    })(),
     ...(typeof (r as { playerChatAvatarUrl?: unknown }).playerChatAvatarUrl === 'string' &&
     (r as { playerChatAvatarUrl: string }).playerChatAvatarUrl.trim()
       ? {
@@ -1978,6 +2035,18 @@ function normalizeChatConversationSettingsRow(input: unknown): ChatConversationS
       return {
         ...(sticker !== undefined ? { stickerRoundTriggerPercent: sticker } : {}),
         ...(voice !== undefined ? { voiceRoundTriggerPercent: voice } : {}),
+        ...(typeof (r as { voiceSynthToneTokensEnabled?: unknown }).voiceSynthToneTokensEnabled === 'boolean'
+          ? {
+              voiceSynthToneTokensEnabled: !!(r as { voiceSynthToneTokensEnabled?: boolean })
+                .voiceSynthToneTokensEnabled,
+            }
+          : {}),
+        ...(typeof (r as { voiceSynthEmotionEnabled?: unknown }).voiceSynthEmotionEnabled === 'boolean'
+          ? {
+              voiceSynthEmotionEnabled: !!(r as { voiceSynthEmotionEnabled?: boolean })
+                .voiceSynthEmotionEnabled,
+            }
+          : {}),
         ...(image !== undefined ? { imageRoundTriggerPercent: image } : {}),
         ...(classicEmoji !== undefined ? { classicEmojiRoundTriggerPercent: classicEmoji } : {}),
         ...(targetedMode ? { stickerTargetedModeEnabled: true } : {}),
@@ -2163,6 +2232,18 @@ function mergeChatConversationSettingsRows(
   merged.chatBackground =
     coalesceNonEmptyStr(newer.chatBackground, older.chatBackground) ?? ''
 
+  {
+    const nBlur = newer.chatBackgroundBlur
+    const oBlur = older.chatBackgroundBlur
+    if (typeof nBlur === 'number' && Number.isFinite(nBlur) && nBlur > 0) {
+      merged.chatBackgroundBlur = Math.max(0, Math.min(40, Math.round(nBlur)))
+    } else if (typeof oBlur === 'number' && Number.isFinite(oBlur) && oBlur > 0) {
+      merged.chatBackgroundBlur = Math.max(0, Math.min(40, Math.round(oBlur)))
+    } else {
+      delete merged.chatBackgroundBlur
+    }
+  }
+
   const playerChatAvatarUrl = coalesceNonEmptyStr(newer.playerChatAvatarUrl, older.playerChatAvatarUrl)
   if (playerChatAvatarUrl) merged.playerChatAvatarUrl = playerChatAvatarUrl
   else delete merged.playerChatAvatarUrl
@@ -2199,6 +2280,18 @@ function mergeChatConversationSettingsRows(
   }
   if (typeof newer.innerOsSyncEnabled !== 'boolean' && typeof older.innerOsSyncEnabled === 'boolean') {
     merged.innerOsSyncEnabled = older.innerOsSyncEnabled
+  }
+  if (
+    typeof newer.voiceSynthToneTokensEnabled !== 'boolean' &&
+    typeof older.voiceSynthToneTokensEnabled === 'boolean'
+  ) {
+    merged.voiceSynthToneTokensEnabled = older.voiceSynthToneTokensEnabled
+  }
+  if (
+    typeof newer.voiceSynthEmotionEnabled !== 'boolean' &&
+    typeof older.voiceSynthEmotionEnabled === 'boolean'
+  ) {
+    merged.voiceSynthEmotionEnabled = older.voiceSynthEmotionEnabled
   }
   if (
     !(typeof newer.recentPrivateInjectAiRounds === 'number' && Number.isFinite(newer.recentPrivateInjectAiRounds)) &&
@@ -3872,6 +3965,33 @@ export class PersonaDb {
     emitIndexedTrashChanged()
   }
 
+  /** 一键清空回收站全部条目（不可恢复），返回删除条数 */
+  async clearAllIndexedTrashEntries(): Promise<number> {
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(INDEXED_TRASH_STORE)) {
+      db.close()
+      return 0
+    }
+    const tx = db.transaction(INDEXED_TRASH_STORE, 'readwrite')
+    const store = tx.objectStore(INDEXED_TRASH_STORE)
+    const count = await new Promise<number>((resolve, reject) => {
+      const countReq = store.count()
+      countReq.onsuccess = () => resolve(Number(countReq.result) || 0)
+      countReq.onerror = () => reject(countReq.error ?? new Error('indexedTrash count'))
+    })
+    if (count > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const clearReq = store.clear()
+        clearReq.onsuccess = () => resolve()
+        clearReq.onerror = () => reject(clearReq.error ?? new Error('indexedTrash clear'))
+      })
+    }
+    await txDone(tx)
+    db.close()
+    if (count > 0) emitIndexedTrashChanged()
+    return count
+  }
+
   /** 物理清除已过期的回收站条目，返回删除条数 */
   async purgeExpiredIndexedTrash(): Promise<number> {
     const db = await openDb()
@@ -4881,6 +5001,11 @@ export class PersonaDb {
     db.close()
     await this.purgeStoryTimelineDataForCharacterIds([...idsToRemove])
     await this.purgeLifeMutableForCharacterIds([...idsToRemove])
+    try {
+      await this.purgeWechatDatingArtifactsAndMemoryTracksForCharacterIds([...idsToRemove])
+    } catch {
+      // ignore
+    }
     await unregisterGlobalWechatCharacterForCharacterId(deleteId)
     emitWeChatStorageChanged()
     const { notifyUserWeChatDataClear } = await import('../wechatDataInventoryNotify')
@@ -4921,10 +5046,10 @@ export class PersonaDb {
         await this.setPhoneKv(WECHAT_DATING_ARCHIVES_KV_KEY, arch)
         if (typeof localStorage !== 'undefined') {
           try {
-            if (Object.keys(arch).length) localStorage.setItem(WECHAT_DATING_ARCHIVES_KV_KEY, JSON.stringify(arch))
-            else localStorage.removeItem(WECHAT_DATING_ARCHIVES_KV_KEY)
+            // 不再镜像到 localStorage（易超配额）；有 IDB 后清掉旧副本
+            localStorage.removeItem(WECHAT_DATING_ARCHIVES_KV_KEY)
           } catch {
-            // ignore quota
+            // ignore
           }
         }
       }
@@ -4973,6 +5098,19 @@ export class PersonaDb {
               // ignore
             }
           }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const { deleteAllDatingPlotFontsForCharacter } = await import('../dating/datingPlotFontPersist')
+      for (const id of ids) {
+        try {
+          await deleteAllDatingPlotFontsForCharacter(id)
+        } catch {
+          // ignore
         }
       }
     } catch {
@@ -5811,6 +5949,7 @@ export class PersonaDb {
       voice?: Partial<WeChatVoicePayload>
       musicSync?: Partial<WeChatMusicSyncPayload>
       miniGameInvite?: Partial<WeChatMiniGamePayload>
+      coupleSpaceInvite?: Partial<WeChatCoupleSpaceInvitePayload>
     },
   ): Promise<void> {
     const tid = messageId.trim()
@@ -5844,6 +5983,15 @@ export class PersonaDb {
             ? ({ ...existing.miniGameInvite, ...patch.miniGameInvite } as WeChatMiniGamePayload)
             : (patch.miniGameInvite as WeChatMiniGamePayload)
           : existing.miniGameInvite,
+      coupleSpaceInvite:
+        patch.coupleSpaceInvite !== undefined
+          ? existing.coupleSpaceInvite
+            ? ({
+                ...existing.coupleSpaceInvite,
+                ...patch.coupleSpaceInvite,
+              } as WeChatCoupleSpaceInvitePayload)
+            : (patch.coupleSpaceInvite as WeChatCoupleSpaceInvitePayload)
+          : existing.coupleSpaceInvite,
     }
     if (patch.imageGenPending === false) delete merged.imageGenPending
     if (patch.imageGenAwaitingConfirm === false) delete merged.imageGenAwaitingConfirm
@@ -10411,6 +10559,7 @@ export class PersonaDb {
         | 'showGroupMemberNicknameInChat'
         | 'showGroupRankBadgesInChat'
         | 'chatBackground'
+        | 'chatBackgroundBlur'
         | 'playerChatAvatarUrl'
         | 'stickerRoundTriggerPercent'
         | 'stickerTargetedModeEnabled'
@@ -10420,6 +10569,8 @@ export class PersonaDb {
         | 'classicEmojiRoundTriggerPercent'
         | 'classicEmojiBannedNames'
         | 'voiceRoundTriggerPercent'
+        | 'voiceSynthToneTokensEnabled'
+        | 'voiceSynthEmotionEnabled'
         | 'replyOutputLanguage'
         | 'replyVoiceLanguage'
         | 'replyVoiceId'
@@ -10519,6 +10670,16 @@ export class PersonaDb {
       showGroupRankBadgesInChat:
         params.showGroupRankBadgesInChat ?? existing?.showGroupRankBadgesInChat ?? false,
       chatBackground: params.chatBackground ?? existing?.chatBackground ?? '',
+      ...(typeof params.chatBackgroundBlur === 'number' && Number.isFinite(params.chatBackgroundBlur)
+        ? (() => {
+            const blur = Math.max(0, Math.min(40, Math.round(params.chatBackgroundBlur)))
+            return blur > 0 ? { chatBackgroundBlur: blur } : {}
+          })()
+        : existing?.chatBackgroundBlur != null &&
+            typeof existing.chatBackgroundBlur === 'number' &&
+            existing.chatBackgroundBlur > 0
+          ? { chatBackgroundBlur: Math.max(0, Math.min(40, Math.round(existing.chatBackgroundBlur))) }
+          : {}),
       ...(typeof params.playerChatAvatarUrl === 'string'
         ? params.playerChatAvatarUrl.trim()
           ? { playerChatAvatarUrl: params.playerChatAvatarUrl.trim() }
@@ -10540,6 +10701,16 @@ export class PersonaDb {
           : existing?.voiceRoundTriggerPercent !== undefined
             ? { voiceRoundTriggerPercent: existing.voiceRoundTriggerPercent }
             : {}),
+      ...(typeof params.voiceSynthToneTokensEnabled === 'boolean'
+        ? { voiceSynthToneTokensEnabled: params.voiceSynthToneTokensEnabled }
+        : existing?.voiceSynthToneTokensEnabled !== undefined
+          ? { voiceSynthToneTokensEnabled: existing.voiceSynthToneTokensEnabled }
+          : {}),
+      ...(typeof params.voiceSynthEmotionEnabled === 'boolean'
+        ? { voiceSynthEmotionEnabled: params.voiceSynthEmotionEnabled }
+        : existing?.voiceSynthEmotionEnabled !== undefined
+          ? { voiceSynthEmotionEnabled: existing.voiceSynthEmotionEnabled }
+          : {}),
       ...(typeof params.replyOutputLanguage === 'string'
         ? { replyOutputLanguage: params.replyOutputLanguage.trim().slice(0, 16) }
         : existing?.replyOutputLanguage

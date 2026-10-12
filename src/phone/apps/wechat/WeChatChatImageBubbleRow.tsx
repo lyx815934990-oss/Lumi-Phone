@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import type { WeChatBubbleTheme } from '../../types'
 import {
@@ -46,6 +46,8 @@ type Props = {
   selected?: boolean
   onLongPress?: (anchorRect: DOMRect) => void
   multiSelectAvatar?: ReactNode
+  /** 多选消息时禁止点开大图（只勾选，对齐微信） */
+  disableImagePreview?: boolean
 }
 
 export function WeChatChatImageBubbleRow({
@@ -77,6 +79,7 @@ export function WeChatChatImageBubbleRow({
   onRegenerate,
   onSaveRegenPrompt,
   multiSelectAvatar,
+  disableImagePreview = false,
 }: Props) {
   const anchorRef = useRef<HTMLDivElement>(null)
   const [lightboxOpen, setLightboxOpen] = useState(false)
@@ -86,6 +89,10 @@ export function WeChatChatImageBubbleRow({
   const showGenerating = generating && !genFailed
   const showFailed = genFailed && !showGenerating && !showAwaiting
   const descText = description.trim()
+
+  useEffect(() => {
+    if (disableImagePreview) setLightboxOpen(false)
+  }, [disableImagePreview])
 
   const bg = isSticker ? 'transparent' : 'transparent'
   const border = isSticker
@@ -114,6 +121,7 @@ export function WeChatChatImageBubbleRow({
         onRetry?.()
         return
       }
+      if (disableImagePreview) return
       setLightboxOpen(true)
     },
   })

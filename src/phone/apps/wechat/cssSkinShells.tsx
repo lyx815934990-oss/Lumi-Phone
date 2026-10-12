@@ -52,7 +52,8 @@ export function CssRedPacketShell({
   kind: 'unclaimed' | 'claimed' | 'expired'
   isSelf: boolean
 }) {
-  const tag = kind === 'unclaimed' ? '红包' : kind === 'claimed' ? '已领取' : '已过期'
+  const tag =
+    kind === 'unclaimed' ? '红包' : kind === 'claimed' ? '已领取' : '已过期'
   return (
     <div
       data-wx-msg-kind="red-packet"

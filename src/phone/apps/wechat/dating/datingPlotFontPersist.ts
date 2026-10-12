@@ -2,10 +2,10 @@ import { personaDb } from '../newFriendsPersona/idb'
 import type { DatingPlotFontLibraryItem, DatingPlotFontSettings } from './datingPlotFontSettings'
 import { normalizeDatingPlotFontSettings } from './datingPlotFontSettings'
 
-const FONT_KV_PREFIX = 'wechat-dating-plot-font-v1::'
+export const DATING_PLOT_FONT_KV_PREFIX = 'wechat-dating-plot-font-v1::'
 
 export function datingPlotFontKvKey(characterId: string, assetId: string): string {
-  return `${FONT_KV_PREFIX}${characterId.trim()}::${assetId.trim()}`
+  return `${DATING_PLOT_FONT_KV_PREFIX}${characterId.trim()}::${assetId.trim()}`
 }
 
 export async function persistDatingPlotFontDataUrl(
@@ -34,6 +34,24 @@ export async function deleteDatingPlotFontDataUrl(characterId: string, assetId: 
   } catch {
     /* ignore */
   }
+}
+
+/** 删除某角色全部剧情字体侧存（删角色 / 清约会档时调用） */
+export async function deleteAllDatingPlotFontsForCharacter(characterId: string): Promise<number> {
+  const cid = characterId.trim()
+  if (!cid) return 0
+  const prefix = `${DATING_PLOT_FONT_KV_PREFIX}${cid}::`
+  let removed = 0
+  try {
+    const keys = await personaDb.listPhoneKvKeysByPrefix(prefix)
+    for (const key of keys) {
+      await personaDb.deletePhoneKv(key)
+      removed += 1
+    }
+  } catch {
+    /* ignore */
+  }
+  return removed
 }
 
 /** 加载该角色字体库全部 dataUrl */

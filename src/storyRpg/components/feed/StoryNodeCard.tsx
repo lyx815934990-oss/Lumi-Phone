@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Copy, Pencil, RotateCcw, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Copy, Pencil, RotateCcw, Timer, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useWeChatLongPress } from '../../../phone/apps/wechat/hooks/useWeChatLongPress'
@@ -14,6 +14,10 @@ import { InlineCommentsPanel } from './InlineCommentsPanel'
 import { PlotHtmlVisualAccordion } from './PlotHtmlVisualAccordion'
 import { StoryPlotContextMenu, type StoryPlotContextMenuItem } from './StoryPlotContextMenu'
 import { splitPlotBodyIntoReaderCommentSegments, stripReaderCommentAnchors } from '../../../phone/apps/wechat/dating/datingReaderComments'
+import { contentToInteractiveBubbles } from '../../../phone/apps/wechat/dating/datingInteractiveAi'
+import { InteractiveBubbleStack } from '../../../phone/apps/wechat/dating/InteractiveBubbleView'
+import type { InteractiveBubble } from '../../../phone/apps/wechat/dating/datingInteractiveTypes'
+import { formatPlotGenerationDurationLabel } from '../../../phone/apps/wechat/dating/plotStoryTimeLabel'
 
 function clearDomSelectionSafe() {
   try {
@@ -41,6 +45,9 @@ type Props = {
   onRegenerate?: () => void
   onDelete?: () => void
   onVersionChange?: (index: number) => void
+  /** 互动拍角色头像 / 名（仅 fromInteractive 节点用） */
+  characterName?: string
+  characterAvatarUrl?: string
 }
 
 const spring = { type: 'spring' as const, stiffness: 400, damping: 32 }
@@ -91,6 +98,20 @@ function EditStoryTimeChip({ onClick }: { onClick: () => void }) {
       <Clock3 className="size-3 opacity-80" strokeWidth={1.75} aria-hidden />
       改时间
     </button>
+  )
+}
+
+function GenerationDurationChip({ ms }: { ms: number }) {
+  const label = formatPlotGenerationDurationLabel(ms)
+  if (!label) return null
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--sr-border)] bg-[var(--sr-panel)] px-2.5 py-1 text-[10px] font-medium leading-none tracking-wide text-[var(--sr-text-soft)]"
+      title={`生成耗时 ${label}`}
+    >
+      <Timer className="size-3 opacity-80" strokeWidth={1.75} aria-hidden />
+      <span className="font-mono tabular-nums">{label}</span>
+    </span>
   )
 }
 
@@ -158,7 +179,7 @@ export function StoryNodeCard({
   node,
   showCoT,
   commentModeEnabled,
-  plotArtifactVisualEnabled = true,
+  plotArtifactVisualEnabled = false,
   commentsExpandedId,
   setCommentsExpandedId,
   onEditStoryTime,
@@ -171,6 +192,8 @@ export function StoryNodeCard({
   onRegenerate,
   onDelete,
   onVersionChange,
+  characterName,
+  characterAvatarUrl,
 }: Props) {
   const [cotOpen, setCotOpen] = useState(false)
   const [htmlVisualOpen, setHtmlVisualOpen] = useState(false)
@@ -191,9 +214,20 @@ export function StoryNodeCard({
   const summaryText = node.summary?.trim() ?? ''
   const summaryBody = node.summaryBody?.trim() ?? ''
   const storyTimeText = node.storyTimeLabel?.trim() ?? ''
+  const generationDurationMs =
+    typeof node.generationDurationMs === 'number' &&
+    Number.isFinite(node.generationDurationMs) &&
+    node.generationDurationMs > 0
+      ? Math.round(node.generationDurationMs)
+      : null
   const showPlotMeta =
     !isPlayer &&
-    (!!summaryText || !!summaryBody || !!storyTimeText || !!onEditStoryTime || !!onOpenParallel || !!onOpenIfLine)
+    (!!summaryText ||
+      !!summaryBody ||
+      !!storyTimeText ||
+      !!onEditStoryTime ||
+      !!onOpenParallel ||
+      !!onOpenIfLine)
 
   const bodySegments = useMemo(() => {
     const plotComments =
@@ -220,6 +254,23 @@ export function StoryNodeCard({
         .trim(),
     [bodySegments],
   )
+
+  const isInteractiveOrigin = node.fromInteractive === true
+  const interactiveBubbles = useMemo((): InteractiveBubble[] => {
+    if (!isInteractiveOrigin) return []
+    const stored = (node.interactiveBubbles ?? [])
+      .map((b) => ({
+        id: String(b.id || '').trim() || `b-${node.id}`,
+        kind:
+          b.kind === 'dialogue' || b.kind === 'thought' || b.kind === 'action'
+            ? b.kind
+            : ('action' as const),
+        text: String(b.text ?? '').trim(),
+      }))
+      .filter((b) => b.text)
+    if (stored.length) return stored
+    return contentToInteractiveBubbles(node.content)
+  }, [isInteractiveOrigin, node.content, node.id, node.interactiveBubbles])
 
   const commentsOpen =
     setCommentsExpandedId !== undefined
@@ -399,6 +450,48 @@ export function StoryNodeCard({
           openContextMenuAt(e.clientX, e.clientY)
         }}
       >
+        {isInteractiveOrigin ? (
+          <div
+            id={`dating-plot-${node.id}`}
+            className={`scroll-mt-[calc(var(--sr-header-h)+8px)] px-1 py-1 ${isRegenerating ? 'opacity-70' : ''}`}
+          >
+            <InteractiveBubbleStack
+              bubbles={interactiveBubbles}
+              side={isPlayer ? 'user' : 'char'}
+              characterName={characterName}
+              characterAvatarUrl={characterAvatarUrl}
+            />
+            {(onEdit || onDelete || (canRegenerate && onRegenerate)) && !interactionLocked ? (
+              <div className="mt-2 flex items-center justify-end gap-1.5 opacity-70">
+                {onEdit ? (
+                  <CardActionIcon
+                    label="编辑"
+                    icon={<Pencil className="size-3.5" strokeWidth={1.75} aria-hidden />}
+                    disabled={isRegenerating}
+                    onClick={onEdit}
+                  />
+                ) : null}
+                {canRegenerate && onRegenerate ? (
+                  <CardActionIcon
+                    label="重新回复"
+                    icon={<RotateCcw className="size-3.5" strokeWidth={1.75} aria-hidden />}
+                    disabled={isRegenerating}
+                    onClick={onRegenerate}
+                  />
+                ) : null}
+                {onDelete ? (
+                  <CardActionIcon
+                    label="删除"
+                    danger
+                    icon={<Trash2 className="size-3.5" strokeWidth={1.75} aria-hidden />}
+                    disabled={isRegenerating}
+                    onClick={requestDelete}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : (
         <GlassPanel
           highlight={node.isHighlight}
           className={`scroll-mt-[calc(var(--sr-header-h)+8px)] p-4 ${isPlayer ? 'border-[var(--sr-gold-dim)]/20 bg-[var(--sr-gold)]/[0.04]' : ''} ${isRegenerating ? 'opacity-70' : ''}`}
@@ -478,10 +571,10 @@ export function StoryNodeCard({
                 ) : null}
 
                 <div className="flex items-center justify-between gap-2 rounded-[14px] border border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] px-3 py-2">
-                  <span className="inline-flex min-w-0 items-center gap-1.5 text-[11px] font-medium tracking-wide text-[var(--sr-text-muted)]">
+                  <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-[11px] font-medium tracking-wide text-[var(--sr-text-muted)]">
                     <span className="size-1 shrink-0 rounded-full bg-[var(--sr-text-faint)]" aria-hidden />
                     {storyTimeText ? (
-                      <span className="truncate text-[var(--sr-text)]">{storyTimeText}</span>
+                      <span className="min-w-0 break-words text-[var(--sr-text)]">{storyTimeText}</span>
                     ) : (
                       '剧情时间轴'
                     )}
@@ -671,6 +764,9 @@ export function StoryNodeCard({
               <span />
             )}
             <div className="flex shrink-0 items-center justify-end gap-1.5">
+              {generationDurationMs != null ? (
+                <GenerationDurationChip ms={generationDurationMs} />
+              ) : null}
               <CardActionIcon
                 label="复制"
                 icon={<Copy className="size-3.5" strokeWidth={1.75} aria-hidden />}
@@ -714,6 +810,7 @@ export function StoryNodeCard({
             </div>
           ) : null}
         </GlassPanel>
+        )}
       </div>
 
       <StoryPlotContextMenu

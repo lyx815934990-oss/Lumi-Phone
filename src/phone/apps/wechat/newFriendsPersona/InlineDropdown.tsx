@@ -15,6 +15,8 @@ export function InlineDropdown({
   disabled = false,
   /** 为 true 时在触发按钮上 mousedown 调用 preventDefault，避免抢走邻近 textarea 焦点导致选区错乱（占位符插入等场景） */
   suppressTriggerFocusSteal = false,
+  /** 长文案可换行（如 API 模型全名），默认单行截断 */
+  wrapValue = false,
   valueTextStyle,
   children,
 }: {
@@ -25,6 +27,7 @@ export function InlineDropdown({
   /** 为 true 时不展开，样式与禁用一致（如无数据时） */
   disabled?: boolean
   suppressTriggerFocusSteal?: boolean
+  wrapValue?: boolean
   /** 触发按钮与面板副标题上的 valueText 字体（如全局数字字体） */
   valueTextStyle?: CSSProperties
   children: ReactNode
@@ -48,18 +51,21 @@ export function InlineDropdown({
             e.stopPropagation()
           }}
         >
-          <div className="flex items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: '#f0f0f0' }}>
+          <div className="flex items-start justify-between gap-3 border-b px-4 py-3" style={{ borderColor: '#f0f0f0' }}>
             <div className="min-w-0 flex-1">
               <p className="truncate text-[14px] font-semibold" style={{ color: '#000000' }}>
                 {label}
               </p>
-              <p className="mt-0.5 truncate text-[12px]" style={{ color: '#666666', ...valueTextStyle }}>
+              <p
+                className={`mt-0.5 text-[12px] leading-snug ${wrapValue ? 'break-all' : 'truncate'}`}
+                style={{ color: '#666666', ...valueTextStyle }}
+              >
                 {valueText}
               </p>
             </div>
             <button
               type="button"
-              className="rounded-xl px-3 py-1.5 text-[12px] transition-all duration-200 ease-out hover:bg-[#fafafa]"
+              className="shrink-0 rounded-xl px-3 py-1.5 text-[12px] transition-all duration-200 ease-out hover:bg-[#fafafa]"
               style={{ color: '#666666' }}
               onClick={onToggle}
             >
@@ -73,14 +79,18 @@ export function InlineDropdown({
       </div>,
       document.body,
     )
-  }, [open, disabled, children, label, valueText, valueTextStyle, onToggle])
+  }, [open, disabled, children, label, valueText, valueTextStyle, wrapValue, onToggle])
 
   return (
     <div className="relative min-w-0 flex-1">
       <button
         type="button"
         disabled={disabled}
-        className="relative flex w-full items-center justify-center gap-1 rounded-xl border bg-white px-3 py-3 text-[15px] outline-none transition-all duration-200 ease-out disabled:cursor-not-allowed disabled:opacity-60"
+        className={`relative flex w-full gap-1 rounded-xl border bg-white py-3 text-[15px] outline-none transition-all duration-200 ease-out disabled:cursor-not-allowed disabled:opacity-60 ${
+          wrapValue
+            ? 'items-start justify-start px-3 pr-9 text-left'
+            : 'items-center justify-center px-3'
+        }`}
         style={{ borderColor: '#e5e5e5', color: '#000000' }}
         onMouseDown={
           suppressTriggerFocusSteal && !disabled
@@ -93,13 +103,18 @@ export function InlineDropdown({
         aria-label={label}
         aria-expanded={open}
       >
-        <span className="pointer-events-none select-none text-center" style={valueTextStyle}>
+        <span
+          className={`pointer-events-none min-w-0 select-none leading-snug ${
+            wrapValue ? 'flex-1 break-all text-left' : 'text-center'
+          }`}
+          style={valueTextStyle}
+        >
           {valueText}
         </span>
         <ChevronDown
-          className={`pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 transition-transform duration-200 ${
-            open && !disabled ? 'rotate-180' : 'rotate-0'
-          }`}
+          className={`pointer-events-none absolute right-2 size-4 transition-transform duration-200 ${
+            wrapValue ? 'top-3.5' : 'top-1/2 -translate-y-1/2'
+          } ${open && !disabled ? 'rotate-180' : 'rotate-0'}`}
           style={{ color: '#666666' }}
         />
       </button>

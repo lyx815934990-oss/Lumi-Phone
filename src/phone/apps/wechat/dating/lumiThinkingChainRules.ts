@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 约会页 system：必注入核心（offlineDatingMustInjectPrompts）
  * + 本文件仅追加「档案室可选预设」短注/全文。
  *
@@ -9,6 +9,10 @@ import {
   buildOfflineDatingMustInjectCore,
   buildOfflineDatingThinkingChainBooksPrompt,
 } from './offlineDatingMustInjectPrompts'
+import {
+  resolveOfflineReplyStyleAppendix,
+  resolveOfflineThinkingChainBooksPrompt,
+} from '../../thinkingChain/cotAssemble'
 import type { DatingWritingPresetToggles } from './datingWritingPresets'
 import { OFFLINE_DATING_FASHION_STYLING_APPENDIX } from './offlineDatingFashionStylingAppendix'
 import { OFFLINE_DATING_COUPLE_INTIMACY_POSE_APPENDIX } from './offlineDatingCoupleIntimacyPoseAppendix'
@@ -112,14 +116,19 @@ export function buildDatingStyleSystemPrompt(
       ? `\n\n【档案室预设·有点生活常识·已开启】进屋换拖鞋；进对方家须钥匙/开门/敲门；公共场合亲密默认最多牵手拥抱与轻碰唇；没床处禁安稳睡；早晚洗漱；睡衣/裸睡（详见思维链【有点生活常识】）。`
       : `\n\n【档案室预设·有点生活常识·已开启】\n${DAILY_LIFE_COMMON_SENSE_APPENDIX}`
     : ''
+  const userReplyStyle = !usingCustom ? resolveOfflineReplyStyleAppendix() : null
+  const userCotBooks =
+    thinkingChainEnabled && !usingCustom ? resolveOfflineThinkingChainBooksPrompt() : null
   const core = buildOfflineDatingMustInjectCore({
     thinkingChainEnabled,
     toggles,
     writingPresets: opts?.writingPresets,
     customWritingPrompt: usingCustom ? opts?.customWritingPrompt : null,
+    ...(userReplyStyle ? { replyStyleOverride: userReplyStyle } : {}),
+    ...(userCotBooks ? { thinkingChainBooksOverride: userCotBooks } : {}),
   })
-  // 自定义写作预设：不叠档案室短注（避免与「完全按自定义」冲突）；档案室仍可由世界书条目注入
-  if (usingCustom) return core
+  // 完全自定义写作 / 自定义提示词：不叠档案室短注（避免冲突）；档案室仍可由世界书条目注入
+  if (usingCustom || userReplyStyle) return core
   return (
     core +
     `${innerOsPresetNote}${fashionPresetNote}${intimacyPosePresetNote}${cuisinePresetNote}${directAnswerPresetNote}${passionateDirectPresetNote}${realisticConflictPresetNote}${realisticAutonomyPresetNote}${gentleBrotherPresetNote}${autonomousLifePresetNote}${schoolCampusPresetNote}${bodyScentPresetNote}${dailyLifePresetNote}`

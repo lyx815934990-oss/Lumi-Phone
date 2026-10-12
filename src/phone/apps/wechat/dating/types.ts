@@ -69,6 +69,9 @@ export function clampDatingPlotSummaryInjectRounds(raw: number): number {
  */
 export const DATING_PLOT_COMPLETION_TIMEOUT_MS = 240_000
 
+/** 发剧情前：记忆注入 / 时钟同步等准备步骤上限（毫秒） */
+export const DATING_PLOT_PREPARE_TIMEOUT_MS = 90_000
+
 /**
  * 参考资料汉字总预算（按 {@link DATING_AI_MAX_CONTEXT_TOKENS} 估算，预留 system/思维链指令）。
  * 各段独立裁剪，合计可接近该预算。
@@ -146,12 +149,12 @@ export type NarrativeGenOptions = {
   thinkingChainEnabled?: boolean
   /**
    * 读者评论模式：同轮在正文后输出【读者评论】块（不另发请求）。
-   * 缺省 true。
+   * 缺省 false（需用户在高级场控中自行开启）。
    */
   commentModeEnabled?: boolean
   /**
    * 小剧场：同轮在正文后输出 HTML 可视化块（预设库）。
-   * 缺省 true。
+   * 缺省 false（需用户在高级场控中自行开启）。
    */
   plotArtifactVisualEnabled?: boolean
   /**
@@ -328,6 +331,30 @@ export type PlotItem = {
    * 仅玩家条：发送时生效、且会注入/改写提示词的场控标签（顶行展示）。
    */
   activeControlTags?: import('./datingPlayerControlTags').DatingPlayerControlTag[]
+  /**
+   * 仅 AI 条：本轮叙事镜头。用于「最近剧情」知情红行——
+   * - `side`：主角色未在场，后续当面注入须 redact
+   * - `god`：玩家未在场，当面续写禁止玩家开天眼
+   * 缺省视为当面/混合主镜头。
+   */
+  narrativeLens?: 'god' | 'side'
+  /**
+   * 仅 AI 条：本轮模型生成耗时（毫秒；从发起 completion 到正文可落盘）。
+   * 重新生成时覆盖为最新一轮。
+   */
+  generationDurationMs?: number
+  /**
+   * 互动模式产出的拍：普通页 / 互动页均按互动气泡样式渲染，不走普通剧情卡解析。
+   */
+  fromInteractive?: boolean
+  /**
+   * 互动气泡结构化数据（优先于从 content 反解）。
+   */
+  interactiveBubbles?: Array<{
+    id: string
+    kind: 'action' | 'dialogue' | 'thought'
+    text: string
+  }>
 }
 
 /** 剧情卡片「平行事件 / IF 线」生成结果 */
@@ -398,10 +425,15 @@ export type CharacterArchive = {
    * 关闭则模型直出正文。默认 true；普通模式与 VN 共用。
    */
   thinkingChainEnabled?: boolean
-  /** 读者评论模式（小说随笔式折叠条，同轮生成） */
+  /** 读者评论模式（小说随笔式折叠条，同轮生成）；缺省关 */
   commentModeEnabled?: boolean
-  /** 小剧场：剧情相关 HTML 可视化（同轮生成） */
+  /** 小剧场：剧情相关 HTML 可视化（同轮生成）；缺省关 */
   plotArtifactVisualEnabled?: boolean
+  /**
+   * 评论/小剧场默认改为关后的迁移标记。
+   * 缺省：加载时强制两者为关，并写回 true，避免旧档里的默认 true 继续生效。
+   */
+  commentTheaterDefaultsOffMigrated?: boolean
   /** 小剧场类型：`random` 或预设 id；缺省 random */
   plotArtifactVisualPresetId?: string
   /** 发送剧情时同轮一并生成平行事件（写入卡片 + 时间轴摘要） */
@@ -452,6 +484,11 @@ export type CharacterArchive = {
   plotFonts?: import('./datingPlotFontSettings').DatingPlotFontSettings
   /** 剧情页色卡 + 昼夜（随角色存档） */
   storyAppearance?: import('./datingStoryAppearance').DatingStoryAppearance
+  /**
+   * 互动模式：每轮角色侧气泡「至少」条数（可多于该值，如设 3 则可出 3～7+）。
+   * 缺省 4。
+   */
+  interactiveMinBubbles?: number
 }
 
 export type ArchivesStore = Record<string, CharacterArchive>

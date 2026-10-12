@@ -2,6 +2,7 @@
  * 查手机 · 备忘录 AI 标记块解析（替代易截断的 JSON）
  */
 
+import { parseWeChatSyncTranslationLine } from '../../wechatChatLanguage'
 import type { MemoBlock, MemoTextModifier, PaperStyle, PrivateMemo } from './memoTypes'
 
 export type NotesSyncResult = {
@@ -73,11 +74,30 @@ function parsePaperStyle(raw: string): PaperStyle {
   return 'solid'
 }
 
+function attachTranslation(out: MemoBlock[], text: string) {
+  const last = out[out.length - 1]
+  if (!last || !text.trim()) return
+  if (last.type === 'text' || last.type === 'h1' || last.type === 'h2') {
+    if (!last.translation) last.translation = text.trim()
+  } else if (last.type === 'voice') {
+    if (!last.translation) last.translation = text.trim()
+  } else if (last.type === 'image') {
+    if (!last.translation) last.translation = text.trim()
+  }
+}
+
 function parseBlocks(block: string): MemoBlock[] {
   const out: MemoBlock[] = []
   for (const line of block.split(/\r?\n/)) {
     const t = line.trim()
     if (!t) continue
+
+    const peeledTr = parseWeChatSyncTranslationLine(t)
+    if (peeledTr != null) {
+      attachTranslation(out, peeledTr)
+      continue
+    }
+
     const h1 = t.match(/^(?:h1|标题行)\s*[：:]\s*(.+)$/i)
     if (h1) {
       out.push({ type: 'h1', content: h1[1]!.trim() })
@@ -171,6 +191,7 @@ function fallbackDate(): string {
 function parseMemo(block: string, index: number): PrivateMemo | null {
   const map = fieldMap(block)
   const title = pick(map, '标题', 'title')
+  const titleTranslation = pick(map, '译标题', 'titleTranslation', '标题译')
   const blocks = withFallbackTextColor(parseBlocks(block), index)
   if (!title && blocks.length < 2) return null
   const textCount = blocks.filter((b) => b.type === 'text').length
@@ -185,6 +206,7 @@ function parseMemo(block: string, index: number): PrivateMemo | null {
   return {
     id: pick(map, 'id', 'ID') || `m_${Date.now()}_${index}`,
     title: title || `未命名备忘录 ${index + 1}`,
+    ...(titleTranslation ? { titleTranslation } : {}),
     date: pick(map, '日期', '时间', 'date') || fallbackDate(),
     paperStyle: parsePaperStyle(pick(map, '纸张', 'paperStyle') || 'solid'),
     paperColor: pick(map, '底色', 'paperColor') || '#FAFAFA',
@@ -200,6 +222,7 @@ export const NOTES_MARKUP_FORMAT = `
 - 每条备忘录至少 4 行内容块，且至少 1 行「正文：」；可穿插 h1/小标题/语音/文件/图片。
 - 正文可带样式：正文：内容|bold,italic|#D946EF（样式与颜色可选）。
 - 至少 1 段正文带颜色（#D946EF / #2563EB / #DC2626 / #0F766E 等）。
+- 开启自带翻译时：标题后可写「译标题：…」；每条正文/h1/小标题/语音转写后紧跟单独一行 \`[译]……\`（文件行不要跟译）。
 
 <<NM_ADD>>
 id：m_new1

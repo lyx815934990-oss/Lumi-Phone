@@ -18,7 +18,7 @@
   --sr-border: rgba(95, 95, 95, 0.12);
   --sr-glass: rgba(255, 255, 255, 0.42);
   --sr-glass-strong: rgba(255, 255, 255, 0.55);
-  --sr-header-bg: #f7f1f4f0;
+  --sr-header-bg: #f7f1f4;
   --sr-console-bg: #f7f1f4f5;
   --sr-prose-em: #a2a1a4;
   --plot-dialogue-fg: var(--sr-text-muted);

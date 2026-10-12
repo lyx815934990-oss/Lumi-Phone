@@ -31,6 +31,7 @@ import {
   OFFLINE_DATING_CREATIVE_RULES_TITLE,
 } from './offlineDatingMustInjectPrompts'
 import { getActiveCustomWritingInjectBody } from './datingWritingPresetStore'
+import { resolveOfflineReplyStyleAppendix } from '../../thinkingChain/cotAssemble'
 import { DATING_MIMIC_USER_SPEAKING_STYLE_APPENDIX } from '../wechatMimicUserSpeakingStyle'
 import { loadMimicUserSpeakingStyleEnabled } from '../mimicUserSpeakingStyleSettings'
 import { OFFLINE_DATING_RICH_INNER_OS_APPENDIX } from './offlineDatingRichInnerOsAppendix'
@@ -292,6 +293,7 @@ function buildDimensionSystemPrompt(
   const customWritingPrompt = getActiveCustomWritingInjectBody()
   const slimMustInject = buildOfflineDatingSlimMustInjectBody({
     customWritingPrompt,
+    replyStyleOverride: resolveOfflineReplyStyleAppendix(),
   })
   const usingCustomWriting = typeof customWritingPrompt === 'string'
   // 系统默认时 slim 已含写作禁词表；自定义时仍附带禁词底线，避免旁支完全失约束

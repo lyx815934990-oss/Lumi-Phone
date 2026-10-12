@@ -57,6 +57,7 @@ import {
   sanitizeVoiceControlForTextBubble,
   sanitizeVoiceTranscriptDisplay,
   voiceTranscriptDuplicatesPlainTexts,
+  type VoiceScriptNormalizeOptions,
 } from './wechatVoiceScript'
 
 export type PlannedProactiveBubble = {
@@ -92,6 +93,8 @@ export type ProactiveTakeoutContext = {
   playerAvatarUrl?: string
   /** 会话开启「微博私信截图」时才合成图片 */
   pulseDmScreenshotEnabled?: boolean
+  /** 语音合成：语气词 / 情绪标签（缺省均关） */
+  voiceSynth?: VoiceScriptNormalizeOptions
 }
 
 async function planProactiveBubbleLineAsync(
@@ -194,7 +197,11 @@ async function planProactiveBubbleLineAsync(
   if (voiceLineMatch) {
     const rawScript = String(voiceLineMatch[1] ?? '').trim()
     if (!rawScript) return null
-    const normalizedScript = normalizeVoiceScriptForTts(rawScript)
+    const voiceOpts: VoiceScriptNormalizeOptions = {
+      allowToneTokens: takeoutCtx?.voiceSynth?.allowToneTokens === true,
+      allowEmotion: takeoutCtx?.voiceSynth?.allowEmotion === true,
+    }
+    const normalizedScript = normalizeVoiceScriptForTts(rawScript, voiceOpts)
     const seg = sanitizeVoiceTranscriptDisplay(normalizedScript)
     const estimatedVoiceSec = Math.max(1, Math.min(30, Math.round(seg.length / 6)))
     const voice: WeChatVoicePayload = {
@@ -355,7 +362,10 @@ export async function planProactiveRevealBubblesAsync(
 }
 
 /** 修复落库时未解析 voice 字段的 `[语音]` 行，避免气泡显示原始脚本。 */
-export function repairStoredVoiceMessageRow(m: WeChatChatMessage): WeChatChatMessage {
+export function repairStoredVoiceMessageRow(
+  m: WeChatChatMessage,
+  voiceSynth?: VoiceScriptNormalizeOptions,
+): WeChatChatMessage {
   if (m.voice) return m
   const content = String(m.content ?? '').trim()
   if (!/^(?:\[语音\]|【语音】)/.test(content)) return m
@@ -363,7 +373,11 @@ export function repairStoredVoiceMessageRow(m: WeChatChatMessage): WeChatChatMes
   if (!voiceLineMatch) return m
   const rawScript = String(voiceLineMatch[1] ?? '').trim()
   if (!rawScript) return m
-  const normalizedScript = normalizeVoiceScriptForTts(rawScript)
+  const voiceOpts: VoiceScriptNormalizeOptions = {
+    allowToneTokens: voiceSynth?.allowToneTokens === true,
+    allowEmotion: voiceSynth?.allowEmotion === true,
+  }
+  const normalizedScript = normalizeVoiceScriptForTts(rawScript, voiceOpts)
   const seg = sanitizeVoiceTranscriptDisplay(normalizedScript)
   const estimatedVoiceSec = Math.max(1, Math.min(30, Math.round(seg.length / 6)))
   return {

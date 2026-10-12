@@ -33,6 +33,7 @@ import { StoryLookSettingsSheet } from '../../../../storyRpg/components/header/S
 import { StoryFeed } from '../../../../storyRpg/components/feed/StoryFeed'
 import { DirectorConsole } from '../../../../storyRpg/components/console/DirectorConsole'
 import { AdvancedControlSheet } from '../../../../storyRpg/components/console/AdvancedControlSheet'
+import { CotQuickAdjustSheet } from '../../thinkingChain'
 import { StoryFloorDrawer, StoryFloorRailButton } from '../../../../storyRpg/components/navigation/StoryFloorDrawer'
 import {
   loadPlotInjectRailVisible,
@@ -72,6 +73,7 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
   const [headerCompact, setHeaderCompact] = useState(false)
   const [commentsExpandedId, setCommentsExpandedId] = useState<string | null>(null)
   const [advancedSheetOpen, setAdvancedSheetOpen] = useState(false)
+  const [cotQuickOpen, setCotQuickOpen] = useState(false)
   const [lookSheetOpen, setLookSheetOpen] = useState(false)
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [controlTutorialOpen, setControlTutorialOpen] = useState(false)
@@ -148,6 +150,22 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
 
   const { currentArchive, currentCharacter, plots, plotTailVisible } = actions
   const lastPlotId = plots[plots.length - 1]?.id
+  /**
+   * 重新生成 / 切版本 / 改时间：plotId 与条数不变，但 timeline 内容已变。
+   * 仅依赖 length+lastId 会卡住旧 IDB 摘要图，卡片优先读图就会显示上一轮摘要。
+   */
+  const timelineRowsRefreshKey = useMemo(
+    () =>
+      plots
+        .filter((p) => p.type === 'ai')
+        .map((p) => {
+          const snapHead = String(p.timelineSnapshot ?? '').slice(0, 96)
+          const title = String(p.timelineDelta?.row_title ?? p.planSummary ?? '').trim()
+          return `${p.id}:${p.currentVersionIndex ?? 0}:${p.timestamp}:${snapHead}:${title}`
+        })
+        .join('|'),
+    [plots],
+  )
 
   useEffect(() => {
     const cid = currentCharacter?.id?.trim()
@@ -190,7 +208,8 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
     return () => {
       cancelled = true
     }
-  }, [currentCharacter?.id, plots.length, lastPlotId])
+    // regeneratingPlotId：finalize 写完 IDB 后才清零，再拉一次以免 plots 未再变却漏刷新
+  }, [currentCharacter?.id, plots.length, lastPlotId, timelineRowsRefreshKey, actions.regeneratingPlotId])
 
   const summaryTitleOpts = useMemo(
     () => ({ timelineRowTitles, timelineRowBodies }),
@@ -251,8 +270,8 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
       danmakuEnabled: !!currentArchive.offlineDanmakuEnabled,
       thinkingChainEnabled: actions.thinkingChainEnabled,
       autoUserReaction: currentArchive.godPerspective ? false : actions.autoUserReaction,
-      commentModeEnabled: currentArchive.commentModeEnabled !== false,
-      plotArtifactVisualEnabled: currentArchive.plotArtifactVisualEnabled !== false,
+      commentModeEnabled: currentArchive.commentModeEnabled === true,
+      plotArtifactVisualEnabled: currentArchive.plotArtifactVisualEnabled === true,
       plotArtifactVisualPresetId: currentArchive.plotArtifactVisualPresetId?.trim() || 'random',
       perspective: actions.perspective,
       lengthTargetChars: Number(actions.lengthTargetChars) || 500,
@@ -315,8 +334,8 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
         autoUserReaction: currentArchive.godPerspective ? false : !!actions.autoUserReaction,
         generateParallelOnSend: !!currentArchive.generateParallelOnSend,
         generateIfLineOnSend: !!currentArchive.generateIfLineOnSend,
-        commentModeEnabled: currentArchive.commentModeEnabled !== false,
-        plotArtifactVisualEnabled: currentArchive.plotArtifactVisualEnabled !== false,
+        commentModeEnabled: currentArchive.commentModeEnabled === true,
+        plotArtifactVisualEnabled: currentArchive.plotArtifactVisualEnabled === true,
         thinkingChainEnabled: actions.thinkingChainEnabled !== false,
         offlineDanmakuEnabled: !!currentArchive.offlineDanmakuEnabled,
       }),
@@ -683,8 +702,14 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
         activeDirectorActions={activeDirectorActions}
         onDirectorAction={handleDirectorAction}
         onOpenAdvanced={() => setAdvancedSheetOpen(true)}
+        onOpenWenxin={() => setCotQuickOpen(true)}
         onHeartWhisper={() => actions.setHeartWhisperOpen(true)}
         pendingControlTags={pendingControlTags}
+      />
+      <CotQuickAdjustSheet
+        open={cotQuickOpen}
+        onClose={() => setCotQuickOpen(false)}
+        scene="offline"
       />
       <AdvancedControlSheet
         open={advancedSheetOpen}

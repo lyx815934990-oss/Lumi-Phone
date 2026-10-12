@@ -67,7 +67,7 @@ export function PhoneShell({ children }: Props) {
     }
   }, [fullScreen])
 
-  /** 不为系统状态栏 / 刘海单独留白，内容从物理顶边起算 */
+  /** 不为系统状态栏单独留白，内容从物理顶边起算，底栏才能完整落在屏幕内 */
   const safePad: CSSProperties = fullScreen
     ? {
         paddingTop: 0,

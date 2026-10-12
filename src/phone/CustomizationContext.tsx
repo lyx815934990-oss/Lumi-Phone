@@ -266,6 +266,8 @@ const FLOATING_SHORTCUT_APP_IDS: ReadonlyArray<AppSlot['id']> = [
   'sandbox',
   'appearance',
   'evolution',
+  'coupleSpace',
+  'thinkingChain',
 ]
 
 const FLOATING_SHORTCUT_MAX = 12
@@ -977,17 +979,28 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
         }
       }
 
-      // 夜间己方绿从过亮 #95EC69 迁到更深的 #28C445
+      // 夜间己方绿：历史偏色 → 用户定稿 #27B561
       if (wechatNightOn) {
+        const legacyNightSelfGreens = new Set(
+          [
+            '#95EC69',
+            '#28C445',
+            '#57B169',
+            '#3EBF5C',
+            '#5AB16A',
+            '#58B26A',
+            '#66BA66',
+          ].map((c) => c.toLowerCase()),
+        )
         let touched = false
-        if (nextGlobal.selfBubbleBg === '#95EC69') {
-          nextGlobal = { ...nextGlobal, selfBubbleBg: '#28C445' }
+        if (legacyNightSelfGreens.has(nextGlobal.selfBubbleBg.toLowerCase())) {
+          nextGlobal = { ...nextGlobal, selfBubbleBg: '#27B561' }
           touched = true
         }
         for (const k of Object.keys(nextByRole)) {
           const b = nextByRole[k]
-          if (b?.selfBubbleBg === '#95EC69') {
-            nextByRole[k] = { ...b, selfBubbleBg: '#28C445' }
+          if (b && legacyNightSelfGreens.has(b.selfBubbleBg.toLowerCase())) {
+            nextByRole[k] = { ...b, selfBubbleBg: '#27B561' }
             touched = true
           }
         }
@@ -1165,6 +1178,8 @@ function normalizeAppPageStyles(parsed: unknown): CustomizationState['appPageSty
     appearance: migrateAppPage(appearanceMerged),
     lumiMeet: migrateAppPage({ ...def.lumiMeet, ...record.lumiMeet }),
     evolution: migrateAppPage({ ...def.evolution, ...record.evolution }),
+    coupleSpace: migrateAppPage({ ...def.coupleSpace, ...record.coupleSpace }),
+    thinkingChain: migrateAppPage({ ...def.thinkingChain, ...record.thinkingChain }),
   }
 }
 
@@ -1220,8 +1235,15 @@ function normalizeApps(parsedApps: unknown): AppSlot[] {
     const found = parsedApps.find(
       (a: AppSlot) => a && typeof a === 'object' && a.id === slot.id,
     ) as AppSlot | undefined
-    const label =
+    let label =
       found && typeof found.label === 'string' ? found.label : slot.label
+    // 桌面名迁移：旧「思维链 / 提示词与思维链」→「文心」（用户手动改过的其它名字保留）
+    if (
+      slot.id === 'thinkingChain' &&
+      (label === '思维链' || label === '提示词与思维链')
+    ) {
+      label = slot.label
+    }
     let iconImageUrl =
       found && typeof found.iconImageUrl === 'string'
         ? found.iconImageUrl
@@ -1251,7 +1273,7 @@ function normalizeDesktopLayout(parsedLayout: unknown, apps: AppSlot[]): Array<A
 
   const used = new Set<AppSlot['id']>()
   // 保留显式 null：空槽表示图标在下一页溢出区，禁止自动回填
-  return Array.from({ length: DESKTOP_LAYOUT_SLOT_COUNT }, (_, index) => {
+  const layout = Array.from({ length: DESKTOP_LAYOUT_SLOT_COUNT }, (_, index) => {
     const raw = parsedLayout[index]
     if (typeof raw !== 'string') return null
     const id = raw.trim() as AppSlot['id']
@@ -1259,6 +1281,15 @@ function normalizeDesktopLayout(parsedLayout: unknown, apps: AppSlot[]): Array<A
     used.add(id)
     return id
   })
+  // 新桌面应用（如思维链）：若尚未入局且仍有空槽，填入空槽，避免旧布局永久看不到新图标
+  for (const id of desktopIds) {
+    if (used.has(id)) continue
+    const empty = layout.findIndex((slot) => slot == null)
+    if (empty < 0) break
+    layout[empty] = id
+    used.add(id)
+  }
+  return layout
 }
 
 function normalizeDesktopLayoutPage2(
@@ -1609,7 +1640,10 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     const onFocusIn = (e: FocusEvent) => {
       if (!isEditable(e.target)) return
       keyboardOpen = true
-      if (!lockedVh) lockedVh = readVh()
+      // 锁定「较高」的一档，避免焦点落在键盘动画中途时把 --app-vh 锁成矮视口
+      const innerH = Math.round(window.innerHeight || 0)
+      const now = Math.max(readVh(), innerH)
+      lockedVh = Math.max(lockedVh || 0, now)
       applyVh(lockedVh)
     }
 

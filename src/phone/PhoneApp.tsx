@@ -49,6 +49,11 @@ import {
   clearLegacyEvolutionPushSessionDismiss,
 } from './apps/evolution/evolutionPushStorage'
 import {
+  shouldOfferCoupleRemindPush,
+  resetCoupleRemindPushDismissals,
+  COUPLE_REMIND_TEST_EVENT,
+} from './apps/wechat/coupleSpace/coupleRemindPushStorage'
+import {
   shouldOfferQixiEnvelope,
   resetQixiEnvelopeDismissals,
   QIXI_OPEN_EVENT,
@@ -106,6 +111,16 @@ const SandboxApp = lazyWithRetry(() =>
 const EvolutionApp = lazyWithRetry(() =>
   import('./apps/evolution/EvolutionApp').then((m) => ({ default: m.EvolutionApp })),
 )
+const CoupleSpaceDesktopApp = lazyWithRetry(() =>
+  import('./apps/wechat/coupleSpace/CoupleSpaceDesktopApp').then((m) => ({
+    default: m.CoupleSpaceDesktopApp,
+  })),
+)
+const ThinkingChainApp = lazyWithRetry(() =>
+  import('./apps/thinkingChain/ThinkingChainApp').then((m) => ({
+    default: m.ThinkingChainApp,
+  })),
+)
 const LumiTasteApp = lazyWithRetry(() =>
   import('./apps/takeout/LumiTasteApp').then((m) => ({ default: m.LumiTasteApp })),
 )
@@ -120,6 +135,16 @@ const EvolutionUpdatePushModal = lazyWithRetry(() =>
 const QixiEnvelopeModal = lazyWithRetry(() =>
   import('./apps/qixi/QixiEnvelopeModal').then((m) => ({
     default: m.QixiEnvelopeModal,
+  })),
+)
+const CoupleRemindCeremonyModal = lazyWithRetry(() =>
+  import('./apps/wechat/coupleSpace/CoupleRemindCeremonyModal').then((m) => ({
+    default: m.CoupleRemindCeremonyModal,
+  })),
+)
+const CouplePeriodAutoCareRunner = lazyWithRetry(() =>
+  import('./apps/wechat/coupleSpace/CouplePeriodAutoCareRunner').then((m) => ({
+    default: m.CouplePeriodAutoCareRunner,
   })),
 )
 const ListenTogetherPlayerBootstrap = lazyWithRetry(() =>
@@ -225,10 +250,16 @@ export function PhoneApp() {
   const [authVerifyError, setAuthVerifyError] = useState<string | null>(null)
   const [authChecking, setAuthChecking] = useState(false)
   const [showEvolutionPush, setShowEvolutionPush] = useState(false)
+  const [showCoupleRemindPush, setShowCoupleRemindPush] = useState(false)
+  const [coupleRemindPayload, setCoupleRemindPayload] = useState<
+    import('./apps/wechat/coupleSpace/coupleMilestoneRemind').CoupleRemindOfferPayload | null
+  >(null)
   const [showQixiEnvelope, setShowQixiEnvelope] = useState(false)
   const [qixiWithCeremony, setQixiWithCeremony] = useState(true)
-  /** 演进面板本轮已结束（未弹或已关），才允许七夕跟进 */
+  /** 演进面板本轮已结束（未弹或已关），才允许情侣提醒 / 七夕跟进 */
   const [evolutionPushSettled, setEvolutionPushSettled] = useState(false)
+  /** 情侣提醒本轮已结束（未弹或已关），才允许七夕跟进 */
+  const [coupleRemindSettled, setCoupleRemindSettled] = useState(false)
   /** Splash 结束后再挂听一听 / 宴席等次要运行时，减轻首开 */
   const [deferSecondaryRuntime, setDeferSecondaryRuntime] = useState(false)
   /** 微信 lazy 失败后递增，强制换新实例（否则「再试一次」仍命中旧的 rejected Promise） */
@@ -583,9 +614,13 @@ export function PhoneApp() {
     if (!canOfferEvolutionPush) {
       setShowEvolutionPush((prev) => (prev ? false : prev))
       setEvolutionPushSettled(false)
+      setShowCoupleRemindPush(false)
+      setCoupleRemindPayload(null)
+      setCoupleRemindSettled(false)
       return
     }
     setEvolutionPushSettled(false)
+    setCoupleRemindSettled(false)
     let cancelled = false
     void import('./apps/evolution/evolutionLogData').then(({ getLatestEvolutionRecord }) => {
       if (cancelled) return
@@ -614,12 +649,72 @@ export function PhoneApp() {
     }
   }, [canOfferEvolutionPush])
 
+  /** 更新日志结束后：扫描情侣空间纪念日，仪式感弹出本地提醒 */
+  useEffect(() => {
+    if (!canOfferEvolutionPush) {
+      setShowCoupleRemindPush(false)
+      setCoupleRemindPayload(null)
+      setCoupleRemindSettled(false)
+      return
+    }
+    if (showEvolutionPush || !evolutionPushSettled) return
+
+    let cancelled = false
+    void (async () => {
+      const {
+        loadActiveCoupleRemindOffer,
+        buildCoupleTestRemindOffer,
+      } = await import('./apps/wechat/coupleSpace/coupleMilestoneRemind')
+
+      let forceTest = false
+      if (import.meta.env.DEV) {
+        try {
+          const q = new URLSearchParams(window.location.search)
+          if (q.get('coupleRemind') === '1') {
+            resetCoupleRemindPushDismissals()
+            forceTest = true
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!forceTest && !shouldOfferCoupleRemindPush()) {
+        if (!cancelled) {
+          setShowCoupleRemindPush(false)
+          setCoupleRemindPayload(null)
+          setCoupleRemindSettled(true)
+        }
+        return
+      }
+
+      const offer = forceTest
+        ? buildCoupleTestRemindOffer({ charName: '对方' })
+        : await loadActiveCoupleRemindOffer()
+
+      if (cancelled) return
+      if (!offer) {
+        setShowCoupleRemindPush(false)
+        setCoupleRemindPayload(null)
+        setCoupleRemindSettled(true)
+        return
+      }
+      setCoupleRemindPayload(offer)
+      setShowCoupleRemindPush(true)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [canOfferEvolutionPush, showEvolutionPush, evolutionPushSettled])
+
   useEffect(() => {
     if (!canOfferEvolutionPush) {
       setShowQixiEnvelope(false)
       return
     }
     if (showEvolutionPush || !evolutionPushSettled) return
+    if (showCoupleRemindPush || !coupleRemindSettled) return
 
     if (import.meta.env.DEV) {
       try {
@@ -638,7 +733,13 @@ export function PhoneApp() {
     if (!shouldOfferQixiEnvelope()) return
     setQixiWithCeremony(true)
     setShowQixiEnvelope(true)
-  }, [canOfferEvolutionPush, showEvolutionPush, evolutionPushSettled])
+  }, [
+    canOfferEvolutionPush,
+    showEvolutionPush,
+    evolutionPushSettled,
+    showCoupleRemindPush,
+    coupleRemindSettled,
+  ])
 
   /** 桌面入口：当日可重复打开 */
   useEffect(() => {
@@ -649,6 +750,38 @@ export function PhoneApp() {
     }
     window.addEventListener(QIXI_OPEN_EVENT, onOpen)
     return () => window.removeEventListener(QIXI_OPEN_EVENT, onOpen)
+  }, [])
+
+  /** 情侣空间主页「预览提醒」：随时可看全局仪式效果 */
+  useEffect(() => {
+    const onTest = (ev: Event) => {
+      const detail = (ev as CustomEvent<{
+        charName?: string
+        userName?: string
+        charAvatarUrl?: string
+        userAvatarUrl?: string
+      }>).detail
+      void Promise.all([
+        import('./apps/wechat/coupleSpace/coupleMilestoneRemind'),
+        import('./utils/characterAvatarUrl'),
+      ]).then(([{ buildCoupleTestRemindOffer }, { resolveCharacterAvatarUrl }]) => {
+        setCoupleRemindPayload(
+          buildCoupleTestRemindOffer({
+            charName: detail?.charName,
+            userName: detail?.userName,
+            charAvatarUrl:
+              resolveCharacterAvatarUrl({ avatarUrl: detail?.charAvatarUrl }) ||
+              detail?.charAvatarUrl,
+            userAvatarUrl:
+              resolveCharacterAvatarUrl({ avatarUrl: detail?.userAvatarUrl }) ||
+              detail?.userAvatarUrl,
+          }),
+        )
+        setShowCoupleRemindPush(true)
+      })
+    }
+    window.addEventListener(COUPLE_REMIND_TEST_EVENT, onTest as EventListener)
+    return () => window.removeEventListener(COUPLE_REMIND_TEST_EVENT, onTest as EventListener)
   }, [])
 
   const handleRetryAuthVerify = useCallback(() => {
@@ -735,6 +868,11 @@ export function PhoneApp() {
     >
       <ApiSettingsProvider>
         <WorldbookLoreProvider>
+        {canOfferEvolutionPush ? (
+          <Suspense fallback={null}>
+            <CouplePeriodAutoCareRunner enabled />
+          </Suspense>
+        ) : null}
         {deferSecondaryRuntime ? (
           <Suspense fallback={null}>
             <ListenTogetherPlayerBootstrap />
@@ -829,6 +967,10 @@ export function PhoneApp() {
                     <SandboxApp onBack={goHome} />
                   ) : route.id === 'evolution' ? (
                     <EvolutionApp onBack={goHome} />
+                  ) : route.id === 'coupleSpace' ? (
+                    <CoupleSpaceDesktopApp onBack={goHome} />
+                  ) : route.id === 'thinkingChain' ? (
+                    <ThinkingChainApp onBack={goHome} />
                   ) : route.id === 'takeout' ? (
                     <LumiTasteApp onBack={goHome} />
                   ) : (
@@ -867,6 +1009,20 @@ export function PhoneApp() {
                 setEvolutionPushSettled(true)
               }}
               onOpenEvolution={() => openApp('evolution')}
+            />
+          </Suspense>
+        ) : null}
+        {showCoupleRemindPush && coupleRemindPayload ? (
+          <Suspense fallback={null}>
+            <CoupleRemindCeremonyModal
+              open={showCoupleRemindPush}
+              payload={coupleRemindPayload}
+              onClose={() => {
+                setShowCoupleRemindPush(false)
+                setCoupleRemindPayload(null)
+                setCoupleRemindSettled(true)
+              }}
+              onOpenCoupleSpace={() => openApp('coupleSpace')}
             />
           </Suspense>
         ) : null}

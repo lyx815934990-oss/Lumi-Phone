@@ -166,6 +166,29 @@ export type MemoryTraceRecentRoundRef = {
   snippet: string
 }
 
+/** 输入 token 分板块（相对本轮 prompt） */
+export type MemoryTraceTokenSection = {
+  id: string
+  label: string
+  detail?: string
+  tokens: number
+  /** 占输入 token 的百分比（0–100，一位小数） */
+  sharePercent: number
+}
+
+/** 最新一次回复的输入/输出 token 与板块占比 */
+export type MemoryTraceTokenUsage = {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  /** prompt/completion 是否来自 API usage */
+  fromApi: boolean
+  /** 各板块粗估之和（缩放前） */
+  estimatedInputSum?: number
+  thinkingChainEnabled?: boolean
+  sections: MemoryTraceTokenSection[]
+}
+
 /** 思维溯源：一轮模型回复所加载的上下文矩阵（与注入逻辑对齐） */
 export type MemoryTraceData = {
   lastReply: string
@@ -180,6 +203,8 @@ export type MemoryTraceData = {
   worldBookAfterChat?: MemoryTraceWorldBookAfterChat | null
   /** 可选：旧持久化记录无此字段 */
   networkRelationships?: MemoryTraceNetworkRelationships | null
+  /** 本轮最新回复输入/输出 token（可选；旧记录无此字段） */
+  tokenUsage?: MemoryTraceTokenUsage | null
   contextMatrix: {
     baseDirectives: {
       /** 兼容旧版：简短标签；新版以 personaDetail 全文为准 */
@@ -594,6 +619,47 @@ export function parseMemoryTraceData(raw: unknown): MemoryTraceData | null {
     }
   }
 
+  let tokenUsage: MemoryTraceTokenUsage | null | undefined
+  const tuRaw = o.tokenUsage
+  if (tuRaw && typeof tuRaw === 'object') {
+    const tu = tuRaw as Record<string, unknown>
+    const sections: MemoryTraceTokenSection[] = []
+    if (Array.isArray(tu.sections)) {
+      for (const x of tu.sections) {
+        if (!x || typeof x !== 'object') continue
+        const s = x as Record<string, unknown>
+        const id = asStr(s.id).trim()
+        const label = asStr(s.label).trim()
+        const tokens = asNum(s.tokens, 0)
+        if (!id || !label || tokens <= 0) continue
+        sections.push({
+          id,
+          label,
+          detail: asStr(s.detail) || undefined,
+          tokens,
+          sharePercent: asNum(s.sharePercent, 0),
+        })
+      }
+    }
+    const promptTokens = asNum(tu.promptTokens, 0)
+    const completionTokens = asNum(tu.completionTokens, 0)
+    if (promptTokens > 0 || completionTokens > 0 || sections.length) {
+      tokenUsage = {
+        promptTokens,
+        completionTokens,
+        totalTokens: asNum(tu.totalTokens, promptTokens + completionTokens),
+        fromApi: Boolean(tu.fromApi),
+        estimatedInputSum:
+          typeof tu.estimatedInputSum === 'number' && Number.isFinite(tu.estimatedInputSum)
+            ? Math.max(0, Math.floor(tu.estimatedInputSum))
+            : undefined,
+        thinkingChainEnabled:
+          typeof tu.thinkingChainEnabled === 'boolean' ? tu.thinkingChainEnabled : undefined,
+        sections,
+      }
+    }
+  }
+
   return {
     lastReply,
     charName: charName || '角色',
@@ -608,6 +674,7 @@ export function parseMemoryTraceData(raw: unknown): MemoryTraceData | null {
     injectionSummary,
     worldBookAfterChat,
     networkRelationships,
+    ...(tokenUsage ? { tokenUsage } : {}),
     contextMatrix: {
       baseDirectives: {
         persona,

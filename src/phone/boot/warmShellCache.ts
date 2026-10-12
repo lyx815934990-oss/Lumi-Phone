@@ -68,6 +68,7 @@ const BOOT_PRELOAD_TASKS: PreloadTask[] = [
   { label: '后台通知', load: () => import('../apps/backgroundNotify/BackgroundNotifyApp') },
   { label: '幻境', load: () => import('../apps/sandbox/SandboxApp') },
   { label: '演进录', load: () => import('../apps/evolution/EvolutionApp') },
+  { label: '文心', load: () => import('../apps/thinkingChain/ThinkingChainApp') },
   { label: '外卖', load: () => import('../apps/takeout/LumiTasteApp') },
   { label: '更新推送', load: () => import('../apps/evolution/EvolutionUpdatePushModal') },
   {
@@ -387,6 +388,7 @@ const APP_IMPORT_BY_ID: Partial<Record<string, () => Promise<unknown>>> = {
   backgroundNotify: () => import('../apps/backgroundNotify/BackgroundNotifyApp'),
   sandbox: () => import('../apps/sandbox/SandboxApp'),
   evolution: () => import('../apps/evolution/EvolutionApp'),
+  thinkingChain: () => import('../apps/thinkingChain/ThinkingChainApp'),
   takeout: () => import('../apps/takeout/LumiTasteApp'),
 }
 

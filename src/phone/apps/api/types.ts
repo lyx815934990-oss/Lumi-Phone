@@ -26,10 +26,19 @@ export type ApiConfig = {
   apiUrl: string
   apiKey: string
   modelId: string
+  /**
+   * 服务商控制台 / 文档网站（非请求地址）。
+   * 随预设保存；可在设置页与预设卡片上一键打开。
+   */
+  websiteUrl?: string
   /** 已拉取的模型列表（用于下拉选择） */
   modelList: string[]
   /** 与 modelList 对应的费率（拉取模型时写入；部分平台 /models 不返回则为空） */
   modelPricingById?: Record<string, ApiModelPricing>
+  /**
+   * 用户为「已拉取模型」单独填写的计费/备注（按 modelId 索引；仅本机展示，不参与请求）。
+   */
+  modelUserMetaById?: Record<string, ApiModelUserMeta>
   /** 最近一次测试连接结果（用于首页显示连接状态） */
   lastTest?: { ok: boolean; message: string; at: number }
   /**
@@ -82,6 +91,25 @@ export type SubApiConfig = {
   tencentRegion?: string
   /** 百度 APP ID / 有道应用ID / 腾讯 SecretId */
   translationAppId?: string
+}
+
+/** 单个模型的用户自定义计费：按量（token）或按次 */
+export type ApiModelBillingMode = 'usage' | 'per_call'
+
+/** 用户对某个已拉取模型的备注 / 标签 / 自定义单价 */
+export type ApiModelUserMeta = {
+  billingMode: ApiModelBillingMode
+  currency?: 'CNY' | 'USD'
+  /** 按量：输入每百万 token 自定义单价 */
+  inputPrice?: number | null
+  /** 按量：输出每百万 token 自定义单价 */
+  outputPrice?: number | null
+  /** 按次：每次调用自定义单价 */
+  perCallPrice?: number | null
+  /** 备注说明 */
+  remark?: string
+  /** 备注标签 */
+  tags?: string[]
 }
 
 export type ApiPreset = {
