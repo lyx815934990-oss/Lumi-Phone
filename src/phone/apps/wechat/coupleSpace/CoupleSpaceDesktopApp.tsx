@@ -8,7 +8,7 @@ import {
   loadAccountsBundle,
   resolveAccountSessionIdentityId,
 } from '../wechatAccountPersistence'
-import { COUPLE_SPACE_DESKTOP_UNDER_DEV } from './coupleSpaceDevFlags'
+import { COUPLE_SPACE_UNDER_DEV } from './coupleSpaceDevFlags'
 import { CoupleSpaceUnderDevPage } from './CoupleSpaceUnderDevPage'
 
 /** 开发中占位不拉取完整情侣空间；完整流程按需 chunk */
@@ -82,7 +82,7 @@ function CoupleSpaceDesktopAppInner({ onBack }: { onBack: () => void }) {
 
 /** 桌面独立应用：情侣空间（与微信发现共用同一套数据） */
 export function CoupleSpaceDesktopApp({ onBack }: { onBack: () => void }) {
-  if (COUPLE_SPACE_DESKTOP_UNDER_DEV) {
+  if (COUPLE_SPACE_UNDER_DEV) {
     return (
       <CoupleSpaceUnderDevPage
         title="情侣空间"
