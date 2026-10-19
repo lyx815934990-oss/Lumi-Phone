@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import type { WeChatBubbleTheme } from '../../../types'
+import { resolveBubbleAvatarRadiusPx, resolveBubbleAvatarSizePx } from '../../../types'
 import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
@@ -47,7 +48,9 @@ export function PulseShareChatRow({
   selected = false,
   onLongPress,
 }: Props) {
-  const avatarPx = 40
+  const avatarSide = isSelf ? 'self' : 'other'
+  const avatarPx = resolveBubbleAvatarSizePx(bubble, avatarSide)
+  const avatarRadiusPx = resolveBubbleAvatarRadiusPx(bubble, avatarSide)
   const { anchorRef, bind, pressStyle } = useSpecialChatCardLongPress(onLongPress, selected)
   const card = (
     <div
@@ -62,12 +65,12 @@ export function PulseShareChatRow({
   const showAvatarVisual = showAvatar && showAvatarColumn
   const reserveAvatarGutter = showAvatar
   const rankBeside = groupRankShowBesideNickname !== false
-  const avatarGutter = <div className="h-10 w-10 shrink-0" aria-hidden />
+  const avatarGutter = <div className="shrink-0" style={{ width: avatarPx, height: avatarPx }} aria-hidden />
   const otherAvatarFallback = (
     <div
-      className="h-10 w-10 shrink-0"
+      className="shrink-0"
       style={{
-        borderRadius: `${bubble.avatarRadiusPx}px`,
+        width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
         background: 'rgba(0,0,0,0.06)',
         border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
       }}
@@ -87,18 +90,18 @@ export function PulseShareChatRow({
                   alt=""
                   width={avatarPx}
                   height={avatarPx}
-                  className="h-10 w-10 shrink-0 object-cover"
+                  className="shrink-0 object-cover"
                   style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                     border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                   }}
                   aria-hidden
                 />
               ) : (
                 <div
-                  className="h-10 w-10 shrink-0"
+                  className="shrink-0"
                   style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                     background: 'rgba(0,0,0,0.06)',
                     border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                   }}
@@ -122,16 +125,16 @@ export function PulseShareChatRow({
           multiSelectAvatar ?? (
             <div className="relative shrink-0">
               {!rankBeside ? (
-                <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge}>
+                <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge} sizePx={avatarPx}>
                   {chatOtherAvatarUrl?.trim() ? (
                     <img
                       src={chatOtherAvatarUrl.trim()}
                       alt=""
                       width={avatarPx}
                       height={avatarPx}
-                      className="h-10 w-10 shrink-0 object-cover"
+                      className="shrink-0 object-cover"
                       style={{
-                        borderRadius: `${bubble.avatarRadiusPx}px`,
+                        width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                         border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                       }}
                       aria-hidden
@@ -141,16 +144,16 @@ export function PulseShareChatRow({
                   )}
                 </ChatGroupSpeakerRankOnAvatar>
               ) : (
-                <WeChatAvatarChromeWrap side="other">
+                <WeChatAvatarChromeWrap side="other" sizePx={avatarPx}>
                   {chatOtherAvatarUrl?.trim() ? (
                     <img
                       src={chatOtherAvatarUrl.trim()}
                       alt=""
                       width={avatarPx}
                       height={avatarPx}
-                      className="h-10 w-10 shrink-0 object-cover"
+                      className="shrink-0 object-cover"
                       style={{
-                        borderRadius: `${bubble.avatarRadiusPx}px`,
+                        width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                         border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                       }}
                       aria-hidden

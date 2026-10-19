@@ -191,6 +191,7 @@ import { wechatClassicSpecialSkinOverrides } from './wechatBubbleWechatUi'
 import { buildWeChatChatSkinExport, buildWeChatChatSkinAiPrompt, WECHAT_CHAT_SKIN_EXPORT_UI_ENABLED } from './wechatChatSkinExport'
 import { WeChatChatSkinPreviewPanel } from './WeChatChatSkinPreviewPanel'
 import { WeChatBubbleSideFontField } from './WeChatBubbleSideFontField'
+import { WeChatBubbleMetricsPanel } from './WeChatBubbleMetricsPanel'
 import {
   applyBubblePack,
   bubblePackDownloadFilename,
@@ -1095,6 +1096,10 @@ function ThemePanel({
   const [headerTarget, setHeaderTarget] = useState<WeChatTabId>('messages')
   const [bubbleScope, setBubbleScope] = useState<'global' | 'role'>('global')
   const [bubbleRole, setBubbleRole] = useState<string>(WECHAT_LUMI_PEER_CHARACTER_ID)
+  /** 聊天气泡页内 Tab：模版 / 气泡 / 文字 / 头像 */
+  const [bubbleSettingsTab, setBubbleSettingsTab] = useState<
+    'theme' | 'bubble' | 'text' | 'avatar'
+  >('theme')
   const [pendingImage, setPendingImage] = useState<{
     kind: 'bg' | 'header' | 'card' | 'tabbar'
     target?: WeChatTabId
@@ -1141,6 +1146,23 @@ function ThemePanel({
     return migrateMislabeledLumiDefaultBubble(raw)
   }, [bubbleScope, bubbleRole, wechatTheme])
   const activeBubbleTailStyle = activeBubble.bubbleTailStyle
+
+  const replaceActiveBubble = useCallback(
+    (next: typeof activeBubble) => {
+      if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
+      else
+        setWeChatTheme({
+          bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
+        })
+    },
+    [bubbleRole, bubbleScope, setWeChatTheme, wechatTheme.bubbleByRole],
+  )
+  const patchActiveBubble = useCallback(
+    (patch: Partial<typeof activeBubble>) => {
+      replaceActiveBubble({ ...activeBubble, ...patch })
+    },
+    [activeBubble, replaceActiveBubble],
+  )
 
   /** 真机聊天室：由此路径套用气泡包 */
   const applyImportedBubblePack = useCallback(
@@ -2566,6 +2588,40 @@ function ThemePanel({
                 </div>
               ) : section === 'bubbles' ? (
                 <div className="space-y-3">
+                  <div
+                    className="sticky top-0 z-10 -mx-1 rounded-[16px] border p-1"
+                    style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}
+                  >
+                    <div className="grid grid-cols-4 gap-1">
+                      {(
+                        [
+                          { id: 'theme' as const, label: '模版' },
+                          { id: 'bubble' as const, label: '气泡' },
+                          { id: 'text' as const, label: '文字' },
+                          { id: 'avatar' as const, label: '头像' },
+                        ] as const
+                      ).map((tab) => {
+                        const active = bubbleSettingsTab === tab.id
+                        return (
+                          <Pressable
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setBubbleSettingsTab(tab.id)}
+                            className="rounded-[12px] px-2 py-2 text-center text-[12px] font-medium"
+                            style={{
+                              background: active ? 'rgba(0,0,0,0.08)' : 'transparent',
+                              color: active ? 'var(--wx-text)' : 'var(--wx-text-muted)',
+                            }}
+                          >
+                            {tab.label}
+                          </Pressable>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {bubbleSettingsTab === 'theme' ? (
+                  <>
                   <div className="rounded-[18px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
                     <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
                       配置范围
@@ -2780,18 +2836,21 @@ function ThemePanel({
                     style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}
                   >
                     <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
-                      预览
+                      模版预览
                     </p>
                     <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
-                      对照本页已应用的聊天气泡（含上传的气泡包）。也可在本页用 AI 写气泡，或上传导出的气泡文件。
+                      完整聊天皮肤预览：顶栏、文字/特殊消息与输入栏。
                     </p>
-                    <WeChatChatSkinPreviewPanel
-                      wechatTheme={previewWechatTheme}
-                      chatTheme={previewChatTheme}
-                      bubble={activeBubble}
-                      roomBgStyle={bubblePreviewBgStyle}
-                      tailMaskColor={previewTailMaskColor}
-                    />
+                    <div className="mt-2">
+                      <WeChatChatSkinPreviewPanel
+                        focus="theme"
+                        wechatTheme={previewWechatTheme}
+                        chatTheme={previewChatTheme}
+                        bubble={activeBubble}
+                        roomBgStyle={bubblePreviewBgStyle}
+                        tailMaskColor={previewTailMaskColor}
+                      />
+                    </div>
                   </div>
 
                   {WECHAT_CHAT_SKIN_EXPORT_UI_ENABLED ? (
@@ -2825,6 +2884,66 @@ function ThemePanel({
                   </div>
                   ) : null}
 
+                  <div className="rounded-[18px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
+                    <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
+                      时间戳
+                    </p>
+                    <select
+                      className="mt-2 w-full rounded-[14px] border px-3 py-2 text-[12px] outline-none"
+                      style={{ borderColor: 'var(--wx-border)', background: 'transparent', color: 'var(--wx-text)' }}
+                      value={wechatTheme.timestampStyle}
+                      onChange={(e) =>
+                        setWeChatTheme({
+                          timestampStyle: e.target.value as 'hidden' | 'subtle' | 'detailed',
+                        })
+                      }
+                    >
+                      <option value="hidden">隐藏</option>
+                      <option value="subtle">弱展示</option>
+                      <option value="detailed">详细</option>
+                    </select>
+                    <p className="mt-2 text-[11px]" style={{ color: 'var(--wx-text-muted)' }}>
+                      时间戳文字色
+                    </p>
+                    <input
+                      type="color"
+                      value={wechatTheme.timestampText}
+                      onChange={(e) => setWeChatTheme({ timestampText: e.target.value })}
+                      className="mt-1 h-10 w-full cursor-pointer rounded-[12px] border border-black/10 bg-transparent p-1"
+                    />
+                  </div>
+                  </>
+                  ) : null}
+
+                  {bubbleSettingsTab === 'bubble' ? (
+                  <>
+                  <div
+                    className="rounded-[18px] border p-3"
+                    style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}
+                  >
+                    <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
+                      气泡预览
+                    </p>
+                    <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
+                      专看气泡大小、最大宽高、颜色与圆角；拖滑杆时这里会跟着变。
+                    </p>
+                    <div className="mt-2">
+                      <WeChatChatSkinPreviewPanel
+                        focus="bubble"
+                        wechatTheme={previewWechatTheme}
+                        chatTheme={previewChatTheme}
+                        bubble={activeBubble}
+                        roomBgStyle={bubblePreviewBgStyle}
+                        tailMaskColor={previewTailMaskColor}
+                      />
+                    </div>
+                  </div>
+                  <WeChatBubbleMetricsPanel
+                    section="bubble"
+                    bubble={activeBubble}
+                    onChange={patchActiveBubble}
+                    onReplace={replaceActiveBubble}
+                  />
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
                       <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
@@ -2864,160 +2983,42 @@ function ThemePanel({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
-                      <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
-                        对方文字颜色
-                      </p>
-                      <input
-                        type="color"
-                        value={safeHex6ForColorInput(wechatTheme.otherBubbleText)}
-                        onChange={(e) => setWeChatTheme({ otherBubbleText: e.target.value })}
-                        className="mt-2 h-10 w-full cursor-pointer rounded-[12px] border border-black/10 bg-transparent p-1"
-                      />
-                    </div>
-                    <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
-                      <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
-                        自己文字颜色
-                      </p>
-                      <input
-                        type="color"
-                        value={safeHex6ForColorInput(wechatTheme.selfBubbleText)}
-                        onChange={(e) => setWeChatTheme({ selfBubbleText: e.target.value })}
-                        className="mt-2 h-10 w-full cursor-pointer rounded-[12px] border border-black/10 bg-transparent p-1"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <WeChatBubbleSideFontField
-                      label="角色侧字体"
-                      hint="对方气泡正文；不设则跟随主题气泡原机字 / 全局字体。"
-                      value={activeBubble.otherFont}
-                      onChange={(otherFont) => {
-                        const next = { ...activeBubble, otherFont }
+                  <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
+                    <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
+                      气泡圆角
+                    </p>
+                    <p className="mt-2 text-[11px]" style={{ color: 'var(--wx-text-muted)' }}>
+                      自己：{activeBubble.selfBubbleRadiusPx}px
+                    </p>
+                    <input
+                      type="range"
+                      min={4}
+                      max={28}
+                      step={1}
+                      value={activeBubble.selfBubbleRadiusPx}
+                      onChange={(e) => {
+                        const next = { ...activeBubble, selfBubbleRadiusPx: Number(e.target.value) }
                         if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
-                        else
-                          setWeChatTheme({
-                            bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
-                          })
+                        else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
                       }}
+                      className="mt-1 w-full"
                     />
-                    <WeChatBubbleSideFontField
-                      label="用户侧字体"
-                      hint="自己气泡正文；不设则跟随主题气泡原机字 / 全局字体。"
-                      value={activeBubble.selfFont}
-                      onChange={(selfFont) => {
-                        const next = { ...activeBubble, selfFont }
+                    <p className="mt-2 text-[11px]" style={{ color: 'var(--wx-text-muted)' }}>
+                      对方：{activeBubble.otherBubbleRadiusPx}px
+                    </p>
+                    <input
+                      type="range"
+                      min={4}
+                      max={28}
+                      step={1}
+                      value={activeBubble.otherBubbleRadiusPx}
+                      onChange={(e) => {
+                        const next = { ...activeBubble, otherBubbleRadiusPx: Number(e.target.value) }
                         if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
-                        else
-                          setWeChatTheme({
-                            bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next },
-                          })
+                        else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
                       }}
+                      className="mt-1 w-full"
                     />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
-                      <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
-                        显示头像
-                      </p>
-                      <div className="mt-2 flex gap-2">
-                        <Pressable
-                          onClick={() => {
-                            const next = { ...activeBubble, showAvatar: true }
-                            // X 等预设会留下 showAvatarSelf/Other:false，只改总开关不够
-                            delete next.showAvatarSelf
-                            delete next.showAvatarOther
-                            if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
-                            else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
-                          }}
-                          className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
-                          style={{
-                            borderColor: 'var(--wx-border)',
-                            background: activeBubble.showAvatar ? 'rgba(0,0,0,0.06)' : 'transparent',
-                            color: 'var(--wx-text)',
-                          }}
-                        >
-                          开
-                        </Pressable>
-                        <Pressable
-                          onClick={() => {
-                            const next = {
-                              ...activeBubble,
-                              showAvatar: false,
-                              showAvatarSelf: false,
-                              showAvatarOther: false,
-                            }
-                            if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
-                            else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
-                          }}
-                          className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
-                          style={{
-                            borderColor: 'var(--wx-border)',
-                            background: !activeBubble.showAvatar ? 'rgba(0,0,0,0.06)' : 'transparent',
-                            color: 'var(--wx-text)',
-                          }}
-                        >
-                          关
-                        </Pressable>
-                      </div>
-                      <p className="mt-2 text-[11px]" style={{ color: 'var(--wx-text-muted)' }}>
-                        头像圆角：{activeBubble.avatarRadiusPx}px
-                      </p>
-                      <input
-                        type="range"
-                        min={0}
-                        max={18}
-                        step={1}
-                        value={activeBubble.avatarRadiusPx}
-                        onChange={(e) => {
-                          const next = { ...activeBubble, avatarRadiusPx: Number(e.target.value) }
-                          if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
-                          else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
-                        }}
-                        className="mt-1 w-full"
-                      />
-                    </div>
-
-                    <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
-                      <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
-                        气泡圆角
-                      </p>
-                      <p className="mt-2 text-[11px]" style={{ color: 'var(--wx-text-muted)' }}>
-                        自己：{activeBubble.selfBubbleRadiusPx}px
-                      </p>
-                      <input
-                        type="range"
-                        min={4}
-                        max={28}
-                        step={1}
-                        value={activeBubble.selfBubbleRadiusPx}
-                        onChange={(e) => {
-                          const next = { ...activeBubble, selfBubbleRadiusPx: Number(e.target.value) }
-                          if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
-                          else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
-                        }}
-                        className="mt-1 w-full"
-                      />
-                      <p className="mt-2 text-[11px]" style={{ color: 'var(--wx-text-muted)' }}>
-                        对方：{activeBubble.otherBubbleRadiusPx}px
-                      </p>
-                      <input
-                        type="range"
-                        min={4}
-                        max={28}
-                        step={1}
-                        value={activeBubble.otherBubbleRadiusPx}
-                        onChange={(e) => {
-                          const next = { ...activeBubble, otherBubbleRadiusPx: Number(e.target.value) }
-                          if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
-                          else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
-                        }}
-                        className="mt-1 w-full"
-                      />
-                    </div>
                   </div>
 
                   <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
@@ -3214,7 +3215,149 @@ function ThemePanel({
                       </Pressable>
                     </div>
                   ) : null}
+                  </>
+                  ) : null}
 
+                  {bubbleSettingsTab === 'text' ? (
+                  <>
+                  <div
+                    className="rounded-[18px] border p-3"
+                    style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}
+                  >
+                    <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
+                      文字预览
+                    </p>
+                    <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
+                      专看字号、文字颜色与自定义字体。
+                    </p>
+                    <div className="mt-2">
+                      <WeChatChatSkinPreviewPanel
+                        focus="text"
+                        wechatTheme={previewWechatTheme}
+                        chatTheme={previewChatTheme}
+                        bubble={activeBubble}
+                        roomBgStyle={bubblePreviewBgStyle}
+                        tailMaskColor={previewTailMaskColor}
+                      />
+                    </div>
+                  </div>
+                  <WeChatBubbleMetricsPanel
+                    section="text"
+                    bubble={activeBubble}
+                    onChange={patchActiveBubble}
+                    onReplace={replaceActiveBubble}
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
+                      <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
+                        对方文字颜色
+                      </p>
+                      <input
+                        type="color"
+                        value={safeHex6ForColorInput(wechatTheme.otherBubbleText)}
+                        onChange={(e) => setWeChatTheme({ otherBubbleText: e.target.value })}
+                        className="mt-2 h-10 w-full cursor-pointer rounded-[12px] border border-black/10 bg-transparent p-1"
+                      />
+                    </div>
+                    <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
+                      <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
+                        自己文字颜色
+                      </p>
+                      <input
+                        type="color"
+                        value={safeHex6ForColorInput(wechatTheme.selfBubbleText)}
+                        onChange={(e) => setWeChatTheme({ selfBubbleText: e.target.value })}
+                        className="mt-2 h-10 w-full cursor-pointer rounded-[12px] border border-black/10 bg-transparent p-1"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <WeChatBubbleSideFontField
+                      label="角色侧字体"
+                      hint="对方气泡正文；不设则跟随主题气泡原机字 / 全局字体。"
+                      value={activeBubble.otherFont}
+                      onChange={(otherFont) => patchActiveBubble({ otherFont })}
+                    />
+                    <WeChatBubbleSideFontField
+                      label="用户侧字体"
+                      hint="自己气泡正文；不设则跟随主题气泡原机字 / 全局字体。"
+                      value={activeBubble.selfFont}
+                      onChange={(selfFont) => patchActiveBubble({ selfFont })}
+                    />
+                  </div>
+                  </>
+                  ) : null}
+
+                  {bubbleSettingsTab === 'avatar' ? (
+                  <>
+                  <div
+                    className="rounded-[18px] border p-3"
+                    style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}
+                  >
+                    <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
+                      头像预览
+                    </p>
+                    <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--wx-text-muted)' }}>
+                      专看头像大小、圆角、显示开关与连续消息合并。
+                    </p>
+                    <div className="mt-2">
+                      <WeChatChatSkinPreviewPanel
+                        focus="avatar"
+                        wechatTheme={previewWechatTheme}
+                        chatTheme={previewChatTheme}
+                        bubble={activeBubble}
+                        roomBgStyle={bubblePreviewBgStyle}
+                        tailMaskColor={previewTailMaskColor}
+                      />
+                    </div>
+                  </div>
+                  <WeChatBubbleMetricsPanel
+                    section="avatar"
+                    bubble={activeBubble}
+                    onChange={patchActiveBubble}
+                    onReplace={replaceActiveBubble}
+                  />
+                  <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
+                    <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
+                      显示头像
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      <Pressable
+                        onClick={() => {
+                          const next = { ...activeBubble, showAvatar: true }
+                          delete next.showAvatarSelf
+                          delete next.showAvatarOther
+                          replaceActiveBubble(next)
+                        }}
+                        className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
+                        style={{
+                          borderColor: 'var(--wx-border)',
+                          background: activeBubble.showAvatar ? 'rgba(0,0,0,0.06)' : 'transparent',
+                          color: 'var(--wx-text)',
+                        }}
+                      >
+                        开
+                      </Pressable>
+                      <Pressable
+                        onClick={() =>
+                          replaceActiveBubble({
+                            ...activeBubble,
+                            showAvatar: false,
+                            showAvatarSelf: false,
+                            showAvatarOther: false,
+                          })
+                        }
+                        className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
+                        style={{
+                          borderColor: 'var(--wx-border)',
+                          background: !activeBubble.showAvatar ? 'rgba(0,0,0,0.06)' : 'transparent',
+                          color: 'var(--wx-text)',
+                        }}
+                      >
+                        关
+                      </Pressable>
+                    </div>
+                  </div>
                   <div className="rounded-[16px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
                     <p className="text-[11px] font-medium tracking-[0.16em]" style={{ color: 'var(--wx-text-muted)' }}>
                       连续消息头像
@@ -3225,69 +3368,34 @@ function ThemePanel({
                         : '开启后，同一人连续发送的多条消息仅在首条显示头像列；关闭则每条都占位（需「显示头像」为开时在聊天页生效）。'}
                     </p>
                     {activeBubbleTailStyle === 'wechat' ? null : (
-                    <div className="mt-2 flex gap-2">
-                      <Pressable
-                        onClick={() => {
-                          const next = { ...activeBubble, mergeConsecutiveAvatarGroup: true }
-                          if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
-                          else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
-                        }}
-                        className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
-                        style={{
-                          borderColor: 'var(--wx-border)',
-                          background: activeBubble.mergeConsecutiveAvatarGroup ? 'rgba(0,0,0,0.06)' : 'transparent',
-                          color: 'var(--wx-text)',
-                        }}
-                      >
-                        合并（仅首条头像）
-                      </Pressable>
-                      <Pressable
-                        onClick={() => {
-                          const next = { ...activeBubble, mergeConsecutiveAvatarGroup: false }
-                          if (bubbleScope === 'global') setWeChatTheme({ bubbleGlobal: next })
-                          else setWeChatTheme({ bubbleByRole: { ...wechatTheme.bubbleByRole, [bubbleRole]: next } })
-                        }}
-                        className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
-                        style={{
-                          borderColor: 'var(--wx-border)',
-                          background: !activeBubble.mergeConsecutiveAvatarGroup ? 'rgba(0,0,0,0.06)' : 'transparent',
-                          color: 'var(--wx-text)',
-                        }}
-                      >
-                        每条都显示
-                      </Pressable>
-                    </div>
+                      <div className="mt-2 flex gap-2">
+                        <Pressable
+                          onClick={() => patchActiveBubble({ mergeConsecutiveAvatarGroup: true })}
+                          className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
+                          style={{
+                            borderColor: 'var(--wx-border)',
+                            background: activeBubble.mergeConsecutiveAvatarGroup ? 'rgba(0,0,0,0.06)' : 'transparent',
+                            color: 'var(--wx-text)',
+                          }}
+                        >
+                          合并（仅首条头像）
+                        </Pressable>
+                        <Pressable
+                          onClick={() => patchActiveBubble({ mergeConsecutiveAvatarGroup: false })}
+                          className="flex-1 rounded-[14px] border px-3 py-2 text-[12px]"
+                          style={{
+                            borderColor: 'var(--wx-border)',
+                            background: !activeBubble.mergeConsecutiveAvatarGroup ? 'rgba(0,0,0,0.06)' : 'transparent',
+                            color: 'var(--wx-text)',
+                          }}
+                        >
+                          每条都显示
+                        </Pressable>
+                      </div>
                     )}
                   </div>
-
-                  <div className="rounded-[18px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>
-                    <p className="text-[12px] font-medium" style={{ color: 'var(--wx-text)' }}>
-                      时间戳
-                    </p>
-                    <select
-                      className="mt-2 w-full rounded-[14px] border px-3 py-2 text-[12px] outline-none"
-                      style={{ borderColor: 'var(--wx-border)', background: 'transparent', color: 'var(--wx-text)' }}
-                      value={wechatTheme.timestampStyle}
-                      onChange={(e) =>
-                        setWeChatTheme({
-                          timestampStyle: e.target.value as 'hidden' | 'subtle' | 'detailed',
-                        })
-                      }
-                    >
-                      <option value="hidden">隐藏</option>
-                      <option value="subtle">弱展示</option>
-                      <option value="detailed">详细</option>
-                    </select>
-                    <p className="mt-2 text-[11px]" style={{ color: 'var(--wx-text-muted)' }}>
-                      时间戳文字色
-                    </p>
-                    <input
-                      type="color"
-                      value={wechatTheme.timestampText}
-                      onChange={(e) => setWeChatTheme({ timestampText: e.target.value })}
-                      className="mt-1 h-10 w-full cursor-pointer rounded-[12px] border border-black/10 bg-transparent p-1"
-                    />
-                  </div>
+                  </>
+                  ) : null}
                 </div>
               ) : (
                 <div className="rounded-[18px] border p-3" style={{ borderColor: 'var(--wx-border)', background: 'var(--wx-surface)' }}>

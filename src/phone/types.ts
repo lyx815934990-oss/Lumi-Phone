@@ -284,7 +284,34 @@ export type WeChatBubbleTheme = {
   selfBubbleRadiusPx: number
   otherBubbleRadiusPx: number
   showAvatar: boolean
+  /** 头像圆角总控（分侧未设时回退）；0–32 */
   avatarRadiusPx: number
+  /** 自己头像圆角；缺省跟 avatarRadiusPx */
+  selfAvatarRadiusPx?: number
+  /** 对方头像圆角；缺省跟 avatarRadiusPx */
+  otherAvatarRadiusPx?: number
+  /** 自己头像边长 px；缺省按主题（微信经典 42 / 其它 40） */
+  selfAvatarSizePx?: number
+  /** 对方头像边长 px */
+  otherAvatarSizePx?: number
+  /** 自己气泡正文字号 px；缺省 15 */
+  selfFontSizePx?: number
+  /** 对方气泡正文字号 px */
+  otherFontSizePx?: number
+  /**
+   * 自己气泡最大宽度占比（%）；缺省 75，不单独写入时不额外收窄微信双头像行。
+   */
+  selfBubbleMaxWidthPct?: number
+  /** 对方气泡最大宽度占比（%） */
+  otherBubbleMaxWidthPct?: number
+  /** 自己气泡内边距缩放（%）；缺省 100 */
+  selfBubbleScalePct?: number
+  /** 对方气泡内边距缩放（%） */
+  otherBubbleScalePct?: number
+  /** 自己气泡最大高度 px；0 或缺省表示不限制 */
+  selfBubbleMaxHeightPx?: number
+  /** 对方气泡最大高度 px；0 或缺省表示不限制 */
+  otherBubbleMaxHeightPx?: number
   /** 在头像一侧显示指向三角，三角竖直方向与头像水平中线对齐（需开启头像） */
   showBubbleTail: boolean
   /** 分侧：对方（角色）是否显示尾巴；缺省跟 showBubbleTail */
@@ -380,6 +407,63 @@ export function resolveBubbleAvatarCluster(
   return bubble.mergeConsecutiveAvatarGroup ? 'first' : 'every'
 }
 
+export const WECHAT_BUBBLE_DEFAULT_FONT_SIZE_PX = 15
+export const WECHAT_BUBBLE_DEFAULT_MAX_WIDTH_PCT = 75
+/** 气泡视觉大小：100 为模版原始内边距 */
+export const WECHAT_BUBBLE_DEFAULT_SCALE_PCT = 100
+/** 非微信经典主题的默认头像边长 */
+export const WECHAT_BUBBLE_DEFAULT_AVATAR_SIZE_PX = 40
+
+function clampBubbleMetric(n: unknown, min: number, max: number, fallback: number): number {
+  const v = typeof n === 'number' ? n : Number(n)
+  if (!Number.isFinite(v)) return fallback
+  return Math.min(max, Math.max(min, Math.round(v)))
+}
+
+export function resolveBubbleFontSizePx(bubble: WeChatBubbleTheme, side: 'self' | 'other'): number {
+  const raw = side === 'self' ? bubble.selfFontSizePx : bubble.otherFontSizePx
+  return clampBubbleMetric(raw, 12, 22, WECHAT_BUBBLE_DEFAULT_FONT_SIZE_PX)
+}
+
+export function resolveBubbleMaxWidthPct(bubble: WeChatBubbleTheme, side: 'self' | 'other'): number {
+  const raw = side === 'self' ? bubble.selfBubbleMaxWidthPct : bubble.otherBubbleMaxWidthPct
+  return clampBubbleMetric(raw, 50, 92, WECHAT_BUBBLE_DEFAULT_MAX_WIDTH_PCT)
+}
+
+export function resolveBubbleScalePct(bubble: WeChatBubbleTheme, side: 'self' | 'other'): number {
+  const raw = side === 'self' ? bubble.selfBubbleScalePct : bubble.otherBubbleScalePct
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return WECHAT_BUBBLE_DEFAULT_SCALE_PCT
+  return clampBubbleMetric(raw, 70, 150, WECHAT_BUBBLE_DEFAULT_SCALE_PCT)
+}
+
+/** 文字气泡内边距倍率；未设置缩放时为 1 */
+export function resolveBubblePadScale(bubble: WeChatBubbleTheme, side: 'self' | 'other'): number {
+  return resolveBubbleScalePct(bubble, side) / WECHAT_BUBBLE_DEFAULT_SCALE_PCT
+}
+
+/** 气泡最大高度；0 表示不限制 */
+export function resolveBubbleMaxHeightPx(bubble: WeChatBubbleTheme, side: 'self' | 'other'): number {
+  const raw = side === 'self' ? bubble.selfBubbleMaxHeightPx : bubble.otherBubbleMaxHeightPx
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return 0
+  return clampBubbleMetric(raw, 80, 520, 0)
+}
+
+export function resolveBubbleAvatarSizePx(bubble: WeChatBubbleTheme, side: 'self' | 'other'): number {
+  const raw = side === 'self' ? bubble.selfAvatarSizePx : bubble.otherAvatarSizePx
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return clampBubbleMetric(raw, 28, 64, WECHAT_BUBBLE_DEFAULT_AVATAR_SIZE_PX)
+  }
+  return bubble.bubbleTailStyle === 'wechat' ? 42 : WECHAT_BUBBLE_DEFAULT_AVATAR_SIZE_PX
+}
+
+export function resolveBubbleAvatarRadiusPx(bubble: WeChatBubbleTheme, side: 'self' | 'other'): number {
+  const raw = side === 'self' ? bubble.selfAvatarRadiusPx : bubble.otherAvatarRadiusPx
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return clampBubbleMetric(raw, 0, 32, bubble.avatarRadiusPx)
+  }
+  return clampBubbleMetric(bubble.avatarRadiusPx, 0, 32, 12)
+}
+
 /** 连续簇内是否显示头像本体（非占位） */
 export function shouldShowAvatarInCluster(
   cluster: 'every' | 'first' | 'last',
@@ -416,6 +500,18 @@ export function wechatBubbleThemesEqual(a: WeChatBubbleTheme, b: WeChatBubbleThe
     a.showAvatarSelf === b.showAvatarSelf &&
     a.showAvatarOther === b.showAvatarOther &&
     a.avatarRadiusPx === b.avatarRadiusPx &&
+    a.selfAvatarRadiusPx === b.selfAvatarRadiusPx &&
+    a.otherAvatarRadiusPx === b.otherAvatarRadiusPx &&
+    a.selfAvatarSizePx === b.selfAvatarSizePx &&
+    a.otherAvatarSizePx === b.otherAvatarSizePx &&
+    a.selfFontSizePx === b.selfFontSizePx &&
+    a.otherFontSizePx === b.otherFontSizePx &&
+    a.selfBubbleScalePct === b.selfBubbleScalePct &&
+    a.otherBubbleScalePct === b.otherBubbleScalePct &&
+    a.selfBubbleMaxWidthPct === b.selfBubbleMaxWidthPct &&
+    a.otherBubbleMaxWidthPct === b.otherBubbleMaxWidthPct &&
+    a.selfBubbleMaxHeightPx === b.selfBubbleMaxHeightPx &&
+    a.otherBubbleMaxHeightPx === b.otherBubbleMaxHeightPx &&
     a.showBubbleTail === b.showBubbleTail &&
     a.showBubbleTailSelf === b.showBubbleTailSelf &&
     a.showBubbleTailOther === b.showBubbleTailOther &&
@@ -450,6 +546,18 @@ export function wechatBubbleSkinKey(bubble: WeChatBubbleTheme): string {
     bubble.selfBubbleRadiusPx,
     bubble.otherBubbleRadiusPx,
     bubble.avatarRadiusPx,
+    bubble.selfAvatarRadiusPx ?? '',
+    bubble.otherAvatarRadiusPx ?? '',
+    bubble.selfAvatarSizePx ?? '',
+    bubble.otherAvatarSizePx ?? '',
+    bubble.selfFontSizePx ?? '',
+    bubble.otherFontSizePx ?? '',
+    bubble.selfBubbleScalePct ?? '',
+    bubble.otherBubbleScalePct ?? '',
+    bubble.selfBubbleMaxWidthPct ?? '',
+    bubble.otherBubbleMaxWidthPct ?? '',
+    bubble.selfBubbleMaxHeightPx ?? '',
+    bubble.otherBubbleMaxHeightPx ?? '',
     bubble.selfBubbleBg,
     bubble.otherBubbleBg,
     bubble.selfFont?.id ?? '',

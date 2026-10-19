@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import type { WeChatBubbleTheme } from '../../../types'
+import { resolveBubbleAvatarRadiusPx, resolveBubbleAvatarSizePx } from '../../../types'
 import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
@@ -69,7 +70,9 @@ export function LocationChatRow({
   selected = false,
   onLongPress,
 }: Props) {
-  const avatarPx = 40
+  const avatarSide = isSelf ? 'self' : 'other'
+  const avatarPx = resolveBubbleAvatarSizePx(bubble, avatarSide)
+  const avatarRadiusPx = resolveBubbleAvatarRadiusPx(bubble, avatarSide)
   const chatSkinEngine = useChatSkinEngine()
   const messengerStyle = resolveMessengerBubbleStyle(bubble, chatSkinEngine)
   const { anchorRef, bind, pressStyle } = useSpecialChatCardLongPress(onLongPress, selected)
@@ -129,7 +132,7 @@ export function LocationChatRow({
   const showAvatarVisual = showAvatar && showAvatarColumn
   const reserveAvatarGutter = showAvatar
   const rankBeside = groupRankShowBesideNickname !== false
-  const avatarGutter = <div className="h-10 w-10 shrink-0" aria-hidden />
+  const avatarGutter = <div className="shrink-0" style={{ width: avatarPx, height: avatarPx }} aria-hidden />
   const rowWidthClass =
     variant === 'preview'
       ? 'w-full max-w-full shrink-0 overflow-x-hidden'
@@ -138,9 +141,9 @@ export function LocationChatRow({
     variant === 'preview' ? 'min-w-0 max-w-full' : 'min-w-0 max-w-[calc(100vw-96px)]'
   const otherAvatarFallback = (
     <div
-      className="h-10 w-10 shrink-0"
+      className="shrink-0"
       style={{
-        borderRadius: `${bubble.avatarRadiusPx}px`,
+        width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
         background: 'rgba(0,0,0,0.06)',
         border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
       }}
@@ -172,18 +175,18 @@ export function LocationChatRow({
                   alt=""
                   width={avatarPx}
                   height={avatarPx}
-                  className="h-10 w-10 shrink-0 object-cover"
+                  className="shrink-0 object-cover"
                   style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                     border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                   }}
                   aria-hidden
                 />
               ) : (
                 <div
-                  className="h-10 w-10 shrink-0"
+                  className="shrink-0"
                   style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                     background: 'rgba(0,0,0,0.06)',
                     border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                   }}
@@ -207,16 +210,16 @@ export function LocationChatRow({
           multiSelectAvatar ?? (
             <div className="relative shrink-0">
               {!rankBeside ? (
-                <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge}>
+                <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge} sizePx={avatarPx}>
                   {chatOtherAvatarUrl?.trim() ? (
                     <img
                       src={chatOtherAvatarUrl.trim()}
                       alt=""
                       width={avatarPx}
                       height={avatarPx}
-                      className="h-10 w-10 shrink-0 object-cover"
+                      className="shrink-0 object-cover"
                       style={{
-                        borderRadius: `${bubble.avatarRadiusPx}px`,
+                        width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                         border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                       }}
                       aria-hidden
@@ -226,16 +229,16 @@ export function LocationChatRow({
                   )}
                 </ChatGroupSpeakerRankOnAvatar>
               ) : (
-                <WeChatAvatarChromeWrap side="other">
+                <WeChatAvatarChromeWrap side="other" sizePx={avatarPx}>
                   {chatOtherAvatarUrl?.trim() ? (
                     <img
                       src={chatOtherAvatarUrl.trim()}
                       alt=""
                       width={avatarPx}
                       height={avatarPx}
-                      className="h-10 w-10 shrink-0 object-cover"
+                      className="shrink-0 object-cover"
                       style={{
-                        borderRadius: `${bubble.avatarRadiusPx}px`,
+                        width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                         border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                       }}
                       aria-hidden

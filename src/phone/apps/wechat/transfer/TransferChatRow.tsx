@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from 'react'
 
 import type { WeChatBubbleTheme } from '../../../types'
+import { resolveBubbleAvatarRadiusPx, resolveBubbleAvatarSizePx } from '../../../types'
 import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
@@ -58,7 +59,9 @@ export function TransferChatRow({
 }: Props) {
   const anchorRef = useRef<HTMLDivElement>(null)
   const bubbleRadius = isSelf ? `${bubble.selfBubbleRadiusPx}px` : `${bubble.otherBubbleRadiusPx}px`
-  const avatarPx = 40
+  const avatarSide = isSelf ? 'self' : 'other'
+  const avatarPx = resolveBubbleAvatarSizePx(bubble, avatarSide)
+  const avatarRadiusPx = resolveBubbleAvatarRadiusPx(bubble, avatarSide)
 
   const handleLongPress = useCallback(() => {
     if (!onLongPress) return
@@ -137,25 +140,25 @@ export function TransferChatRow({
         ) : showAvatarVisual || multiSelectAvatar ? (
           <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">
             {multiSelectAvatar ?? (
-              <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge}>
+              <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge} sizePx={avatarPx}>
                 {otherChatAvatarSrc ? (
                   <img
                     src={otherChatAvatarSrc}
                     alt=""
                     width={avatarPx}
                     height={avatarPx}
-                    className="h-10 w-10 shrink-0 object-cover"
+                    className="shrink-0 object-cover"
                     style={{
-                      borderRadius: `${bubble.avatarRadiusPx}px`,
+                      width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                       border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                     }}
                     aria-hidden
                   />
                 ) : (
                   <div
-                    className="h-10 w-10 shrink-0"
+                    className="shrink-0"
                     style={{
-                      borderRadius: `${bubble.avatarRadiusPx}px`,
+                      width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                       background: 'rgba(0,0,0,0.06)',
                       border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                     }}
@@ -181,8 +184,8 @@ export function TransferChatRow({
         ) : reserveAvatarGutter ? (
           <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">
             {multiSelectAvatar ?? (
-              <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge}>
-                <div className="h-10 w-10 shrink-0" aria-hidden />
+              <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge} sizePx={avatarPx}>
+                <div className="shrink-0" style={{ width: avatarPx, height: avatarPx }} aria-hidden />
               </ChatGroupSpeakerRankOnAvatar>
             )}
             <div className="flex min-w-0 flex-1 flex-col items-start gap-[3px]">
@@ -207,25 +210,25 @@ export function TransferChatRow({
         <div className="mr-[24px] ml-auto flex max-w-full flex-row items-start gap-[12px]">
           {block}
           {multiSelectAvatar ?? (
-            <ChatGroupSpeakerRankOnAvatar chromeSide="self" rankBadge={rankBeside ? null : chatSelfAvatarRankBadge}>
+            <ChatGroupSpeakerRankOnAvatar chromeSide="self" rankBadge={rankBeside ? null : chatSelfAvatarRankBadge} sizePx={avatarPx}>
               {selfChatAvatarSrc ? (
                 <img
                   src={selfChatAvatarSrc}
                   alt=""
                   width={avatarPx}
                   height={avatarPx}
-                  className="h-10 w-10 shrink-0 object-cover"
+                  className="shrink-0 object-cover"
                   style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                     border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                   }}
                   aria-hidden
                 />
               ) : (
                 <div
-                  className="h-10 w-10 shrink-0"
+                  className="shrink-0"
                   style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                     background: 'rgba(0,0,0,0.04)',
                   }}
                   aria-hidden
@@ -238,8 +241,8 @@ export function TransferChatRow({
         <div className="mr-[24px] ml-auto flex max-w-full flex-row items-start gap-[12px]">
           {block}
           {multiSelectAvatar ?? (
-            <ChatGroupSpeakerRankOnAvatar chromeSide="self" rankBadge={rankBeside ? null : chatSelfAvatarRankBadge}>
-              <div className="h-10 w-10 shrink-0" aria-hidden />
+            <ChatGroupSpeakerRankOnAvatar chromeSide="self" rankBadge={rankBeside ? null : chatSelfAvatarRankBadge} sizePx={avatarPx}>
+              <div className="shrink-0" style={{ width: avatarPx, height: avatarPx }} aria-hidden />
             </ChatGroupSpeakerRankOnAvatar>
           )}
         </div>

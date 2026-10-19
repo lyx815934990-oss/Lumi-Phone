@@ -59,18 +59,24 @@ export function ChatGroupSpeakerRankOnAvatar({
   rankBadge,
   children,
   chromeSide,
+  sizePx = 40,
 }: {
   rankBadge: ChatGroupSpeakerRankBadge | null | undefined
   children: ReactNode
   /** 传入则叠加气泡主题的头像框 / 角标 */
   chromeSide?: WeChatAvatarChromeSide
+  /** 与文字气泡头像边长一致（微信主题 42） */
+  sizePx?: number
 }) {
   const badgeLabel = rankBadge === 'owner' ? '群主' : rankBadge === 'admin' ? '管理员' : null
   const badgeFontPx = rankBadge === 'admin' ? 6 : 8
   const withRank = !badgeLabel ? (
     <>{children}</>
   ) : (
-    <div className="relative inline-flex h-10 w-10 shrink-0 overflow-visible">
+    <div
+      className="relative inline-flex shrink-0 overflow-visible"
+      style={{ width: sizePx, height: sizePx }}
+    >
       {children}
       <span
         className="pointer-events-none absolute left-[2px] top-[2px] z-[6] whitespace-nowrap rounded px-[2px] py-[1px] font-bold leading-none tracking-tight"
@@ -88,5 +94,9 @@ export function ChatGroupSpeakerRankOnAvatar({
     </div>
   )
   if (!chromeSide) return withRank
-  return <WeChatAvatarChromeWrap side={chromeSide}>{withRank}</WeChatAvatarChromeWrap>
+  return (
+    <WeChatAvatarChromeWrap side={chromeSide} sizePx={sizePx}>
+      {withRank}
+    </WeChatAvatarChromeWrap>
+  )
 }

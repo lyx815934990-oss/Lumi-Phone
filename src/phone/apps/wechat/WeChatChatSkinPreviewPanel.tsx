@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { Activity, MoreHorizontal } from 'lucide-react'
 
 import type { WeChatBubbleTheme, WeChatTheme } from '../../types'
+import { resolveBubbleAvatarRadiusPx, resolveBubbleAvatarSizePx } from '../../types'
 import type { ChatTheme } from './chatTheme/types'
 import { LocationChatRow } from './location/LocationChatRow'
 import { WeChatMessageBubbleRow } from './WeChatMessageBubbleRow'
@@ -35,12 +36,19 @@ const SAMPLE_LOCATION = {
   longitude: 0,
 }
 
+export type WeChatChatSkinPreviewFocus = 'theme' | 'bubble' | 'text' | 'avatar'
+
 type Props = {
   wechatTheme: WeChatTheme
   chatTheme: ChatTheme
   bubble: WeChatBubbleTheme
   roomBgStyle?: CSSProperties
   tailMaskColor?: string
+  /**
+   * 按设置页 Tab 聚焦预览内容：
+   * theme=完整；bubble=气泡尺寸/颜色；text=字号字体；avatar=头像。
+   */
+  focus?: WeChatChatSkinPreviewFocus
 }
 
 function previewBubbleTail(
@@ -75,12 +83,16 @@ function PreviewChatMessageRow({
 }) {
   const showAvatarVisual = bubble.showAvatar && showAvatarColumn
   const reserveAvatarGutter = bubble.showAvatar
+  const avatarSide = isSelf ? 'self' : 'other'
+  const avatarPx = resolveBubbleAvatarSizePx(bubble, avatarSide)
   const avatarPlaceholder = (
-    <WeChatAvatarChromeWrap side={isSelf ? 'self' : 'other'}>
+    <WeChatAvatarChromeWrap side={avatarSide} sizePx={avatarPx}>
       <div
-        className="h-10 w-10 shrink-0"
+        className="shrink-0"
         style={{
-          borderRadius: `${bubble.avatarRadiusPx}px`,
+          width: avatarPx,
+          height: avatarPx,
+          borderRadius: `${resolveBubbleAvatarRadiusPx(bubble, avatarSide)}px`,
           background: isSelf ? '#E5E5E5' : '#D4D4D4',
         }}
         aria-hidden
@@ -100,7 +112,7 @@ function PreviewChatMessageRow({
           </div>
         ) : reserveAvatarGutter ? (
           <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">
-            <div className="h-10 w-10 shrink-0" aria-hidden />
+            <div className="shrink-0" style={{ width: avatarPx, height: avatarPx }} aria-hidden />
             {children}
           </div>
         ) : (
@@ -122,7 +134,7 @@ function PreviewChatMessageRow({
       ) : reserveAvatarGutter ? (
         <div className="mr-[24px] ml-auto flex max-w-full flex-row items-start gap-[12px]">
           {children}
-          <div className="h-10 w-10 shrink-0" aria-hidden />
+          <div className="shrink-0" style={{ width: avatarPx, height: avatarPx }} aria-hidden />
         </div>
       ) : (
         <div className="mr-[24px] ml-auto min-w-0">{children}</div>
@@ -138,6 +150,7 @@ export function WeChatChatSkinPreviewPanel({
   bubble,
   roomBgStyle,
   tailMaskColor = '#EDEDED',
+  focus = 'theme',
 }: Props) {
   const textareaRef = useRef<HTMLDivElement>(null)
   const effectiveBubble = useMemo(() => migrateMislabeledLumiDefaultBubble(bubble), [bubble])
@@ -183,12 +196,63 @@ export function WeChatChatSkinPreviewPanel({
     effectiveBubble.otherFont?.family,
   ])
 
+  const showHeader = focus === 'theme'
+  const showSpecial = focus === 'theme'
+  const showInput = focus === 'theme'
+  const showTimestamp = focus === 'theme' || focus === 'text'
+  const hint =
+    focus === 'bubble'
+      ? '调气泡大小、最大宽高、颜色与圆角时，看这里即时变化。'
+      : focus === 'text'
+        ? '调文字大小、颜色与字体时，看这里即时变化。'
+        : focus === 'avatar'
+          ? '调头像大小、圆角与显示方式时，看这里即时变化。'
+          : '预览区与当前选中的气泡模版一致；切换模版或调整后可即时查看。'
+
+  const bubbleCompareShort = '短句预览'
+  const bubbleCompareLong =
+    '长气泡对照：用来看最大宽度与最大长度。两侧示例字完全相同，参数一致时应等宽。'
+  const otherShort =
+    focus === 'bubble'
+      ? bubbleCompareShort
+      : focus === 'text'
+        ? '对方短句：字号与字体在这里最明显。'
+        : focus === 'avatar'
+          ? '对方首条'
+          : '这是对方气泡预览：低饱和、留白、干净。'
+  const otherLong =
+    focus === 'bubble'
+      ? bubbleCompareLong
+      : focus === 'text'
+        ? '对方长文预览：一二三四五六七八九十。换行后仍保持当前字号与行距，方便对比两边字体。'
+        : focus === 'avatar'
+          ? '对方连续第二条（可看占位/合并头像）'
+          : mergeAvatarGroup && effectiveBubble.showAvatar
+            ? '连续对方消息：本行无头像，左侧占位与首条气泡对齐。'
+            : '连续对方消息：每条均显示头像。'
+  const selfShort =
+    focus === 'bubble'
+      ? bubbleCompareShort
+      : focus === 'text'
+        ? '自己短句：字号与字体在这里最明显。'
+        : focus === 'avatar'
+          ? '自己首条'
+          : '这是我方气泡预览：主色弱点缀，圆角克制。'
+  const selfLong =
+    focus === 'bubble'
+      ? bubbleCompareLong
+      : focus === 'text'
+        ? '自己长文预览：一二三四五六七八九十。换行后仍保持当前字号与行距，方便对比两边字体。'
+        : focus === 'avatar'
+          ? '自己连续第二条（可看占位/合并头像）'
+          : '连续我方消息：每条均显示头像。'
+
   return (
     <WeChatChatSkinEngineProvider engine={wechatTheme.chatSkinEngine}>
     <WeChatAvatarChromeProvider chrome={wechatTheme.avatarChrome}>
     <div
       data-wx-chat-skin-scope
-      className="mt-3 overflow-hidden rounded-[14px] border border-black/5 shadow-sm"
+      className="overflow-hidden rounded-[14px] border border-black/5 shadow-sm"
       style={scopeStyle}
     >
       {wechatTheme.chatSkinScopedCss?.trim() ? (
@@ -198,6 +262,7 @@ export function WeChatChatSkinPreviewPanel({
           }}
         />
       ) : null}
+      {showHeader ? (
       <header
         data-wx-chat-header
         className="relative shrink-0 overflow-hidden border-b"
@@ -366,13 +431,14 @@ export function WeChatChatSkinPreviewPanel({
           <MoreHorizontal size={22} strokeWidth={2} aria-hidden />
         </span>
       </header>
+      ) : null}
 
       <div className="space-y-3 px-2 py-3">
         <p className="text-center text-[10px] leading-snug" style={{ color: 'var(--wx-text-muted)' }}>
-          预览区与当前选中的气泡模版一致；切换模版或调整颜色后可即时查看。
+          {hint}
         </p>
 
-        {wechatTheme.timestampStyle === 'hidden' ? null : (
+        {showTimestamp && wechatTheme.timestampStyle !== 'hidden' ? (
           <div className="flex justify-center">
             <span
               className="rounded-full px-3 py-1 text-[12px]"
@@ -396,13 +462,13 @@ export function WeChatChatSkinPreviewPanel({
               </span>
             </span>
           </div>
-        )}
+        ) : null}
 
         <p className="pt-1 text-center text-[10px]" style={{ color: 'var(--wx-text-muted)' }}>
-          文字气泡
+          {focus === 'avatar' ? '头像对照' : focus === 'text' ? '文字对照' : focus === 'bubble' ? '气泡对照' : '文字气泡'}
         </p>
         <WeChatMessageBubbleRow
-          messageText="这是对方气泡预览：低饱和、留白、干净。"
+          messageText={otherShort}
           isSelf={false}
           bubble={effectiveBubble}
           showAvatar={effectiveBubble.showAvatar}
@@ -412,11 +478,7 @@ export function WeChatChatSkinPreviewPanel({
           bubbleTailMaskColor={tailMaskColor}
         />
         <WeChatMessageBubbleRow
-          messageText={
-            mergeAvatarGroup && effectiveBubble.showAvatar
-              ? '连续对方消息：本行无头像，左侧占位与首条气泡对齐。'
-              : '连续对方消息：每条均显示头像。'
-          }
+          messageText={otherLong}
           isSelf={false}
           bubble={effectiveBubble}
           showAvatar={effectiveBubble.showAvatar}
@@ -428,7 +490,11 @@ export function WeChatChatSkinPreviewPanel({
         {mergeAvatarGroup && effectiveBubble.showAvatar ? (
           <>
             <WeChatMessageBubbleRow
-              messageText="这是我方气泡预览：主色弱点缀，圆角克制。（同组首条右侧带头像）"
+              messageText={
+                focus === 'theme'
+                  ? `${selfShort}（同组首条右侧带头像）`
+                  : selfShort
+              }
               isSelf
               bubble={effectiveBubble}
               showAvatar={effectiveBubble.showAvatar}
@@ -438,7 +504,13 @@ export function WeChatChatSkinPreviewPanel({
               bubbleTailMaskColor={tailMaskColor}
             />
             <WeChatMessageBubbleRow
-              messageText="连续我方消息：本行无头像，右侧占位与首条气泡对齐。"
+              messageText={
+                focus === 'theme' || focus === 'avatar'
+                  ? selfLong.includes('连续')
+                    ? selfLong
+                    : '连续我方消息：本行无头像，右侧占位与首条气泡对齐。'
+                  : selfLong
+              }
               isSelf
               bubble={effectiveBubble}
               showAvatar={effectiveBubble.showAvatar}
@@ -451,7 +523,7 @@ export function WeChatChatSkinPreviewPanel({
         ) : (
           <>
             <WeChatMessageBubbleRow
-              messageText="这是我方气泡预览：主色弱点缀，圆角克制。"
+              messageText={selfShort}
               isSelf
               bubble={effectiveBubble}
               showAvatar={effectiveBubble.showAvatar}
@@ -461,7 +533,7 @@ export function WeChatChatSkinPreviewPanel({
               bubbleTailMaskColor={tailMaskColor}
             />
             <WeChatMessageBubbleRow
-              messageText="连续我方消息：每条均显示头像。"
+              messageText={selfLong}
               isSelf
               bubble={effectiveBubble}
               showAvatar={effectiveBubble.showAvatar}
@@ -473,75 +545,80 @@ export function WeChatChatSkinPreviewPanel({
           </>
         )}
 
-        <p className="pt-1 text-center text-[10px]" style={{ color: 'var(--wx-text-muted)' }}>
-          特殊消息
-        </p>
-        <RedPacketChatRow
-          id="skin-preview-rp"
-          isSelf={false}
-          data={{ remark: 'Best Wishes', opened: false, amountYuan: 88 }}
-          bubble={effectiveBubble}
-          showAvatar={effectiveBubble.showAvatar}
-          showAvatarColumn
-          onOpen={() => {}}
-        />
-        <PreviewChatMessageRow isSelf={false} bubble={effectiveBubble}>
-          <TransferBubbleFace
-            messengerStyle={messengerStyle}
-            status="pending"
-            amountYuan={520}
-            remark="示例转账"
-            perspective="incoming"
-          />
-        </PreviewChatMessageRow>
-        <PreviewChatMessageRow isSelf={false} bubble={effectiveBubble}>
-          <VoiceMessageBubble
-            isUser={false}
-            duration={8}
-            audioUrl=""
-            transcriptText="对方语音转写预览"
-            messengerStyle={messengerStyle}
-            bubble={effectiveBubble}
-            showBubbleTail={bubbleTail('only')}
-            bubbleTailMaskColor={tailMaskColor}
-          />
-        </PreviewChatMessageRow>
-        <PreviewChatMessageRow isSelf bubble={effectiveBubble}>
-          <VoiceMessageBubble
-            isUser
-            duration={12}
-            audioUrl=""
-            transcriptText="己方语音转写预览"
-            messengerStyle={messengerStyle}
-            bubble={effectiveBubble}
-            showBubbleTail={bubbleTail('only')}
-            bubbleTailMaskColor={tailMaskColor}
-          />
-        </PreviewChatMessageRow>
-        <LocationChatRow
-          id="skin-preview-loc-other"
-          isSelf={false}
-          data={SAMPLE_LOCATION}
-          bubble={effectiveBubble}
-          showAvatar={effectiveBubble.showAvatar}
-          showAvatarColumn
-          showBubbleTail={bubbleTail('only')}
-          bubbleTailMaskColor={tailMaskColor}
-          variant="preview"
-        />
-        <LocationChatRow
-          id="skin-preview-loc-self"
-          isSelf
-          data={SAMPLE_LOCATION}
-          bubble={effectiveBubble}
-          showAvatar={effectiveBubble.showAvatar}
-          showAvatarColumn
-          showBubbleTail={bubbleTail('only')}
-          bubbleTailMaskColor={tailMaskColor}
-          variant="preview"
-        />
+        {showSpecial ? (
+          <>
+            <p className="pt-1 text-center text-[10px]" style={{ color: 'var(--wx-text-muted)' }}>
+              特殊消息
+            </p>
+            <RedPacketChatRow
+              id="skin-preview-rp"
+              isSelf={false}
+              data={{ remark: 'Best Wishes', opened: false, amountYuan: 88 }}
+              bubble={effectiveBubble}
+              showAvatar={effectiveBubble.showAvatar}
+              showAvatarColumn
+              onOpen={() => {}}
+            />
+            <PreviewChatMessageRow isSelf={false} bubble={effectiveBubble}>
+              <TransferBubbleFace
+                messengerStyle={messengerStyle}
+                status="pending"
+                amountYuan={520}
+                remark="示例转账"
+                perspective="incoming"
+              />
+            </PreviewChatMessageRow>
+            <PreviewChatMessageRow isSelf={false} bubble={effectiveBubble}>
+              <VoiceMessageBubble
+                isUser={false}
+                duration={8}
+                audioUrl=""
+                transcriptText="对方语音转写预览"
+                messengerStyle={messengerStyle}
+                bubble={effectiveBubble}
+                showBubbleTail={bubbleTail('only')}
+                bubbleTailMaskColor={tailMaskColor}
+              />
+            </PreviewChatMessageRow>
+            <PreviewChatMessageRow isSelf bubble={effectiveBubble}>
+              <VoiceMessageBubble
+                isUser
+                duration={12}
+                audioUrl=""
+                transcriptText="己方语音转写预览"
+                messengerStyle={messengerStyle}
+                bubble={effectiveBubble}
+                showBubbleTail={bubbleTail('only')}
+                bubbleTailMaskColor={tailMaskColor}
+              />
+            </PreviewChatMessageRow>
+            <LocationChatRow
+              id="skin-preview-loc-other"
+              isSelf={false}
+              data={SAMPLE_LOCATION}
+              bubble={effectiveBubble}
+              showAvatar={effectiveBubble.showAvatar}
+              showAvatarColumn
+              showBubbleTail={bubbleTail('only')}
+              bubbleTailMaskColor={tailMaskColor}
+              variant="preview"
+            />
+            <LocationChatRow
+              id="skin-preview-loc-self"
+              isSelf
+              data={SAMPLE_LOCATION}
+              bubble={effectiveBubble}
+              showAvatar={effectiveBubble.showAvatar}
+              showAvatarColumn
+              showBubbleTail={bubbleTail('only')}
+              bubbleTailMaskColor={tailMaskColor}
+              variant="preview"
+            />
+          </>
+        ) : null}
       </div>
 
+      {showInput ? (
       <div
         data-wx-chat-input-bar
         className="border-t px-2 py-2"
@@ -583,6 +660,7 @@ export function WeChatChatSkinPreviewPanel({
           onSend={() => {}}
         />
       </div>
+      ) : null}
     </div>
     </WeChatAvatarChromeProvider>
     </WeChatChatSkinEngineProvider>

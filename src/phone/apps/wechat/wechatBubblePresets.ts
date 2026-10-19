@@ -410,6 +410,12 @@ export function mergeWeChatBubbleGlobal(
   patch: Partial<WeChatBubbleTheme>,
 ): WeChatBubbleTheme {
   const merged: WeChatBubbleTheme = { ...prev, ...patch }
+  // patch 里显式 undefined = 清除该可选字段（恢复默认尺寸等）
+  for (const key of Object.keys(patch) as (keyof WeChatBubbleTheme)[]) {
+    if (patch[key] === undefined) {
+      delete merged[key]
+    }
+  }
   if (patch.showBubbleTail === false && !patch.bubbleTailStyle && !('bubbleTailStyle' in patch)) {
     delete merged.bubbleTailStyle
   }

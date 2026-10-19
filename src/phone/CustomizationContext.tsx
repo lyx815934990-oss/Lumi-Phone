@@ -179,6 +179,52 @@ function syncBubbleByRoleWithNewGlobal(
       showAvatar: role.showAvatar === prevGlobal.showAvatar ? nextGlobal.showAvatar : role.showAvatar,
       avatarRadiusPx:
         role.avatarRadiusPx === prevGlobal.avatarRadiusPx ? nextGlobal.avatarRadiusPx : role.avatarRadiusPx,
+      selfAvatarRadiusPx:
+        role.selfAvatarRadiusPx === prevGlobal.selfAvatarRadiusPx
+          ? nextGlobal.selfAvatarRadiusPx
+          : role.selfAvatarRadiusPx,
+      otherAvatarRadiusPx:
+        role.otherAvatarRadiusPx === prevGlobal.otherAvatarRadiusPx
+          ? nextGlobal.otherAvatarRadiusPx
+          : role.otherAvatarRadiusPx,
+      selfAvatarSizePx:
+        role.selfAvatarSizePx === prevGlobal.selfAvatarSizePx
+          ? nextGlobal.selfAvatarSizePx
+          : role.selfAvatarSizePx,
+      otherAvatarSizePx:
+        role.otherAvatarSizePx === prevGlobal.otherAvatarSizePx
+          ? nextGlobal.otherAvatarSizePx
+          : role.otherAvatarSizePx,
+      selfFontSizePx:
+        role.selfFontSizePx === prevGlobal.selfFontSizePx ? nextGlobal.selfFontSizePx : role.selfFontSizePx,
+      otherFontSizePx:
+        role.otherFontSizePx === prevGlobal.otherFontSizePx
+          ? nextGlobal.otherFontSizePx
+          : role.otherFontSizePx,
+      selfBubbleScalePct:
+        role.selfBubbleScalePct === prevGlobal.selfBubbleScalePct
+          ? nextGlobal.selfBubbleScalePct
+          : role.selfBubbleScalePct,
+      otherBubbleScalePct:
+        role.otherBubbleScalePct === prevGlobal.otherBubbleScalePct
+          ? nextGlobal.otherBubbleScalePct
+          : role.otherBubbleScalePct,
+      selfBubbleMaxWidthPct:
+        role.selfBubbleMaxWidthPct === prevGlobal.selfBubbleMaxWidthPct
+          ? nextGlobal.selfBubbleMaxWidthPct
+          : role.selfBubbleMaxWidthPct,
+      otherBubbleMaxWidthPct:
+        role.otherBubbleMaxWidthPct === prevGlobal.otherBubbleMaxWidthPct
+          ? nextGlobal.otherBubbleMaxWidthPct
+          : role.otherBubbleMaxWidthPct,
+      selfBubbleMaxHeightPx:
+        role.selfBubbleMaxHeightPx === prevGlobal.selfBubbleMaxHeightPx
+          ? nextGlobal.selfBubbleMaxHeightPx
+          : role.selfBubbleMaxHeightPx,
+      otherBubbleMaxHeightPx:
+        role.otherBubbleMaxHeightPx === prevGlobal.otherBubbleMaxHeightPx
+          ? nextGlobal.otherBubbleMaxHeightPx
+          : role.otherBubbleMaxHeightPx,
       showBubbleTail:
         role.showBubbleTail === prevGlobal.showBubbleTail ? nextGlobal.showBubbleTail : role.showBubbleTail,
       showBubbleTailSelf:
@@ -639,7 +685,88 @@ function normalizeWeChatTheme(parsed: unknown): WeChatTheme {
       showAvatar: bool(r.showAvatar, fallback.showAvatar),
       ...(typeof r.showAvatarSelf === 'boolean' ? { showAvatarSelf: r.showAvatarSelf } : {}),
       ...(typeof r.showAvatarOther === 'boolean' ? { showAvatarOther: r.showAvatarOther } : {}),
-      avatarRadiusPx: clamp(r.avatarRadiusPx, 0, 18, fallback.avatarRadiusPx),
+      avatarRadiusPx: clamp(r.avatarRadiusPx, 0, 32, fallback.avatarRadiusPx),
+      ...(typeof r.selfAvatarRadiusPx === 'number' && Number.isFinite(r.selfAvatarRadiusPx)
+        ? { selfAvatarRadiusPx: clamp(r.selfAvatarRadiusPx, 0, 32, fallback.selfAvatarRadiusPx ?? fallback.avatarRadiusPx) }
+        : fallback.selfAvatarRadiusPx !== undefined
+          ? { selfAvatarRadiusPx: fallback.selfAvatarRadiusPx }
+          : {}),
+      ...(typeof r.otherAvatarRadiusPx === 'number' && Number.isFinite(r.otherAvatarRadiusPx)
+        ? {
+            otherAvatarRadiusPx: clamp(
+              r.otherAvatarRadiusPx,
+              0,
+              32,
+              fallback.otherAvatarRadiusPx ?? fallback.avatarRadiusPx,
+            ),
+          }
+        : fallback.otherAvatarRadiusPx !== undefined
+          ? { otherAvatarRadiusPx: fallback.otherAvatarRadiusPx }
+          : {}),
+      ...(typeof r.selfAvatarSizePx === 'number' && Number.isFinite(r.selfAvatarSizePx)
+        ? { selfAvatarSizePx: clamp(r.selfAvatarSizePx, 28, 64, fallback.selfAvatarSizePx ?? 40) }
+        : fallback.selfAvatarSizePx !== undefined
+          ? { selfAvatarSizePx: fallback.selfAvatarSizePx }
+          : {}),
+      ...(typeof r.otherAvatarSizePx === 'number' && Number.isFinite(r.otherAvatarSizePx)
+        ? { otherAvatarSizePx: clamp(r.otherAvatarSizePx, 28, 64, fallback.otherAvatarSizePx ?? 40) }
+        : fallback.otherAvatarSizePx !== undefined
+          ? { otherAvatarSizePx: fallback.otherAvatarSizePx }
+          : {}),
+      ...(typeof r.selfFontSizePx === 'number' && Number.isFinite(r.selfFontSizePx)
+        ? { selfFontSizePx: clamp(r.selfFontSizePx, 12, 22, fallback.selfFontSizePx ?? 15) }
+        : fallback.selfFontSizePx !== undefined
+          ? { selfFontSizePx: fallback.selfFontSizePx }
+          : {}),
+      ...(typeof r.otherFontSizePx === 'number' && Number.isFinite(r.otherFontSizePx)
+        ? { otherFontSizePx: clamp(r.otherFontSizePx, 12, 22, fallback.otherFontSizePx ?? 15) }
+        : fallback.otherFontSizePx !== undefined
+          ? { otherFontSizePx: fallback.otherFontSizePx }
+          : {}),
+      ...(typeof r.selfBubbleScalePct === 'number' && Number.isFinite(r.selfBubbleScalePct)
+        ? { selfBubbleScalePct: clamp(r.selfBubbleScalePct, 70, 150, fallback.selfBubbleScalePct ?? 100) }
+        : fallback.selfBubbleScalePct !== undefined
+          ? { selfBubbleScalePct: fallback.selfBubbleScalePct }
+          : {}),
+      ...(typeof r.otherBubbleScalePct === 'number' && Number.isFinite(r.otherBubbleScalePct)
+        ? { otherBubbleScalePct: clamp(r.otherBubbleScalePct, 70, 150, fallback.otherBubbleScalePct ?? 100) }
+        : fallback.otherBubbleScalePct !== undefined
+          ? { otherBubbleScalePct: fallback.otherBubbleScalePct }
+          : {}),
+      ...(typeof r.selfBubbleMaxHeightPx === 'number' && Number.isFinite(r.selfBubbleMaxHeightPx)
+        ? { selfBubbleMaxHeightPx: clamp(r.selfBubbleMaxHeightPx, 0, 520, fallback.selfBubbleMaxHeightPx ?? 0) }
+        : fallback.selfBubbleMaxHeightPx !== undefined
+          ? { selfBubbleMaxHeightPx: fallback.selfBubbleMaxHeightPx }
+          : {}),
+      ...(typeof r.otherBubbleMaxHeightPx === 'number' && Number.isFinite(r.otherBubbleMaxHeightPx)
+        ? { otherBubbleMaxHeightPx: clamp(r.otherBubbleMaxHeightPx, 0, 520, fallback.otherBubbleMaxHeightPx ?? 0) }
+        : fallback.otherBubbleMaxHeightPx !== undefined
+          ? { otherBubbleMaxHeightPx: fallback.otherBubbleMaxHeightPx }
+          : {}),
+      ...(typeof r.selfBubbleMaxWidthPct === 'number' && Number.isFinite(r.selfBubbleMaxWidthPct)
+        ? {
+            selfBubbleMaxWidthPct: clamp(
+              r.selfBubbleMaxWidthPct,
+              50,
+              92,
+              fallback.selfBubbleMaxWidthPct ?? 75,
+            ),
+          }
+        : fallback.selfBubbleMaxWidthPct !== undefined
+          ? { selfBubbleMaxWidthPct: fallback.selfBubbleMaxWidthPct }
+          : {}),
+      ...(typeof r.otherBubbleMaxWidthPct === 'number' && Number.isFinite(r.otherBubbleMaxWidthPct)
+        ? {
+            otherBubbleMaxWidthPct: clamp(
+              r.otherBubbleMaxWidthPct,
+              50,
+              92,
+              fallback.otherBubbleMaxWidthPct ?? 75,
+            ),
+          }
+        : fallback.otherBubbleMaxWidthPct !== undefined
+          ? { otherBubbleMaxWidthPct: fallback.otherBubbleMaxWidthPct }
+          : {}),
       showBubbleTail: bool(r.showBubbleTail, fallback.showBubbleTail),
       ...(typeof r.showBubbleTailSelf === 'boolean' ? { showBubbleTailSelf: r.showBubbleTailSelf } : {}),
       ...(typeof r.showBubbleTailOther === 'boolean' ? { showBubbleTailOther: r.showBubbleTailOther } : {}),

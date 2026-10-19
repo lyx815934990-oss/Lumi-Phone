@@ -87,6 +87,9 @@ import type { WeChatBubbleTheme, WeChatChatRoomBg, WeChatTheme } from '../../typ
 import {
   DEFAULT_WECHAT_CHAT_ROOM_BG,
   resolveBubbleAvatarCluster,
+  resolveBubbleAvatarRadiusPx,
+  resolveBubbleAvatarSizePx,
+  resolveBubbleMaxWidthPct,
   resolveBubbleShowAvatar,
   resolveBubbleShowTail,
   resolveGlassBubbleStyle,
@@ -17857,39 +17860,45 @@ export function ChatRoomInner({
         const reserveAvatarGutter = showAvatar
         const voiceRankBadge = isSelf ? selfSpeakerRankBadge : otherSpeakerRankBadge
         const rankBesideNick = sharedMsgProps.groupRankShowBesideNickname !== false
+        const voiceAvatarSide = isSelf ? 'self' : 'other'
+        const voiceAvatarPx = resolveBubbleAvatarSizePx(bubble, voiceAvatarSide)
+        const voiceAvatarRadiusPx = resolveBubbleAvatarRadiusPx(bubble, voiceAvatarSide)
+        const voiceMaxStyle = { maxWidth: `${resolveBubbleMaxWidthPct(bubble, voiceAvatarSide)}%` }
         const avatarBorder =
           bubbleTailStyle === 'wechat'
             ? 'none'
             : '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)'
+        const voiceAvatarStyle = {
+          width: voiceAvatarPx,
+          height: voiceAvatarPx,
+          borderRadius: `${voiceAvatarRadiusPx}px`,
+          border: avatarBorder,
+        }
         const avatarNodeRaw = (
           <img
             src={(isSelf ? sharedMsgProps.chatSelfAvatarUrl : sharedRowProps.chatOtherAvatarUrl) || ''}
             alt=""
-            width={40}
-            height={40}
-            className="h-10 w-10 shrink-0 object-cover"
-            style={{
-              borderRadius: `${bubble.avatarRadiusPx}px`,
-              border: avatarBorder,
-            }}
+            width={voiceAvatarPx}
+            height={voiceAvatarPx}
+            className="shrink-0 object-cover"
+            style={voiceAvatarStyle}
             aria-hidden
           />
         )
         const otherGrayAvatar = (
           <div
-            className="h-10 w-10 shrink-0"
+            className="shrink-0"
             style={{
-              borderRadius: `${bubble.avatarRadiusPx}px`,
+              ...voiceAvatarStyle,
               background: 'rgba(0,0,0,0.06)',
-              border: avatarBorder,
             }}
             aria-hidden
           />
         )
         const selfGrayAvatar = (
           <div
-            className="h-10 w-10 shrink-0"
-            style={{ borderRadius: `${bubble.avatarRadiusPx}px`, background: 'rgba(0,0,0,0.04)' }}
+            className="shrink-0"
+            style={{ ...voiceAvatarStyle, border: 'none', background: 'rgba(0,0,0,0.04)' }}
             aria-hidden
           />
         )
@@ -17899,20 +17908,20 @@ export function ChatRoomInner({
           const chromeSide = isSelf ? 'self' : 'other'
           if (rankBesideNick || !voiceRankBadge) {
             return (
-              <ChatGroupSpeakerRankOnAvatar chromeSide={chromeSide} rankBadge={null}>
+              <ChatGroupSpeakerRankOnAvatar chromeSide={chromeSide} rankBadge={null} sizePx={voiceAvatarPx}>
                 {node}
               </ChatGroupSpeakerRankOnAvatar>
             )
           }
           return (
-            <ChatGroupSpeakerRankOnAvatar chromeSide={chromeSide} rankBadge={voiceRankBadge}>
+            <ChatGroupSpeakerRankOnAvatar chromeSide={chromeSide} rankBadge={voiceRankBadge} sizePx={voiceAvatarPx}>
               {node}
             </ChatGroupSpeakerRankOnAvatar>
           )
         }
         const avatarPlaceholder = composeMultiSelectLeading(
           msAvatar,
-          <div className="h-10 w-10 shrink-0" aria-hidden />,
+          <div className="shrink-0" style={{ width: voiceAvatarPx, height: voiceAvatarPx }} aria-hidden />,
           voiceShowAvatarColumn,
         )
         const bubbleNode = (
@@ -17968,25 +17977,25 @@ export function ChatRoomInner({
           isSelf ? (
             <div className="flex w-full max-w-full shrink-0 items-end justify-end overflow-x-visible px-4">
               {!effectiveShowAvatar && !msAvatar ? (
-                <div className="w-fit max-w-[75%]">{bubbleNode}</div>
+                <div className="w-fit" style={voiceMaxStyle}>{bubbleNode}</div>
               ) : showAvatarVisual || msAvatar ? (
-                <div className="flex w-fit max-w-[75%] flex-row items-start gap-[12px]">
+                <div className="flex w-fit flex-row items-start gap-[12px]" style={voiceMaxStyle}>
                   {bubbleNode}
                   {wrapVoiceRankOnAvatar(sharedMsgProps.chatSelfAvatarUrl ? avatarNodeRaw : selfGrayAvatar)}
                 </div>
               ) : reserveAvatarGutter ? (
-                <div className="flex w-fit max-w-[75%] flex-row items-start gap-[12px]">
+                <div className="flex w-fit flex-row items-start gap-[12px]" style={voiceMaxStyle}>
                   {bubbleNode}
                   {wrapVoiceRankOnAvatar(avatarPlaceholder)}
                 </div>
               ) : (
-                <div className="w-fit max-w-[75%]">{bubbleNode}</div>
+                <div className="w-fit" style={voiceMaxStyle}>{bubbleNode}</div>
               )}
             </div>
           ) : (
             <div className="w-full max-w-full shrink-0 overflow-x-visible">
               {!effectiveShowAvatar && !msAvatar ? (
-                <div className="ml-[24px] mr-[24px] w-fit max-w-[75%]">{bubbleNode}</div>
+                <div className="ml-[24px] mr-[24px] w-fit" style={voiceMaxStyle}>{bubbleNode}</div>
               ) : showAvatarVisual || msAvatar ? (
                 <div className="ml-[24px] mr-[24px] flex max-w-full flex-row items-start gap-[12px]">
                   {wrapVoiceRankOnAvatar(sharedRowProps.chatOtherAvatarUrl ? avatarNodeRaw : otherGrayAvatar)}
@@ -18008,7 +18017,7 @@ export function ChatRoomInner({
                   </div>
                 </div>
               ) : (
-                <div className="ml-[24px] mr-[24px] w-fit max-w-[75%]">{bubbleNode}</div>
+                <div className="ml-[24px] mr-[24px] w-fit" style={voiceMaxStyle}>{bubbleNode}</div>
               )}
             </div>
           )
@@ -19067,7 +19076,9 @@ export function ChatRoomInner({
             <TypingIndicatorBubble
               avatarUrl={pendingRevealAvatarUrl}
               showAvatar={showAvatar}
-              avatarRadiusPx={bubble.avatarRadiusPx}
+              avatarRadiusPx={resolveBubbleAvatarRadiusPx(bubble, 'other')}
+              avatarSizePx={resolveBubbleAvatarSizePx(bubble, 'other')}
+              bubbleTailStyle={bubble.bubbleTailStyle}
             />
           ) : null}
         </div>

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import type { WeChatBubbleTheme } from '../../../types'
+import { resolveBubbleAvatarRadiusPx, resolveBubbleAvatarSizePx } from '../../../types'
 import {
   ChatGroupSenderNicknameWithRank,
   ChatGroupSpeakerRankOnAvatar,
@@ -99,7 +100,9 @@ export function MusicInviteChatRow({
   selected = false,
   onLongPress,
 }: Props) {
-  const avatarPx = 40
+  const avatarSide = isSelf ? 'self' : 'other'
+  const avatarPx = resolveBubbleAvatarSizePx(bubble, avatarSide)
+  const avatarRadiusPx = resolveBubbleAvatarRadiusPx(bubble, avatarSide)
   const { anchorRef, bind, pressStyle } = useSpecialChatCardLongPress(onLongPress, selected)
   const listenStatus =
     data.kind === 'music_invite'
@@ -133,12 +136,12 @@ export function MusicInviteChatRow({
   const reserveAvatarGutter = showAvatar
   const rankBeside = groupRankShowBesideNickname !== false
   /** 与同一人连续气泡对齐：仅占位，不渲染可见灰块 */
-  const avatarGutter = <div className="h-10 w-10 shrink-0" aria-hidden />
+  const avatarGutter = <div className="shrink-0" style={{ width: avatarPx, height: avatarPx }} aria-hidden />
   const otherAvatarFallback = (
     <div
-      className="h-10 w-10 shrink-0"
+      className="shrink-0"
       style={{
-        borderRadius: `${bubble.avatarRadiusPx}px`,
+        width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
         background: 'rgba(0,0,0,0.06)',
         border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
       }}
@@ -158,18 +161,18 @@ export function MusicInviteChatRow({
                   alt=""
                   width={avatarPx}
                   height={avatarPx}
-                  className="h-10 w-10 shrink-0 object-cover"
+                  className="shrink-0 object-cover"
                   style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                     border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                   }}
                   aria-hidden
                 />
               ) : (
                 <div
-                  className="h-10 w-10 shrink-0"
+                  className="shrink-0"
                   style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                     background: 'rgba(0,0,0,0.06)',
                     border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                   }}
@@ -193,16 +196,16 @@ export function MusicInviteChatRow({
       ) : showAvatarVisual || multiSelectAvatar ? (
         <div className="ml-[24px] mr-auto flex max-w-full flex-row items-start gap-[12px]">
           {multiSelectAvatar ?? (
-            <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge}>
+            <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={rankBeside ? null : chatOtherAvatarRankBadge} sizePx={avatarPx}>
               {chatOtherAvatarUrl?.trim() ? (
                 <img
                   src={chatOtherAvatarUrl.trim()}
                   alt=""
                   width={avatarPx}
                   height={avatarPx}
-                  className="h-10 w-10 shrink-0 object-cover"
+                  className="shrink-0 object-cover"
                   style={{
-                    borderRadius: `${bubble.avatarRadiusPx}px`,
+                    width: avatarPx, height: avatarPx, borderRadius: `${avatarRadiusPx}px`,
                     border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
                   }}
                   aria-hidden
