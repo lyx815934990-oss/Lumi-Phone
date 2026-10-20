@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Download, Eraser, Upload } from 'lucide-react'
+import { Download, Eraser, RotateCcw, Upload } from 'lucide-react'
+import { clearAllUserData } from './clearAllUserData'
 import { PLATINUM } from './constants'
 import {
   cleanupRedundantLocalData,
@@ -89,7 +90,8 @@ export function MigrationPanel() {
   const [exportNameOpen, setExportNameOpen] = useState(false)
   const [exportNameDraft, setExportNameDraft] = useState('')
   const exportNameInputRef = useRef<HTMLInputElement>(null)
-  const [busy, setBusy] = useState<'export' | 'import' | 'cleanup' | null>(null)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
+  const [busy, setBusy] = useState<'export' | 'import' | 'cleanup' | 'clear' | null>(null)
   const lineTimer = useRef<number>(0)
 
   const clearLineTimers = () => {
@@ -209,6 +211,19 @@ export function MigrationPanel() {
     }, 50)
     return () => window.clearTimeout(t)
   }, [exportNameOpen])
+
+  const executeClearAllUserData = useCallback(async () => {
+    setClearConfirmOpen(false)
+    setBusy('clear')
+    try {
+      await clearAllUserData()
+      // 整页刷新，避免内存里的人设/聊天/外观态残留
+      window.location.reload()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '清除失败，请刷新页面后重试。')
+      setBusy(null)
+    }
+  }, [])
 
   const finishImportCeremony = useCallback(async () => {
     setCeremonyLines(IMPORT_LINES)
@@ -417,9 +432,52 @@ export function MigrationPanel() {
         </div>
       ) : null}
 
+      {clearConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-[2100] flex items-center justify-center px-5"
+          style={{ background: 'rgba(28,28,30,0.35)', backdropFilter: 'blur(10px)' }}
+        >
+          <div
+            className="max-w-[320px] rounded-2xl border px-5 py-5 shadow-xl"
+            style={{
+              borderColor: 'rgba(196, 72, 72, 0.35)',
+              background: 'rgba(255,255,255,0.94)',
+            }}
+          >
+            <p className="text-[15px] font-semibold" style={{ color: '#B42318' }}>
+              确认清除全部使用数据？
+            </p>
+            <p className="mt-2 text-[13px] leading-relaxed" style={{ color: PLATINUM.ash }}>
+              将清空本浏览器中的聊天、人设、外观、约会剧情、缓存等全部使用数据，网页恢复为初始状态。此操作不可撤销。
+              <span className="mt-1.5 block" style={{ color: PLATINUM.ink }}>
+                若需要保留，请先点「备份导出」。
+              </span>
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                className="flex-1 rounded-xl border py-2.5 text-[13px] font-medium"
+                style={{ borderColor: PLATINUM.line, color: PLATINUM.ink }}
+                onClick={() => setClearConfirmOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white"
+                style={{ background: '#B42318' }}
+                onClick={() => void executeClearAllUserData()}
+              >
+                确认清除
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <button
         type="button"
-        disabled={busy !== null || exportNameOpen}
+        disabled={busy !== null || exportNameOpen || clearConfirmOpen}
         onClick={() => void runLocalCleanup()}
         className="flex w-full items-center justify-center gap-2 rounded-2xl border py-3.5 text-[14px] font-semibold transition-opacity disabled:opacity-50"
         style={{
@@ -435,7 +493,7 @@ export function MigrationPanel() {
 
       <button
         type="button"
-        disabled={busy !== null || exportNameOpen}
+        disabled={busy !== null || exportNameOpen || clearConfirmOpen}
         onClick={() => openExportNameDialog()}
         className="flex w-full items-center justify-center gap-2 rounded-2xl border py-3.5 text-[14px] font-semibold transition-opacity disabled:opacity-50"
         style={{
@@ -452,7 +510,7 @@ export function MigrationPanel() {
       <label
         id="data-archive-import-restore"
         className={`flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border py-3.5 text-[14px] font-semibold ${
-          busy ? 'pointer-events-none opacity-50' : ''
+          busy || clearConfirmOpen ? 'pointer-events-none opacity-50' : ''
         }`}
         style={{
           borderColor: PLATINUM.gold,
@@ -484,6 +542,22 @@ export function MigrationPanel() {
           }}
         />
       </label>
+
+      <button
+        type="button"
+        disabled={busy !== null || exportNameOpen || clearConfirmOpen}
+        onClick={() => setClearConfirmOpen(true)}
+        className="flex w-full items-center justify-center gap-2 rounded-2xl border py-3.5 text-[14px] font-semibold transition-opacity disabled:opacity-50"
+        style={{
+          borderColor: 'rgba(196, 72, 72, 0.45)',
+          color: '#B42318',
+          background: 'rgba(255, 245, 245, 0.72)',
+          boxShadow: '0 6px 24px rgba(180, 35, 24, 0.08)',
+        }}
+      >
+        <RotateCcw className="size-4" />
+        {busy === 'clear' ? '正在清除并恢复初始…' : '一键清除全部使用数据 · 恢复初始'}
+      </button>
     </div>
   )
 }
