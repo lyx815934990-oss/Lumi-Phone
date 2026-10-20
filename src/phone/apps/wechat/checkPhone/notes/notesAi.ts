@@ -48,7 +48,7 @@ function buildNotesGenerateLanguageAppendix(opts: {
   ]
   if (lang === 'ja') {
     lines.push(
-      `- **日语禁句末「笑」口癖**：禁止默认在句末加「笑」「（笑）」「w/www」充当中文「哈哈」；普通碎念直接收句。`,
+      `- **日语句末「笑」**：轻松碎念句末「笑」「（笑）」「w」可自然使用（网聊习惯）；严肃时可直接收句。`,
     )
   }
   if (syncOn) {
