@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 
 import { Pressable } from '../../../components/Pressable'
-import { StickerAuthorCredit } from './StickerAuthorCredit'
 import { useStickerStore } from './stickerStore'
 
 type Props = {
@@ -40,9 +39,6 @@ export function StickerPickerPanel({ onPick }: Props) {
         role="list"
         aria-label="表情包列表"
       >
-        {active?.authorCredit ? (
-          <StickerAuthorCredit credit={active.authorCredit} className="mb-2 mt-0" />
-        ) : null}
         <div className="grid grid-cols-4 gap-2 pb-1">
           {(active?.items ?? []).map((item) => (
             <Pressable

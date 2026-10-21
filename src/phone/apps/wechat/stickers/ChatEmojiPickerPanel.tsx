@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 
 import { Pressable } from '../../../components/Pressable'
-import { StickerAuthorCredit } from './StickerAuthorCredit'
 import { useStickerStore } from './stickerStore'
 import { WECHAT_CLASSIC_GROUP_ID } from './wechatClassicStickerPack'
 import { WeChatClassicEmojiPickerPanel } from './WeChatClassicEmojiPickerPanel'
@@ -56,9 +55,6 @@ export function ChatEmojiPickerPanel({ onInsertClassicEmoji, onPickSticker }: Pr
           role="list"
           aria-label="表情包列表"
         >
-          {activeSticker.authorCredit ? (
-            <StickerAuthorCredit credit={activeSticker.authorCredit} className="mb-2 mt-0" />
-          ) : null}
           <div className="grid grid-cols-4 gap-2 pb-1">
             {activeSticker.items.map((item) => (
               <Pressable

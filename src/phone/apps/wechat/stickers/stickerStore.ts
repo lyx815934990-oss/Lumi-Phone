@@ -19,8 +19,6 @@ export interface StickerGroup {
   items: StickerItem[]
   createdAt: number
   readonly?: boolean
-  /** 内置包原创作者标注（展示用，不进 AI 描述） */
-  authorCredit?: string
 }
 
 type StickerState = {
@@ -30,91 +28,8 @@ type StickerState = {
 const STORAGE_KEY = 'wechat-sticker-center-v1'
 const STICKER_DB_KEY = 'wechat-sticker-center-v2'
 const STICKER_CHANGED_EVENT = 'wechat-sticker-storage-changed'
-const DEFAULT_GROUP_ID_1 = 'default-sticker-pack-1'
-const DEFAULT_GROUP_ID_2 = 'default-sticker-pack-2'
-const DEFAULT_GROUP_ID_3 = 'default-sticker-pack-3'
-const DEFAULT_GROUP_ID_4 = 'default-sticker-pack-4'
-const READONLY_GROUP_IDS = new Set([
-  WECHAT_CLASSIC_GROUP_ID,
-  DEFAULT_GROUP_ID_1,
-  DEFAULT_GROUP_ID_2,
-  DEFAULT_GROUP_ID_3,
-  DEFAULT_GROUP_ID_4,
-])
-
-const defaultPack1Modules = import.meta.glob('../../../../../image/默认表情包1/*.{png,jpg,jpeg,webp,gif}', {
-  eager: true,
-  import: 'default',
-}) as Record<string, string>
-
-const defaultPack2Modules = import.meta.glob('../../../../../image/默认表情包2/*.{png,jpg,jpeg,webp,gif}', {
-  eager: true,
-  import: 'default',
-}) as Record<string, string>
-
-const defaultPack3Modules = import.meta.glob('../../../../../image/蒜皮宝宝表情包/*.{png,jpg,jpeg,webp,gif}', {
-  eager: true,
-  import: 'default',
-}) as Record<string, string>
-
-const defaultPack4Modules = import.meta.glob('../../../../../image/月薪喵表情包/*.{png,jpg,jpeg,webp,gif}', {
-  eager: true,
-  import: 'default',
-}) as Record<string, string>
-
-function fileLabelFromPath(path: string) {
-  const normalized = path.replaceAll('\\', '/')
-  const fileName = normalized.split('/').pop() ?? ''
-  return fileName.replace(/\.[^.]+$/, '').trim() || '未命名表情'
-}
-
-function buildDefaultItems(modules: Record<string, string>, idPrefix: string): StickerItem[] {
-  const keys = Object.keys(modules).sort((a, b) => a.localeCompare(b, 'zh-CN'))
-  return keys.map((k, idx) => ({
-    id: `${idPrefix}-${idx + 1}`,
-    url: modules[k],
-    description: fileLabelFromPath(k),
-    createdAt: 0,
-  }))
-}
-
-const DEFAULT_GROUPS: StickerGroup[] = [
-  {
-    id: DEFAULT_GROUP_ID_1,
-    name: '这狗',
-    coverUrl: buildDefaultItems(defaultPack1Modules, 'df1')[0]?.url ?? '',
-    items: buildDefaultItems(defaultPack1Modules, 'df1'),
-    createdAt: 0,
-    readonly: true,
-    authorCredit: '蘸只 JiaH 酱 · 小红书「这狗」5206698798',
-  },
-  {
-    id: DEFAULT_GROUP_ID_2,
-    name: '杂混抽象',
-    coverUrl: buildDefaultItems(defaultPack2Modules, 'df2')[0]?.url ?? '',
-    items: buildDefaultItems(defaultPack2Modules, 'df2'),
-    createdAt: 0,
-    readonly: true,
-  },
-  {
-    id: DEFAULT_GROUP_ID_3,
-    name: '蒜皮宝宝',
-    coverUrl: buildDefaultItems(defaultPack3Modules, 'df3')[0]?.url ?? '',
-    items: buildDefaultItems(defaultPack3Modules, 'df3'),
-    createdAt: 0,
-    readonly: true,
-    authorCredit: '蒜皮宝宝 · 小红书 CUIPJI424',
-  },
-  {
-    id: DEFAULT_GROUP_ID_4,
-    name: '月薪喵',
-    coverUrl: buildDefaultItems(defaultPack4Modules, 'df4')[0]?.url ?? '',
-    items: buildDefaultItems(defaultPack4Modules, 'df4'),
-    createdAt: 0,
-    readonly: true,
-    authorCredit: '月薪喵 · 小红书 884627210',
-  },
-].filter((g) => !!g && g.items.length > 0)
+/** 仅经典黄脸只读；角色表情包需用户自行上传，避免内置第三方素材侵权 */
+const READONLY_GROUP_IDS = new Set([WECHAT_CLASSIC_GROUP_ID])
 
 function uid(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -197,7 +112,7 @@ if (typeof window !== 'undefined') {
   })
 }
 
-/** 角色发图 / 校验模型输出 URL：仅允许资源库内地址（含默认包与用户表情包中心） */
+/** 角色发图 / 校验模型输出 URL：仅允许用户表情包中心内地址 */
 export function getKnownStickerUrlSet(): Set<string> {
   const s = new Set<string>()
   for (const g of allStickerGroups()) {
@@ -258,14 +173,13 @@ export type StickerCatalogEntry = {
   description: string
   groupName: string
   groupTag: string
-  /** 用户在「表情包中心」自建分组（非默认只读包） */
+  /** 用户在「表情包中心」自建分组 */
   isUserCustom: boolean
 }
 
 function allStickerGroups(): StickerGroup[] {
   const state = readState()
-  /** 自定义分组优先：注入 AI 目录与解析匹配时，避免被默认大包截断 */
-  return [...state.groups, ...DEFAULT_GROUPS].filter((g) => g.id !== WECHAT_CLASSIC_GROUP_ID)
+  return state.groups.filter((g) => g.id !== WECHAT_CLASSIC_GROUP_ID)
 }
 
 /** 发 AI 请求 / 解析角色 `[表情包]` 行前须 await，确保自定义包已从 IndexedDB 载入 */
@@ -568,7 +482,7 @@ export function buildStickerCatalogPromptBlock(
       : ''
   if (body.length > maxChars) body = `${body.slice(0, maxChars)}${truncated || '\n…（目录过长已截断，请只用上方已列出的引用名）'}`
   else if (truncated) body = `${body}${truncated}`
-  return `---------------------\n【表情包资源（含默认包与用户自建分组；选用须贴脸，默认不发）】\n---------------------\n发送格式硬约束：每一条 GIF **独占一行**，整行只能是「表情包」+半角空格+下方箭头右侧的引用名原文；不要方括号、不要冒号、不要跟口语粘在同一行。\n\n${WECHAT_STICKER_SEND_CONSERVATIVE_RULE}\n\n${WECHAT_STICKER_DESCRIPTION_SEMANTICS_RULE}\n\n${body}\n`
+  return `---------------------\n【表情包资源（用户自建分组；选用须贴脸，默认不发）】\n---------------------\n发送格式硬约束：每一条 GIF **独占一行**，整行只能是「表情包」+半角空格+下方箭头右侧的引用名原文；不要方括号、不要冒号、不要跟口语粘在同一行。\n\n${WECHAT_STICKER_SEND_CONSERVATIVE_RULE}\n\n${WECHAT_STICKER_DESCRIPTION_SEMANTICS_RULE}\n\n${body}\n`
 }
 
 function writeState(next: StickerState) {
@@ -724,7 +638,7 @@ export function useStickerStore() {
   }, [update])
 
   const groups = useMemo(
-    () => [...DEFAULT_GROUPS, ...state.groups].filter((g) => g.id !== WECHAT_CLASSIC_GROUP_ID),
+    () => state.groups.filter((g) => g.id !== WECHAT_CLASSIC_GROUP_ID),
     [state.groups],
   )
 
