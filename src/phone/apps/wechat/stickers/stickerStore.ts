@@ -19,6 +19,8 @@ export interface StickerGroup {
   items: StickerItem[]
   createdAt: number
   readonly?: boolean
+  /** 内置包原创作者标注（展示用，不进 AI 描述） */
+  authorCredit?: string
 }
 
 type StickerState = {
@@ -84,6 +86,7 @@ const DEFAULT_GROUPS: StickerGroup[] = [
     items: buildDefaultItems(defaultPack1Modules, 'df1'),
     createdAt: 0,
     readonly: true,
+    authorCredit: '蘸只 JiaH 酱 · 小红书「这狗」5206698798',
   },
   {
     id: DEFAULT_GROUP_ID_2,
@@ -100,6 +103,7 @@ const DEFAULT_GROUPS: StickerGroup[] = [
     items: buildDefaultItems(defaultPack3Modules, 'df3'),
     createdAt: 0,
     readonly: true,
+    authorCredit: '蒜皮宝宝 · 小红书 CUIPJI424',
   },
   {
     id: DEFAULT_GROUP_ID_4,
@@ -108,6 +112,7 @@ const DEFAULT_GROUPS: StickerGroup[] = [
     items: buildDefaultItems(defaultPack4Modules, 'df4'),
     createdAt: 0,
     readonly: true,
+    authorCredit: '月薪喵 · 小红书 884627210',
   },
 ].filter((g) => !!g && g.items.length > 0)
 

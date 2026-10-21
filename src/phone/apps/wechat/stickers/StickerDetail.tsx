@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from 'react'
 import { Pressable } from '../../../components/Pressable'
 import { ListenNumericText } from '../../../../components/discoverListen/ListenNum'
 import { useCustomization } from '../../../CustomizationContext'
+import { StickerAuthorCredit } from './StickerAuthorCredit'
 import type { StickerGroup, StickerItem } from './stickerStore'
 import { StickerUploadSheet } from './StickerUploadSheet'
 
@@ -56,6 +57,9 @@ export function StickerDetail({
               <ListenNumericText text={String(group.items.length)} />
               {' 张表情'}
             </p>
+            {group.authorCredit ? (
+              <StickerAuthorCredit credit={group.authorCredit} size="md" />
+            ) : null}
           </div>
           {readonly ? (
             <span className="rounded-full border border-white/60 bg-white/34 px-4 py-2 text-[12px] text-gray-700 backdrop-blur-[8px]">

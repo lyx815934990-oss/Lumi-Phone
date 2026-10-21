@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 
 import { ListenNumericText } from '../../../../components/discoverListen/ListenNum'
 import { Pressable } from '../../../components/Pressable'
+import { StickerAuthorCredit } from './StickerAuthorCredit'
 import type { StickerGroup } from './stickerStore'
 
 type Props = {
@@ -67,6 +68,7 @@ export function StickerHub({ groups, onCreate, onOpenGroup, onRequestDeleteGroup
                     <ListenNumericText text={String(g.items.length)} />
                     {' expressions'}
                   </p>
+                  {g.authorCredit ? <StickerAuthorCredit credit={g.authorCredit} /> : null}
                 </div>
               </Pressable>
             </div>
