@@ -425,7 +425,7 @@ export function evacuateReservedProfileCells(
           : x,
       )
     } else {
-      for (const pg of neighborPages(0)) {
+      for (const pg of neighborPages(0, getActiveWidgetPageCount())) {
         const o1 = findFirstFreeOrigin(next, p.size, p.id, pg)
         if (!o1) continue
         next = next.map((x) =>
