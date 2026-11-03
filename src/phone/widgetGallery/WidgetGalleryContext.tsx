@@ -48,7 +48,7 @@ type WidgetGalleryContextValue = {
   setPlacementEnabled: (id: string, enabled: boolean) => void
   setPlacementSize: (id: string, size: GalleryWidgetSize) => void
   setPlacementCharacter: (id: string, characterId: string | undefined) => void
-  /** 将组件加到桌面第二页；返回是否成功新增/启用 */
+  /** 将组件加到指定页（0 主屏 / 1 组件页）；返回是否成功新增/启用 */
   addWidget: (kind: GalleryWidgetKind, page?: number) => boolean
   /** 从桌面移除（禁用） */
   removeWidget: (id: string) => void
@@ -71,6 +71,11 @@ type WidgetGalleryContextValue = {
     },
   ) => void
   kindsEnabled: Record<GalleryWidgetKind, boolean>
+  /**
+   * 删除普通页后：去掉该 widget page 上的组件，更高页码整体 -1。
+   * `removedWidgetPage` 为组件页索引（≥1）。
+   */
+  shiftPagesAfterDelete: (removedWidgetPage: number) => void
 }
 
 const WidgetGalleryContext = createContext<WidgetGalleryContextValue | null>(null)
@@ -438,6 +443,21 @@ export function WidgetGalleryProvider({ children }: { children: ReactNode }) {
     [state],
   )
 
+  const shiftPagesAfterDelete = useCallback(
+    (removedWidgetPage: number) => {
+      const removed = Math.max(1, Math.floor(removedWidgetPage))
+      persist({
+        ...state,
+        placements: normalizeOrders(
+          state.placements
+            .filter((p) => p.page !== removed)
+            .map((p) => (p.page > removed ? { ...p, page: p.page - 1 } : p)),
+        ),
+      })
+    },
+    [persist, state],
+  )
+
   const value = useMemo(
     () => ({
       state,
@@ -457,6 +477,7 @@ export function WidgetGalleryProvider({ children }: { children: ReactNode }) {
       patchConfig,
       patchPlacement,
       kindsEnabled,
+      shiftPagesAfterDelete,
     }),
     [
       state,
@@ -476,6 +497,7 @@ export function WidgetGalleryProvider({ children }: { children: ReactNode }) {
       patchConfig,
       patchPlacement,
       kindsEnabled,
+      shiftPagesAfterDelete,
     ],
   )
 

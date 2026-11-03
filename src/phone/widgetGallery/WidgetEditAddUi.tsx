@@ -21,10 +21,13 @@ type Props = {
   onDone?: () => void
   /** 添加成功后回调（例如跳到组件页） */
   onAdded?: (kind: GalleryWidgetKind) => void
+  /** 普通页编辑态：显示「删除空白页」（点按后由外部弹确认） */
+  showDeletePage?: boolean
+  onRequestDeletePage?: () => void
 }
 
 /**
- * 桌面编辑态标题栏：安全区 +「完成」+ 右上角加号与组件选择面板。
+ * 桌面编辑态标题栏：安全区 +「完成」+ 中间删页 + 右上角加号与组件选择面板。
  */
 export function WidgetEditAddUi({
   open,
@@ -32,6 +35,8 @@ export function WidgetEditAddUi({
   targetPage = 0,
   onDone,
   onAdded,
+  showDeletePage = false,
+  onRequestDeletePage,
 }: Props) {
   const { addWidget, availableToAdd, kindsEnabled } = useWidgetGallery()
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -55,41 +60,57 @@ export function WidgetEditAddUi({
           transition={{ type: 'spring', stiffness: 420, damping: 32 }}
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between gap-3 px-3 pb-2 pt-1">
-            <button
-              type="button"
-              className="rounded-full border border-white/45 bg-white/45 px-3.5 py-1.5 text-[13px] font-medium text-[#2c2c2e] shadow-sm backdrop-blur-xl"
-              onClick={(e) => {
-                e.stopPropagation()
-                setPickerOpen(false)
-                onDone?.()
-              }}
-            >
-              完成
-            </button>
-
-            <p className="min-w-0 flex-1 truncate text-center text-[12px] text-white/70">
-              编辑桌面
-            </p>
-
-            <motion.button
-              type="button"
-              aria-label="添加桌面组件"
-              aria-expanded={pickerOpen}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/55 bg-white/55 text-[#2c2c2e] shadow-[0_10px_28px_rgba(28,28,30,0.16)] backdrop-blur-xl"
-              onClick={(e) => {
-                e.stopPropagation()
-                setPickerOpen((v) => !v)
-              }}
-            >
-              <motion.span
-                animate={{ rotate: pickerOpen ? 45 : 0 }}
-                transition={{ type: 'spring', stiffness: 420, damping: 24 }}
-                className="flex"
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pb-2 pt-1">
+            <div className="justify-self-start">
+              <button
+                type="button"
+                className="rounded-full border border-white/45 bg-white/45 px-3.5 py-1.5 text-[13px] font-medium text-[#2c2c2e] shadow-sm backdrop-blur-xl"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setPickerOpen(false)
+                  onDone?.()
+                }}
               >
-                <Plus size={20} strokeWidth={2.2} />
-              </motion.span>
-            </motion.button>
+                完成
+              </button>
+            </div>
+
+            {showDeletePage ? (
+              <button
+                type="button"
+                className="rounded-full border border-white/40 bg-white/35 px-3 py-1.5 text-[12px] font-medium text-[#2c2c2e] shadow-sm backdrop-blur-xl"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setPickerOpen(false)
+                  onRequestDeletePage?.()
+                }}
+              >
+                删除空白页
+              </button>
+            ) : (
+              <p className="truncate text-center text-[12px] text-white/70">编辑桌面</p>
+            )}
+
+            <div className="justify-self-end">
+              <motion.button
+                type="button"
+                aria-label="添加桌面组件"
+                aria-expanded={pickerOpen}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/55 bg-white/55 text-[#2c2c2e] shadow-[0_10px_28px_rgba(28,28,30,0.16)] backdrop-blur-xl"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setPickerOpen((v) => !v)
+                }}
+              >
+                <motion.span
+                  animate={{ rotate: pickerOpen ? 45 : 0 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 24 }}
+                  className="flex"
+                >
+                  <Plus size={20} strokeWidth={2.2} />
+                </motion.span>
+              </motion.button>
+            </div>
           </div>
 
           <AnimatePresence>

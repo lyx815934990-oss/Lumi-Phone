@@ -1211,7 +1211,7 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
     'coupleSpace',
     'thinkingChain',
   ],
-  /** 主屏第二页图标布局（创作者工具等） */
+  /** 旧工具页图标槽位（已取消独立工具页，保留字段兼容存档） */
   desktopLayoutPage2: [null, null, null, null, null, null, null, null],
   ui: {
     showStatusBar: true,

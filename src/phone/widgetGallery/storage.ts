@@ -1,3 +1,4 @@
+import { MAX_WIDGET_PAGES } from '../homePages'
 import type {
   GalleryWidgetKind,
   GalleryWidgetPlacement,
@@ -246,7 +247,11 @@ export function parseGalleryState(raw: unknown): WidgetGalleryState {
       id: p.id.trim(),
       kind: p.kind,
       size,
-      page: typeof p.page === 'number' && p.page >= 0 ? Math.floor(p.page) : 0,
+      // 保留多普通页坐标；仅防止离谱越界（运行时再按当前页数 clamp）
+      page:
+        typeof p.page === 'number' && p.page >= 0
+          ? Math.min(MAX_WIDGET_PAGES - 1, Math.floor(p.page))
+          : 0,
       order: typeof p.order === 'number' ? p.order : placements.length,
       ...(col != null ? { col } : {}),
       ...(row != null ? { row } : {}),

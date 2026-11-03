@@ -424,11 +424,20 @@ function normalizeState(raw: Partial<CustomizationState>): CustomizationState {
         typeof musicMerged.playingAudioUrl === 'string' ? musicMerged.playingAudioUrl : '',
     },
     apps,
-    desktopLayout: normalizeDesktopLayout(raw.desktopLayout, apps),
-    desktopLayoutPage2: normalizeDesktopLayoutPage2(
-      (raw as { desktopLayoutPage2?: unknown }).desktopLayoutPage2,
-      apps,
-    ),
+    desktopLayout: (() => {
+      const rawPage2 = (raw as { desktopLayoutPage2?: unknown }).desktopLayoutPage2
+      const page2Orphans = Array.isArray(rawPage2)
+        ? rawPage2.filter(
+            (id): id is AppSlot['id'] =>
+              typeof id === 'string' &&
+              !!id.trim() &&
+              apps.some((a) => a.id === id.trim()),
+          )
+        : []
+      return normalizeDesktopLayout(raw.desktopLayout, apps, page2Orphans)
+    })(),
+    // 工具页已取消：槽位清空，图标已并入 desktopLayout
+    desktopLayoutPage2: Array.from({ length: DESKTOP_PAGE2_SLOT_COUNT }, () => null),
     ui: {
       ...DEFAULT_CUSTOMIZATION.ui,
       ...raw.ui,
@@ -1394,23 +1403,60 @@ function normalizeApps(parsedApps: unknown): AppSlot[] {
 
 const PAGE2_ID_SET = new Set<string>(DESKTOP_PAGE2_APP_IDS)
 
-function normalizeDesktopLayout(parsedLayout: unknown, apps: AppSlot[]): Array<AppSlot['id'] | null> {
+/** 工具页取消后须优先出现在主屏的应用 */
+const MIGRATE_TO_MAIN_APP_IDS: ReadonlyArray<AppSlot['id']> = [
+  'thinkingChain',
+  'coupleSpace',
+  'langStudy',
+]
+
+function normalizeDesktopLayout(
+  parsedLayout: unknown,
+  apps: AppSlot[],
+  page2Orphans: ReadonlyArray<AppSlot['id']> = [],
+): Array<AppSlot['id'] | null> {
   const desktopIds = apps.slice(4).map((app) => app.id).filter((id) => !PAGE2_ID_SET.has(id))
   const desktopSet = new Set(desktopIds)
   const fallback = Array.from({ length: DESKTOP_LAYOUT_SLOT_COUNT }, (_, index) => desktopIds[index] ?? null)
-  if (!Array.isArray(parsedLayout)) return fallback
+  if (!Array.isArray(parsedLayout) && page2Orphans.length === 0) return fallback
 
   const used = new Set<AppSlot['id']>()
   // 保留显式 null：空槽表示图标在下一页溢出区，禁止自动回填
   const layout = Array.from({ length: DESKTOP_LAYOUT_SLOT_COUNT }, (_, index) => {
-    const raw = parsedLayout[index]
+    const raw = Array.isArray(parsedLayout) ? parsedLayout[index] : null
     if (typeof raw !== 'string') return null
     const id = raw.trim() as AppSlot['id']
     if (!desktopSet.has(id) || used.has(id) || PAGE2_ID_SET.has(id)) return null
     used.add(id)
     return id
   })
-  // 新桌面应用（如思维链）：若尚未入局且仍有空槽，填入空槽，避免旧布局永久看不到新图标
+  // 旧工具页图标并入主屏空位
+  for (const id of page2Orphans) {
+    if (!desktopSet.has(id) || used.has(id)) continue
+    const empty = layout.findIndex((slot) => slot == null)
+    if (empty < 0) break
+    layout[empty] = id
+    used.add(id)
+  }
+  // 钉住应用：无空位时挤走非钉住槽
+  for (const id of MIGRATE_TO_MAIN_APP_IDS) {
+    if (!desktopSet.has(id) || used.has(id)) continue
+    const empty = layout.findIndex((slot) => slot == null)
+    if (empty >= 0) {
+      layout[empty] = id
+      used.add(id)
+      continue
+    }
+    for (let i = layout.length - 1; i >= 0; i -= 1) {
+      const cur = layout[i]
+      if (!cur || (MIGRATE_TO_MAIN_APP_IDS as readonly string[]).includes(cur)) continue
+      used.delete(cur)
+      layout[i] = id
+      used.add(id)
+      break
+    }
+  }
+  // 新桌面应用：若尚未入局且仍有空槽，填入空槽，避免旧布局永久看不到新图标
   for (const id of desktopIds) {
     if (used.has(id)) continue
     const empty = layout.findIndex((slot) => slot == null)

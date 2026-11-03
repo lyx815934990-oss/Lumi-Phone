@@ -1,11 +1,28 @@
+import { MAX_WIDGET_PAGES, widgetPageCount as pagesFromNormal } from '../homePages'
 import type { GalleryWidgetPlacement, GalleryWidgetSize } from './types'
 
 export const GALLERY_GRID_COLS = 4
 /** 每页固定 4×7 占位网格 */
 export const GALLERY_GRID_ROWS = 7
 export const GALLERY_GRID_GAP = 10
-/** 主屏可放组件的页数（0 / 1 / 2） */
-export const HOME_WIDGET_PAGE_COUNT = 3
+/**
+ * 默认组件页数（主屏 + 1 普通页）。运行时以 {@link getActiveWidgetPageCount} 为准。
+ * @deprecated 优先用 getActiveWidgetPageCount()
+ */
+export const HOME_WIDGET_PAGE_COUNT = 2
+
+let activeWidgetPageCount = HOME_WIDGET_PAGE_COUNT
+
+export function setActiveWidgetPageCount(normalOrTotal: number, asNormalCount = true) {
+  const total = asNormalCount
+    ? pagesFromNormal(normalOrTotal)
+    : Math.max(1, Math.min(MAX_WIDGET_PAGES, Math.floor(normalOrTotal)))
+  activeWidgetPageCount = total
+}
+
+export function getActiveWidgetPageCount(): number {
+  return activeWidgetPageCount
+}
 
 /** 个人名片在主屏第 0 页占用 4×3 */
 export const HOME_PROFILE_SPAN = { w: 4, h: 3 } as const
@@ -280,9 +297,9 @@ export function pointerToOriginFromCanvas(
   return pointerToOrigin(clientX, clientY, canvasRect, cellW, size, cellH)
 }
 
-function neighborPages(page: number): number[] {
+function neighborPages(page: number, pageCount: number): number[] {
   return [page + 1, page - 1, page + 2, page - 2].filter(
-    (pg) => pg >= 0 && pg < HOME_WIDGET_PAGE_COUNT && pg !== page,
+    (pg) => pg >= 0 && pg < pageCount && pg !== page,
   )
 }
 
@@ -297,12 +314,14 @@ export function applyPlacementWithYield(
   selfId: string,
   targetPage: number,
   targetOrigin: GridOrigin,
+  pageCount = getActiveWidgetPageCount(),
 ): GalleryWidgetPlacement[] {
   const self = placements.find((p) => p.id === selfId)
   if (!self || !self.enabled) return placements
 
+  const maxPage = Math.max(0, pageCount - 1)
   const size = self.size
-  let page = Math.max(0, Math.min(HOME_WIDGET_PAGE_COUNT - 1, Math.floor(targetPage)))
+  let page = Math.max(0, Math.min(maxPage, Math.floor(targetPage)))
   let origin = clampOrigin(targetOrigin, size)
   const reserved = reservedOriginsForPage(page)
 
@@ -311,7 +330,7 @@ export function applyPlacementWithYield(
     if (alt) {
       origin = alt
     } else {
-      for (const pg of neighborPages(page)) {
+      for (const pg of neighborPages(page, pageCount)) {
         const o = findFirstFreeOrigin(placements, size, selfId, pg)
         if (o) {
           page = pg
@@ -352,7 +371,7 @@ export function applyPlacementWithYield(
 
     // 同页实在塞不下这个组件尺寸，才去邻页
     if (!dest) {
-      for (const pg of neighborPages(page)) {
+      for (const pg of neighborPages(page, pageCount)) {
         dest = findFirstFreeOrigin(pool, hit.size, hit.id, pg)
         if (dest) {
           destPage = pg
@@ -362,9 +381,8 @@ export function applyPlacementWithYield(
     }
 
     if (!dest) {
-      destPage =
-        page === 0 ? 1 : Math.min(page + 1, HOME_WIDGET_PAGE_COUNT - 1)
-      if (destPage === page) destPage = page > 0 ? page - 1 : 1
+      destPage = page === 0 ? Math.min(1, maxPage) : Math.min(page + 1, maxPage)
+      if (destPage === page) destPage = page > 0 ? page - 1 : Math.min(1, maxPage)
       dest =
         findFirstFreeOrigin(pool, hit.size, hit.id, destPage) ??
         clampOrigin({ col: 0, row: 0 }, hit.size)

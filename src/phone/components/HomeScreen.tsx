@@ -1,5 +1,17 @@
-﻿import { AnimatePresence, animate as motionAnimate, motion, useMotionValue } from 'framer-motion'
+import { AnimatePresence, animate as motionAnimate, motion, useMotionValue } from 'framer-motion'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  clampNormalPageCount,
+  DEFAULT_NORMAL_PAGES,
+  galleryPageFromHome,
+  HOME_ACCOUNT_PAGE,
+  HOME_MAIN_PAGE,
+  homePagerPageCount,
+  isNormalHomePage,
+  lastHomePage,
+  MAX_NORMAL_PAGES,
+  widgetPageCount,
+} from '../homePages'
 import { DESKTOP_LAYOUT_SLOT_COUNT, DESKTOP_PAGE2_APP_IDS, type AppSlot } from '../types'
 import { personaDb } from '../apps/wechat/newFriendsPersona/idb'
 import {
@@ -25,6 +37,7 @@ import {
   HOME_PROFILE_SPAN,
   clampProfileAnchor,
   homeProfileHomeCells,
+  setActiveWidgetPageCount,
   widgetOccupiedHomeCells,
   type ProfileAnchor,
 } from '../widgetGallery/galleryGrid'
@@ -78,10 +91,23 @@ function useWeChatHomeUnreadBadge(): number {
 const HOME_WIDGET_LAYOUT_STORAGE_KEY = 'lumi-home-widget-layout-v1'
 const RESET_HOME_WIDGET_LAYOUT_EVENT = 'lumi-reset-home-widget-layout'
 
-/** v8：组件页溢出图标可拖拽落位（持久化坐标） */
-const FREE_HOME_LAYOUT_VERSION = 8
+/** v9：多普通页 + 溢出图标带 page（组件页索引，≥1） */
+const FREE_HOME_LAYOUT_VERSION = 9
 
-type OverflowIconPlacement = { id: AppSlot['id']; col: number; row: number }
+/** 工具页取消后优先留在主屏的应用（勿被挤到不可见处） */
+const PIN_TO_MAIN_APP_IDS: ReadonlyArray<AppSlot['id']> = [
+  'thinkingChain',
+  'coupleSpace',
+  'langStudy',
+]
+
+/** page：组件库页码（1=第一普通页）；主屏图标不走此结构 */
+type OverflowIconPlacement = {
+  id: AppSlot['id']
+  page: number
+  col: number
+  row: number
+}
 /** 图标槽格点（1-based，与 CSS grid 行列线一致；每格 1×1） */
 type GridPoint = { col: number; row: number }
 
@@ -173,6 +199,7 @@ function packIconsAroundWidgets(
     .filter((c) => !blocked.has(cellKey(c)))
     .sort((a, b) => (a.row !== b.row ? a.row - b.row : a.col - b.col))
 
+  const pinSet = new Set<string>(PIN_TO_MAIN_APP_IDS)
   const seen = new Set<string>()
   const desktopIds: AppSlot['id'][] = []
   const prevSlotById = new Map<AppSlot['id'], GridPoint>()
@@ -186,6 +213,8 @@ function packIconsAroundWidgets(
       prevSlotById.set(id, { col: prev.col, row: prev.row })
     }
   }
+  // 钉住应用优先占格，避免被组件挤出主屏后反复拉回造成抖动
+  desktopIds.sort((a, b) => Number(pinSet.has(b)) - Number(pinSet.has(a)))
 
   const nextLayout: Array<AppSlot['id'] | null> = Array.from(
     { length: DESKTOP_LAYOUT_SLOT_COUNT },
@@ -218,6 +247,8 @@ function packIconsAroundWidgets(
 
   let freeIdx = 0
   const spilled: AppSlot['id'][] = []
+  // 非钉住的先挤出，钉住的尽量留下
+  reassign.sort((a, b) => Number(pinSet.has(b)) - Number(pinSet.has(a)))
   for (const id of reassign) {
     while (freeIdx < freeCells.length && used.has(cellKey(freeCells[freeIdx]!))) {
       freeIdx += 1
@@ -265,17 +296,24 @@ function listAllPageCells(): GridPoint[] {
   return out
 }
 
-/** 保留已有落点；冲突 / 新图标填剩余空格 */
+/** 保留已有落点；冲突 / 新图标填剩余空格。格子被组件占满时仍落位（禁止静默丢图标） */
 function reconcileOverflowPlacements(
   overflowIds: AppSlot['id'][],
   prev: OverflowIconPlacement[],
   blockedCells: Array<{ col: number; row: number }>,
+  page: number = DEFAULT_OVERFLOW_WIDGET_PAGE,
 ): OverflowIconPlacement[] {
+  const widgetPage = Math.max(1, Math.floor(page))
   const blocked = new Set(blockedCells.map((c) => cellKey(c)))
-  const free = listAllPageCells()
+  const preferred = listAllPageCells()
     .filter((c) => !blocked.has(cellKey(c)))
     .sort((a, b) => (a.row !== b.row ? a.row - b.row : a.col - b.col))
-  const prevById = new Map(prev.map((p) => [p.id, p] as const))
+  const fallback = listAllPageCells().sort((a, b) =>
+    a.row !== b.row ? a.row - b.row : a.col - b.col,
+  )
+  const prevById = new Map(
+    prev.filter((p) => (p.page ?? widgetPage) === widgetPage).map((p) => [p.id, p] as const),
+  )
   const used = new Set<string>()
   const out: OverflowIconPlacement[] = []
   const pending: AppSlot['id'][] = []
@@ -289,21 +327,58 @@ function reconcileOverflowPlacements(
       !blocked.has(cellKey(old)) &&
       !used.has(cellKey(old))
     ) {
-      out.push({ id, col: old.col, row: old.row })
+      out.push({ id, page: widgetPage, col: old.col, row: old.row })
       used.add(cellKey(old))
     } else {
       pending.push(id)
     }
   }
 
-  let freeIdx = 0
+  const placeInto = (pool: GridPoint[], id: AppSlot['id']): boolean => {
+    for (const cell of pool) {
+      if (used.has(cellKey(cell))) continue
+      out.push({ id, page: widgetPage, col: cell.col, row: cell.row })
+      used.add(cellKey(cell))
+      return true
+    }
+    return false
+  }
+
   for (const id of pending) {
-    while (freeIdx < free.length && used.has(cellKey(free[freeIdx]!))) freeIdx += 1
-    if (freeIdx >= free.length) break
-    const cell = free[freeIdx]!
-    out.push({ id, col: cell.col, row: cell.row })
-    used.add(cellKey(cell))
-    freeIdx += 1
+    if (placeInto(preferred, id)) continue
+    if (placeInto(fallback, id)) continue
+    const cell = fallback[0] ?? { col: 1, row: 1 }
+    out.push({ id, page: widgetPage, col: cell.col, row: cell.row })
+  }
+  return out
+}
+
+/** 按页分别 reconcile，再合并（保留其它页上的图标） */
+function reconcileAllOverflowPlacements(
+  allIds: AppSlot['id'][],
+  prev: OverflowIconPlacement[],
+  blockedByPage: Map<number, Array<{ col: number; row: number }>>,
+  defaultPage: number = DEFAULT_OVERFLOW_WIDGET_PAGE,
+): OverflowIconPlacement[] {
+  const prevById = new Map(prev.map((p) => [p.id, p] as const))
+  const byPage = new Map<number, AppSlot['id'][]>()
+  for (const id of allIds) {
+    const old = prevById.get(id)
+    const page = old?.page && old.page >= 1 ? old.page : defaultPage
+    const list = byPage.get(page) ?? []
+    list.push(id)
+    byPage.set(page, list)
+  }
+  const out: OverflowIconPlacement[] = []
+  for (const [page, ids] of byPage) {
+    out.push(
+      ...reconcileOverflowPlacements(
+        ids,
+        prev,
+        blockedByPage.get(page) ?? [],
+        page,
+      ),
+    )
   }
   return out
 }
@@ -318,7 +393,7 @@ type IconLayoutSnapshot = {
 type VacatedSlot =
   | { zone: 'dock'; index: number }
   | { zone: 'desktop'; index: number; col: number; row: number }
-  | { zone: 'overflow'; col: number; row: number }
+  | { zone: 'overflow'; col: number; row: number; page: number }
 
 function cloneIconLayout(base: IconLayoutSnapshot): IconLayoutSnapshot {
   return {
@@ -351,7 +426,12 @@ function extractAppFromLayout(
   } else {
     const cur = layout.overflowPlacements[source.index]
     if (cur) {
-      vacated = { zone: 'overflow', col: cur.col, row: cur.row }
+      vacated = {
+        zone: 'overflow',
+        col: cur.col,
+        row: cur.row,
+        page: cur.page >= 1 ? cur.page : DEFAULT_OVERFLOW_WIDGET_PAGE,
+      }
     }
   }
 
@@ -385,16 +465,25 @@ function placeDisplacedApp(
   if (vacated?.zone === 'overflow') {
     layout.overflowPlacements.push({
       id: displacedId,
+      page: vacated.page,
       col: vacated.col,
       row: vacated.row,
     })
     return
   }
-  // 无处可回：塞进溢出区第一个空位
-  const used = new Set(layout.overflowPlacements.map((p) => cellKey(p)))
+  // 无处可回：塞进第一普通页溢出区空位
+  const page = DEFAULT_OVERFLOW_WIDGET_PAGE
+  const used = new Set(
+    layout.overflowPlacements.filter((p) => p.page === page).map((p) => cellKey(p)),
+  )
   for (const cell of listAllPageCells()) {
     if (used.has(cellKey(cell))) continue
-    layout.overflowPlacements.push({ id: displacedId, col: cell.col, row: cell.row })
+    layout.overflowPlacements.push({
+      id: displacedId,
+      page,
+      col: cell.col,
+      row: cell.row,
+    })
     return
   }
 }
@@ -465,13 +554,19 @@ function previewIconDrop(
       layout.slots[slotIndex] = { col: target.col, row: target.row }
     }
   } else {
+    const page =
+      target.page >= 1 ? target.page : DEFAULT_OVERFLOW_WIDGET_PAGE
     const hit = layout.overflowPlacements.findIndex(
-      (p) => p.col === target.col && p.row === target.row,
+      (p) =>
+        p.col === target.col &&
+        p.row === target.row &&
+        (p.page ?? DEFAULT_OVERFLOW_WIDGET_PAGE) === page,
     )
     if (hit >= 0) {
       const displaced = layout.overflowPlacements[hit]!
       layout.overflowPlacements[hit] = {
         id: activeId,
+        page,
         col: target.col,
         row: target.row,
       }
@@ -481,6 +576,7 @@ function previewIconDrop(
     } else {
       layout.overflowPlacements.push({
         id: activeId,
+        page,
         col: target.col,
         row: target.row,
       })
@@ -564,10 +660,18 @@ function claimDesktopSlotIndex(layout: IconLayoutSnapshot, preferIndex?: number)
     const kicked = layout.desktopLayout[i]
     if (!kicked) continue
     layout.desktopLayout[i] = null
-    const used = new Set(layout.overflowPlacements.map((p) => cellKey(p)))
+    const page = DEFAULT_OVERFLOW_WIDGET_PAGE
+    const used = new Set(
+      layout.overflowPlacements.filter((p) => p.page === page).map((p) => cellKey(p)),
+    )
     for (const cell of listAllPageCells()) {
       if (used.has(cellKey(cell))) continue
-      layout.overflowPlacements.push({ id: kicked, col: cell.col, row: cell.row })
+      layout.overflowPlacements.push({
+        id: kicked,
+        page,
+        col: cell.col,
+        row: cell.row,
+      })
       break
     }
     return i
@@ -608,6 +712,10 @@ function previewMultiIconDrop(
   for (const id of groupIds) removeIconById(layout, id)
 
   const targetZone = target.zone
+  const overflowPage =
+    target.zone === 'overflow' && target.page >= 1
+      ? target.page
+      : DEFAULT_OVERFLOW_WIDGET_PAGE
   const anchor = { col: target.col, row: target.row }
   const blockedSet = new Set(
     (targetZone === 'desktop' ? blockedDesktop : blockedOverflow).map((c) => cellKey(c)),
@@ -626,7 +734,9 @@ function previewMultiIconDrop(
     if (targetZone === 'desktop') used.add(cellKey(s))
   }
   for (const p of layout.overflowPlacements) {
-    if (targetZone === 'overflow') used.add(cellKey(p))
+    if (targetZone === 'overflow' && (p.page ?? DEFAULT_OVERFLOW_WIDGET_PAGE) === overflowPage) {
+      used.add(cellKey(p))
+    }
   }
   for (const c of blockedSet) used.add(c)
 
@@ -671,12 +781,21 @@ function previewMultiIconDrop(
       const displaced = layout.desktopLayout[hit]
       if (!displaced || groupIds.includes(displaced)) continue
       layout.desktopLayout[hit] = null
-      const ovUsed = new Set(layout.overflowPlacements.map((p) => cellKey(p)))
+      const ovUsed = new Set(
+        layout.overflowPlacements
+          .filter((p) => (p.page ?? DEFAULT_OVERFLOW_WIDGET_PAGE) === DEFAULT_OVERFLOW_WIDGET_PAGE)
+          .map((p) => cellKey(p)),
+      )
       for (const cell of listAllPageCells()) {
         if (ovUsed.has(cellKey(cell)) || blockedOverflow.some((b) => cellKey(b) === cellKey(cell))) {
           continue
         }
-        layout.overflowPlacements.push({ id: displaced, col: cell.col, row: cell.row })
+        layout.overflowPlacements.push({
+          id: displaced,
+          page: DEFAULT_OVERFLOW_WIDGET_PAGE,
+          col: cell.col,
+          row: cell.row,
+        })
         break
       }
     }
@@ -689,17 +808,26 @@ function previewMultiIconDrop(
     // 溢出页：踢走同格旧图标
     for (const a of assigned) {
       const hit = layout.overflowPlacements.findIndex(
-        (p) => p.col === a.col && p.row === a.row && !groupIds.includes(p.id),
+        (p) =>
+          p.col === a.col &&
+          p.row === a.row &&
+          (p.page ?? DEFAULT_OVERFLOW_WIDGET_PAGE) === overflowPage &&
+          !groupIds.includes(p.id),
       )
       if (hit >= 0) {
         const displaced = layout.overflowPlacements[hit]!
         layout.overflowPlacements.splice(hit, 1)
-        const ovUsed = new Set(layout.overflowPlacements.map((p) => cellKey(p)))
+        const ovUsed = new Set(
+          layout.overflowPlacements
+            .filter((p) => (p.page ?? DEFAULT_OVERFLOW_WIDGET_PAGE) === overflowPage)
+            .map((p) => cellKey(p)),
+        )
         for (const cell of listAllPageCells()) {
           if (ovUsed.has(cellKey(cell)) || blockedSet.has(cellKey(cell))) continue
           if (cell.col === a.col && cell.row === a.row) continue
           layout.overflowPlacements.push({
             id: displaced.id,
+            page: overflowPage,
             col: cell.col,
             row: cell.row,
           })
@@ -707,7 +835,12 @@ function previewMultiIconDrop(
           break
         }
       }
-      layout.overflowPlacements.push({ id: a.id, col: a.col, row: a.row })
+      layout.overflowPlacements.push({
+        id: a.id,
+        page: overflowPage,
+        col: a.col,
+        row: a.row,
+      })
     }
   }
 
@@ -828,6 +961,7 @@ function migrateStorageToFreeHome(): {
   profileAnchor: ProfileAnchor
   slots: GridPoint[]
   overflowPlacements: OverflowIconPlacement[]
+  normalPageCount: number
 } {
   try {
     const raw = JSON.parse(window.localStorage.getItem(HOME_WIDGET_LAYOUT_STORAGE_KEY) || '{}') as {
@@ -838,8 +972,13 @@ function migrateStorageToFreeHome(): {
       slots?: GridPoint[]
       overflowIconIds?: unknown
       overflowPlacements?: unknown
+      normalPageCount?: unknown
+      extraPageCount?: unknown
     }
     const anchor = clampProfileAnchor(raw.profileAnchor)
+    const normalPageCount = clampNormalPageCount(
+      raw.normalPageCount ?? raw.extraPageCount ?? DEFAULT_NORMAL_PAGES,
+    )
     const overflowIdsFromIds = Array.isArray(raw.overflowIconIds)
       ? raw.overflowIconIds.filter((id): id is AppSlot['id'] => typeof id === 'string' && !!id)
       : []
@@ -847,11 +986,20 @@ function migrateStorageToFreeHome(): {
       ? raw.overflowPlacements
           .map((p) => {
             if (!p || typeof p !== 'object') return null
-            const row = p as { id?: unknown; col?: unknown; row?: unknown }
+            const row = p as { id?: unknown; col?: unknown; row?: unknown; page?: unknown }
             if (typeof row.id !== 'string' || typeof row.col !== 'number' || typeof row.row !== 'number') {
               return null
             }
-            return { id: row.id as AppSlot['id'], col: row.col, row: row.row }
+            const page =
+              typeof row.page === 'number' && row.page >= 1
+                ? Math.floor(row.page)
+                : DEFAULT_OVERFLOW_WIDGET_PAGE
+            return {
+              id: row.id as AppSlot['id'],
+              page,
+              col: row.col,
+              row: row.row,
+            }
           })
           .filter((p): p is OverflowIconPlacement => !!p)
       : []
@@ -859,7 +1007,20 @@ function migrateStorageToFreeHome(): {
       overflowIdsFromIds.length > 0
         ? overflowIdsFromIds
         : prevPlacements.map((p) => p.id)
-    const overflowPlacements = reconcileOverflowPlacements(overflowIds, prevPlacements, [])
+    const overflowPlacements = reconcileAllOverflowPlacements(
+      overflowIds,
+      prevPlacements,
+      new Map(),
+      DEFAULT_OVERFLOW_WIDGET_PAGE,
+    )
+    // 若存档普通页数小于图标最高页，抬升页数以免图标落在不存在的页
+    const maxIconPage = overflowPlacements.reduce(
+      (m, p) => Math.max(m, p.page),
+      0,
+    )
+    const resolvedNormal = clampNormalPageCount(
+      Math.max(normalPageCount, maxIconPage),
+    )
     let slots: GridPoint[]
     let upgraded = false
     if (Array.isArray(raw.slots)) {
@@ -877,7 +1038,11 @@ function migrateStorageToFreeHome(): {
       )
       upgraded = true
     }
-    if (upgraded || raw.v !== FREE_HOME_LAYOUT_VERSION) {
+    if (
+      upgraded ||
+      raw.v !== FREE_HOME_LAYOUT_VERSION ||
+      resolvedNormal !== normalPageCount
+    ) {
       try {
         window.localStorage.setItem(
           HOME_WIDGET_LAYOUT_STORAGE_KEY,
@@ -885,6 +1050,7 @@ function migrateStorageToFreeHome(): {
             v: FREE_HOME_LAYOUT_VERSION,
             profileAnchor: anchor,
             slots,
+            normalPageCount: resolvedNormal,
             overflowIconIds: overflowPlacements.map((p) => p.id),
             overflowPlacements,
           }),
@@ -893,7 +1059,12 @@ function migrateStorageToFreeHome(): {
         /* ignore */
       }
     }
-    return { profileAnchor: anchor, slots, overflowPlacements }
+    return {
+      profileAnchor: anchor,
+      slots,
+      overflowPlacements,
+      normalPageCount: resolvedNormal,
+    }
   } catch {
     const anchor: ProfileAnchor = 0
     const slots = relocateIconSlotsAfterWidgets(anchor, defaultSlotOrigins(anchor))
@@ -901,6 +1072,7 @@ function migrateStorageToFreeHome(): {
       profileAnchor: anchor,
       slots,
       overflowPlacements: [],
+      normalPageCount: DEFAULT_NORMAL_PAGES,
     }
   }
 }
@@ -911,17 +1083,8 @@ const DESKTOP_GRID_COLUMNS = GALLERY_GRID_COLS
 const DESKTOP_GRID_ROWS = GALLERY_GRID_ROWS
 const DESKTOP_GRID_GAP_PX = GALLERY_GRID_GAP
 const DOCK_GAP_PX = 8
-/** 主屏总页：0 账号中心(固定) / 1 主屏 / 2 组件 / 3 工具 */
-const HOME_ACCOUNT_PAGE = 0
-const HOME_MAIN_PAGE = 1
-const HOME_GALLERY_PAGE = 2
-const HOME_TOOLS_PAGE = 3
-const HOME_PAGE_COUNT = 4
-
-/** 主屏页码 → 组件库 page（账号页无组件） */
-function galleryPageFromHome(homePage: number): number {
-  return Math.max(0, Math.min(2, homePage - HOME_MAIN_PAGE))
-}
+/** 溢出图标默认落到的组件页索引 */
+const DEFAULT_OVERFLOW_WIDGET_PAGE = 1
 
 /** 拖拽幽灵位置：不落弹簧动画，避免图标跟不上手指 */
 const DRAG_GHOST_TRANSITION = {
@@ -937,12 +1100,12 @@ const DRAG_GHOST_TRANSITION = {
 type DragSource =
   | { zone: 'desktop'; index: number }
   | { zone: 'dock'; index: number }
-  | { zone: 'overflow'; index: number }
+  | { zone: 'overflow'; index: number; page: number }
 
-/** 落点：桌面 / 组件页溢出区按 4×7 格子，Dock 按槽位 */
+/** 落点：桌面 / 普通页溢出区按 4×7 格子，Dock 按槽位 */
 type DropTarget =
   | { zone: 'desktop'; col: number; row: number }
-  | { zone: 'overflow'; col: number; row: number }
+  | { zone: 'overflow'; col: number; row: number; page: number }
   | { zone: 'dock'; index: number }
 
 /** 指针 → 主屏 1-based 格点（整页 4×7） */
@@ -1149,12 +1312,14 @@ function readInitialFreeHomeLayout(): {
   profileAnchor: ProfileAnchor
   slots: GridPoint[]
   overflowPlacements: OverflowIconPlacement[]
+  normalPageCount: number
 } {
   if (typeof window === 'undefined') {
     return {
       profileAnchor: 0,
       slots: defaultSlotOrigins(0),
       overflowPlacements: [],
+      normalPageCount: DEFAULT_NORMAL_PAGES,
     }
   }
   return migrateStorageToFreeHome()
@@ -1162,14 +1327,24 @@ function readInitialFreeHomeLayout(): {
 
 export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
   const { state, reorderApps, setDesktopLayout } = useCustomization()
-  const { state: galleryState, reflowProfileReserve } = useWidgetGallery()
+  const {
+    state: galleryState,
+    reflowProfileReserve,
+    shiftPagesAfterDelete,
+  } = useWidgetGallery()
   const { apps, ui, theme } = state
   const wechatUnread = useWeChatHomeUnreadBadge()
   const appMap = new Map(apps.map((app) => [app.id, app] as const))
   const initialFree = readInitialFreeHomeLayout()
   const [profileAnchorState, setProfileAnchorState] = useState<ProfileAnchor>(initialFree.profileAnchor)
   const [slotOriginsState, setSlotOriginsState] = useState<GridPoint[]>(initialFree.slots)
-  /** 主屏挤不下的图标，显示在下一页（组件页），可自由拖格 */
+  /** 普通页数量（不含账号中心与名片主屏） */
+  const [normalPageCount, setNormalPageCount] = useState(() => initialFree.normalPageCount)
+  const normalPageCountRef = useRef(normalPageCount)
+  normalPageCountRef.current = normalPageCount
+  const homePageCount = homePagerPageCount(normalPageCount)
+  const maxHomePage = lastHomePage(normalPageCount)
+  /** 主屏挤不下的图标，显示在普通页，可自由拖格 */
   const [overflowPlacements, setOverflowPlacements] = useState<OverflowIconPlacement[]>(
     () => initialFree.overflowPlacements,
   )
@@ -1213,6 +1388,30 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
   const [homePage, setHomePage] = useState(HOME_MAIN_PAGE)
   const homePageRef = useRef(homePage)
   homePageRef.current = homePage
+  /** 末页继续左滑时露出「新增页面」 */
+  const [showAddPageAffordance, setShowAddPageAffordance] = useState(false)
+  const showAddPageAffordanceRef = useRef(false)
+  showAddPageAffordanceRef.current = showAddPageAffordance
+  /** 长按普通页空白：删除页确认 */
+  const [deletePagePrompt, setDeletePagePrompt] = useState<{
+    homePage: number
+    empty: boolean
+  } | null>(null)
+  const normalPageGridRefs = useRef<Map<number, HTMLDivElement | null>>(new Map())
+  useEffect(() => {
+    setActiveWidgetPageCount(normalPageCount)
+  }, [normalPageCount])
+  useEffect(() => {
+    if (homePage > maxHomePage) {
+      const next = Math.max(HOME_MAIN_PAGE, maxHomePage)
+      homePageRef.current = next
+      setHomePage(next)
+    }
+  }, [homePage, maxHomePage])
+  // 翻页后关掉未确认的删页提示，避免挡加组件
+  useEffect(() => {
+    setDeletePagePrompt(null)
+  }, [homePage])
   const pagerViewportRef = useRef<HTMLDivElement | null>(null)
   /** 落点高亮在哪一页网格 */
   const [hoverDropZone, setHoverDropZone] = useState<'desktop' | 'overflow' | null>(null)
@@ -1309,7 +1508,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       pagerMountedRef.current && !(activeDrag || galleryDraggingId)
     pagerMountedRef.current = true
     snapPageOffset(homePage, withSpring)
-  }, [homePage, activeDrag, galleryDraggingId, snapPageOffset])
+  }, [homePage, homePageCount, activeDrag, galleryDraggingId, snapPageOffset])
 
   useEffect(() => () => clearHomeSwipeWindowListeners(), [clearHomeSwipeWindowListeners])
 
@@ -1324,9 +1523,42 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
     return () => ro.disconnect()
   }, [pageOffsetX])
 
-  /** 主屏组件占用格 → 图标填剩余空格；挤不下的排到下一页 */
+  const writeHomeLayoutStorage = useCallback(
+    (
+      profileAnchor: ProfileAnchor,
+      slots: GridPoint[],
+      overflow: OverflowIconPlacement[],
+      pages = normalPageCountRef.current,
+    ) => {
+      try {
+        window.localStorage.setItem(
+          HOME_WIDGET_LAYOUT_STORAGE_KEY,
+          JSON.stringify({
+            v: FREE_HOME_LAYOUT_VERSION,
+            profileAnchor,
+            slots,
+            normalPageCount: pages,
+            overflowIconIds: overflow.map((p) => p.id),
+            overflowPlacements: overflow,
+          }),
+        )
+      } catch {
+        /* ignore */
+      }
+    },
+    [],
+  )
+
+  /** 主屏组件占用格 → 图标填剩余空格；挤不下的排到普通页 */
   useEffect(() => {
     if (activeDrag || activeWidgetDrag) return
+    // 无普通页时先确保至少一页，否则溢出图标无处安放
+    if (normalPageCountRef.current < 1 && overflowIconIdsRef.current.length > 0) {
+      const nextPages = 1
+      normalPageCountRef.current = nextPages
+      setNormalPageCount(nextPages)
+      setActiveWidgetPageCount(nextPages)
+    }
     const blocked = widgetOccupiedHomeCells(galleryState.placements, 0)
     const packed = packIconsAroundWidgets(
       profileAnchorState,
@@ -1335,11 +1567,16 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       blocked,
       slotOriginsRef.current,
     )
-    const blockedGallery = widgetOccupiedHomeCells(galleryState.placements, 1)
-    const nextOverflow = reconcileOverflowPlacements(
+    const blockedByPage = new Map<number, Array<{ col: number; row: number }>>()
+    const wCount = widgetPageCount(normalPageCountRef.current)
+    for (let pg = 1; pg < wCount; pg += 1) {
+      blockedByPage.set(pg, widgetOccupiedHomeCells(galleryState.placements, pg))
+    }
+    const nextOverflow = reconcileAllOverflowPlacements(
       packed.overflowIds,
       overflowPlacementsRef.current,
-      blockedGallery,
+      blockedByPage,
+      DEFAULT_OVERFLOW_WIDGET_PAGE,
     )
     const slotsSame =
       packed.slots.length === slotOriginsRef.current.length &&
@@ -1356,6 +1593,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       nextOverflow.every(
         (p, i) =>
           p.id === overflowPlacementsRef.current[i]?.id &&
+          p.page === overflowPlacementsRef.current[i]?.page &&
           p.col === overflowPlacementsRef.current[i]?.col &&
           p.row === overflowPlacementsRef.current[i]?.row,
       )
@@ -1369,21 +1607,16 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
     setOverflowPlacements(nextOverflow)
     overflowPlacementsRef.current = nextOverflow
     overflowIconIdsRef.current = nextOverflow.map((p) => p.id)
-    try {
-      window.localStorage.setItem(
-        HOME_WIDGET_LAYOUT_STORAGE_KEY,
-        JSON.stringify({
-          v: FREE_HOME_LAYOUT_VERSION,
-          profileAnchor: profileAnchorState,
-          slots: packed.slots,
-          overflowIconIds: nextOverflow.map((p) => p.id),
-          overflowPlacements: nextOverflow,
-        }),
-      )
-    } catch {
-      /* ignore */
-    }
-  }, [activeDrag, activeWidgetDrag, galleryState.placements, profileAnchorState, setDesktopLayout])
+    writeHomeLayoutStorage(profileAnchorState, packed.slots, nextOverflow)
+  }, [
+    activeDrag,
+    activeWidgetDrag,
+    galleryState.placements,
+    normalPageCount,
+    profileAnchorState,
+    setDesktopLayout,
+    writeHomeLayoutStorage,
+  ])
 
   const blankLongPressTimerRef = useRef<number | null>(null)
   const blankLongPressOriginRef = useRef<{ x: number; y: number } | null>(null)
@@ -1422,14 +1655,115 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
     )
   }, [galleryState.placements])
 
-  /** 组件页：溢出图标落在组件未占用的 4×7 空格，与组件同层网格、不挤占高度 */
-  const galleryOverflowIcons = overflowPlacements
+  /** 普通页：溢出图标按组件页索引分组 */
+  const overflowByWidgetPage = useMemo(() => {
+    const map = new Map<number, OverflowIconPlacement[]>()
+    for (const p of overflowPlacements) {
+      const page = p.page >= 1 ? p.page : DEFAULT_OVERFLOW_WIDGET_PAGE
+      const list = map.get(page) ?? []
+      list.push(p)
+      map.set(page, list)
+    }
+    return map
+  }, [overflowPlacements])
 
-  const widgetBlockedGalleryKeys = useMemo(() => {
-    return new Set(
-      widgetOccupiedHomeCells(galleryState.placements, 1).map((c) => cellKey(c)),
+  const widgetBlockedKeysByPage = useMemo(() => {
+    const map = new Map<number, Set<string>>()
+    const wCount = widgetPageCount(normalPageCount)
+    for (let pg = 1; pg < wCount; pg += 1) {
+      map.set(
+        pg,
+        new Set(
+          widgetOccupiedHomeCells(galleryState.placements, pg).map((c) => cellKey(c)),
+        ),
+      )
+    }
+    return map
+  }, [galleryState.placements, normalPageCount])
+
+  const isNormalPageEmpty = useCallback(
+    (homePg: number) => {
+      if (!isNormalHomePage(homePg)) return false
+      const wp = galleryPageFromHome(homePg)
+      const hasIcons = overflowPlacements.some(
+        (p) => (p.page >= 1 ? p.page : DEFAULT_OVERFLOW_WIDGET_PAGE) === wp,
+      )
+      const hasWidgets = galleryState.placements.some(
+        (p) => p.enabled && p.page === wp,
+      )
+      return !hasIcons && !hasWidgets
+    },
+    [galleryState.placements, overflowPlacements],
+  )
+
+  const addNormalPage = useCallback(() => {
+    if (normalPageCountRef.current >= MAX_NORMAL_PAGES) return
+    const next = normalPageCountRef.current + 1
+    normalPageCountRef.current = next
+    setNormalPageCount(next)
+    setActiveWidgetPageCount(next)
+    showAddPageAffordanceRef.current = false
+    setShowAddPageAffordance(false)
+    const newHome = lastHomePage(next)
+    homePageRef.current = newHome
+    setHomePage(newHome)
+    writeHomeLayoutStorage(
+      profileAnchorState,
+      slotOriginsRef.current,
+      overflowPlacementsRef.current,
+      next,
     )
-  }, [galleryState.placements])
+  }, [profileAnchorState, writeHomeLayoutStorage])
+
+  const dismissAddPageAffordance = useCallback(() => {
+    showAddPageAffordanceRef.current = false
+    setShowAddPageAffordance(false)
+    snapPageOffset(homePageRef.current, true)
+  }, [snapPageOffset])
+
+  const confirmDeleteNormalPage = useCallback(() => {
+    const prompt = deletePagePrompt
+    if (!prompt || !prompt.empty) {
+      setDeletePagePrompt(null)
+      return
+    }
+    const homePg = prompt.homePage
+    if (!isNormalHomePage(homePg)) {
+      setDeletePagePrompt(null)
+      return
+    }
+    const removedWp = galleryPageFromHome(homePg)
+    if (normalPageCountRef.current <= 0) {
+      setDeletePagePrompt(null)
+      return
+    }
+    const nextPages = clampNormalPageCount(normalPageCountRef.current - 1)
+    // 图标：删掉本页，更高页 -1
+    const nextOverflow = overflowPlacementsRef.current
+      .filter((p) => (p.page >= 1 ? p.page : DEFAULT_OVERFLOW_WIDGET_PAGE) !== removedWp)
+      .map((p) => {
+        const page = p.page >= 1 ? p.page : DEFAULT_OVERFLOW_WIDGET_PAGE
+        return page > removedWp ? { ...p, page: page - 1 } : p
+      })
+    shiftPagesAfterDelete(removedWp)
+    normalPageCountRef.current = nextPages
+    setNormalPageCount(nextPages)
+    setActiveWidgetPageCount(nextPages)
+    setOverflowPlacements(nextOverflow)
+    overflowPlacementsRef.current = nextOverflow
+    overflowIconIdsRef.current = nextOverflow.map((p) => p.id)
+    writeHomeLayoutStorage(
+      profileAnchorState,
+      slotOriginsRef.current,
+      nextOverflow,
+      nextPages,
+    )
+    const maxPg = lastHomePage(nextPages)
+    const nextHome = Math.min(homePageRef.current, Math.max(HOME_MAIN_PAGE, maxPg))
+    homePageRef.current = nextHome
+    setHomePage(nextHome)
+    setDeletePagePrompt(null)
+  }, [deletePagePrompt, profileAnchorState, shiftPagesAfterDelete, writeHomeLayoutStorage])
 
   const homeLayoutRef = useRef({
     profileAnchor: profileAnchorState,
@@ -1443,8 +1777,10 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
   useEffect(() => {
     if (activeDrag || activeWidgetDrag) return
     const page2Set = new Set<string>(DESKTOP_PAGE2_APP_IDS)
+    const pinSet = new Set<string>(PIN_TO_MAIN_APP_IDS)
     const overflowSet = new Set(overflowIconIdsRef.current)
     const nextDock = apps.slice(0, DOCK_COUNT).map((app) => app.id)
+    const dockSet = new Set(nextDock)
     const allowed = new Set(
       apps.slice(DOCK_COUNT).map((app) => app.id).filter((id) => !page2Set.has(id)),
     )
@@ -1455,18 +1791,62 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       if (!id || !allowed.has(id) || overflowSet.has(id)) return null
       return id
     })
+    /** 旧工具页残留：并入待安置列表 */
+    const page2Orphans = (state.desktopLayoutPage2 ?? []).filter(
+      (id): id is AppSlot['id'] =>
+        typeof id === 'string' && !!id && allowed.has(id) && !dockSet.has(id),
+    )
     /** 主屏没空位时，新应用直接落到次页（溢出区） */
     const spillToOverflow: AppSlot['id'][] = []
-    for (const app of apps.slice(DOCK_COUNT)) {
-      if (page2Set.has(app.id)) continue
-      if (overflowSet.has(app.id)) continue
-      if (next.includes(app.id)) continue
+    const pendingPlace = [
+      ...apps.slice(DOCK_COUNT).map((app) => app.id),
+      ...page2Orphans,
+    ].filter((id, i, arr) => arr.indexOf(id) === i)
+    for (const appId of pendingPlace) {
+      if (page2Set.has(appId)) continue
+      if (overflowSet.has(appId) && !pinSet.has(appId)) continue
+      if (next.includes(appId)) continue
+      if (dockSet.has(appId)) continue
       const emptyIndex = next.findIndex((slot) => slot === null)
       if (emptyIndex < 0) {
-        spillToOverflow.push(app.id)
+        if (pinSet.has(appId)) {
+          // 钉住应用：挤走主屏上非钉住的图标
+          let kicked = false
+          for (let i = next.length - 1; i >= 0; i -= 1) {
+            const cur = next[i]
+            if (!cur || pinSet.has(cur)) continue
+            spillToOverflow.push(cur)
+            next[i] = appId
+            overflowSet.delete(appId)
+            kicked = true
+            break
+          }
+          if (!kicked) spillToOverflow.push(appId)
+          continue
+        }
+        spillToOverflow.push(appId)
         continue
       }
-      next[emptyIndex] = app.id
+      next[emptyIndex] = appId
+      overflowSet.delete(appId)
+    }
+    // 钉住应用若仍在溢出区，拉回主屏
+    for (const pinId of PIN_TO_MAIN_APP_IDS) {
+      if (!allowed.has(pinId) || dockSet.has(pinId) || next.includes(pinId)) continue
+      let placed = false
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        const cur = next[i]
+        if (!cur || pinSet.has(cur)) continue
+        spillToOverflow.push(cur)
+        next[i] = pinId
+        placed = true
+        break
+      }
+      if (!placed) {
+        const emptyIndex = next.findIndex((slot) => slot === null)
+        if (emptyIndex >= 0) next[emptyIndex] = pinId
+        else spillToOverflow.push(pinId)
+      }
     }
     dockIdsRef.current = nextDock
     desktopLayoutRef.current = next
@@ -1484,41 +1864,47 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       state.desktopLayout.every((id, i) => id === next[i])
     if (!stateSame) setDesktopLayout(next)
 
-    if (spillToOverflow.length > 0) {
-      const mergedIds = [...overflowIconIdsRef.current, ...spillToOverflow]
-      const blockedGallery = widgetOccupiedHomeCells(galleryState.placements, 1)
-      const nextOverflow = reconcileOverflowPlacements(
-        mergedIds,
-        overflowPlacementsRef.current,
-        blockedGallery,
+    const onMainOrDock = new Set(
+      [...nextDock, ...next.filter((id): id is AppSlot['id'] => !!id)],
+    )
+    const mergedIds = [
+      ...overflowIconIdsRef.current.filter((id) => !onMainOrDock.has(id)),
+      ...spillToOverflow.filter((id) => !onMainOrDock.has(id)),
+    ].filter((id, i, arr) => arr.indexOf(id) === i)
+    if (mergedIds.length > 0 && normalPageCountRef.current < 1) {
+      normalPageCountRef.current = 1
+      setNormalPageCount(1)
+      setActiveWidgetPageCount(1)
+    }
+    const blockedByPage = new Map<number, Array<{ col: number; row: number }>>()
+    const wCount = widgetPageCount(normalPageCountRef.current)
+    for (let pg = 1; pg < wCount; pg += 1) {
+      blockedByPage.set(pg, widgetOccupiedHomeCells(galleryState.placements, pg))
+    }
+    const nextOverflow = reconcileAllOverflowPlacements(
+      mergedIds,
+      overflowPlacementsRef.current,
+      blockedByPage,
+      DEFAULT_OVERFLOW_WIDGET_PAGE,
+    )
+    const overflowSame =
+      nextOverflow.length === overflowPlacementsRef.current.length &&
+      nextOverflow.every(
+        (p, i) =>
+          p.id === overflowPlacementsRef.current[i]?.id &&
+          p.page === overflowPlacementsRef.current[i]?.page &&
+          p.col === overflowPlacementsRef.current[i]?.col &&
+          p.row === overflowPlacementsRef.current[i]?.row,
       )
-      const overflowSame =
-        nextOverflow.length === overflowPlacementsRef.current.length &&
-        nextOverflow.every(
-          (p, i) =>
-            p.id === overflowPlacementsRef.current[i]?.id &&
-            p.col === overflowPlacementsRef.current[i]?.col &&
-            p.row === overflowPlacementsRef.current[i]?.row,
-        )
-      if (!overflowSame) {
-        setOverflowPlacements(nextOverflow)
-        overflowPlacementsRef.current = nextOverflow
-        overflowIconIdsRef.current = nextOverflow.map((p) => p.id)
-        try {
-          window.localStorage.setItem(
-            HOME_WIDGET_LAYOUT_STORAGE_KEY,
-            JSON.stringify({
-              v: FREE_HOME_LAYOUT_VERSION,
-              profileAnchor: profileAnchorState,
-              slots: slotOriginsRef.current,
-              overflowIconIds: nextOverflow.map((p) => p.id),
-              overflowPlacements: nextOverflow,
-            }),
-          )
-        } catch {
-          /* ignore */
-        }
-      }
+    if (!overflowSame) {
+      setOverflowPlacements(nextOverflow)
+      overflowPlacementsRef.current = nextOverflow
+      overflowIconIdsRef.current = nextOverflow.map((p) => p.id)
+      writeHomeLayoutStorage(
+        profileAnchorState,
+        slotOriginsRef.current,
+        nextOverflow,
+      )
     }
   }, [
     activeDrag,
@@ -1528,8 +1914,10 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
     galleryState.placements,
     profileAnchorState,
     state.desktopLayout,
+    state.desktopLayoutPage2,
     overflowIconIds,
     setDesktopLayout,
+    writeHomeLayoutStorage,
   ])
 
   const handleEnterEditMode = useCallback((id: AppSlot['id']) => {
@@ -1557,6 +1945,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
     clearHomeSwipeWindowListeners()
     homePageSwipeRef.current = null
     isPageDraggingRef.current = false
+    setDeletePagePrompt(null)
     setIsEditMode(true)
     setActiveDrag(null)
     setActiveWidgetDrag(null)
@@ -1564,6 +1953,12 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
     setHoverCell(null)
     setHoverDockIndex(null)
   }, [clearHomeSwipeWindowListeners])
+
+  const requestDeleteCurrentNormalPage = useCallback(() => {
+    const pg = homePageRef.current
+    if (!isNormalHomePage(pg)) return
+    setDeletePagePrompt({ homePage: pg, empty: isNormalPageEmpty(pg) })
+  }, [isNormalPageEmpty])
 
   const clearBlankLongPress = useCallback(() => {
     if (blankLongPressTimerRef.current != null) {
@@ -1683,13 +2078,36 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
 
       const w = getPagerWidth()
       const minPage = isEditModeRef.current ? HOME_MAIN_PAGE : 0
-      const maxPage = HOME_PAGE_COUNT - 1
+      const maxPage = lastHomePage(normalPageCountRef.current)
       const maxX = -minPage * w
       const minX = -maxPage * w
       const followDx = clientX - swipe.startX
       let next = swipe.baseX + followDx
       if (next > maxX) next = maxX + (next - maxX) * 0.22
-      if (next < minX) next = minX + (next - minX) * 0.22
+      // 末页继续左滑：多露一点并显示「新增页面」（未满上限时）
+      const canAdd =
+        !isEditModeRef.current &&
+        normalPageCountRef.current < MAX_NORMAL_PAGES &&
+        homePageRef.current >= maxPage
+      if (next < minX) {
+        const overshoot = minX - next
+        if (canAdd) {
+          next = minX - Math.min(w * 0.42, overshoot * 0.55)
+          if (!showAddPageAffordanceRef.current && overshoot > w * 0.08) {
+            showAddPageAffordanceRef.current = true
+            setShowAddPageAffordance(true)
+          }
+        } else {
+          next = minX + (next - minX) * 0.22
+          if (showAddPageAffordanceRef.current) {
+            showAddPageAffordanceRef.current = false
+            setShowAddPageAffordance(false)
+          }
+        }
+      } else if (showAddPageAffordanceRef.current && next >= minX - 4) {
+        showAddPageAffordanceRef.current = false
+        setShowAddPageAffordance(false)
+      }
       pageOffsetX.set(next)
     },
     [clearBlankLongPress, getPagerWidth, pageOffsetX],
@@ -1719,12 +2137,16 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
 
       if (cancelled) {
         pageSwipeSuppressClickRef.current = false
+        showAddPageAffordanceRef.current = false
+        setShowAddPageAffordance(false)
         snapPageOffset(homePageRef.current, true)
         return true
       }
 
       armPageSwipeClickGuard()
       if (activeDragRef.current || activeWidgetDragRef.current || galleryDraggingIdRef.current) {
+        showAddPageAffordanceRef.current = false
+        setShowAddPageAffordance(false)
         snapPageOffset(homePageRef.current, true)
         return true
       }
@@ -1733,9 +2155,29 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       const idle = performance.now() - swipe.lastT
       const vx = idle > 120 ? swipe.vx * 0.4 : swipe.vx
       const minPage = isEditModeRef.current ? HOME_MAIN_PAGE : 0
-      const maxPage = HOME_PAGE_COUNT - 1
+      const maxPage = lastHomePage(normalPageCountRef.current)
+      const offset = pageOffsetX.get()
+      const minX = -maxPage * w
+      const canAdd =
+        !isEditModeRef.current && normalPageCountRef.current < MAX_NORMAL_PAGES
+      // 末页再左滑足够远：停在半屏露出新增按钮，不立刻弹回
+      if (canAdd && homePageRef.current >= maxPage && offset < minX - w * 0.14) {
+        showAddPageAffordanceRef.current = true
+        setShowAddPageAffordance(true)
+        skipNextPageLayoutSnapRef.current = true
+        pageOffsetX.stop()
+        void motionAnimate(pageOffsetX, minX - w * 0.36, {
+          type: 'spring',
+          stiffness: 380,
+          damping: 36,
+          mass: 0.85,
+        })
+        return true
+      }
+      showAddPageAffordanceRef.current = false
+      setShowAddPageAffordance(false)
       const nextPage = resolveHomePageAfterSwipe(
-        pageOffsetX.get(),
+        offset,
         vx,
         homePageRef.current,
         minPage,
@@ -1794,23 +2236,15 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       profileAnchor: ProfileAnchor
       slots: GridPoint[]
       overflowPlacements?: OverflowIconPlacement[]
+      normalPageCount?: number
     }) => {
       const overflowPrev = next.overflowPlacements ?? overflowPlacementsRef.current
       const overflowIds = overflowPrev.map((p) => p.id)
-      try {
-        window.localStorage.setItem(
-          HOME_WIDGET_LAYOUT_STORAGE_KEY,
-          JSON.stringify({
-            v: FREE_HOME_LAYOUT_VERSION,
-            profileAnchor: next.profileAnchor,
-            slots: next.slots,
-            overflowIconIds: overflowIds,
-            overflowPlacements: overflowPrev,
-          }),
-        )
-      } catch {
-        /* ignore */
-      }
+      const pages =
+        typeof next.normalPageCount === 'number'
+          ? clampNormalPageCount(next.normalPageCount)
+          : normalPageCountRef.current
+      writeHomeLayoutStorage(next.profileAnchor, next.slots, overflowPrev, pages)
       const placements = reflowProfileReserve(next.profileAnchor)
       const blocked = widgetOccupiedHomeCells(placements, 0)
       const packed = packIconsAroundWidgets(
@@ -1820,11 +2254,16 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
         blocked,
         next.slots,
       )
-      const blockedGallery = widgetOccupiedHomeCells(placements, 1)
-      const nextOverflow = reconcileOverflowPlacements(
+      const blockedByPage = new Map<number, Array<{ col: number; row: number }>>()
+      const wCount = widgetPageCount(pages)
+      for (let pg = 1; pg < wCount; pg += 1) {
+        blockedByPage.set(pg, widgetOccupiedHomeCells(placements, pg))
+      }
+      const nextOverflow = reconcileAllOverflowPlacements(
         packed.overflowIds,
         overflowPrev,
-        blockedGallery,
+        blockedByPage,
+        DEFAULT_OVERFLOW_WIDGET_PAGE,
       )
       setProfileAnchorState(next.profileAnchor)
       setSlotOriginsState(packed.slots)
@@ -1835,29 +2274,22 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       setOverflowPlacements(nextOverflow)
       overflowPlacementsRef.current = nextOverflow
       overflowIconIdsRef.current = nextOverflow.map((p) => p.id)
-      try {
-        window.localStorage.setItem(
-          HOME_WIDGET_LAYOUT_STORAGE_KEY,
-          JSON.stringify({
-            v: FREE_HOME_LAYOUT_VERSION,
-            profileAnchor: next.profileAnchor,
-            slots: packed.slots,
-            overflowIconIds: nextOverflow.map((p) => p.id),
-            overflowPlacements: nextOverflow,
-          }),
-        )
-      } catch {
-        // ignore storage failures
+      if (pages !== normalPageCountRef.current) {
+        normalPageCountRef.current = pages
+        setNormalPageCount(pages)
+        setActiveWidgetPageCount(pages)
       }
+      writeHomeLayoutStorage(next.profileAnchor, packed.slots, nextOverflow, pages)
     },
-    [reflowProfileReserve, setDesktopLayout],
+    [reflowProfileReserve, setDesktopLayout, writeHomeLayoutStorage],
   )
 
   const handleWidgetEdgePageFlip = useCallback((dir: -1 | 1) => {
     const page = homePageRef.current
     const next = page + dir
-    // 组件可在主屏 / 组件页 / 工具页之间移动，不进账号页
-    if (next < HOME_MAIN_PAGE || next > HOME_TOOLS_PAGE) return false
+    const maxPage = lastHomePage(normalPageCountRef.current)
+    // 组件可在主屏 / 普通页之间移动，不进账号页
+    if (next < HOME_MAIN_PAGE || next > maxPage) return false
     homePageRef.current = next
     setHomePage(next)
     return true
@@ -1882,30 +2314,24 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
   const resetWidgetLayout = useCallback(() => {
     const anchor: ProfileAnchor = 0
     const slots = relocateIconSlotsAfterWidgets(anchor, defaultSlotOrigins(anchor))
+    const pages = DEFAULT_NORMAL_PAGES
     setProfileAnchorState(anchor)
     setSlotOriginsState(slots)
     setOverflowPlacements([])
     overflowPlacementsRef.current = []
     overflowIconIdsRef.current = []
+    normalPageCountRef.current = pages
+    setNormalPageCount(pages)
+    setActiveWidgetPageCount(pages)
     setSelectedIconIds([])
     selectedIconIdsRef.current = []
     setActiveWidgetDrag(null)
     setPrimedStaticWidget(null)
-    try {
-      window.localStorage.setItem(
-        HOME_WIDGET_LAYOUT_STORAGE_KEY,
-        JSON.stringify({
-          v: FREE_HOME_LAYOUT_VERSION,
-          profileAnchor: anchor,
-          slots,
-          overflowIconIds: [],
-          overflowPlacements: [],
-        }),
-      )
-    } catch {
-      // ignore storage failures
-    }
-  }, [])
+    setDeletePagePrompt(null)
+    showAddPageAffordanceRef.current = false
+    setShowAddPageAffordance(false)
+    writeHomeLayoutStorage(anchor, slots, [], pages)
+  }, [writeHomeLayoutStorage])
 
   const handleAppOpen = useCallback((id: AppSlot['id']) => {
     if (isEditMode) return
@@ -1930,6 +2356,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
     ])
     setDesktopLayout(desktopLayoutRef.current)
     setIsEditMode(false)
+    setDeletePagePrompt(null)
     setSelectedIconIds([])
     selectedIconIdsRef.current = []
     setActiveDrag(null)
@@ -2016,13 +2443,25 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
 
       const page = homePageRef.current
 
-      if (page === HOME_GALLERY_PAGE) {
-        const grid = galleryGridRef.current
+      if (isNormalHomePage(page)) {
+        const widgetPage = galleryPageFromHome(page)
+        const grid =
+          normalPageGridRefs.current.get(widgetPage) ?? galleryGridRef.current
         if (!grid) return null
         const cell = pointerToHomeCell(point, grid.getBoundingClientRect())
         if (!cell) return null
-        if (widgetBlockedGalleryKeys.has(cellKey(cell))) return null
-        return { zone: 'overflow', col: cell.col, row: cell.row }
+        const blocked = new Set(
+          widgetOccupiedHomeCells(galleryState.placements, widgetPage).map((c) =>
+            cellKey(c),
+          ),
+        )
+        if (blocked.has(cellKey(cell))) return null
+        return {
+          zone: 'overflow',
+          col: cell.col,
+          row: cell.row,
+          page: widgetPage,
+        }
       }
 
       if (page === HOME_MAIN_PAGE) {
@@ -2037,7 +2476,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
 
       return null
     },
-    [galleryState.placements, getDockCenter, profileAnchorState, widgetBlockedGalleryKeys],
+    [galleryState.placements, getDockCenter, profileAnchorState],
   )
 
   const applyPreview = useCallback((id: AppSlot['id'], source: DragSource, target: DropTarget) => {
@@ -2045,6 +2484,10 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
     if (!base) return
     const companions = activeDragRef.current?.companionIds ?? []
 
+    const overflowTargetPage =
+      target.zone === 'overflow' && target.page >= 1
+        ? target.page
+        : DEFAULT_OVERFLOW_WIDGET_PAGE
     const next = previewMultiIconDrop(
       base,
       id,
@@ -2053,7 +2496,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       target,
       profileAnchorState,
       widgetOccupiedHomeCells(galleryState.placements, 0),
-      widgetOccupiedHomeCells(galleryState.placements, 1),
+      widgetOccupiedHomeCells(galleryState.placements, overflowTargetPage),
     )
     dockIdsRef.current = next.dockIds
     desktopLayoutRef.current = next.desktopLayout
@@ -2075,7 +2518,11 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
     } else if (target.zone === 'overflow') {
       const group = new Set([id, ...companions])
       const occupied = base.overflowPlacements.some(
-        (p) => !group.has(p.id) && p.col === target.col && p.row === target.row,
+        (p) =>
+          !group.has(p.id) &&
+          p.col === target.col &&
+          p.row === target.row &&
+          (p.page ?? DEFAULT_OVERFLOW_WIDGET_PAGE) === overflowTargetPage,
       )
       setHoverSlotIndex(null)
       setHoverCell(occupied ? null : { col: target.col, row: target.row })
@@ -2110,21 +2557,8 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
       ...committedOverflow.map((p) => p.id),
     ])
 
-    try {
-      window.localStorage.setItem(
-        HOME_WIDGET_LAYOUT_STORAGE_KEY,
-        JSON.stringify({
-          v: FREE_HOME_LAYOUT_VERSION,
-          profileAnchor: profileAnchorState,
-          slots: committedSlots,
-          overflowIconIds: committedOverflow.map((p) => p.id),
-          overflowPlacements: committedOverflow,
-        }),
-      )
-    } catch {
-      /* ignore */
-    }
-  }, [profileAnchorState, reorderApps, setDesktopLayout])
+    writeHomeLayoutStorage(profileAnchorState, committedSlots, committedOverflow)
+  }, [profileAnchorState, reorderApps, setDesktopLayout, writeHomeLayoutStorage])
 
   const handlePointerDragStart = useCallback(
     (id: AppSlot['id'], source: DragSource, event: React.PointerEvent<HTMLElement>) => {
@@ -2216,10 +2650,11 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
     const flipWhileDragging = (dir: -1 | 1) => {
       const page = homePageRef.current
       const next = page + dir
-      // 拖图标跨页：主屏 ↔ 组件页（不进账号页）
-      if (dir > 0 && page >= HOME_GALLERY_PAGE) return false
+      const maxPage = lastHomePage(normalPageCountRef.current)
+      // 拖图标跨页：主屏 ↔ 普通页（不进账号页）
+      if (dir > 0 && page >= maxPage) return false
       if (dir < 0 && page <= HOME_MAIN_PAGE) return false
-      if (next < HOME_MAIN_PAGE || next > HOME_GALLERY_PAGE) return false
+      if (next < HOME_MAIN_PAGE || next > maxPage) return false
       homePageRef.current = next
       setHomePage(next)
       setHoverCell(null)
@@ -2446,7 +2881,7 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
             if (w > 0) {
               const visualPage = Math.round(-pageOffsetX.get() / w)
               const minPage = isEditMode ? HOME_MAIN_PAGE : 0
-              const maxPage = HOME_PAGE_COUNT - 1
+              const maxPage = lastHomePage(normalPageCountRef.current)
               const synced = Math.max(minPage, Math.min(maxPage, visualPage))
               if (synced !== homePageRef.current) {
                 homePageRef.current = synced
@@ -2526,6 +2961,8 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
           }
           targetPage={galleryPageFromHome(homePage)}
           onDone={exitEditMode}
+          showDeletePage={isNormalHomePage(homePage)}
+          onRequestDeletePage={requestDeleteCurrentNormalPage}
         />
         {isEditMode && selectedIconIds.length > 1 ? (
           <div className="pointer-events-none absolute bottom-[88px] left-0 right-0 z-[12] flex justify-center px-4">
@@ -2541,17 +2978,26 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
         >
           <motion.div
             className="flex h-full"
-            style={{ width: '400%', x: pageOffsetX }}
+            style={{
+              width: `${homePageCount * 100}%`,
+              x: pageOffsetX,
+            }}
           >
             {/* 第 0 页：账号中心手势位（进入后跳转全屏路由） */}
-            <div className="relative flex h-full w-1/4 min-w-0 flex-col overflow-hidden">
+            <div
+              className="relative flex h-full min-w-0 flex-col overflow-hidden"
+              style={{ width: `${100 / homePageCount}%` }}
+            >
               {homePage === HOME_ACCOUNT_PAGE || Math.abs(homePage - HOME_ACCOUNT_PAGE) <= 1 ? (
                 <HomeAccountCenterPage />
               ) : null}
             </div>
 
             {/* 第 1 页：名片 + 图标 + 4×7 组件层 */}
-            <div className="relative flex h-full w-1/4 min-w-0 items-stretch justify-center px-3">
+            <div
+              className="relative flex h-full min-w-0 items-stretch justify-center px-3"
+              style={{ width: `${100 / homePageCount}%` }}
+            >
               {/* 图标网格与组件层共用同一外框，避免 absolute 叠层错位导致「悬浮盖住图标」 */}
               <div className="relative h-full w-full max-w-[360px]">
                 <div
@@ -2701,157 +3147,230 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
               </div>
             </div>
 
-            {/* 第 2 页：与主屏同高的 4×7；溢出图标占空格，组件层满高叠加（不缩水） */}
-            <div className="relative flex h-full w-1/4 min-w-0 items-stretch justify-center px-3">
-              <div className="relative h-full w-full max-w-[360px]">
+            {/* 普通页：应用图标 + 装饰组件（可增减） */}
+            {Array.from({ length: normalPageCount }, (_, i) => {
+              const widgetPage = i + 1
+              const homePg = HOME_MAIN_PAGE + widgetPage
+              const pageIcons = overflowByWidgetPage.get(widgetPage) ?? []
+              const blockedKeys =
+                widgetBlockedKeysByPage.get(widgetPage) ?? new Set<string>()
+              const pageActive =
+                homePage === homePg ||
+                Math.abs(homePage - homePg) <= 1 ||
+                galleryDraggingId
+              return (
                 <div
-                  ref={galleryGridRef}
-                  className="grid h-full w-full items-stretch pb-5"
-                  style={{
-                    gridTemplateColumns: `repeat(${DESKTOP_GRID_COLUMNS}, minmax(0, 1fr))`,
-                    gridTemplateRows: `repeat(${DESKTOP_GRID_ROWS}, minmax(0, 1fr))`,
-                    gap: DESKTOP_GRID_GAP_PX,
-                  }}
+                  key={`normal-page-${widgetPage}`}
+                  className="relative flex h-full min-w-0 items-stretch justify-center px-3"
+                  style={{ width: `${100 / homePageCount}%` }}
                 >
-                  {isEditMode && hoverDropZone === 'overflow' && hoverCell ? (
+                  <div className="relative h-full w-full max-w-[360px]">
                     <div
-                      className="pointer-events-none relative"
+                      ref={(el) => {
+                        normalPageGridRefs.current.set(widgetPage, el)
+                        if (widgetPage === 1) galleryGridRef.current = el
+                      }}
+                      className="grid h-full w-full items-stretch pb-5"
                       style={{
-                        gridColumn: `${hoverCell.col} / ${hoverCell.col + 1}`,
-                        gridRow: `${hoverCell.row} / ${hoverCell.row + 1}`,
+                        gridTemplateColumns: `repeat(${DESKTOP_GRID_COLUMNS}, minmax(0, 1fr))`,
+                        gridTemplateRows: `repeat(${DESKTOP_GRID_ROWS}, minmax(0, 1fr))`,
+                        gap: DESKTOP_GRID_GAP_PX,
                       }}
                     >
-                      <div className="absolute inset-1 rounded-[22px] border border-[#D4AF37]/70 bg-white/24 shadow-[0_10px_24px_rgba(212,175,55,0.12)]" />
-                    </div>
-                  ) : null}
+                      {isEditMode &&
+                      hoverDropZone === 'overflow' &&
+                      homePage === homePg &&
+                      hoverCell ? (
+                        <div
+                          className="pointer-events-none relative"
+                          style={{
+                            gridColumn: `${hoverCell.col} / ${hoverCell.col + 1}`,
+                            gridRow: `${hoverCell.row} / ${hoverCell.row + 1}`,
+                          }}
+                        >
+                          <div className="absolute inset-1 rounded-[22px] border border-[#D4AF37]/70 bg-white/24 shadow-[0_10px_24px_rgba(212,175,55,0.12)]" />
+                        </div>
+                      ) : null}
 
-                  {galleryOverflowIcons.map((item, overflowIndex) => {
-                    const app = appMap.get(item.id) ?? null
-                    if (!app) return null
-                    const coveredByWidget = widgetBlockedGalleryKeys.has(cellKey(item))
-                    return (
-                      <div
-                        key={`gallery-overflow-${app.id}`}
-                        className="relative min-h-0"
-                        style={{
-                          gridColumn: `${item.col} / ${item.col + 1}`,
-                          gridRow: `${item.row} / ${item.row + 1}`,
-                          zIndex: activeDrag?.id === app.id ? 55 : isEditMode ? 30 : 14,
-                          opacity: coveredByWidget ? 0 : 1,
-                          pointerEvents: coveredByWidget ? 'none' : undefined,
-                        }}
-                      >
-                        <SortableDesktopTile
-                          app={app}
-                          slotIndex={overflowIndex}
-                          slot={{ col: item.col, row: item.row }}
-                          compact={compactDesktop}
+                      {pageIcons.map((item, overflowIndex) => {
+                        const app = appMap.get(item.id) ?? null
+                        if (!app) return null
+                        const globalIndex = overflowPlacements.findIndex(
+                          (p) => p.id === item.id,
+                        )
+                        const coveredByWidget = blockedKeys.has(cellKey(item))
+                        return (
+                          <div
+                            key={`overflow-${widgetPage}-${app.id}`}
+                            className="relative min-h-0"
+                            style={{
+                              gridColumn: `${item.col} / ${item.col + 1}`,
+                              gridRow: `${item.row} / ${item.row + 1}`,
+                              zIndex:
+                                activeDrag?.id === app.id
+                                  ? 55
+                                  : coveredByWidget
+                                    ? 28
+                                    : isEditMode
+                                      ? 30
+                                      : 14,
+                            }}
+                          >
+                            <SortableDesktopTile
+                              app={app}
+                              slotIndex={overflowIndex}
+                              slot={{ col: item.col, row: item.row }}
+                              compact={compactDesktop}
+                              isEditMode={isEditMode}
+                              isActiveDrag={activeDrag?.id === app.id}
+                              isLongPressPrimed={primedAppId === app.id}
+                              isSelected={selectedIconIds.includes(app.id)}
+                              isCompanionGhosted={
+                                !!activeDrag &&
+                                activeDrag.id !== app.id &&
+                                activeDrag.companionIds.includes(app.id)
+                              }
+                              onOpenApp={handleAppOpen}
+                              onEnterEditMode={handleEnterEditMode}
+                              onToggleSelect={toggleIconSelect}
+                              registerNode={registerTileNode}
+                              onPointerDragStart={(id, event) =>
+                                handlePointerDragStart(
+                                  id,
+                                  {
+                                    zone: 'overflow',
+                                    index: globalIndex >= 0 ? globalIndex : overflowIndex,
+                                    page: widgetPage,
+                                  },
+                                  event,
+                                )
+                              }
+                            />
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {pageActive ? (
+                      <div className="pointer-events-none absolute inset-0 z-[6] pb-5">
+                        <HomeWidgetGalleryPage
+                          page={widgetPage}
+                          activeHomePage={galleryPageFromHome(homePage)}
+                          overlay
                           isEditMode={isEditMode}
-                          isActiveDrag={activeDrag?.id === app.id}
-                          isLongPressPrimed={primedAppId === app.id}
-                          isSelected={selectedIconIds.includes(app.id)}
-                          isCompanionGhosted={
-                            !!activeDrag &&
-                            activeDrag.id !== app.id &&
-                            activeDrag.companionIds.includes(app.id)
-                          }
-                          onOpenApp={handleAppOpen}
-                          onEnterEditMode={handleEnterEditMode}
-                          onToggleSelect={toggleIconSelect}
-                          registerNode={registerTileNode}
-                          onPointerDragStart={(id, event) =>
-                            handlePointerDragStart(id, { zone: 'overflow', index: overflowIndex }, event)
-                          }
+                          onEnterEditMode={() => {
+                            if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+                              navigator.vibrate(12)
+                            }
+                            setDeletePagePrompt(null)
+                            setIsEditMode(true)
+                          }}
+                          onExitEditMode={exitEditMode}
+                          onDragEdgePageFlip={handleWidgetEdgePageFlip}
+                          onDragActiveChange={(active, id) => {
+                            setGalleryDraggingId(active ? id : null)
+                          }}
                         />
                       </div>
-                    )
-                  })}
-                </div>
-
-                {homePage === HOME_GALLERY_PAGE ||
-                Math.abs(homePage - HOME_GALLERY_PAGE) <= 1 ||
-                galleryDraggingId ? (
-                  <div className="pointer-events-none absolute inset-0 z-[6] pb-5">
-                    <HomeWidgetGalleryPage
-                      page={1}
-                      activeHomePage={galleryPageFromHome(homePage)}
-                      overlay
-                      isEditMode={isEditMode}
-                      onEnterEditMode={() => {
-                        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-                          navigator.vibrate(12)
-                        }
-                        setIsEditMode(true)
-                      }}
-                      onExitEditMode={exitEditMode}
-                      onDragEdgePageFlip={handleWidgetEdgePageFlip}
-                      onDragActiveChange={(active, id) => {
-                        setGalleryDraggingId(active ? id : null)
-                      }}
-                    />
+                    ) : (
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
+                        <p className="text-center text-[12px] text-white/40">左右滑动切换页面</p>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
-                    <p className="text-center text-[12px] text-white/40">左右滑动切换页面</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 第 3 页：工具图标 + 4×7 组件层 */}
-            <div className="relative flex h-full w-1/4 min-w-0 flex-col px-3 pb-5 pt-2">
-              <div className="mb-3 px-1">
-                <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-white/70">
-                  Creator
-                </p>
-                <p className="text-[13px] font-semibold text-white/90">工具页</p>
-              </div>
-              <div
-                className="grid max-w-[360px] grid-cols-4 gap-x-2.5 gap-y-3 self-center"
-                style={{ width: '100%' }}
-              >
-                {(state.desktopLayoutPage2 ?? []).map((appId, slotIndex) => {
-                  const app = appId ? appMap.get(appId) ?? null : null
-                  if (!app) {
-                    return <div key={`page2-empty-${slotIndex}`} className="aspect-square" />
-                  }
-                  return (
-                    <DesktopAppTile
-                      key={app.id}
-                      app={app}
-                      onOpen={handleAppOpen}
-                      compact={compactDesktop}
-                      isEditMode={isEditMode}
-                    />
-                  )
-                })}
-              </div>
-
-              {homePage === HOME_TOOLS_PAGE ||
-              Math.abs(homePage - HOME_TOOLS_PAGE) <= 1 ||
-              galleryDraggingId ? (
-                <div className="pointer-events-none absolute inset-0 z-[6]">
-                  <HomeWidgetGalleryPage
-                    page={2}
-                    activeHomePage={galleryPageFromHome(homePage)}
-                    overlay
-                    isEditMode={isEditMode}
-                    onEnterEditMode={() => {
-                      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-                        navigator.vibrate(12)
-                      }
-                      setIsEditMode(true)
-                    }}
-                    onExitEditMode={exitEditMode}
-                    onDragEdgePageFlip={handleWidgetEdgePageFlip}
-                    onDragActiveChange={(active, id) => {
-                      setGalleryDraggingId(active ? id : null)
-                    }}
-                  />
                 </div>
-              ) : null}
-            </div>
+              )
+            })}
+
           </motion.div>
+
+          {/* 末页越界：新增页面 */}
+          <AnimatePresence>
+            {showAddPageAffordance ? (
+              <motion.div
+                className="pointer-events-none absolute inset-0 z-[20] flex items-center justify-end pr-5"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <button
+                  type="button"
+                  className="pointer-events-auto flex flex-col items-center gap-2 rounded-[22px] bg-black/45 px-4 py-5 text-white backdrop-blur-md"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    addNormalPage()
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/18 text-[28px] leading-none">
+                    +
+                  </span>
+                  <span className="text-[12px] font-medium">新增页面</span>
+                </button>
+                <button
+                  type="button"
+                  className="pointer-events-auto absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-white/14 px-3 py-1 text-[11px] text-white/80"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    dismissAddPageAffordance()
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  取消
+                </button>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+
+          {/* 长按普通页：删除确认 */}
+          <AnimatePresence>
+            {deletePagePrompt ? (
+              <motion.div
+                className="absolute inset-x-0 bottom-[72px] z-[22] flex justify-center px-4"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+              >
+                <div className="w-full max-w-[320px] rounded-[20px] bg-black/55 px-4 py-3 text-center text-white backdrop-blur-md">
+                  {deletePagePrompt.empty ? (
+                    <>
+                      <p className="text-[13px] font-medium">删除此空白页？</p>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          className="flex-1 rounded-full bg-white/14 py-2 text-[12px]"
+                          onClick={() => setDeletePagePrompt(null)}
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          className="flex-1 rounded-full bg-[#ff453a] py-2 text-[12px] font-medium"
+                          onClick={confirmDeleteNormalPage}
+                        >
+                          删除页面
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[13px] font-medium">无法删除此页</p>
+                      <p className="mt-1 text-[11px] text-white/70">
+                        请先移走本页的应用和组件
+                      </p>
+                      <button
+                        type="button"
+                        className="mt-3 w-full rounded-full bg-white/14 py-2 text-[12px]"
+                        onClick={() => setDeletePagePrompt(null)}
+                      >
+                        知道了
+                      </button>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
         <AnimatePresence>
           {activeDrag ? (
@@ -2909,24 +3428,32 @@ export function HomeScreen({ onOpenApp, onOpenUserAccount }: Props) {
           data-page-dots="true"
           className="flex shrink-0 items-center justify-center gap-1.5 pb-1.5 pt-0.5"
         >
-          {[
-            { page: HOME_ACCOUNT_PAGE, label: '账号中心' },
-            { page: HOME_MAIN_PAGE, label: '主屏' },
-            { page: HOME_GALLERY_PAGE, label: '组件页' },
-            { page: HOME_TOOLS_PAGE, label: '工具页' },
-          ].map(({ page, label }) => (
-            <button
-              key={page}
-              type="button"
-              aria-label={label}
-              className="h-1.5 rounded-full transition-all"
-              style={{
-                width: homePage === page ? 14 : 6,
-                background: homePage === page ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.38)',
-              }}
-              onClick={() => setHomePage(page)}
-            />
-          ))}
+          {Array.from({ length: homePageCount }, (_, page) => {
+            const label =
+              page === HOME_ACCOUNT_PAGE
+                ? '账号中心'
+                : page === HOME_MAIN_PAGE
+                  ? '主屏'
+                  : `第${page - 1}页`
+            return (
+              <button
+                key={page}
+                type="button"
+                aria-label={label}
+                className="h-1.5 rounded-full transition-all"
+                style={{
+                  width: homePage === page ? 14 : 6,
+                  background:
+                    homePage === page ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.38)',
+                }}
+                onClick={() => {
+                  showAddPageAffordanceRef.current = false
+                  setShowAddPageAffordance(false)
+                  setHomePage(page)
+                }}
+              />
+            )
+          })}
         </div>
       </div>
 

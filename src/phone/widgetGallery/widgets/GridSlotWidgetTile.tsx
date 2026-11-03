@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   clampOrigin,
+  getActiveWidgetPageCount,
   originsOverlap,
   pointerToOriginFromCanvas,
   resolveGridOrigin,
@@ -174,7 +175,10 @@ export function GridSlotWidgetTile({
     setGhost(null)
     onHoverOrigin(placement.id, null)
 
-    const targetPage = Math.max(0, Math.min(2, dropPage))
+    const targetPage = Math.max(
+      0,
+      Math.min(getActiveWidgetPageCount() - 1, dropPage),
+    )
     const canvasEl =
       (document.querySelector(
         `[data-home-widget-canvas="${targetPage}"]`,
