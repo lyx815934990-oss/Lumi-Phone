@@ -2,8 +2,13 @@ import { useMemo } from 'react'
 
 import { Pressable } from '../../../components/Pressable'
 import { FORUM, forumKindLabel, formatForumRelativeTime } from '../forumTheme'
+import { useForumSocialStore } from '../forumSocialStore'
 import { personaAvatarResolved } from '../personaAvatar'
-import type { ResidentWriter } from '../residentWriters'
+import {
+  formatWriterFans,
+  type ResidentWriter,
+  writerFanCount,
+} from '../residentWriters'
 import type { ForumPost } from '../forumTypes'
 import { ForumAvatar, SoftCard, StatRow } from './ui'
 
@@ -25,6 +30,12 @@ export function ForumAuthorProfile({
   onWriteCustom: () => void
 }) {
   const avatar = personaAvatarResolved(writer.id, writer.username)
+  const following = useForumSocialStore((s) => {
+    const acc = s.currentAccountId
+    if (!acc) return false
+    return s.root.byAccount[acc]?.followingWriterIds.includes(writer.id) ?? false
+  })
+  const toggleFollow = useForumSocialStore((s) => s.toggleFollow)
   const interaction = useMemo(
     () => posts.reduce((n, p) => n + commentCountFor(p.boardId, p.id), 0),
     [posts, commentCountFor],
@@ -75,6 +86,19 @@ export function ForumAuthorProfile({
             borderWidth={4}
             borderColor={FORUM.surface1}
           />
+          <span
+            className="mt-2 inline-flex items-center rounded-full px-2 py-0.5"
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              color: FORUM.textAccent,
+              backgroundColor: FORUM.surface2,
+              border: `1px solid ${FORUM.hairline}`,
+            }}
+          >
+            写手 · 已认证
+          </span>
         </div>
 
         <h1
@@ -122,34 +146,43 @@ export function ForumAuthorProfile({
           <StatRow
             items={[
               { label: '作品', value: String(posts.length) },
+              { label: '粉丝', value: formatWriterFans(writerFanCount(writer.id)) },
               { label: '互动', value: String(interaction) },
-              { label: '身份', value: '写手' },
             ]}
           />
         </div>
 
-        <div className="mt-4 flex gap-2">
+        <div className="mt-3 flex gap-2">
+          <Pressable
+            type="button"
+            onClick={() => toggleFollow(writer.id)}
+            className="rounded-[14px] px-4 py-2.5 text-center text-[13px] font-medium"
+            style={{
+              background: following ? FORUM.surface2 : FORUM.accent,
+              color: following ? FORUM.text : '#FFFDF8',
+              border: following ? `1px solid ${FORUM.hairline}` : 'none',
+            }}
+          >
+            {following ? '已关注' : '关注'}
+          </Pressable>
           {writer.writesShip ? (
             <Pressable
               type="button"
               onClick={onWriteShip}
-              className="flex-1 rounded-[17px] py-3 text-center text-[13.5px] font-medium"
-              style={{ background: FORUM.accent, color: '#FFFDF8' }}
+              className="flex-1 rounded-[14px] py-2.5 text-center text-[13px] font-medium"
+              style={{ background: FORUM.bgAccent, color: FORUM.text }}
             >
-              用 TA 的笔触写本命
+              写本命
             </Pressable>
           ) : null}
           {writer.writesCustom ? (
             <Pressable
               type="button"
               onClick={onWriteCustom}
-              className="flex-1 rounded-[17px] py-3 text-center text-[13.5px] font-medium"
-              style={{
-                background: writer.writesShip ? FORUM.surface2 : FORUM.accent,
-                color: writer.writesShip ? FORUM.text : '#FFFDF8',
-              }}
+              className="flex-1 rounded-[14px] py-2.5 text-center text-[13px] font-medium"
+              style={{ background: FORUM.bgAccent, color: FORUM.text }}
             >
-              用 TA 的笔触写选角
+              搜索选角
             </Pressable>
           ) : null}
         </div>

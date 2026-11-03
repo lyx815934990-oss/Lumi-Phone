@@ -32,6 +32,7 @@ import {
   type MessagesThreadRow,
   type WxActiveChat,
 } from './messagesThreadTypes'
+import { WeChatBlockedContactBadge } from './WeChatBlockedContactBadge'
 import { WeChatThreadPreviewText, WeChatThreadTimeText, WeChatUnreadBadgeText } from './wechatUnreadCountText'
 
 export type { MessagesThreadRow, WxActiveChat } from './messagesThreadTypes'
@@ -477,8 +478,12 @@ function MessageThreadListItem({
           </span>
           <div className="min-w-0 flex-1 pr-1">
             <div className="flex items-start justify-between gap-2">
-              <p className="min-w-0 truncate text-[15px] font-semibold" style={{ color: LUMI_SHELL.ink }}>
-                {t.name}
+              <p
+                className="flex min-w-0 items-center gap-1 truncate text-[15px] font-semibold"
+                style={{ color: LUMI_SHELL.ink }}
+              >
+                <span className="min-w-0 truncate">{t.name}</span>
+                {t.kind === 'persona' && t.blockedMark ? <WeChatBlockedContactBadge /> : null}
               </p>
               <span className="shrink-0 text-[12px] leading-none" style={{ color: LUMI_SHELL.mist }}>
                 <WeChatThreadTimeText text={t.time} />

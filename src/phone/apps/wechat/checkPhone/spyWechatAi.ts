@@ -154,6 +154,69 @@ export function summarizeMirrorChatForAppend(
   return { lastTimestamp, totalMessageCount, earlierDigestLines, recentLines }
 }
 
+/** 聊天生成：两侧语言策略 */
+export type SpyChatLanguageMode = 'unified' | 'split' | 'auto_persona'
+
+function resolveSpyChatLanguageMode(raw: unknown): SpyChatLanguageMode {
+  const s = typeof raw === 'string' ? raw.trim() : ''
+  if (s === 'split' || s === 'auto_persona') return s
+  return 'unified'
+}
+
+function languageHardExtras(code: WeChatChatLanguageCode): string[] {
+  if (code === 'ja') {
+    return [
+      `- **日语句末「笑」**：轻松场合句末「笑」「（笑）」「w」是网聊习惯（≈哈哈），可自然使用（如「了解した笑」「うん（笑）」）；严肃时可直接收句。`,
+    ]
+  }
+  if (code === 'zh-CN') {
+    return [
+      `- **简体硬项**：必须用大陆简体字形，禁止繁体冒充简体。`,
+    ]
+  }
+  if (code === 'zh-TW') {
+    return [`- **繁體硬項**：必須用繁體字形，禁止改回簡體。`]
+  }
+  return []
+}
+
+/**
+ * @param forcePerBubble 为 true 时（按人设自动 / 左右分侧可能多语）：只要勾选自带翻译就启用，
+ *   规则改为「原文语言 ≠ 译文语言 → 必须 [译]」；不再用单一 generateLanguage 误判关掉翻译。
+ */
+function buildChatTranslationHardLines(
+  syncWanted: boolean,
+  trLang: WeChatChatLanguageCode,
+  bodyLangs: WeChatChatLanguageCode[],
+  forcePerBubble = false,
+): string[] {
+  const trNative = weChatChatLanguageNativeName(trLang)
+  const trLabel = weChatChatLanguageLabel(trLang)
+  const allBodyIsTr =
+    bodyLangs.length > 0 && bodyLangs.every((l) => l === trLang)
+  const syncOn = syncWanted && (forcePerBubble || !allBodyIsTr)
+  if (syncOn) {
+    if (forcePerBubble) {
+      return [
+        `【同步翻译 · 硬项】已开启自带翻译（目标：${trLabel} / ${trNative}）。`,
+        `- **按条判断**：气泡正文语言若**已经是** ${trNative}，该条可不写 \`[译]\`；正文若是其它语言（日/韩/英等），**必须**紧跟 \`[译]……\`，译成 ${trNative}。`,
+        `- 换言之：只要原文不是译文语言，就要出翻译——禁止「全场日语却不写中文译」这类漏译。`,
+        `- 普通文字气泡、通话 \`CL|…\`、群聊 \`G|…\` 均适用；\`[译]\` 不计入气泡条数，禁止写成 P/C/G 普通气泡。`,
+        `- 红包行（CRP/PRP）与转账行（CTF/PTF）、通话状态行（CVC/PVC）**不要**跟 \`[译]\`。`,
+      ]
+    }
+    return [
+      `【同步翻译 · 硬项】已开启自带翻译（目标：${trLabel} / ${trNative}）。`,
+      `- 每条普通文字气泡后必须紧跟单独一行：\`[译]……\`，内容为上一行气泡的 ${trNative} 译文（通顺、忠于原文，不加戏）。`,
+      `- 每条通话内容行 \`CL|C/P|……\`（群聊同理 \`CL|…\`）后也必须紧跟单独一行 \`[译]……\`（译出对白与声音旁白；\`[译]\` 不计入气泡条数）。`,
+      `- 群聊 \`G|…\` 文字气泡后同样跟 \`[译]……\`。`,
+      `- \`[译]\` 行禁止写成 P/C/G 普通气泡。`,
+      `- 红包行（CRP/PRP）与转账行（CTF/PTF）、通话状态行（CVC/PVC）**不要**跟 \`[译]\`。`,
+    ]
+  }
+  return ['- 禁止输出 `[译]` / `【译】` / `[翻译]` 行。']
+}
+
 /** 镜像生成：备注 / 气泡 / 朋友圈的语言与可选同步翻译 */
 function buildMirrorGenerateLanguageAppendix(
   o: SpyWechatGenerateOptions,
@@ -167,49 +230,89 @@ function buildMirrorGenerateLanguageAppendix(
     o.translationLanguage,
     WECHAT_CHAT_DEFAULT_TRANSLATION_LANGUAGE,
   )
-  const trNative = weChatChatLanguageNativeName(trLang)
-  const trLabel = weChatChatLanguageLabel(trLang)
-  const syncOn = syncWanted && trLang !== lang
-
-  const lines: string[] = [
-    `【生成语言 · 硬项】本轮可见输出语言为 **${label}（${native}）**。`,
-  ]
+  const mode = resolveSpyChatLanguageMode(o.chatLanguageMode)
 
   if (surface === 'contacts') {
-    lines.push(
+    return [
+      `【生成语言 · 硬项】本轮可见输出语言为 **${label}（${native}）**。`,
       `- 通讯录「备注」必须用 ${native} 书写（可按该语言习惯写缩写/昵称；禁止写成其它语言）。`,
       `- 「关系」字段必须用**简体中文**、不超过 20 字，写清对方与 {{char}} 的社会/情感关系（同事/家人/恋人/经纪人等）；禁止写成「星标好友」「通讯录好友」。`,
       `- 「昵称」：额外联系人用 ${native}；人脉 NPC / 用户本行的公开昵称按给定原样保留，不要强行翻译专名。`,
       `- 字段名（备注：/ 昵称：/ 关系：等）仍用中文标记；备注与昵称的**字段值**用 ${native}，关系字段值用简体中文。`,
-    )
-  } else if (surface === 'chats') {
-    lines.push(
-      `- 所有普通文字气泡正文必须用 ${native}；禁止中外文混条当正文，也禁止把译文写成另一条普通气泡。`,
-      `- 红包祝福语 / 转账备注也尽量用 ${native}（金额数字除外）。`,
-    )
-    if (lang === 'ja') {
-      lines.push(
-        `- **日语句末「笑」**：轻松场合句末「笑」「（笑）」「w」是网聊习惯（≈哈哈），可自然使用（如「了解した笑」「うん（笑）」）；严肃时可直接收句。`,
-      )
-    }
-    if (syncOn) {
-      lines.push(
-        `【同步翻译 · 硬项】已开启自带翻译（目标：${trLabel} / ${trNative}）。`,
-        `- 每条普通文字气泡后必须紧跟单独一行：\`[译]……\`，内容为上一行气泡的 ${trNative} 译文（通顺、忠于原文，不加戏）。`,
-        `- 每条通话内容行 \`CL|C/P|……\` 后也必须紧跟单独一行 \`[译]……\`（译出对白与声音旁白，便于阅读；\`[译]\` 不计入气泡条数）。`,
-        `- \`[译]\` 行禁止写成 P/C 普通气泡。`,
-        `- 红包行（CRP/PRP）与转账行（CTF/PTF）、通话状态行（CVC/PVC）**不要**跟 \`[译]\`。`,
-      )
-    } else {
-      lines.push('- 禁止输出 `[译]` / `【译】` / `[翻译]` 行。')
-    }
-  } else {
-    lines.push(
-      `- 朋友圈「内容」与「评：」评论正文必须用 ${native}。`,
-      `- 点赞人名可保留通讯录备注原样；可见性字段可用中文短标签。`,
-    )
+    ].join('\n')
   }
 
+  if (surface === 'moments') {
+    return [
+      `【生成语言 · 硬项】本轮可见输出语言为 **${label}（${native}）**。`,
+      `- 朋友圈「内容」与「评：」评论正文必须用 ${native}。`,
+      `- 点赞人名可保留通讯录备注原样；可见性字段可用中文短标签。`,
+    ].join('\n')
+  }
+
+  // —— chats ——
+  if (mode === 'auto_persona') {
+    const lines: string[] = [
+      `【生成语言 · 按人设自动 · 硬项 · 由你按人设判断，系统不做本地改写】`,
+      `- **优先看个人语言习惯**：每人先定一种「主语言」（惯用语），**绝大多数**气泡用主语言；禁止无理由全场统一成同一种。`,
+      `- 判定依据（按优先级，前项命中就定主语言，勿被后项带偏）：`,
+      `  1) 姓名文字：含平假名/片假名（如 ハル / ケント / あかり）→ **主语言日语**；含韩文 → 韩语；纯汉字中国名且无外籍证据 → 简中。`,
+      `  2) 备注/关系：日本人、在日、日服、高校（日本）、固定PT、日文昵称旁注 → **主语言日语**。`,
+      `  3) 人设/世界书：角色社交圈在日本、对方住日本、日本同学/损友 → 该联系人 **主语言日语**。`,
+      `  4) 仅当以上都无外籍/在日证据时，才默认该人 **简体中文**。`,
+      `- **在日好友硬项**：只要联系人是日本人或人在日本的朋友（含假名名、高校损友、日服网友），P 侧主语言必须是 **日语**。禁止因为 C 用中文回、或「好懂一点」就把 P 写成全程中文；聊「回日本 / 日本烧烤」等话题时 P 仍应用日语说。`,
+      `- **私聊主语言**：`,
+      `  · C = 角色本人习惯（中日混血若日常更常中文 → C 主语言简中；人设明确日语为主 → C 主语言日语）。`,
+      `  · P = 该联系人习惯（见上；日本人/在日 → **P 日语**；中国同学 → P 简中）。`,
+      `  · 合格例：ハル 发日语、混血 C 用中文回——两侧主语言可以不同；不合格例：ハル 全程中文（假名名却说中文）。`,
+      `- **双语夹杂（有条件允许）**：仅当**该发言者人设精通这两种语言**，且**对话对方也能看懂**时，才可在主语言之外**偶尔**夹杂另一语；主语言气泡仍须占大多数。`,
+      `  · **禁止假双语 / 偷懒中文化**：日本人开场偶夹一句中文梗可以，但禁止整段改成中文；禁止「反正角色懂中文就全用中文写日本好友」。`,
+      `- **禁止无条件迁就**：日本人 P 不会因为 C 说中文就整段改中文。`,
+      `- **群聊**：在日/假名成员主语言日语；夹杂须本人精通且对象能懂。禁止全员抄角色中文。`,
+      `- 红包祝福语 / 转账备注跟**发出方**主语言（金额数字除外）。`,
+      `- 禁止把译文写成另一条普通气泡；日语等非译文语言正文须跟 \`[译]\`（若已开启自带翻译）。`,
+      `- 简体中文气泡：大陆简体字形。日语气泡：轻松场合句末「笑」「（笑）」「w」可自然使用。`,
+      ...buildChatTranslationHardLines(syncWanted, trLang, [lang], true),
+    ]
+    return lines.join('\n')
+  }
+
+  if (mode === 'split') {
+    const cLang = normalizeWeChatChatLanguageCode(
+      o.characterSideLanguage ?? o.generateLanguage,
+      WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE,
+    )
+    const pLang = normalizeWeChatChatLanguageCode(
+      o.peerSideLanguage ?? o.generateLanguage,
+      WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE,
+    )
+    const cNative = weChatChatLanguageNativeName(cLang)
+    const cLabel = weChatChatLanguageLabel(cLang)
+    const pNative = weChatChatLanguageNativeName(pLang)
+    const pLabel = weChatChatLanguageLabel(pLang)
+    const lines: string[] = [
+      `【生成语言 · 左右分侧 · 硬项】`,
+      `- **C（角色 / 右侧气泡）**正文必须用 **${cLabel}（${cNative}）**。`,
+      `- **P（联系人 / 左侧气泡）**正文必须用 **${pLabel}（${pNative}）**。`,
+      `- 群聊：**C** 用 ${cNative}；**所有成员侧**（\`G|…\`）统一用 ${pNative}（与左侧联系人侧一致）。`,
+      `- 禁止把 C 侧写成 ${pNative}，也禁止把 P/G 侧写成 ${cNative}（专名可保留）。`,
+      `- 红包祝福语 / 转账备注跟发出方语言（C 侧→${cNative}，P 侧→${pNative}；金额数字除外）。`,
+      `- 禁止中外文混条当正文，也禁止把译文写成另一条普通气泡。`,
+      ...languageHardExtras(cLang),
+      ...(cLang !== pLang ? languageHardExtras(pLang) : []),
+      ...buildChatTranslationHardLines(syncWanted, trLang, [cLang, pLang], cLang !== pLang),
+    ]
+    return lines.join('\n')
+  }
+
+  // unified（默认）
+  const lines: string[] = [
+    `【生成语言 · 硬项】本轮可见输出语言为 **${label}（${native}）**。`,
+    `- 所有普通文字气泡正文必须用 ${native}；禁止中外文混条当正文，也禁止把译文写成另一条普通气泡。`,
+    `- 红包祝福语 / 转账备注也尽量用 ${native}（金额数字除外）。`,
+    ...languageHardExtras(lang),
+    ...buildChatTranslationHardLines(syncWanted, trLang, [lang], false),
+  ]
   return lines.join('\n')
 }
 
@@ -224,7 +327,7 @@ function clampPlotTimestamp(ts: number, spanStartMs: number, storyNowMs: number)
 
 /**
  * 把模型吐出的时间戳收入「剧情现在 − 跨度」区间。
- * 时段/钟点由模型自行判断；此处只做边界夹紧，并尽量平移保留模型原有相对间隔（不按正文关键词改钟点）。
+ * 时段/钟点由模型自行判断（提示词约束铺开）；此处只做边界夹紧与越界平移/压缩，不按「是否同一天」本地改写。
  */
 function remapMessagesIntoPlotSpan<T extends { timestamp: number }>(
   messages: T[],
@@ -505,8 +608,20 @@ export type SpyWechatGenerateOptions = {
   /**
    * 生成语言（备注 / 聊天气泡 / 朋友圈正文）。
    * 默认简体中文；外籍人设可选 en/ja 等。
+   * 聊天「统一语言」模式、以及通讯录/朋友圈，均用此字段。
    */
   generateLanguage?: WeChatChatLanguageCode | string
+  /**
+   * 仅「信息/聊天」生效：
+   * - unified：C/P 同用 generateLanguage
+   * - split：C 用 characterSideLanguage，P/群成员用 peerSideLanguage
+   * - auto_persona：按各人设母语/国籍自动分语言（群聊可多语并存）
+   */
+  chatLanguageMode?: SpyChatLanguageMode | string
+  /** 分侧模式：角色侧（C / 右侧）语言 */
+  characterSideLanguage?: WeChatChatLanguageCode | string
+  /** 分侧模式：联系人侧（P / 左侧；群聊成员侧）语言 */
+  peerSideLanguage?: WeChatChatLanguageCode | string
   /** 是否在每条普通文字气泡后自带 `[译]` 译文 */
   syncTranslation?: boolean
   /** 译文目标语言（默认简体中文） */
@@ -1289,17 +1404,36 @@ ${userAnchorLines.join('\n')}
 `.trim()
       : ''
 
-    const buildBatchUserTask = (metas: ChatTargetMeta[]) => {
+    const minMsg = Math.min(80, Math.max(1, Math.round(Number(o.minMessagesPerContact) || 8)))
+
+    const buildBatchUserTask = (
+      metas: ChatTargetMeta[],
+      opts?: { underfillRetry?: boolean },
+    ) => {
       const ids = metas.map((m) => m.id).join('、')
       const nameHints = metas.map((m) => `「${m.peerCallName}」`).join('、')
       const priorAppendix = buildPriorChatAppendix(metas)
+      const underfillBanner = opts?.underfillRetry
+        ? `
+【条数补全 · 硬项】上一轮这些人可计数气泡 **不足 ${minMsg} 条**（有的只有十来条）。本轮必须每人整块重写到 **≥ ${minMsg} 条**，禁止再偷工减料或用 CL/[译] 虚报条数。
+`.trim()
+        : ''
       return `
 请**一次**为下列全部联系人${isAppend ? '**续写追加**' : '生成'}各自与角色本人之间的私聊（共 ${metas.length} 人，每人一个 <<MIRROR_CHAT>> 块）。
-目标名单（id 必须原样写入每块首行；作息须贴合「关系」）：
+${underfillBanner}
+
+【条数硬项 · 最高优先之一 · 用户设定每人最少 ${minMsg} 条】
+- 每块 **可计数消息行必须 ≥ ${minMsg}**（鼓励 ${minMsg}～${Math.min(80, minMsg + 8)}；**禁止**大约 8～12 条就收工）。
+- **算 1 条**：\`C|\` \`P|\` \`CRP|\` \`PRP|\` \`CTF|\` \`PTF|\` \`CVC|\` \`PVC|\` \`CLOC|\` \`PLOC|\` 以及 \`【系统】…\` 行。
+- **不算条数**：\`CL|…\`（通话旁白挂在 CVC/PVC 上）、\`[译]……\`、空行、说明文字。禁止用 CL 条数凑 ${minMsg}。
+- 达标办法：多簇话题 + 连发碎气泡（同一人连续 2～5 条短句）；宁可多写短句，也不许低于 ${minMsg}。
+- 写完每块前在心里点数；不足则继续补写，达标后再写下一块 / 结束。
+
+目标名单（id 必须原样写入每块首行；作息须贴合「关系」；每人条数 ≥ ${minMsg}）：
 ${metas
           .map((t, i) => {
             const bucket = t.avatarBucket ? `｜头像桶 ${t.avatarBucket}` : ''
-            return `${i + 1}. id=${t.id}｜称呼「${t.peerCallName}」｜备注「${t.label}」｜关系「${t.relationshipNote}」${bucket}`
+            return `${i + 1}. id=${t.id}｜称呼「${t.peerCallName}」｜备注「${t.label}」｜关系「${t.relationshipNote}」｜最少 ${minMsg} 条气泡${bucket}`
           })
           .join('\n')}
 
@@ -1310,6 +1444,7 @@ ${metas
 - 对对方说话用「你」或对方昵称；禁止第三人称指称本会话对象。
 - 称呼符合该二人关系；非恋人禁止「宝宝/宝贝」等，除非世界书明确二人已是情侣。
 - 【禁止】编造「角色 ↔ 现实用户」对话；用户本行由系统复制。
+- **语言不串台（提示词硬项）**：假名名 / 在日 / 日本高校好友 → P 主语言日语（绝大多数气泡日语）。禁止因 C 说中文就把日本好友写成全程中文。双语夹杂仅当本人精通且对方能懂，且不得压过主语言。
 
 【剧情时间铁律 · 最高优先级】
 - 剧情「现在」= **${plotNowLabel}**（毫秒戳 ${storyNowMs}）。**禁止**用现实手机日期当剧情日；**禁止**任何消息时间戳 > ${storyNowMs}（不得出现剧情未来）。
@@ -1319,7 +1454,13 @@ ${metas
           : `全部时间戳必须落在 **${plotStartLabel}**（${spanStartMs}）～ **${plotNowLabel}**（${storyNowMs}），即剧情现在往前 **${spanValue}${unitLabel}内**。`
       }
 - 每块内时间戳单调不减；末几条接近剧情「现在」但不得超过。参考戳：${sampleMid}、${sampleLate}、${storyNowMs}。
-- **时段与作息由你智能判断（硬项）**：结合对话语境、活动氛围，以及该联系人的关系/年龄段/身份，自行决定每段聊天落在合理钟点。系统不做关键词改戳——钟点违和就是你写错。
+${
+  isAppend
+    ? ''
+    : `- 【时间铺开 · 硬项】跨度是 **${spanValue}${unitLabel}**，不是「今天一天」。每块至少拆成 **3～5 簇**话题：最早一簇靠近 **${plotStartLabel}** 附近，最晚一簇靠近 **${plotNowLabel}**；簇间距按跨度拉开（跨月时隔数天～数周，禁止整段聊天落在同一自然日或全挤在剧情「现在」当天）。
+- 簇内气泡可相隔数秒～一两分钟；**簇与簇之间**必须换日历日（或至少隔开数小时以上），禁止「看起来聊了很多但时间戳全是同一天」。
+`
+}- **时段与作息由你智能判断（硬项）**：结合对话语境、活动氛围，以及该联系人的关系/年龄段/身份，自行决定每段聊天落在合理钟点。系统不做关键词改戳——钟点违和就是你写错。
 - **日常作息须像真人（硬项）**：
   - 父母/爷爷奶奶/外公外婆/叔伯姑姨/老师等**长辈**，以及头像桶 elderMale/elderFemale：活跃大致在白天到晚饭后（常见约 7:00–22:00）；**禁止**长辈在凌晨三四点、四五点主动刷屏或闲聊；极少数「醒得早」也最多落在清晨六七点，且内容像早起问候/问吃了没，而不是半夜煲电话粥式连发。
   - 同事/上司/业务往来：优先工作日白天与下班前后；少写工作日凌晨互撩。
@@ -1333,16 +1474,16 @@ ${priorAppendix}
 
 要求：
 1) 名单里每人恰好一块，id 必须是：${ids}（共 ${metas.length} 块，禁止漏人）。
-2) 每块气泡不少于 ${o.minMessagesPerContact} 条（连发碎气泡会自然抬高条数）；可用 C/P、CRP/PRP、CTF/PTF、CVC/PVC+CL、CLOC/PLOC。
+2) **再次强调条数**：每块可计数气泡 **≥ ${minMsg}**（C/P/红包/转账/通话头/位置/系统条；CL 与 [译] 不计）。不够就连发短句补满。
 ${
   o.includeSpecialMessages
-    ? `3) 【特殊消息 · 硬项 · 已勾选】每人块内至少出现 **2 种** 特殊行（从下列四类里选，须用规范行，禁止只写「[红包]」等占位文字）：
+    ? `3) 【特殊消息 · 硬项 · 已勾选】每人块内至少出现 **2 种** 特殊行（从下列四类里选，须用规范行，禁止只写「[红包]」等占位文字）。特殊行计入 ${minMsg}，但通话里的 CL 不计：
    - 语音通话：CVC/PVC|毫秒戳|时长秒|duration（或 rejected / no_answer）；接通时 CL 条数须按时长（约每 10～14 秒一句：1 分钟≈4～8、3 分钟≈13～22、5 分钟≈21～37），禁止长通只写 2～4 句；**禁止一人一句轮流**，须有同侧连说 2～4 行；每行 CL|C/P|对白(声音旁白)；同步翻译时每条 CL 后跟 [译]……；拒接/未接不要 CL
    - 位置：CLOC/PLOC|毫秒戳|地点名|详细地址|距离文案（如「步行约300米」；地址写中文地名，勿写经纬度）
    - 红包：CRP/PRP|毫秒戳|金额|祝福语|pending或opened（一笔只写一侧；联系人→角色领取：仅 PRP|opened +【系统】你领取了对方的红包，禁止再写 CRP 发出气泡；角色→联系人：仅 CRP；已领系统条对应「对方领取了你的红包」）
    - 转账：CTF/PTF|毫秒戳|金额|备注|pending或accepted或returned（accepted 可下一行【系统】你已收款 / 对方已收款）
    关系越近（恋人/家人/死党）越适合红包/转账/通话；同事/点头之交优先位置或短通话。禁止全员同模板复制。窥探用户不可代领，已领态须用 opened/accepted + 系统条表达。`
-    : `3) 可偶尔穿插语音通话（CVC/PVC+CL）/ 位置（CLOC/PLOC）/ 红包（CRP/PRP）/ 转账（CTF/PTF）；未强制时宁可少写也不要乱写。接通通话的 CL 须按时长密度（约每 10～14 秒一句），禁止一人一句轮流、禁止长通只写开场几句；半角括号内写声音旁白。`
+    : `3) 可偶尔穿插语音通话（CVC/PVC+CL）/ 位置（CLOC/PLOC）/ 红包（CRP/PRP）/ 转账（CTF/PTF）；未强制时宁可少写也不要乱写。接通通话的 CL 须按时长密度（约每 10～14 秒一句），禁止一人一句轮流、禁止长通只写开场几句；半角括号内写声音旁白。CL 仍不计入 ${minMsg}。`
 }
 4) **内容先贴人设与关系**，再用碎气泡呈现；不同联系人语气/话题要明显不同；禁止为「看起来像真人」而 OOC。
 5) 聊天偏向 / 自定义（按点名分发到对应称呼 ${nameHints}；未点名的通则人人适用；偏向也不能压过人设）：
@@ -1416,32 +1557,44 @@ ${SPY_CHATS_BATCH_FORMAT}
       }
     }
 
-    // 遗漏补全：剩余多少人都只再打 **一整轮**，禁止按人拆轮
-    const missing = !chatGenAborted
-      ? targetMetas.filter((t) => !(messagesByContact.get(t.id) || []).length)
+    // 遗漏 / 条数不足：只再整批打 **一整轮**（提示词要求写满 minMsg），禁止按人拆轮
+    const needRefill = !chatGenAborted
+      ? targetMetas.filter((t) => (messagesByContact.get(t.id) || []).length < minMsg)
       : []
-    if (missing.length) {
+    if (needRefill.length) {
+      const emptyN = needRefill.filter((t) => !(messagesByContact.get(t.id) || []).length).length
+      const shortN = needRefill.length - emptyN
       params.onProgress?.(
-        missing.length === targetMetas.length
-          ? `批量未解析到聊天，正在整批重试（${missing.length} 人·仅 1 轮）…`
-          : `已生成部分会话；正在一次补全剩余 ${missing.length} 人（仅 1 轮）…`,
+        emptyN === needRefill.length
+          ? `批量未解析到聊天，正在整批重试（${needRefill.length} 人·每人≥${minMsg}条·仅 1 轮）…`
+          : shortN === needRefill.length
+            ? `有 ${shortN} 人不足 ${minMsg} 条，正在整批按提示词补满（仅 1 轮）…`
+            : `缺 ${emptyN} 人、另有 ${shortN} 人不足 ${minMsg} 条；正在一次补全（仅 1 轮）…`,
       )
       try {
         throwIfAborted(signal)
         const fill = await askModelMarkupWithRetry(
           cfg,
           `${baseSystem}\n\n${strictGuard}`,
-          buildBatchUserTask(missing),
+          buildBatchUserTask(needRefill, { underfillRetry: true }),
           (raw) => {
             const parsed = parseSpyChatsBatchMarkup(raw)
             if (!parsed) return null
-            const hit = missing.some((t) => (parsed.byContactId[t.id] || []).length > 0)
+            const hit = needRefill.some((t) => (parsed.byContactId[t.id] || []).length > 0)
             return hit ? parsed : null
           },
           2,
           signal,
         )
-        applyBatchPayload(fill.byContactId)
+        // 仅当新结果条数不低于旧结果时才覆盖，避免补全轮更短把已有会话冲短
+        for (const meta of needRefill) {
+          const next = fill.byContactId[meta.id]
+          if (!next?.length) continue
+          const prev = messagesByContact.get(meta.id) || []
+          if (next.length >= prev.length) {
+            applyBatchPayload({ [meta.id]: next })
+          }
+        }
       } catch (e) {
         if (isAbortError(e) || signal?.aborted) {
           chatGenAborted = true
@@ -1452,11 +1605,13 @@ ${SPY_CHATS_BATCH_FORMAT}
       }
     }
 
-    const stillMissing = targetMetas.filter((t) => !(messagesByContact.get(t.id) || []).length)
-    if (stillMissing.length) {
+    const stillShort = targetMetas.filter((t) => (messagesByContact.get(t.id) || []).length < minMsg)
+    if (stillShort.length) {
       console.warn(
-        `[镜像微信] 仍有 ${stillMissing.length} 人无会话（已放弃单人兜底）：`,
-        stillMissing.map((m) => m.label).join('、'),
+        `[镜像微信] 仍有 ${stillShort.length} 人会话条数 < ${minMsg}（已放弃继续拆轮）：`,
+        stillShort
+          .map((m) => `${m.label}(${(messagesByContact.get(m.id) || []).length})`)
+          .join('、'),
       )
     }
 
@@ -1506,10 +1661,12 @@ ${dmToneLines}
   - **禁止**输出头像 URL、data:、http 链接；只写桶名。
   - 陌生人关系≤20 字必填：写清「为何同群却不是好友」（如前同事·已删好友、高中同学未加好友、同城网友）；禁止写成星标好友。
 - 消息：C=角色；G|ts|成员键|正文（成员键必须与上方成员一致）。禁止把现实 App 用户写进群。
-- 时间戳落在 ${spanStartMs}～${storyNowMs}（剧情现在 ${plotNowLabel}）；**禁止**任何戳 > ${storyNowMs}。
+- 时间戳落在 ${spanStartMs}～${storyNowMs}（${plotStartLabel} → ${plotNowLabel}，跨度 ${spanValue}${unitLabel}）；**禁止**任何戳 > ${storyNowMs}。
+- 【时间铺开】每群至少 3 簇话题，最早靠近跨度起点、最晚靠近现在；跨月时簇间距数天～数周，**禁止**全挤同一天。
 - **时段与作息由你智能判断**：按群聊语境与成员身份对齐钟点（晚间场景勿打下午戳）；长辈/elder 桶成员禁止凌晨三四点、四五点在群里刷屏；系统不做关键词改戳。
-- 每群气泡不少于 ${Math.max(6, Math.round(Number(o.minMessagesPerContact) || 8))} 条。
+- 【条数硬项】每群可计数气泡（C/G 行）不少于 **${Math.max(6, minMsg)}** 条；CL/[译] 不计。不够就连发短句补满。
 - 自定义要求：${groupBias}
+- **语言不串台**：假名/在日成员主语言日语；双语夹杂仅当本人精通且对象能懂。禁止因角色说中文就让日本成员整段改中文。
 
 【私聊↔群聊态度统一 · 最高优先之一】
 - 上表每人的「关系」+「私聊近端气质」是该人在群里的人设锚点。

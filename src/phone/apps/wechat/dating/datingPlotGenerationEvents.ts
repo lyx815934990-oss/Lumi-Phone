@@ -11,6 +11,8 @@ export type DatingPlotGenerationCompleteDetail = {
   linkedNpcNames: string[]
   /** 开启配图但未成功展示时的提示（如解析失败、CORS 等） */
   plotImageWarning?: string
+  /** SSE 中途断线但已保留半成品正文时的提示 */
+  streamPartialWarning?: string
 }
 
 export type DatingPlotGenerationErrorDetail = {
@@ -23,10 +25,13 @@ const pendingByChar = new Map<string, number>()
 const contentHintChars = new Set<string>()
 const genListeners = new Set<() => void>()
 const contentHintListeners = new Set<() => void>()
-/** 防卡死：整轮（记忆准备+completion+落库后处理）超时后强制解锁 loading */
+/** 当前角色进行中的剧情请求 AbortController（0→1 时新建） */
+const abortByChar = new Map<string, AbortController>()
+/** 防卡死：整轮（记忆准备+completion+落库后处理）超时后强制解锁 loading；completion 不设上限时不启用 */
 const watchdogByChar = new Map<string, number>()
-/** 记忆/时钟同步等预请求上限 + completion 上限 + 落库缓冲 */
-const GENERATION_WATCHDOG_MS = DATING_PLOT_COMPLETION_TIMEOUT_MS + 120_000
+/** 记忆/时钟同步等预请求上限 + completion 上限 + 落库缓冲（仅 completion 有上限时生效） */
+const GENERATION_WATCHDOG_MS =
+  DATING_PLOT_COMPLETION_TIMEOUT_MS > 0 ? DATING_PLOT_COMPLETION_TIMEOUT_MS + 120_000 : 0
 
 function emitGenChange() {
   for (const fn of genListeners) fn()
@@ -50,11 +55,14 @@ function armGenerationWatchdog(characterId: string) {
   const id = characterId.trim()
   if (!id || typeof window === 'undefined') return
   clearGenerationWatchdog(id)
+  // completion 不设客户端超时：不强制掐死 loading，等 fetch 自然结束/失败
+  if (!(GENERATION_WATCHDOG_MS > 0)) return
   const t = window.setTimeout(() => {
     watchdogByChar.delete(id)
     if ((pendingByChar.get(id) ?? 0) <= 0) return
     pendingByChar.delete(id)
     contentHintChars.delete(id)
+    abortByChar.delete(id)
     emitGenChange()
     emitContentHintChange()
     dispatchDatingPlotGenerationError({
@@ -97,10 +105,34 @@ export function getDatingPlotGeneratingSnapshot(): Record<string, number> {
   return out
 }
 
+/** 当前角色剧情生成用的 AbortSignal（未在生成中则无） */
+export function getDatingPlotGenerationSignal(characterId: string): AbortSignal | undefined {
+  const id = characterId.trim()
+  if (!id) return undefined
+  return abortByChar.get(id)?.signal
+}
+
+/**
+ * 用户停止生成：中止进行中的 fetch。
+ * 不直接清 loading——由异步任务 catch/finally 收尾；中转侧可能仍已计费。
+ */
+export function abortDatingPlotGeneration(characterId: string): boolean {
+  const id = characterId.trim()
+  if (!id) return false
+  const ctrl = abortByChar.get(id)
+  if (!ctrl || ctrl.signal.aborted) return false
+  ctrl.abort()
+  return true
+}
+
 export function beginDatingPlotGeneration(characterId: string): void {
   const id = characterId.trim()
   if (!id) return
-  pendingByChar.set(id, (pendingByChar.get(id) ?? 0) + 1)
+  const prev = pendingByChar.get(id) ?? 0
+  if (prev <= 0) {
+    abortByChar.set(id, new AbortController())
+  }
+  pendingByChar.set(id, prev + 1)
   armGenerationWatchdog(id)
   emitGenChange()
 }
@@ -111,6 +143,7 @@ export function endDatingPlotGeneration(characterId: string): void {
   const next = (pendingByChar.get(id) ?? 1) - 1
   if (next <= 0) {
     pendingByChar.delete(id)
+    abortByChar.delete(id)
     clearGenerationWatchdog(id)
   } else {
     pendingByChar.set(id, next)
@@ -145,6 +178,7 @@ export function dispatchDatingPlotGenerationComplete(detail: DatingPlotGeneratio
         characterName: name,
         linkedNpcNames: (detail.linkedNpcNames ?? []).map((n) => String(n).trim()).filter(Boolean),
         plotImageWarning: detail.plotImageWarning?.trim() || undefined,
+        streamPartialWarning: detail.streamPartialWarning?.trim() || undefined,
       },
     }),
   )

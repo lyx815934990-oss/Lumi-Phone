@@ -191,7 +191,7 @@ const DISCOVER_ACTIONS: DiscoverAction[] = [
   { id: 'lumi-live', label: '浮光直播', icon: Radio },
   { id: 'subconscious-archives', label: '私语档案', icon: ScrollText },
   { id: 'observation-notes', label: '私藏侧写', icon: Feather },
-  { id: 'fanfic-forum', label: '同人论坛', icon: BookHeart },
+  { id: 'fanfic-forum', label: '同人通讯社', icon: BookHeart },
   { id: 'couple-space', label: '情侣空间', icon: Heart },
   { id: 'jubensha', label: '剧本杀馆', icon: BookOpen },
   { id: 'bead-craft', label: '一起拼豆', icon: LayoutGrid },
@@ -374,6 +374,7 @@ export function WeChatDiscoverInstagram({
           onBack={() => setActiveView('list')}
           personaContacts={personaContacts}
           userDisplayName={currentUserName?.trim() || wechatNickname?.trim() || '我'}
+          wechatAvatarUrl={wechatAvatarUrl}
           wechatAccountId={wechatAccountId}
           playerIdentityId={playerIdentityId}
         />

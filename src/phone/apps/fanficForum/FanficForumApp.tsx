@@ -5,6 +5,7 @@ export function FanficForumApp({
   onBack,
   personaContacts = [],
   userDisplayName,
+  wechatAvatarUrl,
   wechatAccountId,
   playerIdentityId,
   className = '',
@@ -12,6 +13,7 @@ export function FanficForumApp({
   onBack: () => void
   personaContacts?: WeChatPersonaContact[]
   userDisplayName: string
+  wechatAvatarUrl?: string | null
   wechatAccountId?: string | null
   playerIdentityId?: string | null
   className?: string
@@ -21,6 +23,7 @@ export function FanficForumApp({
       onBack={onBack}
       personaContacts={personaContacts}
       userDisplayName={userDisplayName}
+      wechatAvatarUrl={wechatAvatarUrl}
       wechatAccountId={wechatAccountId}
       playerIdentityId={playerIdentityId}
       className={className}

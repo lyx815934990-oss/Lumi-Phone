@@ -23,6 +23,7 @@ export function messageContentSummary(m: WeChatChatMessage): string {
     return `${prefix} ${m.listenTrackShare.targetTitle}`
   }
   if (m.pulseShare) return `[微博] ${m.pulseShare.authorName}`
+  if (m.forumShare) return `[同人] ${m.forumShare.title}`
   const text = (m.content ?? '').trim()
   if (text.startsWith(LEGACY_MERGE_FORWARD_PREFIX)) return '[聊天记录]'
   return text || '...'

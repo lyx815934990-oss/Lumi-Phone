@@ -12,13 +12,11 @@ export function ContactProfileSettingsScreen({
   characterId,
   onOpenRecommend,
   onOpenComplaint,
-  onBlockedAndBack,
   onDeleteContact,
 }: {
   characterId: string
   onOpenRecommend: () => void
   onOpenComplaint: () => void
-  onBlockedAndBack: () => void
   onDeleteContact: (notifyPeer: boolean, chatHistoryMode: 'hard' | 'soft') => void | Promise<void>
 }) {
   const { state, replaceWeChatPersonaContacts } = useCustomization()
@@ -27,7 +25,6 @@ export function ContactProfileSettingsScreen({
   const [remarkDraft, setRemarkDraft] = useState('')
   const [remarkOpen, setRemarkOpen] = useState(false)
   const [remarkExitConfirmOpen, setRemarkExitConfirmOpen] = useState(false)
-  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false)
   const [deletePanelOpen, setDeletePanelOpen] = useState(false)
   /** 1 = 先选是否告知对方，2 = 再选聊天记录 / 是否清除 AI 上下文 */
   const [deletePanelStep, setDeletePanelStep] = useState<1 | 2>(1)
@@ -67,11 +64,14 @@ export function ContactProfileSettingsScreen({
   )
 
   const updateContact = useCallback(
-    async (patch: Partial<Pick<Character, 'remark' | 'isStarred' | 'isBlocked' | 'momentsPermission'>>) => {
+    async (
+      patch: Partial<Pick<Character, 'remark' | 'isStarred' | 'momentsPermission'>>,
+    ) => {
       const next = await personaDb.updateCharacterContactSettings(characterId, patch)
       if (!next) return
       setCharacter(next)
       syncPersonaContact(next)
+      return next
     },
     [characterId, syncPersonaContact],
   )
@@ -117,7 +117,6 @@ export function ContactProfileSettingsScreen({
               setDeletePanelOpen(true)
             }}
           />
-          <DangerCardButton label="加入黑名单" onClick={() => setBlockConfirmOpen(true)} />
           <DangerCardButton label="投诉" onClick={onOpenComplaint} />
         </div>
       </div>
@@ -320,39 +319,6 @@ export function ContactProfileSettingsScreen({
         ) : null}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {blockConfirmOpen ? (
-          <ModalMask dark onClose={() => setBlockConfirmOpen(false)}>
-            <motion.div
-              initial={disableTransitions ? false : { opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={disableTransitions ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.96 }}
-              transition={disableTransitions ? { duration: 0 } : { duration: 0.18 }}
-              className="mx-8 overflow-hidden rounded-[14px] bg-white"
-            >
-              <div className="px-5 pb-4 pt-5 text-center">
-                <div className="text-[17px] font-medium text-black">加入黑名单</div>
-                <p className="mt-2 text-[14px] leading-6 text-[#666]">
-                  加入黑名单后，你将不再收到对方的消息，并且你们互相看不到对方的朋友圈更新
-                </p>
-              </div>
-              <div className="flex border-t border-[#e5e5e5]">
-                <DialogButton label="取消" onClick={() => setBlockConfirmOpen(false)} />
-                <div className="w-px bg-[#e5e5e5]" aria-hidden />
-                <DialogButton
-                  label="确定"
-                  danger
-                  onClick={() => {
-                    void updateContact({ isBlocked: true })
-                    setBlockConfirmOpen(false)
-                    onBlockedAndBack()
-                  }}
-                />
-              </div>
-            </motion.div>
-          </ModalMask>
-        ) : null}
-      </AnimatePresence>
     </div>
   )
 }

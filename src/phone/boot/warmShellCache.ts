@@ -389,6 +389,7 @@ const APP_IMPORT_BY_ID: Partial<Record<string, () => Promise<unknown>>> = {
   sandbox: () => import('../apps/sandbox/SandboxApp'),
   evolution: () => import('../apps/evolution/EvolutionApp'),
   thinkingChain: () => import('../apps/thinkingChain/ThinkingChainApp'),
+  langStudy: () => import('../apps/langStudy/LangStudyApp'),
   takeout: () => import('../apps/takeout/LumiTasteApp'),
 }
 

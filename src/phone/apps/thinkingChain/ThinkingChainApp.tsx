@@ -12,13 +12,17 @@ import {
 } from 'lucide-react'
 import { useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { CotEntryCard } from './components/CotEntryCard'
+import { CotRegexRuleCard } from './components/CotRegexRuleCard'
 import { SortableCotEntry } from './components/SortableCotEntry'
 import {
+  COT_REGEX_GROUP_OTHER,
   COT_SYSTEM_PRESET_ID,
+  inferCotRegexGroup,
   type CoTEntry,
   type CoTPreset,
   type CotPresetKind,
   type CotPresetScope,
+  type CotRegexRule,
 } from './cotTypes'
 import {
   activateCotPreset,
@@ -26,6 +30,7 @@ import {
   convertCotPresetKind,
   createEmptyCotEntry,
   createEmptyCotPreset,
+  createEmptyCotRegexRule,
   deleteCotPreset,
   downloadSingleCotPreset,
   duplicateCotPreset,
@@ -45,6 +50,27 @@ type Props = { onBack: () => void }
 type Screen =
   | { name: 'home' }
   | { name: 'entries'; presetId: string; draft: CoTPreset }
+
+/** 预设编辑顶栏：条目，或某一正则配套 */
+type EditorTab = { kind: 'entries' } | { kind: 'regex'; pack: string }
+
+function listRegexPacks(rules: CotRegexRule[]): string[] {
+  const order: string[] = []
+  const seen = new Set<string>()
+  for (const r of [...rules].sort((a, b) => a.order - b.order)) {
+    const g = inferCotRegexGroup(r)
+    if (seen.has(g)) continue
+    seen.add(g)
+    order.push(g)
+  }
+  // 「其他」靠后
+  order.sort((a, b) => {
+    if (a === COT_REGEX_GROUP_OTHER) return 1
+    if (b === COT_REGEX_GROUP_OTHER) return -1
+    return a.localeCompare(b, 'zh')
+  })
+  return order
+}
 
 const SCOPE_META: Record<
   CotPresetScope,
@@ -112,6 +138,14 @@ export function ThinkingChainApp({ onBack }: Props) {
   const [hint, setHint] = useState('')
   const [tagFilter, setTagFilter] = useState('')
   const [tagDraft, setTagDraft] = useState('')
+  /** 预设编辑：条目 / 各正则配套分 tab */
+  const [editorTab, setEditorTab] = useState<EditorTab>({ kind: 'entries' })
+  /** 刚添加的正则：默认展开编辑 */
+  const [freshRegexId, setFreshRegexId] = useState<string | null>(null)
+  /** 首页：提示词 / 思维链 */
+  const [homeKind, setHomeKind] = useState<CotPresetKind>('replyStyle')
+  /** 首页：通用 / 线上 / 线下 */
+  const [homeScope, setHomeScope] = useState<CotPresetScope>('online')
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const tokenStats = useMemo(() => getEffectiveCotTokenStats(), [store])
@@ -139,6 +173,8 @@ export function ThinkingChainApp({ onBack }: Props) {
     setQuery('')
     setHint('')
     setTagDraft('')
+    setEditorTab({ kind: 'entries' })
+    setFreshRegexId(null)
     setScreen({
       name: 'entries',
       presetId: preset.id,
@@ -150,8 +186,29 @@ export function ThinkingChainApp({ onBack }: Props) {
           ...e,
           tags: [...(e.tags ?? [])],
         })),
+        regexRules: (preset.regexRules ?? []).map((r) => ({ ...r })),
       },
     })
+  }
+
+  const addRegexRule = (pack?: string) => {
+    if (screen.name !== 'entries') return
+    const list = screen.draft.regexRules ?? []
+    const nextOrder = (list.reduce((m, r) => Math.max(m, r.order), 0) || 0) + 1
+    const group =
+      (pack && pack.trim()) ||
+      (editorTab.kind === 'regex' ? editorTab.pack : '') ||
+      COT_REGEX_GROUP_OTHER
+    const created = createEmptyCotRegexRule(nextOrder, {
+      group: group === COT_REGEX_GROUP_OTHER ? undefined : group,
+    })
+    if (group && group !== COT_REGEX_GROUP_OTHER) {
+      created.group = group
+      if (!created.name.startsWith('【')) created.name = `【${group}】规则 ${nextOrder}`
+    }
+    setFreshRegexId(created.id)
+    setEditorTab({ kind: 'regex', pack: inferCotRegexGroup(created) })
+    patchDraft({ regexRules: [...list, created] })
   }
 
   const onCreate = (scope: CotPresetScope, kind: CotPresetKind) => {
@@ -216,6 +273,9 @@ export function ThinkingChainApp({ onBack }: Props) {
       ...e,
       order: i + 1,
     }))
+    const regexOrdered = [...(screen.draft.regexRules ?? [])]
+      .sort((a, b) => a.order - b.order)
+      .map((r, i) => ({ ...r, order: i + 1 }))
     const saved = saveCotPreset(
       {
         ...screen.draft,
@@ -224,6 +284,7 @@ export function ThinkingChainApp({ onBack }: Props) {
         kind: screen.draft.kind ?? 'thinkingChain',
         tags: screen.draft.tags,
         entries: ordered,
+        regexRules: regexOrdered,
         updatedAt: Date.now(),
       },
       { activate },
@@ -541,52 +602,76 @@ export function ThinkingChainApp({ onBack }: Props) {
     )
   }
 
-  const renderKindBlock = (kind: CotPresetKind) => {
-    const title = kind === 'replyStyle' ? '自定义提示词' : '自定义思维链'
-    const desc =
-      kind === 'replyStyle'
-        ? '始终可生效：线上替换 WECHAT_CORE 扮演主壳（沙盒与输出格式仍保留）；线下替换扮演/写作核心，并覆盖沙盒与禁词硬钉（约会输出壳仍保留）。'
-        : '仅在开启思维链开关时注入：替换内置思维链 / 场记包。'
-    const byScope = presetsByKindScope[kind]
-    const tag = tagFilter.trim()
-    const scopes = (['both', 'online', 'offline'] as const).filter((scope) => {
-      const list = byScope[scope]
-      if (!list.length) return false
-      if (!tag) return true
-      return list.some((p) => p.tags.includes(tag))
-    })
+  const homeKindMeta =
+    homeKind === 'replyStyle'
+      ? {
+          title: '自定义提示词',
+          desc: '始终可生效：线上替换扮演主壳（沙盒与格式仍保留）；线下替换扮演/写作，并覆盖沙盒与禁词硬钉。',
+          createLabel: '新建提示词',
+        }
+      : {
+          title: '自定义思维链',
+          desc: '仅在开启思维链开关时注入：替换内置思维链 / 场记包。',
+          createLabel: '新建思维链',
+        }
 
-    return (
-      <div key={kind} className="mt-5">
-        <div className="mx-4 mb-1">
-          <h2
-            className="text-[17px] font-bold"
-            style={{ color: cotTheme.text, fontFamily: cotTheme.sans }}
-          >
-            {title}
-          </h2>
-          <p className="mt-1 text-[12px] leading-relaxed" style={{ color: cotTheme.muted }}>
-            {desc}
-          </p>
-        </div>
-        {!scopes.length ? (
-          <p className="px-5 py-6 text-center text-[13px]" style={{ color: cotTheme.muted }}>
-            {tag
-              ? `标签 #${tag} 下暂无${title}`
-              : `暂无${title}，点上方「新建${kind === 'replyStyle' ? '提示词' : '思维链'}」开始`}
-          </p>
-        ) : (
-          scopes.map((scope) => (
-            <div key={`${kind}-${scope}`}>{renderSection(scope, byScope[scope], kind)}</div>
-          ))
-        )}
-      </div>
-    )
-  }
+  const homeScopeCounts = useMemo(() => {
+    const by = presetsByKindScope[homeKind]
+    const count = (list: CoTPreset[]) => filterByTag(list).length
+    return {
+      both: count(by.both),
+      online: count(by.online),
+      offline: count(by.offline),
+    }
+  }, [presetsByKindScope, homeKind, tagFilter])
 
   if (screen.name === 'entries') {
     const draft = screen.draft
     const draftTokens = estimatePresetEffectiveTokens(draft)
+    const sortedRegexRules = (draft.regexRules ?? [])
+      .slice()
+      .sort((a, b) => a.order - b.order)
+    const regexPacks = listRegexPacks(sortedRegexRules)
+    const activeRegexPack =
+      editorTab.kind === 'regex'
+        ? regexPacks.includes(editorTab.pack)
+          ? editorTab.pack
+          : regexPacks[0] ?? COT_REGEX_GROUP_OTHER
+        : null
+    const visibleRegexRules =
+      activeRegexPack == null
+        ? []
+        : sortedRegexRules.filter((r) => inferCotRegexGroup(r) === activeRegexPack)
+    const editorTabs: Array<
+      | { id: 'entries'; label: string; count: string }
+      | { id: string; pack: string; label: string; count: string }
+    > = [
+      {
+        id: 'entries',
+        label: '条目',
+        count: `${enabledCount(draft)}/${draft.entries.length}`,
+      },
+      ...regexPacks.map((pack) => {
+        const inPack = sortedRegexRules.filter((r) => inferCotRegexGroup(r) === pack)
+        const on = inPack.filter((r) => r.enabled).length
+        return {
+          id: `regex:${pack}`,
+          pack,
+          label: pack,
+          count: `${on}/${inPack.length}`,
+        }
+      }),
+    ]
+    // 尚无正则时仍给一个「其他」入口，方便新建配套
+    if (!regexPacks.length) {
+      editorTabs.push({
+        id: `regex:${COT_REGEX_GROUP_OTHER}`,
+        pack: COT_REGEX_GROUP_OTHER,
+        label: '正则',
+        count: '0',
+      })
+    }
+
     return (
       <div className="flex h-full min-h-0 flex-col" style={{ background: cotTheme.bg }}>
         <header
@@ -751,131 +836,255 @@ export function ThinkingChainApp({ onBack }: Props) {
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 px-4 py-3">
-          <button
-            type="button"
-            onClick={() => {
-              const nextOrder =
-                (draft.entries.reduce((m, e) => Math.max(m, e.order), 0) || 0) + 1
-              patchDraft({
-                entries: [...draft.entries, createEmptyCotEntry(nextOrder)],
-              })
-            }}
-            className="flex size-9 items-center justify-center rounded-xl"
-            style={{
-              background: cotTheme.btnPrimaryBg,
-              color: cotTheme.btnPrimaryText,
-            }}
-            aria-label="新建条目"
-          >
-            <Plus size={16} />
-          </button>
-          <div
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-2"
-            style={{ background: cotTheme.card, border: `1px solid ${cotTheme.border}` }}
-          >
-            <Search size={14} style={{ color: cotTheme.muted }} />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索条目"
-              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none"
-              style={{ color: cotTheme.text }}
-            />
-          </div>
-          <span
-            className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium"
-            style={{ background: cotTheme.goldSoft, color: cotTheme.text }}
-          >
-            拖动手柄排序
-          </span>
+        <div
+          className="mx-4 mt-3 flex shrink-0 gap-1 overflow-x-auto rounded-xl p-1 [scrollbar-width:thin]"
+          style={{ background: cotTheme.card, border: `1px solid ${cotTheme.border}` }}
+          role="tablist"
+          aria-label="预设编辑分区"
+        >
+          {editorTabs.map((tab) => {
+            const active =
+              tab.id === 'entries'
+                ? editorTab.kind === 'entries'
+                : editorTab.kind === 'regex' &&
+                  (activeRegexPack ?? editorTab.pack) === ('pack' in tab ? tab.pack : '')
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => {
+                  if (tab.id === 'entries') setEditorTab({ kind: 'entries' })
+                  else if ('pack' in tab) setEditorTab({ kind: 'regex', pack: tab.pack })
+                }}
+                className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold transition"
+                style={{
+                  background: active ? cotTheme.btnPrimaryBg : 'transparent',
+                  color: active ? cotTheme.btnPrimaryText : cotTheme.muted,
+                }}
+              >
+                <span className="max-w-[7.5rem] truncate">{tab.label}</span>
+                <span
+                  className="rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
+                  style={{
+                    background: active ? 'rgba(255,255,255,0.18)' : cotTheme.goldSoft,
+                    color: active ? cotTheme.btnPrimaryText : cotTheme.text,
+                  }}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            )
+          })}
         </div>
 
-        <p className="px-4 pb-2 text-[11px]" style={{ color: cotTheme.muted }}>
-          列表按你拖动的顺序排列；注入时跳过关闭的条目，已开启的按列表从上到下依次拼接。按住左侧 ≡ 可拖动排序。
-          {query.trim() ? ' 搜索中暂不可拖动。' : ''}
-        </p>
-
-        <div className="min-h-0 flex-1 overflow-y-auto pb-8">
-          {filteredEntries.length ? (
-            query.trim() ? (
-              filteredEntries.map((entry, idx) => (
-                <CotEntryCard
-                  key={entry.id}
-                  entry={entry}
-                  indexLabel={idx + 1}
-                  presetKind={draft.kind ?? 'thinkingChain'}
-                  onChange={(next) => {
-                    if (next.enabled !== entry.enabled) {
-                      const merged = draft.entries.map((e) =>
-                        e.id === entry.id ? next : e,
-                      )
-                      patchDraft({
-                        entries: sortCotEntriesDisplay(merged).map((e, i) => ({
-                          ...e,
-                          order: i + 1,
-                        })),
-                      })
-                    } else {
-                      patchEntry(entry.id, next)
-                    }
-                  }}
-                  onDelete={() =>
-                    patchDraft({
-                      entries: draft.entries.filter((e) => e.id !== entry.id),
-                    })
-                  }
-                />
-              ))
-            ) : (
-              <Reorder.Group
-                axis="y"
-                values={filteredEntries}
-                onReorder={(next) => {
-                  const renumbered = next.map((e, i) => ({ ...e, order: i + 1 }))
-                  patchDraft({ entries: renumbered })
+        {editorTab.kind === 'entries' ? (
+          <>
+            <div className="flex shrink-0 items-center gap-2 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const nextOrder =
+                    (draft.entries.reduce((m, e) => Math.max(m, e.order), 0) || 0) + 1
+                  patchDraft({
+                    entries: [...draft.entries, createEmptyCotEntry(nextOrder)],
+                  })
                 }}
-                className="flex flex-col"
+                className="flex size-9 items-center justify-center rounded-xl"
+                style={{
+                  background: cotTheme.btnPrimaryBg,
+                  color: cotTheme.btnPrimaryText,
+                }}
+                aria-label="新建条目"
               >
-                {filteredEntries.map((entry, idx) => (
-                  <SortableCotEntry
-                    key={entry.id}
-                    entry={entry}
-                    indexLabel={idx + 1}
-                    presetKind={draft.kind ?? 'thinkingChain'}
-                    onChange={(next) => {
-                      if (next.enabled !== entry.enabled) {
-                        const merged = draft.entries.map((e) =>
-                          e.id === entry.id ? next : e,
-                        )
+                <Plus size={16} />
+              </button>
+              <div
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-2"
+                style={{ background: cotTheme.card, border: `1px solid ${cotTheme.border}` }}
+              >
+                <Search size={14} style={{ color: cotTheme.muted }} />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="搜索条目"
+                  className="min-w-0 flex-1 bg-transparent text-[13px] outline-none"
+                  style={{ color: cotTheme.text }}
+                />
+              </div>
+              <span
+                className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium"
+                style={{ background: cotTheme.goldSoft, color: cotTheme.text }}
+              >
+                拖动手柄排序
+              </span>
+            </div>
+
+            <p className="px-4 pb-2 text-[11px]" style={{ color: cotTheme.muted }}>
+              列表按你拖动的顺序排列；注入时跳过关闭的条目，已开启的按列表从上到下依次拼接。按住左侧 ≡
+              可拖动排序。
+              {query.trim() ? ' 搜索中暂不可拖动。' : ''}
+            </p>
+
+            <div className="min-h-0 flex-1 overflow-y-auto pb-8">
+              {filteredEntries.length ? (
+                query.trim() ? (
+                  filteredEntries.map((entry, idx) => (
+                    <CotEntryCard
+                      key={entry.id}
+                      entry={entry}
+                      indexLabel={idx + 1}
+                      presetKind={draft.kind ?? 'thinkingChain'}
+                      onChange={(next) => {
+                        if (next.enabled !== entry.enabled) {
+                          const merged = draft.entries.map((e) =>
+                            e.id === entry.id ? next : e,
+                          )
+                          patchDraft({
+                            entries: sortCotEntriesDisplay(merged).map((e, i) => ({
+                              ...e,
+                              order: i + 1,
+                            })),
+                          })
+                        } else {
+                          patchEntry(entry.id, next)
+                        }
+                      }}
+                      onDelete={() =>
                         patchDraft({
-                          entries: sortCotEntriesDisplay(merged).map((e, i) => ({
-                            ...e,
-                            order: i + 1,
-                          })),
+                          entries: draft.entries.filter((e) => e.id !== entry.id),
                         })
-                      } else {
-                        patchEntry(entry.id, next)
+                      }
+                    />
+                  ))
+                ) : (
+                  <Reorder.Group
+                    axis="y"
+                    values={filteredEntries}
+                    onReorder={(next) => {
+                      const renumbered = next.map((e, i) => ({ ...e, order: i + 1 }))
+                      patchDraft({ entries: renumbered })
+                    }}
+                    className="flex flex-col"
+                  >
+                    {filteredEntries.map((entry, idx) => (
+                      <SortableCotEntry
+                        key={entry.id}
+                        entry={entry}
+                        indexLabel={idx + 1}
+                        presetKind={draft.kind ?? 'thinkingChain'}
+                        onChange={(next) => {
+                          if (next.enabled !== entry.enabled) {
+                            const merged = draft.entries.map((e) =>
+                              e.id === entry.id ? next : e,
+                            )
+                            patchDraft({
+                              entries: sortCotEntriesDisplay(merged).map((e, i) => ({
+                                ...e,
+                                order: i + 1,
+                              })),
+                            })
+                          } else {
+                            patchEntry(entry.id, next)
+                          }
+                        }}
+                        onDelete={() =>
+                          patchDraft({
+                            entries: draft.entries.filter((e) => e.id !== entry.id),
+                          })
+                        }
+                      />
+                    ))}
+                  </Reorder.Group>
+                )
+              ) : (
+                <p
+                  className="px-6 py-16 text-center text-[13px] leading-relaxed"
+                  style={{ color: cotTheme.muted }}
+                >
+                  {query.trim() ? '无匹配条目' : '还没有条目。点 + 新建。'}
+                </p>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex shrink-0 items-center gap-2 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => addRegexRule(activeRegexPack ?? COT_REGEX_GROUP_OTHER)}
+                className="flex size-9 items-center justify-center rounded-xl"
+                style={{
+                  background: cotTheme.btnPrimaryBg,
+                  color: cotTheme.btnPrimaryText,
+                }}
+                aria-label="添加正则"
+              >
+                <Plus size={16} />
+              </button>
+              <p className="min-w-0 flex-1 text-[11px] leading-relaxed" style={{ color: cotTheme.muted }}>
+                配套「{activeRegexPack ?? COT_REGEX_GROUP_OTHER}
+                」· 仅本预设生效。按名称【配套】自动分 tab；点标题可展开编辑。
+              </p>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto pb-8">
+              {visibleRegexRules.length ? (
+                visibleRegexRules.map((rule) => (
+                  <CotRegexRuleCard
+                    key={rule.id}
+                    rule={rule}
+                    defaultOpen={rule.id === freshRegexId}
+                    onChange={(next) => {
+                      const list = draft.regexRules ?? []
+                      // 改名可能导致换配套：同步 group 并必要时切 tab
+                      const pack = inferCotRegexGroup(next)
+                      const synced =
+                        next.group === pack
+                          ? next
+                          : { ...next, group: pack === COT_REGEX_GROUP_OTHER ? undefined : pack }
+                      patchDraft({
+                        regexRules: list.map((r) => (r.id === rule.id ? synced : r)),
+                      })
+                      if (editorTab.kind === 'regex' && pack !== editorTab.pack) {
+                        setEditorTab({ kind: 'regex', pack })
                       }
                     }}
-                    onDelete={() =>
+                    onDelete={() => {
+                      if (freshRegexId === rule.id) setFreshRegexId(null)
                       patchDraft({
-                        entries: draft.entries.filter((e) => e.id !== entry.id),
+                        regexRules: (draft.regexRules ?? []).filter((r) => r.id !== rule.id),
                       })
-                    }
+                    }}
                   />
-                ))}
-              </Reorder.Group>
-            )
-          ) : (
-            <p
-              className="px-6 py-16 text-center text-[13px] leading-relaxed"
-              style={{ color: cotTheme.muted }}
-            >
-              {query.trim() ? '无匹配条目' : '还没有条目。点 + 新建。'}
-            </p>
-          )}
-        </div>
+                ))
+              ) : (
+                <p
+                  className="px-6 py-16 text-center text-[13px] leading-relaxed"
+                  style={{ color: cotTheme.muted }}
+                >
+                  「{activeRegexPack ?? '正则'}」还没有规则。点 + 添加。
+                </p>
+              )}
+              <div className="px-4 pb-10 pt-3">
+                <button
+                  type="button"
+                  onClick={() => addRegexRule(activeRegexPack ?? COT_REGEX_GROUP_OTHER)}
+                  className="w-full rounded-xl border border-dashed py-2.5 text-[13px] font-medium"
+                  style={{
+                    borderColor: cotTheme.borderStrong,
+                    color: cotTheme.muted,
+                    background: cotTheme.card,
+                  }}
+                >
+                  + 添加「{activeRegexPack ?? COT_REGEX_GROUP_OTHER}」正则
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
         {hint ? (
           <p className="px-4 pb-3 text-center text-[12px]" style={{ color: cotTheme.gold }}>
             {hint}
@@ -888,7 +1097,7 @@ export function ThinkingChainApp({ onBack }: Props) {
   return (
     <div className="flex h-full min-h-0 flex-col" style={{ background: cotTheme.bg }}>
       <header
-        className="flex shrink-0 items-center gap-2 px-3 pb-3"
+        className="flex shrink-0 items-center gap-2 px-3 pb-2"
         style={{
           borderBottom: `1px solid ${cotTheme.border}`,
           paddingTop: 'max(12px, env(safe-area-inset-top, 0px))',
@@ -917,7 +1126,96 @@ export function ThinkingChainApp({ onBack }: Props) {
             文心
           </h1>
         </div>
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[12px] font-medium"
+          style={{
+            background: cotTheme.btnSecondaryBg,
+            color: cotTheme.btnSecondaryText,
+            border: `1.5px solid ${cotTheme.btnSecondaryBorder}`,
+          }}
+        >
+          <Upload size={14} />
+          导入
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null
+            void onImportFile(f)
+            e.target.value = ''
+          }}
+        />
       </header>
+
+      {/* 一级 Tab：提示词 / 思维链 */}
+      <div
+        className="mx-4 mt-3 flex shrink-0 rounded-2xl p-1"
+        style={{ background: cotTheme.editBg, border: `1px solid ${cotTheme.border}` }}
+        role="tablist"
+        aria-label="预设类型"
+      >
+        {(
+          [
+            { id: 'replyStyle' as const, label: '提示词' },
+            { id: 'thinkingChain' as const, label: '思维链' },
+          ] as const
+        ).map((tab) => {
+          const active = homeKind === tab.id
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setHomeKind(tab.id)}
+              className="min-w-0 flex-1 rounded-xl py-2.5 text-[13px] font-semibold transition"
+              style={{
+                background: active ? cotTheme.card : 'transparent',
+                color: active ? cotTheme.text : cotTheme.muted,
+                boxShadow: active ? '0 4px 14px rgba(45,42,38,0.06)' : 'none',
+              }}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* 二级 Tab：通用 / 线上 / 线下 */}
+      <div
+        className="mx-4 mt-2.5 flex shrink-0 gap-1.5"
+        role="tablist"
+        aria-label="作用范围"
+      >
+        {(['both', 'online', 'offline'] as const).map((scope) => {
+          const active = homeScope === scope
+          const m = SCOPE_META[scope]
+          const n = homeScopeCounts[scope]
+          return (
+            <button
+              key={scope}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setHomeScope(scope)}
+              className="min-w-0 flex-1 rounded-full px-2 py-2 text-[12px] font-semibold"
+              style={{
+                background: active ? m.soft : cotTheme.card,
+                color: active ? m.accent : cotTheme.muted,
+                border: `1.5px solid ${active ? m.border : cotTheme.border}`,
+              }}
+            >
+              {m.label}
+              <span className="ml-1 tabular-nums opacity-70">{n}</span>
+            </button>
+          )
+        })}
+      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-10 pt-1">
         <div
@@ -931,7 +1229,7 @@ export function ThinkingChainApp({ onBack }: Props) {
             EFFECTIVE TOKENS · 生效自定义提示词 + 思维链
           </p>
           <p
-            className="mt-1 text-[26px] font-semibold tabular-nums"
+            className="mt-1 text-[22px] font-semibold tabular-nums"
             style={{ color: cotTheme.text, fontFamily: cotTheme.serif }}
           >
             ≈ {tokenStats.tokens}
@@ -947,13 +1245,17 @@ export function ThinkingChainApp({ onBack }: Props) {
         </div>
 
         <p className="px-5 pb-1 pt-3 text-[12px] leading-relaxed" style={{ color: cotTheme.muted }}>
-          回复提示词与思维链可同时启用；各自通用 / 线上 / 线下互斥。线上：替换扮演主壳，沙盒与格式仍保留。线下：替换扮演/写作，并覆盖沙盒与禁词硬钉；约会输出壳与场控（人称/字数/导演等）仍生效。
+          {homeKindMeta.desc} 当前查看：
+          <span style={{ color: SCOPE_META[homeScope].accent, fontWeight: 600 }}>
+            {SCOPE_META[homeScope].label}
+          </span>
+          。提示词与思维链可同时启用；同类型下通用 / 线上 / 线下互斥。
         </p>
 
         <div className="mx-4 mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => onCreate('both', 'replyStyle')}
+            onClick={() => onCreate(homeScope, homeKind)}
             className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-medium"
             style={{
               background: cotTheme.btnPrimaryBg,
@@ -961,44 +1263,8 @@ export function ThinkingChainApp({ onBack }: Props) {
             }}
           >
             <Plus size={14} />
-            新建提示词
+            {homeKindMeta.createLabel}·{SCOPE_META[homeScope].short}
           </button>
-          <button
-            type="button"
-            onClick={() => onCreate('both', 'thinkingChain')}
-            className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-medium"
-            style={{
-              background: cotTheme.btnPrimaryBg,
-              color: cotTheme.btnPrimaryText,
-            }}
-          >
-            <Plus size={14} />
-            新建思维链
-          </button>
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-medium"
-            style={{
-              background: cotTheme.btnSecondaryBg,
-              color: cotTheme.btnSecondaryText,
-              border: `1.5px solid ${cotTheme.btnSecondaryBorder}`,
-            }}
-          >
-            <Upload size={14} />
-            导入
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0] ?? null
-              void onImportFile(f)
-              e.target.value = ''
-            }}
-          />
         </div>
 
         <div className="flex flex-wrap gap-1.5 px-4 pt-3">
@@ -1039,8 +1305,11 @@ export function ThinkingChainApp({ onBack }: Props) {
           </p>
         ) : null}
 
-        {renderKindBlock('replyStyle')}
-        {renderKindBlock('thinkingChain')}
+        {renderSection(
+          homeScope,
+          presetsByKindScope[homeKind][homeScope],
+          homeKind,
+        )}
       </div>
     </div>
   )

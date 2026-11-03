@@ -266,6 +266,10 @@ function diffListEntries(
 function previewScalar(key: keyof LifeMutableSheet, v: unknown): string {
   if (key === 'gender') return formatGender(v)
   if (key === 'educationTrack') return formatEducationTrack(v)
+  if (key === 'ledgerAvatar') {
+    const t = typeof v === 'string' ? v.trim() : ''
+    return t ? '账本专属头像' : '沿用微信头像'
+  }
   if (v == null) return '（空）'
   if (typeof v === 'string') return v.trim() || '（空）'
   if (typeof v === 'number' || typeof v === 'boolean') return String(v)
@@ -284,6 +288,7 @@ const SCALAR_LABELS: Array<[keyof LifeMutableSheet, string]> = [
   ['educationGradeAtStart', '开篇学年'],
   ['educationNote', '学历备注'],
   ['extraNote', '补充'],
+  ['ledgerAvatar', '账本头像'],
   ['ageAtStart', '开篇岁数'],
   ['storyStartDay', '开篇日'],
 ]

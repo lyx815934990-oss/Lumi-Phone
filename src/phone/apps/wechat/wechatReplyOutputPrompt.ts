@@ -20,6 +20,7 @@ import {
 import { buildWeChatTakeoutOrderOutputBlock } from './takeout/takeoutOrderShareAiDirective'
 import { buildWeChatPulseShareOutputBlock } from './pulse/pulseShareAiDirective'
 import { buildWeChatPulseFollowOutputBlock } from './pulse/pulseFollowAiDirective'
+import { buildWechatTaggedBlocksOutputAppendix } from './wechatTaggedBlocks'
 
 /**
  * 线上私聊与线下约会剧情共用的「高质量爱情观」。
@@ -220,13 +221,14 @@ const WECHAT_REPLY_FORMAT_APPENDIX_TEMPLATE = `
 
 ■ 正文硬格式
 - 只输出即将发出的 IM 字；禁 JSON/围栏/元话语/Markdown。
-- **真换行**分段：一行=一气泡；客户端不会本地再切；整轮一行=界面仅一条。
+- **主推标签分条**（见下方【硬性输出格式·标签块】）：每条可见气泡包在 \`<msg>…</msg>\`；兼容旧写法「真换行 = 一气泡」。
+- 客户端按标签/换行切分，不会把讲义再切成气泡；整轮只交一段无标签长文 = 界面易糊成一条。
 
 ■ 图片与表情
 - {{user}} **实拍/截图**：至少 2 可核对细节 + 态度 + 延伸；看不清勿编造。
 - {{user}} **GIF**（\`表情包\` 行）：1～2 句接**内心感受方向**即可，禁长篇解读；**别把意思太当真**——表情包更多缓和气氛/标点情绪；**哭包默认不是真哭**（除非明文说哭）；送戒指等≠真行为。
 - {{user}} **emoji/黄脸**：多数=调气氛，勿字面当真（哭脸默认不是真哭，除非对方明文说哭）。
-- {{char}} **GIF**：须单独整行 \`表情包 \` + 资源引用名（半角空格，无冒号/方括号）；默认 0 条，贴脸才发；**严肃讲事时一般不发**；格式错了客户端会丢。
+- {{char}} **GIF**：须单独整行 \`表情包 \` + 资源引用名（半角空格，无冒号/方括号）；**禁止** \`[表情包]捂脸/害羞\` 等方括号写法；默认 0 条，贴脸才发；**严肃讲事时一般不发**；格式错了客户端会丢。
 - {{char}} **黄脸**：inline \`[呲牙]\` 等，可与文字混排（与 GIF 不是同一种）；严肃场合也宜少用。
 - 禁 \`{"bubbles":[...]}\`；禁输出消息 ID 元信息给 {{user}}。
 
@@ -526,6 +528,11 @@ export type WechatReplyAppendixOptions = {
   /** 聊天语音消息：是否允许语气词 / 情绪标签（缺省均关） */
   voiceSynthToneTokensEnabled?: boolean
   voiceSynthEmotionEnabled?: boolean
+  /**
+   * 同步翻译由聊天模型同轮写 tr/[译] 时为 true。
+   * 副接口翻译或未开同步翻译时为 false/缺省。
+   */
+  syncTranslationByModel?: boolean
 }
 
 /** 线上文风层（可被用户自定义提示词整段替换） */
@@ -548,7 +555,10 @@ export function buildWechatReplyFormatAppendix(options?: WechatReplyAppendixOpti
     allowToneTokens: options?.voiceSynthToneTokensEnabled === true,
     allowEmotion: options?.voiceSynthEmotionEnabled === true,
   })
-  return `${WECHAT_REPLY_FORMAT_APPENDIX_TEMPLATE.replace(
+  const tagged = buildWechatTaggedBlocksOutputAppendix({
+    syncTranslation: options?.syncTranslationByModel === true,
+  })
+  return `${tagged}\n\n${WECHAT_REPLY_FORMAT_APPENDIX_TEMPLATE.replace(
     '{{VOICE_MESSAGE_SYNTH_RULES}}',
     voiceRules,
   )

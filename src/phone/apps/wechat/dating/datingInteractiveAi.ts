@@ -25,6 +25,7 @@ import {
 } from '../../../worldbook/worldbookLoreStore'
 import { personaDb } from '../newFriendsPersona/idb'
 import { buildCharacterCard, buildWorldBookText } from '../wechatChatAi'
+import { buildDatingWechatBlockRelationAppendix } from '../wechatBlock'
 import { buildOfflineDatingSlimMustInjectBody } from './offlineDatingMustInjectPrompts'
 import { getActiveCustomWritingInjectBody } from './datingWritingPresetStore'
 import { resolveOfflineReplyStyleAppendix } from '../../thinkingChain/cotAssemble'
@@ -216,6 +217,7 @@ async function loadPersonaBlocks(character: CharacterInfo): Promise<{
   )
   let personaWb = ''
   let cardHint = clip(character.prompt || '', 1600)
+  let blockAppendix = ''
   try {
     const row = await personaDb.getCharacter(character.id)
     if (row) {
@@ -228,9 +230,13 @@ async function loadPersonaBlocks(character: CharacterInfo): Promise<{
         )
         if (bits.length) cardHint = clip(bits.join('\n'), 1600)
       }
+      blockAppendix = buildDatingWechatBlockRelationAppendix(row)
     }
   } catch {
     /* keep dating CharacterInfo.prompt */
+  }
+  if (blockAppendix) {
+    cardHint = clip(`${cardHint}\n\n${blockAppendix}`, 2200)
   }
   return { personaWb, archiveBlock, cardHint }
 }

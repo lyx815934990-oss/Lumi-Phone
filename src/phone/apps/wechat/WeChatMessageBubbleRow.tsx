@@ -197,9 +197,11 @@ export type WeChatMessageBubbleRowProps = {
   /**
    * 气泡译文（与语音「转文字」同交互）：有值时旁侧显示灰底「翻译」按钮，
    * 展开后面板贴在文字气泡下方并衔接圆角。
+   * `translationFetchable`：尚无译文时也显示按钮（点击后由上层拉取）。
    */
   translationText?: string
   translationExpanded?: boolean
+  translationFetchable?: boolean
   onTranslationToggle?: () => void
   /** X / 聚拢簇：影响非对称圆角 */
   bubbleCluster?: 'single' | 'first' | 'middle' | 'last'
@@ -341,6 +343,7 @@ export function WeChatMessageBubbleRow({
   telegramShowReadChecks = true,
   translationText,
   translationExpanded = false,
+  translationFetchable = false,
   onTranslationToggle,
   bubbleCluster = 'single',
   avatarSizePx,
@@ -398,8 +401,11 @@ export function WeChatMessageBubbleRow({
   const showAvatarVisual = showAvatar && showAvatarColumn
   /** 合并组内无头像行仍占头像+间距宽，与首条气泡对齐 */
   const reserveAvatarGutter = showAvatar
-  const hasTranslation = Boolean(translationText?.trim()) && typeof onTranslationToggle === 'function'
-  const translationOpen = hasTranslation && translationExpanded === true
+  const hasTranslation =
+    typeof onTranslationToggle === 'function' &&
+    (Boolean(translationText?.trim()) || translationFetchable === true)
+  const translationOpen =
+    hasTranslation && translationExpanded === true && Boolean(translationText?.trim())
   /** 单行时头像与气泡垂直居中；译文展开后高度变大，须顶对齐以免头像下移 */
   const alignWithAvatarMid = Boolean(
     singleLine && reserveAvatarGutter && !isTalkmakerTail && !translationOpen,
@@ -749,104 +755,111 @@ export function WeChatMessageBubbleRow({
       ) : null}
       {/*
         外层 w-full + justify-end/start：右侧消息靠右、左侧靠左。
-        内层勿加 w-full（否则 row-reverse+justify-end 会把气泡甩到左边）。
-        内层 max-w-full 贴内容生长，左右共用同一列宽上限。
+        「翻译」按钮绝对定位到气泡旁侧（占用微信主题对侧头像槽空隙），
+        禁止再从气泡 max-width 里扣 2.75rem，否则 char 侧会比自己侧明显更窄。
       */}
-      <div className={`flex w-full max-w-full ${isSelf ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`relative flex w-full max-w-full overflow-visible ${
+          isSelf ? 'justify-end' : 'justify-start'
+        }`}
+      >
         <div
-          className={`flex min-w-0 max-w-full items-start gap-1.5 ${
-            isSelf ? 'flex-row-reverse' : 'flex-row'
+          className={`relative min-w-0 max-w-full ${
+            hasTranslation ? (isSelf ? 'mr-0' : 'ml-0') : ''
           }`}
         >
           <div
-            className="min-w-0 max-w-full"
-            style={hasTranslation ? { maxWidth: 'calc(100% - 2.75rem)' } : undefined}
+            className={`flex max-w-full flex-col ${
+              translationOpen ? 'w-full items-stretch' : isSelf ? 'items-end' : 'items-start'
+            }`}
           >
+            {variant === 'chat' ? (
+              <div
+                className={`relative max-w-full overflow-visible ${
+                  translationOpen ? 'w-full' : 'inline-block'
+                }`}
+              >
+                {isWechatTail && showTail ? (
+                  <WechatBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
+                ) : null}
+                {isImessageTail && showTail ? (
+                  <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
+                ) : null}
+                <motion.div
+                  ref={contentRef}
+                  data-wx-bubble-content
+                  className={`relative z-[1] max-w-full overflow-visible ${
+                    translationOpen ? 'block w-full' : 'inline-block'
+                  } ${bubblePadCls} ${leadingCls} select-none ${textCls} ${bubbleContentClassName}`}
+                  style={{
+                    ...bubbleSurfaceStyle,
+                    ...chatBubbleTransformOrigin(isSelf, tailStyle),
+                  }}
+                  initial={bubbleEnterInitial}
+                  animate={bubbleEnterAnimate}
+                  transition={bubbleEnterSpring}
+                  whileTap={onBubbleLongPress ? { scale: 0.97, opacity: 0.92 } : undefined}
+                  {...pressBind}
+                >
+                  {/* 图层：气泡底(face) < 边框 < 贴纸 < 文字 */}
+                  {bubbleFaceStyle ? <BubbleFaceLayer style={bubbleFaceStyle} /> : null}
+                  <BubbleFrameLayer frame={bubbleFrame} />
+                  <BubbleEdgeStickers stickers={edgeStickers} />
+                  <span data-wx-bubble-text="" className="relative z-[3]">
+                    {bubbleInner}
+                  </span>
+                </motion.div>
+                {showBubbleBadge ? (
+                  <span data-wx-bubble-badge={isSelf ? 'self' : 'other'} aria-hidden>
+                    {bubbleBadge!.text}
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <div
+                className={`relative max-w-full overflow-visible ${
+                  translationOpen ? 'w-full' : 'inline-block'
+                }`}
+              >
+                {isWechatTail && showTail ? (
+                  <WechatBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
+                ) : null}
+                {isImessageTail && showTail ? (
+                  <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
+                ) : null}
+                <div
+                  ref={contentRef}
+                  data-wx-bubble-content
+                  className={`relative z-[1] max-w-full overflow-visible ${
+                    translationOpen ? 'block w-full' : 'inline-block'
+                  } ${bubblePadCls} ${leadingCls} select-none transition-[transform,opacity,background-color] duration-150 ease-out ${textCls} ${bubbleContentClassName}`}
+                  style={bubbleSurfaceStyle}
+                >
+                  {bubbleFaceStyle ? <BubbleFaceLayer style={bubbleFaceStyle} /> : null}
+                  <BubbleFrameLayer frame={bubbleFrame} />
+                  <BubbleEdgeStickers stickers={edgeStickers} />
+                  <span data-wx-bubble-text="" className="relative z-[3]">
+                    {bubbleInner}
+                  </span>
+                </div>
+                {showBubbleBadge ? (
+                  <span data-wx-bubble-badge={isSelf ? 'self' : 'other'} aria-hidden>
+                    {bubbleBadge!.text}
+                  </span>
+                ) : null}
+              </div>
+            )}
+            {translationPanel}
+          </div>
+          {translationToggleBtn ? (
             <div
-              className={`flex max-w-full flex-col ${
-                translationOpen ? 'w-full items-stretch' : isSelf ? 'items-end' : 'items-start'
+              className={`absolute top-0 z-[2] ${
+                isSelf ? 'right-full mr-1.5' : 'left-full ml-1.5'
               }`}
             >
-              {variant === 'chat' ? (
-                <div
-                  className={`relative max-w-full overflow-visible ${
-                    translationOpen ? 'w-full' : 'inline-block'
-                  }`}
-                >
-                  {isWechatTail && showTail ? (
-                    <WechatBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
-                  ) : null}
-                  {isImessageTail && showTail ? (
-                    <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
-                  ) : null}
-                  <motion.div
-                    ref={contentRef}
-                    data-wx-bubble-content
-                    className={`relative z-[1] max-w-full overflow-visible ${
-                      translationOpen ? 'block w-full' : 'inline-block'
-                    } ${bubblePadCls} ${leadingCls} select-none ${textCls} ${bubbleContentClassName}`}
-                    style={{
-                      ...bubbleSurfaceStyle,
-                      ...chatBubbleTransformOrigin(isSelf, tailStyle),
-                    }}
-                    initial={bubbleEnterInitial}
-                    animate={bubbleEnterAnimate}
-                    transition={bubbleEnterSpring}
-                    whileTap={onBubbleLongPress ? { scale: 0.97, opacity: 0.92 } : undefined}
-                    {...pressBind}
-                  >
-                    {/* 图层：气泡底(face) < 边框 < 贴纸 < 文字 */}
-                    {bubbleFaceStyle ? <BubbleFaceLayer style={bubbleFaceStyle} /> : null}
-                    <BubbleFrameLayer frame={bubbleFrame} />
-                    <BubbleEdgeStickers stickers={edgeStickers} />
-                    <span data-wx-bubble-text="" className="relative z-[3]">
-                      {bubbleInner}
-                    </span>
-                  </motion.div>
-                  {showBubbleBadge ? (
-                    <span data-wx-bubble-badge={isSelf ? 'self' : 'other'} aria-hidden>
-                      {bubbleBadge!.text}
-                    </span>
-                  ) : null}
-                </div>
-              ) : (
-                <div
-                  className={`relative max-w-full overflow-visible ${
-                    translationOpen ? 'w-full' : 'inline-block'
-                  }`}
-                >
-                  {isWechatTail && showTail ? (
-                    <WechatBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
-                  ) : null}
-                  {isImessageTail && showTail ? (
-                    <ImessageBubbleTail isSelf={isSelf} bubbleColor={bubbleTailColor} />
-                  ) : null}
-                  <div
-                    ref={contentRef}
-                    data-wx-bubble-content
-                    className={`relative z-[1] max-w-full overflow-visible ${
-                      translationOpen ? 'block w-full' : 'inline-block'
-                    } ${bubblePadCls} ${leadingCls} select-none transition-[transform,opacity,background-color] duration-150 ease-out ${textCls} ${bubbleContentClassName}`}
-                    style={bubbleSurfaceStyle}
-                  >
-                    {bubbleFaceStyle ? <BubbleFaceLayer style={bubbleFaceStyle} /> : null}
-                    <BubbleFrameLayer frame={bubbleFrame} />
-                    <BubbleEdgeStickers stickers={edgeStickers} />
-                    <span data-wx-bubble-text="" className="relative z-[3]">
-                      {bubbleInner}
-                    </span>
-                  </div>
-                  {showBubbleBadge ? (
-                    <span data-wx-bubble-badge={isSelf ? 'self' : 'other'} aria-hidden>
-                      {bubbleBadge!.text}
-                    </span>
-                  ) : null}
-                </div>
-              )}
-              {translationPanel}
+              {translationToggleBtn}
             </div>
-          </div>
-          {translationToggleBtn}
+          ) : null}
         </div>
       </div>
       {variant === 'chat' && isSelf ? chatBubbleOverlay : null}
@@ -969,7 +982,10 @@ export function WeChatMessageBubbleRow({
                     {chatOtherSenderNickname.trim()}
                   </span>
                 ) : null}
-                {renderedBubble}
+                <div className="flex max-w-full items-end gap-[4px]">
+                  {renderedBubble}
+                  {chatAccessory ? <div className="shrink-0 self-end">{chatAccessory}</div> : null}
+                </div>
               </div>
             </div>
           ) : reserveAvatarGutter ? (
@@ -993,12 +1009,19 @@ export function WeChatMessageBubbleRow({
                 {!multiSelectAvatar && rankBeside ? (
                   <ChatGroupSenderNicknameWithRank nickname={chatOtherSenderNickname} rankBadge={chatOtherAvatarRankBadge ?? null} />
                 ) : null}
-                {renderedBubble}
+                <div className="flex max-w-full items-end gap-[4px]">
+                  {renderedBubble}
+                  {chatAccessory ? <div className="shrink-0 self-end">{chatAccessory}</div> : null}
+                </div>
               </div>
             </div>
           ) : (
-            <div className="w-fit" style={{ ...otherRowInsetStyle, ...bubbleWidthCap }}>
+            <div
+              className="flex w-fit items-end gap-[4px]"
+              style={{ ...otherRowInsetStyle, ...bubbleWidthCap }}
+            >
               {renderedBubble}
+              {chatAccessory ? <div className="shrink-0 self-end">{chatAccessory}</div> : null}
             </div>
           )}
         </div>

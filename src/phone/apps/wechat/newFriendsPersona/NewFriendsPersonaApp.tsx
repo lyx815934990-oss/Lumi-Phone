@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, FileUp, Plus, Save, Upload, User, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, FileUp, Lock, Plus, Save, Upload, User, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { emitWeChatStorageChanged, personaDb } from './idb'
@@ -14,6 +14,7 @@ import { PersonaNetworkSection } from './PersonaNetworkSection'
 import { DEFAULT_WORLD_BACKGROUND_ID } from './worldBackgroundConstants'
 import type { ScheduleTable } from './types'
 import { ScheduleEditorScreen } from '../schedule/ScheduleEditorScreen'
+import { buildCharacterCard } from '../wechatChatAi'
 import { buildCharacterExportBundle, importCharacterBundle, parseCharacterImportFile, buildAddressingHintFromAudit, shouldPromptImportIdentitySync, type CharacterBundleIdentityAddressingHint } from './characterBundleIo'
 import { buildCharacterRuntimeExport, importCharacterRuntimeExport, parseCharacterRuntimeExport } from './characterRuntimeExport'
 import { auditCliqueIdentityBinding } from './personaIdentityBindingAudit'
@@ -82,6 +83,8 @@ import { usePersonaRoster } from './personaRoster/usePersonaRoster'
 import type { PersonaRosterTabId } from './personaRoster/personaRosterTypes'
 import { WeChatThemePageBackdrop } from './WeChatThemePageBackdrop'
 import { PersonaAiGeneratePage } from './PersonaAiGeneratePage'
+import { PersonaEnsembleGeneratePage } from './PersonaEnsembleGeneratePage'
+import { PersonaPackHubPage } from './PersonaPackHubPage'
 import {
   buildWorldBooksFromImportedDoc,
   extractTextFromPersonaDoc,
@@ -104,27 +107,43 @@ function TopBar({
   right,
   /** 与档案 Tab 等同列一层 sticky 时：外层已处理 safe-area，此处不再重复 padding-top / sticky */
   embedInStickyShell,
+  /** 人设编辑：水墨杂志顶栏 */
+  ink,
 }: {
   title: string
   onBack: () => void
   right?: React.ReactNode
   embedInStickyShell?: boolean
+  ink?: boolean
 }) {
   return (
     <div
-      className={`${embedInStickyShell ? '' : 'sticky top-0 z-30 '}bg-white px-4`}
+      className={`${embedInStickyShell ? '' : 'sticky top-0 z-30 '}px-4`}
       style={{
+        background: ink ? '#1E2024' : '#ffffff',
+        color: ink ? '#F8F7F4' : text,
         paddingTop: embedInStickyShell ? 0 : 'max(10px, env(safe-area-inset-top,0px))',
         paddingBottom: 10,
       }}
     >
-      <div className="flex items-center justify-between">
-        <button type="button" onClick={onBack} className="rounded-xl p-2 transition-all duration-200 ease-out hover:bg-[#fafafa]">
-          <ArrowLeft className="size-5" style={{ color: text }} />
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className={`rounded-xl p-2 transition-all duration-200 ease-out ${ink ? 'hover:bg-white/10' : 'hover:bg-[#fafafa]'}`}
+        >
+          <ArrowLeft className="size-5" style={{ color: ink ? '#F8F7F4' : text }} />
         </button>
-        <p className="text-[16px] font-semibold" style={{ color: text }}>
-          {title}
-        </p>
+        {ink ? (
+          <div className="min-w-0 flex-1 text-left">
+            <p className="font-serif text-[10px] tracking-[0.26em] text-[#9AA0A8]">IDENTIFICATION</p>
+            <p className="truncate text-[14px] font-semibold text-[#F8F7F4]">{title}</p>
+          </div>
+        ) : (
+          <p className="text-[16px] font-semibold" style={{ color: text }}>
+            {title}
+          </p>
+        )}
         <div className="min-w-[44px] text-right">{right}</div>
       </div>
     </div>
@@ -300,20 +319,17 @@ function ImportAddressingDialog({
   )
 }
 
-function CharacterCreateModeModal({
+function CharacterCardKindModal({
   open,
   onClose,
-  onPickCustom,
-  onPickAi,
-  onPickDocImport,
-  docImportBusy = false,
+  onPickSolo,
+  onPickEnsemble: _onPickEnsemble,
 }: {
   open: boolean
   onClose: () => void
-  onPickCustom: () => void
-  onPickAi: () => void
-  onPickDocImport: () => void
-  docImportBusy?: boolean
+  onPickSolo: () => void
+  /** 多人卡入口暂锁，保留回调签名供恢复 */
+  onPickEnsemble: () => void
 }) {
   if (!open) return null
   return (
@@ -324,10 +340,83 @@ function CharacterCreateModeModal({
         onClick={(e) => e.stopPropagation()}
       >
         <p className="text-center text-[16px] font-semibold" style={{ color: text }}>
-          新建角色人设
+          新建人设
         </p>
         <p className="mt-2 text-center text-[13px] leading-relaxed" style={{ color: sub, fontWeight: 300 }}>
-          选择创建方式：自定义编辑、AI 生成，或导入设定文档自动写入世界书。
+          先选卡种。单人卡是一位可攻略对象；多人卡（恋综、综艺、大逃杀等）尚在开发中。
+        </p>
+        <div className="mt-4 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={onPickSolo}
+            className="rounded-xl bg-[#111827] py-3 text-[14px] font-semibold text-white transition-all duration-200 ease-out hover:bg-[#0b1220]"
+          >
+            单人卡
+          </button>
+          <button
+            type="button"
+            disabled
+            aria-disabled
+            aria-label="多人卡（开发中）"
+            title="多人卡功能开发中"
+            className="relative flex items-center justify-center gap-2 rounded-xl border bg-[#f3f4f6] py-3 text-[14px] font-semibold opacity-70"
+            style={{ borderColor: border, color: sub, cursor: 'not-allowed' }}
+          >
+            <Lock className="size-4 shrink-0" strokeWidth={2} aria-hidden />
+            <span>多人卡</span>
+            <span
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full px-2 py-0.5 text-[10px] font-medium leading-none"
+              style={{ background: 'rgba(17,24,39,0.08)', color: sub }}
+            >
+              开发中
+            </span>
+          </button>
+          <p className="px-1 text-center text-[11px] leading-relaxed" style={{ color: sub }}>
+            多人卡暂未开放；可先用单人卡创建可攻略对象。
+          </p>
+          <button type="button" onClick={onClose} className="rounded-xl py-2 text-[13px]" style={{ color: sub }}>
+            取消
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CharacterCreateModeModal({
+  open,
+  onClose,
+  onPickCustom,
+  onPickAi,
+  onPickDocImport,
+  docImportBusy = false,
+  hideDocImport = false,
+  heading = '新建角色人设',
+}: {
+  open: boolean
+  onClose: () => void
+  onPickCustom: () => void
+  onPickAi: () => void
+  onPickDocImport: () => void
+  docImportBusy?: boolean
+  hideDocImport?: boolean
+  heading?: string
+}) {
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/35 px-4" onClick={onClose}>
+      <div
+        className="w-full max-w-[400px] rounded-2xl border bg-white p-4"
+        style={{ borderColor: border, boxShadow: '0 10px 30px rgba(0,0,0,0.18)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-center text-[16px] font-semibold" style={{ color: text }}>
+          {heading}
+        </p>
+        <p className="mt-2 text-center text-[13px] leading-relaxed" style={{ color: sub, fontWeight: 300 }}>
+          {hideDocImport
+            ? '选择创建方式：自定义空白席位，或一次 AI 生成可攻略对象与 NPC。'
+            : '选择创建方式：自定义编辑、AI 生成，或导入设定文档自动写入世界书。'}
         </p>
         <div className="mt-4 flex flex-col gap-2">
           <button
@@ -345,21 +434,25 @@ function CharacterCreateModeModal({
           >
             AI 生成
           </button>
-          <button
-            type="button"
-            disabled={docImportBusy}
-            onClick={onPickDocImport}
-            className="rounded-xl border bg-white py-3 text-[14px] font-semibold transition-all duration-200 ease-out hover:bg-[#fafafa] disabled:opacity-50"
-            style={{ borderColor: border, color: text }}
-          >
-            <span className="inline-flex items-center justify-center gap-2">
-              <FileUp className="size-4 shrink-0" strokeWidth={2} />
-              {docImportBusy ? '导入中…' : '导入设定文档'}
-            </span>
-          </button>
-          <p className="px-1 text-center text-[11px] leading-relaxed" style={{ color: sub }}>
-            导入设定文档：先绑定身份，再选 txt / docx，全文写入一条世界书
-          </p>
+          {hideDocImport ? null : (
+            <>
+              <button
+                type="button"
+                disabled={docImportBusy}
+                onClick={onPickDocImport}
+                className="rounded-xl border bg-white py-3 text-[14px] font-semibold transition-all duration-200 ease-out hover:bg-[#fafafa] disabled:opacity-50"
+                style={{ borderColor: border, color: text }}
+              >
+                <span className="inline-flex items-center justify-center gap-2">
+                  <FileUp className="size-4 shrink-0" strokeWidth={2} />
+                  {docImportBusy ? '导入中…' : '导入设定文档'}
+                </span>
+              </button>
+              <p className="px-1 text-center text-[11px] leading-relaxed" style={{ color: sub }}>
+                导入设定文档：先绑定身份，再选 txt / docx，全文写入一条世界书
+              </p>
+            </>
+          )}
           <button type="button" onClick={onClose} className="rounded-xl py-2 text-[13px]" style={{ color: sub }}>
             取消
           </button>
@@ -793,7 +886,7 @@ function newCharacter(): Character {
     weight: '',
     birthdayMD: '',
     zodiac: '',
-    identity: '学生',
+    identity: '',
     mbti: '',
     bio: '',
     openingLines: '',
@@ -822,7 +915,7 @@ function newBlankNpcForMain(main: Character): Character {
     age: null,
     birthdayMD: '',
     zodiac: '',
-    identity: '学生',
+    identity: '',
     mbti: '',
     bio: '',
     avatarUrl: '',
@@ -1122,11 +1215,22 @@ export function NewFriendsPersonaApp({
         draft?: Character
         /** NPC 编辑页返回目标：名册直入为 list，人脉内打开为 parent */
         backTo?: 'list' | 'parent'
+        /** 从多人演出卡点进来时，返回该卡总览 */
+        returnPackId?: string
       }
     | {
         name: 'ai-generate'
         draft: Character
         playerIdentityId: string
+      }
+    | {
+        name: 'ensemble-generate'
+        mode: 'custom' | 'ai'
+        playerIdentityId: string
+      }
+    | {
+        name: 'pack-hub'
+        packId: string
       }
   >(() =>
     initialEditCharacterId?.trim()
@@ -1140,12 +1244,16 @@ export function NewFriendsPersonaApp({
     setPage({ name: 'edit', id, isNew: false })
   }, [initialEditCharacterId])
   const [rosterTab, setRosterTab] = useState<PersonaRosterTabId>('main')
+  const [personaCardStageActive, setPersonaCardStageActive] = useState(false)
   const [relationsTopRight, setRelationsTopRight] = useState<ReactNode>(null)
   const ensureRelationsTab = useCallback(() => setRosterTab('relations'), [])
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deletePackId, setDeletePackId] = useState<string | null>(null)
   const [deleteTargetDetachHint, setDeleteTargetDetachHint] = useState<string | null>(null)
   const [identityPickOpen, setIdentityPickOpen] = useState(false)
+  const [createKindOpen, setCreateKindOpen] = useState(false)
   const [createModeOpen, setCreateModeOpen] = useState(false)
+  const [pendingCardKind, setPendingCardKind] = useState<'solo' | 'ensemble' | null>(null)
   const [pendingCreateMode, setPendingCreateMode] = useState<'custom' | 'ai' | 'doc-import' | null>(null)
   const [mainPickOpen, setMainPickOpen] = useState(false)
   const [identityLoading, setIdentityLoading] = useState(false)
@@ -1264,6 +1372,9 @@ export function NewFriendsPersonaApp({
     mainNameById,
     mainById,
     loading,
+    packLabelByCharacterId,
+    ensemblePacks,
+    packCoverByPackId,
     refresh,
   } = usePersonaRoster(linkedCharacterIds)
 
@@ -1460,6 +1571,8 @@ export function NewFriendsPersonaApp({
                   mainById={mainById}
                   accountsBundle={accountsBundle}
                   onOpen={(id) => setPage({ name: 'edit', id, isNew: false })}
+                  onCharactersChanged={() => void refresh()}
+                  onCardStageActiveChange={setPersonaCardStageActive}
                   onDelete={(id) => {
                     void (async () => {
                       const acc = currentAccountId?.trim()
@@ -1489,8 +1602,13 @@ export function NewFriendsPersonaApp({
                     })()
                   }}
                   onGenerateContacts={setContactGenRootId}
-                  emptyTitle="尚无主要角色"
-                  emptyHint="点击下方按钮创建第一位主角档案，世界线由此展开。"
+                  emptyTitle="尚无角色档案"
+                  emptyHint="点击下方按钮创建单人卡或多人卡，世界线由此展开。"
+                  packLabelByCharacterId={packLabelByCharacterId}
+                  ensemblePacks={ensemblePacks}
+                  packCoverByPackId={packCoverByPackId}
+                  onOpenPack={(packId) => setPage({ name: 'pack-hub', packId })}
+                  onDeletePack={(packId) => setDeletePackId(packId)}
                 />
               ) : null}
 
@@ -1505,6 +1623,8 @@ export function NewFriendsPersonaApp({
                   mainById={mainById}
                   accountsBundle={accountsBundle}
                   onOpen={(id) => setPage({ name: 'edit', id, isNew: false, backTo: 'list' })}
+                  onCharactersChanged={() => void refresh()}
+                  onCardStageActiveChange={setPersonaCardStageActive}
                   onDelete={(id) => {
                     void (async () => {
                       setDeleteTargetDetachHint(null)
@@ -1513,6 +1633,7 @@ export function NewFriendsPersonaApp({
                   }}
                   emptyTitle="尚无 NPC 档案"
                   emptyHint="在主要角色的「人脉关系」中生成 NPC 后，将自动归入本册。"
+                  packLabelByCharacterId={packLabelByCharacterId}
                 />
               ) : null}
 
@@ -1531,47 +1652,49 @@ export function NewFriendsPersonaApp({
           </AnimatePresence>
         </div>
 
-        <div className="shrink-0 space-y-2 px-4 pt-2" style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom,0px))' }}>
-          <button
-            type="button"
-            className="flex w-full items-center justify-center gap-2 rounded-full bg-[#111827] px-4 py-3.5 text-[15px] font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-all duration-200 ease-out hover:bg-[#0b1220]"
-            onClick={async () => {
-              const c = newCharacter()
-              setPendingNewDraft(c)
-              setCreateModeOpen(true)
-            }}
-          >
-            <Plus className="size-5" />
-            新建角色人设
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center justify-center gap-2 rounded-full border border-[#111827]/15 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#111827] shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out hover:bg-[#FAFAFA]"
-            onClick={() => {
-              if (!mainCharacters.length) {
-                window.alert('请先新建或导入人设包，再导入角色数据包。')
-                return
-              }
-              if (mainCharacters.length === 1) {
-                runtimeImportTargetRootRef.current = mainCharacters[0].id
-                runtimeImportInputRef.current?.click()
-                return
-              }
-              setRuntimeImportPickOpen(true)
-            }}
-          >
-            <Upload className="size-5" />
-            导入角色数据包
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center justify-center gap-2 rounded-full border border-[#111827]/15 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#111827] shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out hover:bg-[#FAFAFA]"
-            onClick={() => setMainPickOpen(true)}
-          >
-            <Plus className="size-5" />
-            新建次要/NPC
-          </button>
-        </div>
+        {!personaCardStageActive ? (
+          <div className="shrink-0 space-y-2 px-4 pt-2" style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom,0px))' }}>
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-[#111827] px-4 py-3.5 text-[15px] font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-all duration-200 ease-out hover:bg-[#0b1220]"
+              onClick={() => {
+                setPendingNewDraft(newCharacter())
+                setPendingCardKind(null)
+                setCreateKindOpen(true)
+              }}
+            >
+              <Plus className="size-5" />
+              新建角色人设
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-2 rounded-full border border-[#111827]/15 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#111827] shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out hover:bg-[#FAFAFA]"
+              onClick={() => {
+                if (!mainCharacters.length) {
+                  window.alert('请先新建或导入人设包，再导入角色数据包。')
+                  return
+                }
+                if (mainCharacters.length === 1) {
+                  runtimeImportTargetRootRef.current = mainCharacters[0].id
+                  runtimeImportInputRef.current?.click()
+                  return
+                }
+                setRuntimeImportPickOpen(true)
+              }}
+            >
+              <Upload className="size-5" />
+              导入角色数据包
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-2 rounded-full border border-[#111827]/15 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#111827] shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-all duration-200 ease-out hover:bg-[#FAFAFA]"
+              onClick={() => setMainPickOpen(true)}
+            >
+              <Plus className="size-5" />
+              新建次要/NPC
+            </button>
+          </div>
+        ) : null}
 
         <CenterDialog
           open={!!deleteId}
@@ -1611,6 +1734,27 @@ export function NewFriendsPersonaApp({
               }
             } catch (e) {
               window.alert(e instanceof Error ? e.message : '删除失败')
+              await refresh()
+            }
+          }}
+        />
+
+        <CenterDialog
+          open={!!deletePackId}
+          title="删除多人卡？"
+          message="将删除整张演出卡及卡内全部角色人设，并移除相关通讯录联系人。此操作不可撤销。"
+          confirmText="删除"
+          onCancel={() => setDeletePackId(null)}
+          onConfirm={async () => {
+            const packId = deletePackId
+            setDeletePackId(null)
+            if (!packId) return
+            try {
+              const removed = await personaDb.deletePersonaPackAndMembers(packId)
+              if (removed.length) removeWeChatPersonaContactsByCharacterIds(removed)
+              await refresh()
+            } catch (e) {
+              window.alert(e instanceof Error ? e.message : '删除多人卡失败')
               await refresh()
             }
           }}
@@ -1743,13 +1887,35 @@ export function NewFriendsPersonaApp({
           }}
         />
 
+        <CharacterCardKindModal
+          open={createKindOpen}
+          onClose={() => {
+            setCreateKindOpen(false)
+            setPendingNewDraft(null)
+            setPendingCardKind(null)
+          }}
+          onPickSolo={() => {
+            setCreateKindOpen(false)
+            setPendingCardKind('solo')
+            setCreateModeOpen(true)
+          }}
+          onPickEnsemble={() => {
+            setCreateKindOpen(false)
+            setPendingCardKind('ensemble')
+            setCreateModeOpen(true)
+          }}
+        />
+
         <CharacterCreateModeModal
           open={createModeOpen}
           docImportBusy={docImportBusy}
+          hideDocImport={pendingCardKind === 'ensemble'}
+          heading={pendingCardKind === 'ensemble' ? '新建多人卡' : '新建角色人设'}
           onClose={() => {
             setCreateModeOpen(false)
             setPendingNewDraft(null)
             setPendingCreateMode(null)
+            setPendingCardKind(null)
             docImportDraftRef.current = null
           }}
           onPickCustom={async () => {
@@ -1767,6 +1933,7 @@ export function NewFriendsPersonaApp({
           onPickDocImport={async () => {
             if (docImportBusy) return
             setCreateModeOpen(false)
+            setPendingCardKind('solo')
             if (!pendingNewDraft) setPendingNewDraft(newCharacter())
             setPendingCreateMode('doc-import')
             setIdentityPickOpen(true)
@@ -1782,12 +1949,14 @@ export function NewFriendsPersonaApp({
             setIdentityPickOpen(false)
             setPendingNewDraft(null)
             setPendingCreateMode(null)
+            setPendingCardKind(null)
             docImportDraftRef.current = null
           }}
           onCreateNew={() => {
             setIdentityPickOpen(false)
             setPendingNewDraft(null)
             setPendingCreateMode(null)
+            setPendingCardKind(null)
             docImportDraftRef.current = null
             onOpenIdentityManager?.()
           }}
@@ -1797,7 +1966,9 @@ export function NewFriendsPersonaApp({
             await setActivePlayerIdentityForCurrentAccount(identityId)
             setIdentityPickOpen(false)
             const mode = pendingCreateMode ?? 'custom'
+            const cardKind = pendingCardKind ?? 'solo'
             setPendingCreateMode(null)
+            setPendingCardKind(null)
             if (mode === 'doc-import') {
               setPendingNewDraft(null)
               docImportDraftRef.current = draft
@@ -1806,6 +1977,14 @@ export function NewFriendsPersonaApp({
             }
             setPendingNewDraft(null)
             docImportDraftRef.current = null
+            if (cardKind === 'ensemble') {
+              setPage({
+                name: 'ensemble-generate',
+                mode: mode === 'ai' ? 'ai' : 'custom',
+                playerIdentityId: identityId,
+              })
+              return
+            }
             if (mode === 'ai') {
               setPage({ name: 'ai-generate', draft, playerIdentityId: identityId })
               return
@@ -1926,6 +2105,55 @@ export function NewFriendsPersonaApp({
     )
   }
 
+  if (page.name === 'pack-hub') {
+    return (
+      <PersonaPackHubPage
+        packId={page.packId}
+        onBack={() => {
+          setPage({ name: 'list' })
+          void refresh()
+        }}
+        onOpenCharacter={(characterId) => {
+          setPage({
+            name: 'edit',
+            id: characterId,
+            isNew: false,
+            backTo: 'list',
+            returnPackId: page.packId,
+          })
+        }}
+        onDeleted={(removedIds) => {
+          if (removedIds.length) removeWeChatPersonaContactsByCharacterIds(removedIds)
+          setPage({ name: 'list' })
+          void refresh()
+        }}
+      />
+    )
+  }
+
+  if (page.name === 'ensemble-generate') {
+    return (
+      <PersonaEnsembleGeneratePage
+        mode={page.mode}
+        playerIdentityId={page.playerIdentityId}
+        wechatAccountId={currentAccountId}
+        apiConfig={apiConfigList}
+        onBack={() => setPage({ name: 'list' })}
+        onCreated={({ packId, romance }) => {
+          if (romance.length) {
+            replaceWeChatPersonaContacts(
+              romance.map((x) => x.id),
+              romance.map((ch) => contactEntryFromCharacter(ch)),
+            )
+          }
+          setRosterTab('main')
+          void refresh()
+          setPage({ name: 'pack-hub', packId })
+        }}
+      />
+    )
+  }
+
   if (page.name === 'ai-generate') {
     const playerIdentity =
       identityList.find((it) => it.id === page.playerIdentityId) ?? null
@@ -1956,13 +2184,32 @@ export function NewFriendsPersonaApp({
       isNew={page.isNew}
       draft={page.draft}
       backTo={page.backTo ?? 'parent'}
-      onBack={() => setPage({ name: 'list' })}
+      onBack={() => {
+        if (page.returnPackId?.trim()) {
+          setPage({ name: 'pack-hub', packId: page.returnPackId.trim() })
+          return
+        }
+        setPage({ name: 'list' })
+      }}
       onSaved={() => void refresh()}
       onNavigateToCharacter={(cid, draftNpc) => {
         if (draftNpc) {
-          setPage({ name: 'edit', id: draftNpc.id, isNew: true, draft: draftNpc, backTo: 'parent' })
+          setPage({
+            name: 'edit',
+            id: draftNpc.id,
+            isNew: true,
+            draft: draftNpc,
+            backTo: 'parent',
+            returnPackId: page.returnPackId,
+          })
         } else {
-          setPage({ name: 'edit', id: cid, isNew: false, backTo: 'parent' })
+          setPage({
+            name: 'edit',
+            id: cid,
+            isNew: false,
+            backTo: 'parent',
+            returnPackId: page.returnPackId,
+          })
         }
       }}
       onBundleImported={async ({ rootId, replacePage }) => {
@@ -2036,6 +2283,11 @@ function PersonaEditPage({
   const [exportAddTimestamp, setExportAddTimestamp] = useState(false)
   const pendingExportJsonRef = useRef<string | null>(null)
   const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduleEditorFocus, setScheduleEditorFocus] = useState<{
+    mode: 'weekly' | 'calendar'
+    calendarDay?: string | null
+  } | null>(null)
+  const [scheduleStoryNowLabel, setScheduleStoryNowLabel] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [iosKeyboardInset, setIosKeyboardInset] = useState(0)
   const androidKeyboardInsetPx = useEditableKeyboardLift(scrollRef)
@@ -2134,6 +2386,45 @@ function PersonaEditPage({
       setWbIdentityCtx(bound)
     })()
   }, [data?.id, data?.playerIdentityId, data?.linkedPlayerIdentityIds, data?.generatedForCharacterId])
+
+  /** 日程编辑/预览：优先角色剧情「现在」，无则空（编辑器回退系统时间） */
+  useEffect(() => {
+    const cid = data?.id?.trim()
+    if (!cid) {
+      setScheduleStoryNowLabel(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const [{ resolveCharacterStoryNowMs }, { formatGregorianStoryDay }] = await Promise.all([
+          import('../time/messagesTabStoryTime'),
+          import('../schedule/scheduleEntries'),
+        ])
+        const [state, storyMs] = await Promise.all([
+          personaDb.getStoryTimelineState(cid),
+          resolveCharacterStoryNowMs(cid),
+        ])
+        if (cancelled) return
+        const day = state?.currentStoryDay?.trim()
+        const time = state?.currentStoryTime?.trim()
+        if (day) {
+          setScheduleStoryNowLabel(time ? `${day} ${time}` : day)
+          return
+        }
+        if (storyMs != null && Number.isFinite(storyMs)) {
+          setScheduleStoryNowLabel(formatGregorianStoryDay(new Date(storyMs)))
+          return
+        }
+        setScheduleStoryNowLabel(null)
+      } catch {
+        if (!cancelled) setScheduleStoryNowLabel(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [data?.id, editTab, scheduleOpen])
 
   /** 世界书 AI：同人脉下 NPC 摘要（进入世界书 Tab 时拉取；从人脉返回后切回 Tab 会刷新） */
   useEffect(() => {
@@ -2438,15 +2729,32 @@ function PersonaEditPage({
     }
     setSaving(false)
     setDirty(false)
+    emitWeChatStorageChanged()
     onSaved()
     promptContactSyncAfterPersist(next, true)
   }
 
-  const persistSchedule = async (next: ScheduleTable) => {
+  const persistSchedule = async (payload: {
+    table: ScheduleTable
+    entries?: import('./types').ScheduleEntry[]
+    calendarEvents?: import('./types').ScheduleCalendarEvent[]
+    calendarAutoUpdateEnabled?: boolean
+  }) => {
     if (!data) return
     const acc = currentAccountId?.trim()
+    const { parseScheduleTableToEntries } = await import('../schedule/scheduleEntries')
+    const scheduleEntries = payload.entries?.length
+      ? payload.entries
+      : parseScheduleTableToEntries(payload.table, data.scheduleEntries)
     const merged: Character = stampWechatAccountOwner(
-      { ...data, schedule: next, updatedAt: Date.now() },
+      {
+        ...data,
+        schedule: payload.table,
+        scheduleEntries,
+        scheduleCalendarEvents: payload.calendarEvents ?? data.scheduleCalendarEvents ?? [],
+        scheduleCalendarAutoUpdateEnabled: payload.calendarAutoUpdateEnabled === true,
+        updatedAt: Date.now(),
+      },
       acc,
     )
     setDirty(true)
@@ -2570,17 +2878,18 @@ function PersonaEditPage({
     <div
       ref={scrollRef}
       className="relative flex h-full min-h-0 flex-col overflow-hidden"
-      style={{ background: bg }}
+      style={{ background: '#EDEBE7' }}
     >
       {/*
         iOS PWA 全屏：safe-area-inset-top 只能加一次。原先 TopBar + ArchiveIndexTabs 各加一遍，
         会在标题与 Tab 之间叠出「第二道刘海高度」的空白；合并为单层 sticky 后只保留一处顶距。
       */}
       <div
-        className="sticky top-0 z-40 shrink-0 bg-white"
-        style={{ paddingTop: 'max(10px, env(safe-area-inset-top, 0px))' }}
+        className="sticky top-0 z-40 shrink-0"
+        style={{ paddingTop: 'max(10px, env(safe-area-inset-top, 0px))', background: '#EDEBE7' }}
       >
         <TopBar
+          ink
           embedInStickyShell
           title={isNew ? '创建人设' : '编辑人设'}
           onBack={() => {
@@ -2591,12 +2900,11 @@ function PersonaEditPage({
             <button
               type="button"
               onClick={() => void save()}
-              className="rounded-xl px-3 py-2 text-[13px] font-semibold transition-all duration-200 ease-out hover:bg-[#fafafa]"
-              style={{ color: text }}
+              className="rounded-full border border-[#8A909A] px-3 py-1.5 text-[12px] font-semibold text-[#F8F7F4] transition-all duration-200 ease-out hover:bg-white/10 disabled:opacity-50"
               disabled={saving}
             >
-              <span className="inline-flex items-center gap-2">
-                <Save className="size-4" />
+              <span className="inline-flex items-center gap-1.5">
+                <Save className="size-3.5" />
                 {saving ? '保存中' : '保存'}
               </span>
             </button>
@@ -2623,7 +2931,7 @@ function PersonaEditPage({
         {isNew && data.generatedForCharacterId ? (
           <p
             className="mb-3 rounded-[12px] border px-3 py-2.5 text-[12px] leading-relaxed"
-            style={{ borderColor: '#e5e5e5', background: '#fafafa', color: sub }}
+            style={{ borderColor: '#D2D0CB', background: '#F8F7F4', color: '#6A6E76' }}
           >
             手动新建的 NPC 在点击「保存」之前
             <span className="font-semibold" style={{ color: text }}>
@@ -2734,7 +3042,22 @@ function PersonaEditPage({
             ) : null}
 
             {editTab === 'schedule' ? (
-              <ScheduleTimelineTab schedule={data.schedule} onEdit={() => setScheduleOpen(true)} />
+              <ScheduleTimelineTab
+                characterId={data.id}
+                schedule={data.schedule}
+                scheduleEntries={data.scheduleEntries}
+                scheduleCalendarEvents={data.scheduleCalendarEvents}
+                scheduleCalendarAutoUpdateEnabled={data.scheduleCalendarAutoUpdateEnabled}
+                storyNowLabel={scheduleStoryNowLabel}
+                onEdit={(opts) => {
+                  setScheduleEditorFocus({ mode: opts?.mode ?? 'weekly' })
+                  setScheduleOpen(true)
+                }}
+                onEditCalendarDay={(storyDay) => {
+                  setScheduleEditorFocus({ mode: 'calendar', calendarDay: storyDay })
+                  setScheduleOpen(true)
+                }}
+              />
             ) : null}
 
             {editTab === 'worldbackground' ? (
@@ -3005,9 +3328,20 @@ function PersonaEditPage({
         title="日程表"
         apiConfig={apiConfig}
         initial={(data?.schedule as ScheduleTable | undefined) ?? null}
-        onClose={() => setScheduleOpen(false)}
-        onSave={async (next) => {
-          await persistSchedule(next)
+        initialEntries={data?.scheduleEntries ?? null}
+        initialCalendarEvents={data?.scheduleCalendarEvents ?? null}
+        initialCalendarAutoUpdateEnabled={data?.scheduleCalendarAutoUpdateEnabled === true}
+        initialMode={scheduleEditorFocus?.mode}
+        focusCalendarDay={scheduleEditorFocus?.calendarDay}
+        storyNowLabel={scheduleStoryNowLabel}
+        personaContext={data ? buildCharacterCard(data, { bioMaxChars: 900 }) : null}
+        characterId={data?.id?.trim() || null}
+        onClose={() => {
+          setScheduleOpen(false)
+          setScheduleEditorFocus(null)
+        }}
+        onSave={async (payload) => {
+          await persistSchedule(payload)
         }}
       />
 

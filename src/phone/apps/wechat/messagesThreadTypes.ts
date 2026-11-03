@@ -40,6 +40,8 @@ export type MessagesThreadRow =
       avatarUrl?: string
       unread: number
       draftPreview?: string
+      /** 用户拉黑对方，或对方拉黑用户 */
+      blockedMark?: boolean
     }
   | {
       key: string

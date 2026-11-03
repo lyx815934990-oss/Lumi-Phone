@@ -128,16 +128,24 @@ export function MomentImageViewer({
     setActionError('')
   }, [open, initialIndex, images.length, resetSlideOffset, resetTransform])
 
+  const openRef = useRef(open)
+  openRef.current = open
+  const regenInFlightRef = useRef(false)
+
+  /** 关闭大图不中断后台重新生成；仅在未在飞时清本地 busy */
   useEffect(() => {
-    if (!open) setLocalBusy(false)
-  }, [open])
+    if (!open && !regenInFlightRef.current && !regenerating) setLocalBusy(false)
+  }, [open, regenerating])
 
   /** 外部 regenerating 从 true→false 时清掉遮罩 */
   const prevRegeneratingRef = useRef(regenerating)
   useEffect(() => {
     const was = prevRegeneratingRef.current
     prevRegeneratingRef.current = regenerating
-    if (was && !regenerating) setLocalBusy(false)
+    if (was && !regenerating) {
+      regenInFlightRef.current = false
+      setLocalBusy(false)
+    }
   }, [regenerating])
 
   /** 新图已替换上来时结束本地 loading（避免父级 Promise 未归还时遮罩卡住） */
@@ -284,7 +292,7 @@ export function MomentImageViewer({
     setPromptEditorOpen(true)
   }
 
-  const runRegenerate = async (prompt: string) => {
+  const runRegenerate = (prompt: string) => {
     const p = prompt.trim()
     if (!p) {
       setActionError('请先填写生图提示词')
@@ -294,14 +302,20 @@ export function MomentImageViewer({
     if (!onRegenerate || busy) return
     setActionError('')
     setLocalBusy(true)
-    try {
-      await onRegenerate(index, p)
-      setPromptEditorOpen(false)
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : '重新生成失败')
-    } finally {
-      setLocalBusy(false)
-    }
+    regenInFlightRef.current = true
+    setPromptEditorOpen(false)
+    // 不 await：关闭大图后仍继续生成；结果由父级 regenerating / 换图驱动
+    void Promise.resolve(onRegenerate(index, p))
+      .catch((e) => {
+        if (openRef.current) {
+          setActionError(e instanceof Error ? e.message : '重新生成失败')
+        }
+      })
+      .finally(() => {
+        regenInFlightRef.current = false
+        // 本地遮罩可关；若父级仍传 regenerating，busy 仍为 true
+        setLocalBusy(false)
+      })
   }
 
   const savePromptOnly = async () => {

@@ -123,6 +123,9 @@ const WRITERS: readonly ResidentWriter[] = Object.freeze([
   },
 ])
 
+/** 演示用粉丝基数（与探索卡片一致）；后续可接真实关注库 */
+const WRITER_FAN_BASE = [1200, 800, 2400, 500, 1600] as const
+
 export function listResidentWriters(): readonly ResidentWriter[] {
   return WRITERS
 }
@@ -135,6 +138,23 @@ export function getResidentWriter(id: string): ResidentWriter | undefined {
 
 export function isResidentWriterId(id: string): boolean {
   return !!getResidentWriter(id)
+}
+
+/** 驻站写手粉丝数（稳定按名单序号） */
+export function writerFanCount(writerId: string): number {
+  const idx = WRITERS.findIndex((w) => w.id === writerId.trim())
+  const i = idx >= 0 ? idx : 0
+  return WRITER_FAN_BASE[i % WRITER_FAN_BASE.length]!
+}
+
+/** 展示用：1200 → 1.2k */
+export function formatWriterFans(count: number): string {
+  if (count >= 1000) {
+    const k = count / 1000
+    const s = k >= 10 ? String(Math.round(k)) : k.toFixed(1).replace(/\.0$/, '')
+    return `${s}k`
+  }
+  return String(Math.max(0, Math.floor(count)))
 }
 
 export function maxAuthorRepliesFor(writer: ResidentWriter): number {

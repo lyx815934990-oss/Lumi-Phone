@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { INK_KICKER, INK_LEAD, INK_SECTION, INK_TITLE } from './personaEditorTabs'
 import type { Character, PlayerIdentity } from '../types'
 import { personaDb } from '../idb'
 import { loadAccountsBundle } from '../../wechatAccountPersistence'
@@ -32,13 +33,13 @@ function BindingCard({ row }: { row: BindingRow }) {
   return (
     <div
       className={`rounded-[12px] border px-4 py-3.5 ${
-        isPrimary ? 'border-[#D4AF37]/50 bg-[#FFFCF5]' : 'border-neutral-200/90 bg-neutral-50/80'
+        isPrimary ? 'border-[#5A6574]/55 bg-[#EBEEF2]' : 'border-[#D2D0CB] bg-[#EDEBE7]/80'
       }`}
     >
       <div className="flex items-start justify-between gap-2">
         <span
           className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wide ${
-            isPrimary ? 'bg-[#D4AF37]/15 text-[#8B6914]' : 'bg-neutral-200/80 text-neutral-600'
+            isPrimary ? 'bg-[#5A6574]/15 text-[#3A414C]' : 'bg-[#D2D0CB]/80 text-[#6A6E76]'
           }`}
         >
           {isPrimary ? '档案主绑定' : '副绑定 · 关联马甲'}
@@ -131,11 +132,11 @@ export function BindingsInfoTab({ character }: { character: Character }) {
   ])
 
   return (
-    <section className="rounded-[14px] border border-neutral-200/90 bg-white px-3 pb-6 pt-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-      <header className="mb-4 border-b border-neutral-100 pb-4">
-        <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-neutral-400">02 LINK · 扮演绑定</p>
-        <h2 className="mt-2 text-[17px] font-semibold tracking-tight text-[#1C1C1E]">绑定信息</h2>
-        <p className="mt-1 text-[11px] font-light leading-relaxed text-neutral-500">
+    <section className={`${INK_SECTION} px-3 pb-6 pt-5`}>
+      <header className="mb-4 border-b border-[#D2D0CB] pb-4">
+        <p className={INK_KICKER}>04 LINK · 扮演绑定</p>
+        <h2 className={INK_TITLE}>绑定信息</h2>
+        <p className={INK_LEAD}>
           主绑定为创建角色时写入档案的扮演身份。仅当<strong className="font-medium text-neutral-600">其它微信号</strong>
           也与本角色建立绑定时，才会出现副绑定；同一微信下的多个「我的身份」不会在此重复列出。私聊时 AI 按当前微信线与主绑定分属账号区分，避免误判为换号。
         </p>

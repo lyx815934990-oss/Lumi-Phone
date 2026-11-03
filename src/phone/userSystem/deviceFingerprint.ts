@@ -19,23 +19,30 @@ function createMachineId(): string {
   return `mach_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`
 }
 
-export async function getDeviceFingerprint(): Promise<{ deviceId: string; deviceType: 'mobile' | 'desktop' }> {
-  const deviceType = detectDeviceType()
+/** 同步读取已存设备码（未生成过则返回 null，不新建） */
+export function readStoredDeviceId(): string | null {
   try {
     const raw = localStorage.getItem(MACHINE_KEY)
     if (raw) {
-      const parsed = JSON.parse(raw) as { machineId?: string; deviceType?: string }
-      if (parsed.machineId) {
-        return { deviceId: parsed.machineId, deviceType: (parsed.deviceType as 'mobile' | 'desktop') || deviceType }
-      }
+      const parsed = JSON.parse(raw) as { machineId?: string }
+      if (parsed.machineId) return parsed.machineId
     }
     const legacy = localStorage.getItem(LEGACY_KEY)
     if (legacy) {
-      const leg = JSON.parse(legacy) as { deviceId?: string; deviceType?: string }
-      if (leg.deviceId) return { deviceId: leg.deviceId, deviceType: (leg.deviceType as 'mobile' | 'desktop') || deviceType }
+      const leg = JSON.parse(legacy) as { deviceId?: string }
+      if (leg.deviceId) return leg.deviceId
     }
   } catch {
     /* ignore */
+  }
+  return null
+}
+
+export async function getDeviceFingerprint(): Promise<{ deviceId: string; deviceType: 'mobile' | 'desktop' }> {
+  const deviceType = detectDeviceType()
+  const existing = readStoredDeviceId()
+  if (existing) {
+    return { deviceId: existing, deviceType }
   }
   const machineId = createMachineId()
   try {

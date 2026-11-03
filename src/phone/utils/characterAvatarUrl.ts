@@ -1,5 +1,5 @@
 import { canonicalPublicImagePath, resolvePublicImageUrl } from '../../publicAssetUrl'
-import { pickRandomWechatDefaultAvatar } from '../apps/wechat/wechatDefaultAvatars'
+import { pickRandomPersonaCharacterAvatar } from '../apps/wechat/newFriendsPersona/personaCharacterAvatarPool'
 import { DEFAULT_PUBLIC_AVATAR_PATH } from '../types'
 
 /** 微信头像等：仅解析 `avatarUrl`，不使用 MBTI 图 */
@@ -11,8 +11,10 @@ export function resolveCharacterAvatarUrl(params: { avatarUrl?: string | null })
     return resolvePublicImageUrl(canon)
   }
   if (/^https?:\/\//i.test(canon)) return canon
+  // 损坏的 Vite /assets 哈希：回落到阳光/清冷人物池，禁止随机网友同学脸
   if (raw.includes('/assets/') || /localhost|127\.0\.0\.1/i.test(raw)) {
-    return pickRandomWechatDefaultAvatar()
+    const fallback = pickRandomPersonaCharacterAvatar()
+    return fallback ? resolvePublicImageUrl(fallback) : ''
   }
   return resolvePublicImageUrl(raw)
 }
@@ -53,6 +55,6 @@ export function repairCharacterAvatarForBundleImport(ch: { avatarUrl?: string })
   const canon = canonicalPublicImagePath(raw)
   if (canon.startsWith('/image/') || canon.startsWith('data:') || canon.startsWith('blob:')) return canon
   if (/^https?:\/\//i.test(canon)) return canon
-  const fallback = canonicalPublicImagePath(pickRandomWechatDefaultAvatar())
+  const fallback = pickRandomPersonaCharacterAvatar()
   return fallback.startsWith('/image/') ? fallback : ''
 }

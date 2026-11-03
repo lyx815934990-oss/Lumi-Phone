@@ -56,7 +56,6 @@ export function buildStoryRpgThemeStyle(appearance?: DatingStoryAppearance | unk
     '--sr-header-bg': night ? t.bg : t.bgElevated,
     '--sr-console-bg': night ? `${t.bg}e6` : `${t.bgElevated}f5`,
     '--sr-prose-em': t.muted,
-    '--plot-dialogue-fg': t.muted,
-    '--plot-inner-os-fg': t.accent,
+    /* --plot-dialogue-fg / --plot-inner-os-fg 已由 buildDatingStoryAppearanceCssVars 按色卡写入 */
   } as CSSProperties
 }

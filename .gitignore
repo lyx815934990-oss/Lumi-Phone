@@ -18,6 +18,10 @@ src/phone/apps/qixi/qixi-letter.ttf
 .dev.vars
 **/.dev.vars
 
+# 外语词本构建原料（产物在 wordbooks/data）
+src/phone/apps/langStudy/wordbooks/raw/
+scripts/raw/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

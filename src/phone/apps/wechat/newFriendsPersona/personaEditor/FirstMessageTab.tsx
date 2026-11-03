@@ -1,8 +1,14 @@
 import { Sparkles } from 'lucide-react'
+import { INK_FOIL, INK_INK, INK_KICKER, INK_LEAD, INK_LINE, INK_PAGE, INK_SECTION, INK_TITLE } from './personaEditorTabs'
 import { PlaceholderAwareTextarea } from '../characterFieldPlaceholderPreview'
 
-const CHAT_BG = '#ECECEC'
-const BUBBLE = '#FFFFFF'
+/** 预览用：行首「你：」「我：」「>>」视为玩家侧；其余为角色侧。注入聊天仍按原文整行发送。 */
+function parseOpeningPreviewLine(raw: string): { side: 'them' | 'me'; text: string } {
+  const t = raw.trim()
+  const m = /^(?:你[：:]|我[：:]|>>)\s*(.*)$/u.exec(t)
+  if (m) return { side: 'me', text: (m[1] ?? '').trim() || '…' }
+  return { side: 'them', text: t || '…' }
+}
 
 export function FirstMessageTab({
   editorId,
@@ -20,49 +26,85 @@ export function FirstMessageTab({
   const lines = String(openingLines ?? '')
     .split(/\r?\n/)
     .map((s) => s.trimEnd())
-  const displayLines = lines.length && lines.some((s) => s.length > 0) ? lines.filter((s) => s.length > 0) : ['尚未填写开场白…']
+  const nonempty = lines.filter((s) => s.trim().length > 0)
+  const bubbles =
+    nonempty.length > 0
+      ? nonempty.map(parseOpeningPreviewLine)
+      : [{ side: 'them' as const, text: '尚未填写开场白…' }]
 
   return (
-    <section className="rounded-[14px] border border-neutral-200/90 bg-white px-3 pb-6 pt-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-      <header className="mb-5 border-b border-neutral-100 pb-4">
-        <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-neutral-400">03 CHAT · 首句预览</p>
-        <h2 className="mt-2 text-[17px] font-semibold tracking-tight text-[#1C1C1E]">开场白</h2>
-        <p className="mt-1 text-[11px] font-light leading-relaxed text-neutral-500">
-          无历史消息进入聊天时按行发送；上方为所见即所得的会话预览。
+    <section className={`${INK_SECTION} px-3 pb-6 pt-5`}>
+      <header className="mb-5 border-b border-[#D2D0CB] pb-4">
+        <p className={INK_KICKER}>05 CHAT · 首句预览</p>
+        <h2 className={INK_TITLE}>开场白</h2>
+        <p className={INK_LEAD}>
+          每行一条气泡。默认角色在左；行首写「你：」或「我：」可在预览里摆到右侧。
         </p>
       </header>
 
-      <div className="mx-auto max-w-md overflow-hidden rounded-[18px] border border-neutral-200/80 shadow-inner">
-        <div className="border-b border-neutral-200/60 bg-white/90 px-4 py-2.5 text-center">
-          <span className="text-[11px] font-medium tracking-wide text-neutral-400">预览 · 透明会话壳</span>
+      <div
+        className="mx-auto max-w-md overflow-hidden rounded-[16px] border"
+        style={{ borderColor: INK_LINE, background: INK_PAGE }}
+      >
+        <div className="border-b px-4 py-2.5 text-center" style={{ borderColor: INK_LINE }}>
+          <span className="font-mono text-[10px] tracking-[0.14em]" style={{ color: INK_FOIL }}>
+            PREVIEW · 会话壳
+          </span>
         </div>
-        <div className="max-h-[min(52vh,420px)] overflow-y-auto px-3 py-5" style={{ background: CHAT_BG }}>
+        <div className="max-h-[min(52vh,420px)] overflow-y-auto px-3 py-4">
           <div className="space-y-3">
-            {displayLines.map((line, i) => (
-              <div key={`${i}-${line.slice(0, 12)}`} className="flex justify-start">
+            {bubbles.map((b, i) => {
+              const them = b.side === 'them'
+              return (
                 <div
-                  className="max-w-[88%] rounded-[14px] px-3.5 py-2.5 text-[15px] leading-snug shadow-sm"
-                  style={{
-                    background: BUBBLE,
-                    color: '#1C1C1E',
-                    borderTopLeftRadius: 4,
-                  }}
+                  key={`${i}-${b.text.slice(0, 12)}`}
+                  className={`flex items-end gap-2 ${them ? 'flex-row' : 'flex-row-reverse'}`}
                 >
-                  {line || '…'}
+                  <div
+                    className="size-7 shrink-0 border-[1.5px]"
+                    style={{
+                      borderColor: INK_INK,
+                      borderRadius: them ? 8 : 999,
+                      background: them ? '#EBEEF2' : '#E2E5EA',
+                    }}
+                    aria-hidden
+                  />
+                  <div className="max-w-[78%]">
+                    <p
+                      className={`mb-1 font-mono text-[9px] tracking-wide ${them ? 'text-left' : 'text-right'}`}
+                      style={{ color: '#9AA0A8' }}
+                    >
+                      {them ? '角色' : '你'}
+                    </p>
+                    <div
+                      className="px-3.5 py-2.5 text-[14px] leading-snug"
+                      style={{
+                        background: them ? '#F8F7F4' : INK_INK,
+                        color: them ? INK_INK : '#F8F7F4',
+                        border: them ? `1px solid ${INK_LINE}` : 'none',
+                        borderRadius: them ? '4px 14px 14px 14px' : '14px 4px 14px 14px',
+                      }}
+                    >
+                      {b.text}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>
 
       <div className="mt-6 flex items-center justify-between gap-3">
-        <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-neutral-400">EDIT SOURCE</span>
+        <span className="font-mono text-[10px] tracking-[0.16em]" style={{ color: INK_FOIL }}>
+          EDIT SOURCE
+        </span>
         <button
           type="button"
           disabled={openingGenerating}
           onClick={onRequestAiGenerate}
-          className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2 text-[12px] font-medium text-[#1C1C1E] shadow-sm transition-colors hover:bg-neutral-50 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[12px] font-medium transition-colors disabled:opacity-50"
+          style={{ borderColor: INK_LINE, background: '#F8F7F4', color: INK_INK }}
         >
           <Sparkles className="size-3.5" strokeWidth={1.75} />
           {openingGenerating ? '生成中…' : 'AI 生成'}
@@ -73,11 +115,14 @@ export function FirstMessageTab({
         value={openingLines ?? ''}
         onChange={onChangeOpeningLines}
         characterId={editorId}
-        className="mt-3 w-full border-0 border-b border-neutral-200 bg-transparent px-1 py-3 text-[14px] leading-relaxed text-[#1C1C1E] outline-none ring-0 transition-colors placeholder:text-neutral-300 focus:border-[#D4AF37]"
+        className="mt-3 w-full border-0 border-b bg-transparent px-1 py-3 text-[14px] leading-relaxed outline-none ring-0 transition-colors placeholder:text-[#9AA0A8] focus:border-[#5A6574]"
+        style={{ borderColor: INK_LINE, color: INK_INK }}
         rows={6}
-        placeholder={'每行一条气泡。回车换行即下一条。'}
+        placeholder={'每行一条。角色侧直接写正文；玩家侧可写「你：……」'}
       />
-      <p className="mt-2 text-[10px] font-light text-neutral-400">失焦时为模型预览句式；点按输入可编辑原文。</p>
+      <p className="mt-2 text-[10px] font-light" style={{ color: '#9AA0A8' }}>
+        失焦时为模型预览句式；点按输入可编辑原文。
+      </p>
     </section>
   )
 }

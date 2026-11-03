@@ -115,6 +115,7 @@ import {
 } from './replyTokenFabStore'
 import { WorldBookAfterPatchNoticeHost } from './WorldBookAfterPatchNoticeHost'
 import { LifeLedgerPatchNoticeHost } from './LifeLedgerPatchNoticeHost'
+import { ScheduleCalPatchNoticeHost } from './schedule/ScheduleCalPatchNoticeHost'
 import { ObservationNotesPatchNoticeHost } from './ObservationNotesPatchNoticeHost'
 import { DatingPlotCompletionToastHost } from './dating/DatingPlotCompletionToastHost'
 import { getLastMemoryTrace, hydrateMemoryTraceFromIndexedDb, subscribeLastMemoryTrace } from './memoryTraceStore'
@@ -161,6 +162,7 @@ import { pruneCharacterVoiceMappings } from '../voiceprint/characterVoiceMapStor
 import { applyWechatContactRemovalDataClear } from './wechatContactRemoval'
 import { resolveCharacterAvatarUrl, resolveWeChatContactAvatarUrl } from '../../utils/characterAvatarUrl'
 import { WeChatMessengerChatHeader } from './WeChatMessengerChatHeader'
+import { WeChatBlockedContactBadge } from './WeChatBlockedContactBadge'
 import { ChatHeader } from './chatRoom/ChatHeader'
 import { ChatPeerPresenceDot } from './chatRoom/ChatPeerPresenceDot'
 import { loadShowChatPresenceDot } from './chatRoom/chatPresenceDotStorage'
@@ -226,6 +228,7 @@ import { uid } from './newFriendsPersona/utils'
 import { formatWorldBackgroundForPrompt } from './newFriendsPersona/worldBackgroundFormat'
 import {
   applyWorldBookAfterPatchesToCharacter,
+  summarizeWorldBookAfterPatchChanges,
   WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT,
 } from './newFriendsPersona/worldBookAfterPatch'
 import {
@@ -3705,18 +3708,24 @@ function WeChatAppInner({ onBack }: Props) {
   ])
 
   const [personaListDisplayNameByCharId, setPersonaListDisplayNameByCharId] = useState<Record<string, string>>({})
+  const [personaBlockedMarkByCharId, setPersonaBlockedMarkByCharId] = useState<Record<string, boolean>>({})
   useEffect(() => {
     let cancelled = false
     const contacts = state.wechatPersonaContacts
     const load = async () => {
       const next: Record<string, string> = {}
+      const blockedNext: Record<string, boolean> = {}
       await Promise.all(
         contacts.map(async (c) => {
           const ch = await personaDb.getCharacter(c.characterId)
           next[c.characterId] = resolveWeChatContactListDisplayName(ch, c.remarkName)
+          blockedNext[c.characterId] = ch?.isBlocked === true || ch?.blockedByPeer === true
         }),
       )
-      if (!cancelled) setPersonaListDisplayNameByCharId(next)
+      if (!cancelled) {
+        setPersonaListDisplayNameByCharId(next)
+        setPersonaBlockedMarkByCharId(blockedNext)
+      }
     }
     void load()
     const onStorage = () => void load()
@@ -3733,9 +3742,15 @@ function WeChatAppInner({ onBack }: Props) {
       remarkName: personaListDisplayNameByCharId[c.characterId] || c.remarkName,
       avatarUrl: resolveCharacterAvatarUrl({ avatarUrl: c.avatarUrl }) || undefined,
       isStarred: c.isStarred,
+      blockedMark: personaBlockedMarkByCharId[c.characterId] === true,
     }))
     return [weChatSelfAccountContact, ...persona, ...WECHAT_DEFAULT_CONTACTS]
-  }, [state.wechatPersonaContacts, weChatSelfAccountContact, personaListDisplayNameByCharId])
+  }, [
+    state.wechatPersonaContacts,
+    weChatSelfAccountContact,
+    personaListDisplayNameByCharId,
+    personaBlockedMarkByCharId,
+  ])
 
   // 记忆管理需要用 characterId 作为主键，否则会出现“聊天可读到记忆，但记忆页显示 0 条”
   const memoryManageContacts = useMemo((): ComponentProps<typeof WeChatContactsInstagram>['contacts'] => {
@@ -3744,9 +3759,10 @@ function WeChatAppInner({ onBack }: Props) {
       remarkName: personaListDisplayNameByCharId[c.characterId] || c.remarkName,
       avatarUrl: resolveCharacterAvatarUrl({ avatarUrl: c.avatarUrl }) || undefined,
       isStarred: c.isStarred,
+      blockedMark: personaBlockedMarkByCharId[c.characterId] === true,
     }))
     return [WECHAT_LUMI_ASSISTANT_CONTACT, ...persona]
-  }, [state.wechatPersonaContacts, personaListDisplayNameByCharId])
+  }, [state.wechatPersonaContacts, personaListDisplayNameByCharId, personaBlockedMarkByCharId])
 
   const [route, setRoute] = useState<WxRoute>({ name: 'tabs', tab: 'messages' })
   const [pendingNewFriendRequests, setPendingNewFriendRequests] = useState<FriendRequest[]>([])
@@ -4452,12 +4468,6 @@ function WeChatAppInner({ onBack }: Props) {
     // 否则左滑「不显示/置顶」写入后刷新读不到设置，卡片会立刻弹回来。
     const convSettings = await personaDb.listAllChatConversationSettings()
     const settingsByKey = new Map(convSettings.map((s) => [s.conversationKey, s]))
-    const hiddenPeerIds = new Set(
-      convSettings
-        .filter((s) => s.hiddenFromMessageList)
-        .map((s) => s.peerCharacterId.trim())
-        .filter(Boolean),
-    )
 
     const buildOne = async (
       conversationKey: string,
@@ -4466,12 +4476,10 @@ function WeChatAppInner({ onBack }: Props) {
       avatarUrl: string | undefined,
       characterIdForKey: string,
       peerCharacterId: string,
+      opts?: { blockedMark?: boolean },
     ): Promise<(MessagesThreadRow & { sortTs: number }) | null> => {
-      // 「不显示」的会话：直接跳过，别再扫未读/最新消息
-      if (
-        hiddenPeerIds.has(peerCharacterId) ||
-        (settingsByKey.get(conversationKey)?.hiddenFromMessageList ?? false)
-      ) {
+      // 「不显示」只认本会话键；勿按 peer 全局屏蔽，否则换身份键 / 再聊后仍永远不出现
+      if (settingsByKey.get(conversationKey)?.hiddenFromMessageList ?? false) {
         return null
       }
       const st = settingsByKey.get(conversationKey) ?? null
@@ -4550,6 +4558,7 @@ function WeChatAppInner({ onBack }: Props) {
         avatarUrl,
         unread,
         draftPreview,
+        ...(opts?.blockedMark ? { blockedMark: true as const } : {}),
         sortTs,
       }
     }
@@ -4588,7 +4597,6 @@ function WeChatAppInner({ onBack }: Props) {
       const slice = contacts.slice(i, i + BATCH)
       const batch = await Promise.all(
         slice.map(async (c) => {
-          if (hiddenPeerIds.has(c.characterId)) return null
           const ch = await personaDb.getCharacter(c.characterId)
           // 列表用同步绑定身份即可，不必对每个关联身份再探 latest（那是进聊天室才该做的）
           const sessionSid = resolvePrivateChatSessionPlayerIdentityId(ch, pid)
@@ -4597,7 +4605,10 @@ function WeChatAppInner({ onBack }: Props) {
           const avatarResolved =
             resolveWeChatContactAvatarUrl(c.avatarUrl, ch?.avatarUrl?.trim()) || undefined
           const displayName = resolveWeChatContactListDisplayName(ch, c.remarkName)
-          return buildOne(convKey, 'persona', displayName, avatarResolved, c.characterId, c.characterId)
+          const blockedMark = ch?.isBlocked === true || ch?.blockedByPeer === true
+          return buildOne(convKey, 'persona', displayName, avatarResolved, c.characterId, c.characterId, {
+            blockedMark,
+          })
         }),
       )
       for (const row of batch) {
@@ -4612,7 +4623,6 @@ function WeChatAppInner({ onBack }: Props) {
       const batch = await Promise.all(
         slice.map(async (g) => {
           const peerCharacterId = wechatGroupPeerCharacterId(g.id)
-          if (hiddenPeerIds.has(peerCharacterId)) return null
           const conversationKey = resolveGroupWeChatStorageConversationKey(g.id, acc || null, pid)
           if (settingsByKey.get(conversationKey)?.hiddenFromMessageList) return null
           const st = settingsByKey.get(conversationKey) ?? null
@@ -4772,6 +4782,21 @@ function WeChatAppInner({ onBack }: Props) {
         name={chatPeerContact?.remarkName ?? '对方'}
         avatarUrl={chatPeerContact?.avatarUrl}
       />
+    ) : null
+
+  const chatPeerBlockedMark =
+    route.name === 'chat' &&
+    wxDockChat?.kind === 'persona' &&
+    personaBlockedMarkByCharId[wxDockChat.characterId] === true ? (
+      <WeChatBlockedContactBadge className="ml-0.5" />
+    ) : null
+
+  const chatHeaderTitleAfterName =
+    chatPeerBlockedMark || chatPeerPresenceDot ? (
+      <span className="inline-flex shrink-0 items-center gap-1">
+        {chatPeerBlockedMark}
+        {chatPeerPresenceDot}
+      </span>
     ) : null
 
   /** 切换聊天对象时从会话级 pipeline 恢复顶栏输入态（各会话独立，互不抢占） */
@@ -5592,12 +5617,19 @@ function WeChatAppInner({ onBack }: Props) {
       })
       if (ai.worldBookPatches?.length) {
         try {
+          const wbChangedEntries = summarizeWorldBookAfterPatchChanges(
+            character,
+            ai.worldBookPatches,
+          )
           const nextCh = applyWorldBookAfterPatchesToCharacter(character, ai.worldBookPatches)
           if (nextCh) {
             await personaDb.upsertCharacter(nextCh)
             window.dispatchEvent(
               new CustomEvent(WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT, {
-                detail: { appliedPatchCount: ai.worldBookPatches.length },
+                detail: {
+                  appliedPatchCount: ai.worldBookPatches.length,
+                  changedEntries: wbChangedEntries,
+                },
               }),
             )
           }
@@ -6441,7 +6473,7 @@ function WeChatAppInner({ onBack }: Props) {
                 }
           }
           titleAfterName={
-            chatMessengerHeaderVariant === 'twitter' ? null : chatPeerPresenceDot
+            chatMessengerHeaderVariant === 'twitter' ? null : chatHeaderTitleAfterName
           }
           customRight={
             chatMultiSelectActive ? (
@@ -6633,7 +6665,7 @@ function WeChatAppInner({ onBack }: Props) {
           }
           titleTrailing={chatHeaderMuteTrailing}
           titleTrailingInteractive={route.name === 'chat' && chatHeaderBusyOn}
-          titleAfterName={chatPeerPresenceDot}
+          titleAfterName={chatHeaderTitleAfterName}
         />
       )}
       </WeChatWelcomeRevealLayer>
@@ -7604,15 +7636,6 @@ function WeChatAppInner({ onBack }: Props) {
                       returnTo: route.returnTo,
                     })
                   }
-                  onBlockedAndBack={() =>
-                    setRoute({
-                      name: 'contact-profile',
-                      target: route.target,
-                      remarkName: route.remarkName,
-                      avatarUrl: route.avatarUrl,
-                      returnTo: route.returnTo,
-                    })
-                  }
                   onDeleteContact={async (notifyPeer, chatHistoryMode) => {
                     if (route.target.kind !== 'persona') return
                     const characterId = route.target.characterId
@@ -8064,6 +8087,7 @@ function WeChatAppInner({ onBack }: Props) {
       <ReplyTokenUsageSheet />
       <WorldBookAfterPatchNoticeHost />
       <LifeLedgerPatchNoticeHost />
+      <ScheduleCalPatchNoticeHost />
       <ObservationNotesPatchNoticeHost />
       <DatingPlotCompletionToastHost />
       <MeetVol10EpilogueNoticeHost />

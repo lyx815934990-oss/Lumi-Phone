@@ -105,6 +105,15 @@ export async function formatWeChatMessageTextForMemorySummary(
     return `（${who}坐标覆写：${place}；TARGET DISTANCE: ${ls.distance}）`
   }
 
+  if (m.ext?.actionNarration === true) {
+    const body = String(m.content || '')
+      .trim()
+      .replace(/^【动描】\s*/u, '')
+      .trim()
+    // 总结材料保留动描事实；标注勿当成用户已知对白
+    return body ? `【动描】${body}` : null
+  }
+
   const text = String(m.content || '').trim()
   return text || null
 }

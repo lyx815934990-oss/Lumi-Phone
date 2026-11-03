@@ -41,14 +41,28 @@ export function DatingPlotCompletionToastHost() {
       if (!hero) return
       const linked = (ce.detail?.linkedNpcNames ?? []).map((n) => String(n).trim()).filter(Boolean)
       const plotImgWarn = ce.detail?.plotImageWarning?.trim()
+      const streamPartialWarn = ce.detail?.streamPartialWarning?.trim()
       let body =
         linked.length > 0
           ? `「${hero}」的剧情已写入。已为 ${formatNpcList(linked)} 写入关联记忆。`
           : `「${hero}」的剧情已生成并写入。`
+      if (streamPartialWarn) {
+        body += `\n\n${streamPartialWarn}`
+      }
       if (plotImgWarn) {
         body += `\n\n配图：${plotImgWarn}`
       }
-      setToast({ kind: plotImgWarn ? 'error' : 'success', title: '线下剧情 · 已完成', body })
+      const softWarn = Boolean(plotImgWarn || streamPartialWarn)
+      const warnTitle = streamPartialWarn?.includes('Token')
+        ? '线下剧情 · 已写入（输出截断）'
+        : streamPartialWarn
+          ? '线下剧情 · 已写入（链路中断）'
+          : '线下剧情 · 已完成'
+      setToast({
+        kind: softWarn ? 'error' : 'success',
+        title: warnTitle,
+        body,
+      })
       dismissLater()
     }
 

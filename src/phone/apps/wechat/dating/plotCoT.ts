@@ -3,11 +3,21 @@
  * 供存盘（DatingContext）与展示兜底（DatingStoryPage）共用。
  */
 
+import { applyActiveCotRegexForScene } from '../../thinkingChain/cotApplyRegex'
+import {
+  applyStSoftTagFallbackBeautify,
+  normalizeStVueBeautifyInText,
+  unwrapBeautifyMarkdownFences,
+} from '../../../../storyRpg/utils/stTavernHelperCompat'
 import { stripVnVoiceParamsPayload } from './vnVoiceParamsStrip'
 
 import type { PlotItem } from './types'
 import { extractAndStripPlotHtmlVisual } from './datingPlotHtmlVisual'
 import { extractAndStripReaderComments, stripReaderCommentAnchors } from './datingReaderComments'
+import {
+  extractDatingTaggedBlocks,
+  promotePlotBodyFromThinkingBlob,
+} from './datingPlotTaggedBlocks'
 import { extractPlotSynopsisTail } from './plotSummaryTitle'
 import { getAiPlotVersionSlices } from './plotVersions'
 
@@ -81,7 +91,7 @@ function stripUnclosedThinkingBlock(src: string): { inner: string; rest: string 
   if (!after) return null
   if (after.length > 4200) return null
   const lumiMarkers = countLumiStyleCoTMarkers(after)
-  const plotSceneTags = (after.match(/【\s*(?:旁白|对白|内心|心声|OS|os)\b/gu) || []).length
+  const plotSceneTags = (after.match(/【\s*(?:旁白|对白|内心|心声|OS|os)(?=\s*[｜|】])/gu) || []).length
   /** 未闭合 thinking 里若是 VN 剧情（旁白/对白等），整段当正文，避免主区域空白、字数只在折叠里 */
   if (plotSceneTags >= 1 && lumiMarkers < 2) return null
   if (after.length > 700 && lumiMarkers < 2) return null
@@ -94,7 +104,7 @@ function looksLikeStructuredCoT(s: string): boolean {
   const t = String(s || '').trim()
   if (!t) return false
   const lumiMarkers = countLumiStyleCoTMarkers(t)
-  const plotSceneTags = (t.match(/【\s*(?:旁白|对白|内心|心声|OS|os)\b/gu) || []).length
+  const plotSceneTags = (t.match(/【\s*(?:旁白|对白|内心|心声|OS|os)(?=\s*[｜|】])/gu) || []).length
   if (plotSceneTags >= 2 && lumiMarkers < 2) return false
   if (t.length < 160) return lumiMarkers >= 1
   if (lumiMarkers >= 3) return true
@@ -119,9 +129,42 @@ export function splitDatingAssistantOutput(raw: string): {
   planSummary: string
   content: string
 } {
-  let text = normalizeCoTAngleBrackets(String(raw || '').trim())
-  let logicPass = ''
+  const original = String(raw || '').trim()
+  const tagged = extractDatingTaggedBlocks(original)
 
+  let logicPass = tagged.thinking.trim()
+  let planSummary = tagged.synopsis.trim().replace(/\s+/g, ' ').slice(0, 48)
+  let text = normalizeCoTAngleBrackets(original)
+
+  // 已有 <content>/【正文】等：正文以标签为准；其余块留给评论/小剧场提取器
+  if (tagged.hadContentTag || tagged.content.trim()) {
+    let finalContentBody = stripEllipsisOnlyOsSpans(stripHtmlComments(tagged.content))
+    if (!logicPass) {
+      // content 外若仍夹 thinking 标签，再剥一层
+      const peel = stripFirstCoTBlock(text)
+      if (peel?.inner) logicPass = peel.inner
+    }
+    if (!finalContentBody.trim() && logicPass.trim()) {
+      const promoted = promotePlotBodyFromThinkingBlob(logicPass)
+      if (promoted) {
+        finalContentBody = stripEllipsisOnlyOsSpans(stripHtmlComments(promoted.content))
+        logicPass = promoted.leftoverThinking
+      } else if (!looksLikeStructuredCoT(logicPass) && logicPass.length > 35) {
+        finalContentBody = stripEllipsisOnlyOsSpans(stripHtmlComments(logicPass))
+        logicPass = ''
+      }
+    }
+    if (!planSummary.trim()) {
+      const syn = extractPlotSynopsisTail(finalContentBody)
+      if (syn.summary) {
+        planSummary = syn.summary
+        finalContentBody = syn.content
+      }
+    }
+    return { logicPass, planSummary, content: finalContentBody.trim() }
+  }
+
+  // 无 content 标签：走旧路径（thinking 剥离 + 裸正文）
   const first = stripFirstCoTBlock(text)
   if (first) {
     logicPass = first.inner
@@ -142,24 +185,31 @@ export function splitDatingAssistantOutput(raw: string): {
     }
   }
 
+  // 标签抽出的 thinking 优先
+  if (tagged.thinking.trim() && !logicPass) logicPass = tagged.thinking.trim()
+
   const legacy = text.match(/^\s*【规划摘要】\s*([^\n]{1,160})\s*(?:\r?\n)+([\s\S]*)$/)
-  let planSummary = ''
   let content = text
   if (legacy) {
-    planSummary = legacy[1].trim()
+    if (!planSummary) planSummary = legacy[1].trim()
     content = (legacy[2] || '').trim() || text
   } else {
     content = text
   }
+  // rest 里可能还有未标签化正文
+  if (!content.trim() && tagged.rest.trim()) content = tagged.rest
+
   let bodyTrim = stripEllipsisOnlyOsSpans(stripHtmlComments(content))
-  const original = String(raw || '').trim()
   let finalContentBody = bodyTrim || (logicPass || planSummary ? '' : original)
 
-  // 正文被剥空但 logicPass 很长且不像分册思维链：多为模型把剧情写在 thinking 内或未闭合误匹配 —— 回落为正文展示，避免 0 字与「全文只在折叠里」。
+  // 空正文救援：thinking 内含 VN 剧情标签 → 提升为正文
   if (!finalContentBody.trim() && logicPass.trim()) {
-    const lp = logicPass.trim()
-    if (!looksLikeStructuredCoT(lp) && lp.length > 35) {
-      finalContentBody = stripEllipsisOnlyOsSpans(stripHtmlComments(lp))
+    const promoted = promotePlotBodyFromThinkingBlob(logicPass)
+    if (promoted) {
+      finalContentBody = stripEllipsisOnlyOsSpans(stripHtmlComments(promoted.content))
+      logicPass = promoted.leftoverThinking
+    } else if (!looksLikeStructuredCoT(logicPass) && logicPass.length > 35) {
+      finalContentBody = stripEllipsisOnlyOsSpans(stripHtmlComments(logicPass))
       logicPass = ''
     }
   }
@@ -211,24 +261,327 @@ export function datingPlotBodyForPromptInjection(raw: string, plotType: 'player'
   return stripReaderCommentAnchors(content) || sansVn
 }
 
+/** 模型常把正文包进 ```text … ```，展示时剥掉围栏（保留内部正文） */
+function unwrapMarkdownProseFences(text: string): string {
+  let s = String(text ?? '')
+  if (!s.includes('```')) return s
+  // 成对围栏：```text / ```plaintext / 无语言
+  s = s.replace(/```(?:text|plaintext|md|markdown)?\s*\r?\n?([\s\S]*?)```/gi, '$1')
+  // 残留的孤立开头/结尾围栏行
+  s = s.replace(/^\s*```(?:text|plaintext|md|markdown)?\s*$/gim, '')
+  s = s.replace(/^\s*```\s*$/gim, '')
+  return s.replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/** 美化正则产出的 ```html / 裸 ``` 围栏 → 裸 HTML，便于网页渲染 */
+function unwrapHtmlBeautifyFences(text: string): string {
+  return unwrapBeautifyMarkdownFences(text)
+}
+
+/**
+ * 隐藏展示用包装标签字样（如 &lt;content&gt;），保留标签中间正文。
+ * 只剥外壳，不删内部剧情。
+ */
+export function stripDisplayWrapperTagShells(text: string): string {
+  let s = String(text ?? '')
+  if (!s) return s
+  // 成对 / 自闭合 / 残缺开闭 —— 只去掉标签本身
+  s = s.replace(/<\s*content\b[^>]*\/\s*>/gi, '')
+  s = s.replace(/<\s*content\b[^>]*>/gi, '')
+  s = s.replace(/<\s*\/\s*content\s*>/gi, '')
+  // 少数模型会把标签写成转义实体露在正文里
+  s = s.replace(/&lt;\s*\/?\s*content\b[^&]*&gt;/gi, '')
+  return s
+}
+
+function escapeHtmlText(s: string): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
+ * 内置兜底：:::emotion_status 标题 # 正文 ::: → 可折叠美化卡。
+ * 预设正则未命中 / 转义损坏时仍能出卡片（对齐酒馆楼层内联 HTML）。
+ */
+const EMOTION_STATUS_CARD_CSS = `<style>
+.lumi-emotion-status{width:100%;margin:14px 0;padding:10px 6px 14px;text-align:center;background:#F7F9F7;border:1px solid #DCE3DC;border-radius:12px;color:#2C3E2D;}
+.lumi-emotion-status>.zd-header{list-style:none;cursor:pointer;display:inline-block;opacity:.92;padding:6px 14px;border-bottom:1px dotted #7A8B7B;color:#7A8B7B;}
+.lumi-emotion-status>.zd-header::-webkit-details-marker{display:none;}
+.lumi-emotion-status .zd-title{font-weight:700;font-size:13px;letter-spacing:.14em;}
+.lumi-emotion-status .zd-body{margin-top:12px;}
+.lumi-emotion-status .zd-line-top{width:40px;height:1px;background:#7A8B7B;margin:0 auto 12px;opacity:.4;}
+.lumi-emotion-status .zd-content{text-align:left;font-size:14px;line-height:1.75;padding:0 12px;color:#2C3E2D;white-space:pre-wrap;}
+.lumi-emotion-status .zd-line-bottom{width:10px;height:1px;background:#7A8B7B;margin:12px auto 0;opacity:.35;}
+</style>`
+
+function buildEmotionStatusCardHtml(title: string, body: string): string {
+  const t = escapeHtmlText(title.trim() || '多维情感状态')
+  const b = escapeHtmlText(body.trim())
+  return `${EMOTION_STATUS_CARD_CSS}<details class="lumi-emotion-status style-zen-divider" open>
+<summary class="zd-header"><span class="zd-title">${t}</span></summary>
+<div class="zd-body"><div class="zd-line-top"></div><div class="zd-content">${b}</div><div class="zd-line-bottom"></div></div>
+</details>`
+}
+
+/** 半角/全角 # */
+const EMOTION_HASH = String.raw`[#＃]`
+/** :::emotion_status 标题 # 正文 :::（与文心美化查找同形，兼容全角＃） */
+const EMOTION_FENCE_RE = new RegExp(
+  String.raw`:::emotion_status\s*([\s\S]*?)\s*${EMOTION_HASH}\s*([\s\S]*?)\s*:::`,
+  'gi',
+)
+const BARE_EMOTION_RE =
+  /🌠\s*【主要角色】[\s\S]*?(?:⭐️|⭐)\s*【综合判断】[^\n]*(?:\n(?!\n)[^\n]*)*/g
+
+export type EmotionStatusSegment =
+  | { type: 'prose'; text: string }
+  | { type: 'emotion'; title: string; body: string }
+  | { type: 'plotDirection'; title: string; body: string }
+
+/** 剥 ```text / ``` 围栏，保留段落 */
+function unwrapTextFencesForDisplay(s: string): string {
+  let out = String(s ?? '')
+  if (!out.includes('```')) return out.trim()
+  out = out.replace(/```(?:text|plaintext|md|markdown)?\s*\r?\n?([\s\S]*?)```/gi, '\n$1\n')
+  return out.replace(/\n{3,}/g, '\n\n').trim()
+}
+
+function stripHtmlToPlain(s: string): string {
+  return String(s || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function extractEmotionFromDetailsHtml(
+  detailsHtml: string,
+): { title: string; body: string } | null {
+  const titleInner =
+    detailsHtml.match(/class=["'][^"']*zd-title[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] ??
+    detailsHtml.match(/<summary\b[^>]*>([\s\S]*?)<\/summary>/i)?.[1]
+  const bodyInner =
+    detailsHtml.match(/class=["'][^"']*zd-content[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1]
+  if (titleInner == null && bodyInner == null) return null
+  return {
+    title: stripHtmlToPlain(titleInner || '') || '多维情感状态',
+    body: stripHtmlToPlain(bodyInner || ''),
+  }
+}
+
+/**
+ * 从正文拆出情感状态 / 剧情走向 / 旁白，供 React 卡片渲染。
+ * 不依赖旁白层解释 HTML，避免 &lt;details&gt; 被当成纯文字或默认折叠藏掉。
+ */
+export function splitEmotionStatusSegments(text: string): EmotionStatusSegment[] {
+  let src = String(text ?? '')
+  if (!src.trim()) return []
+  // 实体还原后再拆
+  if (/&lt;\s*(?:details|style|summary)\b/i.test(src)) {
+    src = src.replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+  }
+
+  const out: EmotionStatusSegment[] = []
+  const pushProse = (chunk: string) => {
+    if (!chunk) return
+    const cleaned = chunk
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/^\s*:::emotion_status[^\n]*$/gim, '')
+      .replace(/^\s*:::\s*$/gim, '')
+      .replace(/\n{3,}/g, '\n\n')
+    if (cleaned.trim()) out.push({ type: 'prose', text: cleaned })
+  }
+
+  // 剧情走向 details（常含 ```text，勿当小剧场/情感卡）
+  if (/<details\b/i.test(src) && /剧情走向/u.test(src)) {
+    let last = 0
+    const re = /<details\b[^>]*>\s*<summary\b[^>]*>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/gi
+    let m: RegExpExecArray | null
+    let hit = false
+    while ((m = re.exec(src)) !== null) {
+      const summary = stripHtmlToPlain(m[1] || '')
+      if (!/剧情走向/u.test(summary)) continue
+      pushProse(src.slice(last, m.index))
+      out.push({
+        type: 'plotDirection',
+        title: summary || '剧情走向',
+        body: stripHtmlToPlain(unwrapTextFencesForDisplay(m[2] || '')),
+      })
+      last = m.index + m[0].length
+      hit = true
+    }
+    if (hit) {
+      pushProse(src.slice(last))
+      // 继续往下拆剩余 prose 里的情感块：把已推入的段再展开太复杂，
+      // 对剩余 prose 递归拆情感即可
+      const merged: EmotionStatusSegment[] = []
+      for (const seg of out) {
+        if (seg.type !== 'prose') {
+          merged.push(seg)
+          continue
+        }
+        const sub = splitEmotionStatusSegmentsWithoutPlotDirection(seg.text)
+        merged.push(...sub)
+      }
+      return merged.length ? merged : [{ type: 'prose', text: src }]
+    }
+  }
+
+  return splitEmotionStatusSegmentsWithoutPlotDirection(src)
+}
+
+function splitEmotionStatusSegmentsWithoutPlotDirection(text: string): EmotionStatusSegment[] {
+  const src = String(text ?? '')
+  if (!src.trim()) return []
+
+  const out: EmotionStatusSegment[] = []
+  const pushProse = (chunk: string) => {
+    if (!chunk) return
+    const cleaned = chunk
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/^\s*:::emotion_status[^\n]*$/gim, '')
+      .replace(/^\s*:::\s*$/gim, '')
+      .replace(/\n{3,}/g, '\n\n')
+    if (cleaned.trim()) out.push({ type: 'prose', text: cleaned })
+  }
+
+  if (/:::emotion_status/i.test(src)) {
+    let last = 0
+    const re = new RegExp(EMOTION_FENCE_RE.source, 'gi')
+    let m: RegExpExecArray | null
+    while ((m = re.exec(src)) !== null) {
+      pushProse(src.slice(last, m.index))
+      out.push({
+        type: 'emotion',
+        title: String(m[1] || '').trim() || '多维情感状态',
+        body: String(m[2] || '').trim(),
+      })
+      last = m.index + m[0].length
+    }
+    pushProse(src.slice(last))
+    if (out.some((s) => s.type === 'emotion')) return out
+  }
+
+  // 预设正则 / 内置已换成 details 时：抽回 title/body → React 卡
+  if (/style-zen-divider|lumi-emotion-status/i.test(src) && /<details\b/i.test(src)) {
+    let last = 0
+    const re =
+      /<details\b[^>]*>[\s\S]*?<\/details>/gi
+    let m: RegExpExecArray | null
+    let hit = false
+    while ((m = re.exec(src)) !== null) {
+      const block = m[0]
+      if (!/style-zen-divider|lumi-emotion-status|zd-content|zd-title/i.test(block)) {
+        continue
+      }
+      const parsed = extractEmotionFromDetailsHtml(block)
+      if (!parsed) continue
+      pushProse(src.slice(last, m.index))
+      out.push({ type: 'emotion', title: parsed.title, body: parsed.body })
+      last = m.index + m[0].length
+      hit = true
+    }
+    if (hit) {
+      pushProse(src.slice(last))
+      return out.length ? out : [{ type: 'prose', text: src }]
+    }
+  }
+
+  if (/🌠\s*【主要角色】/.test(src)) {
+    let last = 0
+    const re = new RegExp(BARE_EMOTION_RE.source, 'g')
+    let m: RegExpExecArray | null
+    while ((m = re.exec(src)) !== null) {
+      pushProse(src.slice(last, m.index))
+      out.push({
+        type: 'emotion',
+        title: '多维情感状态',
+        body: String(m[0] || '').trim(),
+      })
+      last = m.index + m[0].length
+    }
+    pushProse(src.slice(last))
+    if (out.some((s) => s.type === 'emotion')) return out
+  }
+
+  return [{ type: 'prose', text: src }]
+}
+
+export function applyBuiltinEmotionStatusBeautify(text: string): string {
+  let src = String(text ?? '')
+  // 与文心/酒馆美化规则同形：:::emotion_status 标题 # 正文 :::
+  if (/:::emotion_status/i.test(src)) {
+    src = src.replace(EMOTION_FENCE_RE, (_full, titleRaw: string, bodyRaw: string) =>
+      buildEmotionStatusCardHtml(String(titleRaw || ''), String(bodyRaw || '')),
+    )
+  }
+  // 已是卡片则跳过；否则把裸 🌠【主要角色】…⭐【综合判断】收成卡（模型常漏围栏）
+  if (/lumi-emotion-status|style-zen-divider/i.test(src)) return src
+  if (!/🌠\s*【主要角色】/.test(src)) return src
+  src = src.replace(BARE_EMOTION_RE, (block) =>
+    buildEmotionStatusCardHtml('多维情感状态', block),
+  )
+  return src
+}
+
+function prepareAssistantBodyCore(
+  raw: string,
+  opts: { keepReaderAnchors: boolean },
+): { thinkingText: string; body: string } {
+  const sp = splitDatingAssistantOutput(raw)
+  let thinkingText = (sp.logicPass || sp.planSummary || '').trim()
+  let body = stripVnVoiceParamsPayload(sp.content)
+  if (!body.trim() && thinkingText.trim()) {
+    const lp = thinkingText.trim()
+    if (!looksLikeStructuredCoT(lp) && lp.length > 35) {
+      body = stripVnVoiceParamsPayload(lp)
+      thinkingText = ''
+    }
+  }
+  body = extractAndStripPlotHtmlVisual(body).content
+  body = extractAndStripReaderComments(body).content
+  if (!opts.keepReaderAnchors) {
+    body = stripReaderCommentAnchors(body)
+  }
+  // 先只剥旁白围栏；美化 ``` 交给展示正则 + 助手兼容层（对齐 ST→助手）
+  body = unwrapMarkdownProseFences(body)
+  // 展示阶段正则（月读等 markdownOnly 美化）
+  body = applyActiveCotRegexForScene(body, 'offline', 'display')
+  // 正则替换串里的 ```html / 裸 ``` → 裸 HTML，再按助手规则包壳
+  body = unwrapHtmlBeautifyFences(body)
+  body = normalizeStVueBeautifyInText(body)
+  // 预设未命中时仍把 :::emotion_status 围栏收成卡片
+  body = applyBuiltinEmotionStatusBeautify(body)
+  // giggle 等无独立美化规则的软标签兑底
+  body = applyStSoftTagFallbackBeautify(body)
+  body = stripDisplayWrapperTagShells(body)
+  return { thinkingText, body }
+}
+
 /** 思维溯源 / 主界面展示：与 split 规则一致，并剥离 VN 语音参数 / 读者评论 / 物证 HTML 块 */
 export function resolveDatingAssistantDisplayText(raw: string): {
   thinkingText: string
   displayBody: string
 } {
-  const sp = splitDatingAssistantOutput(raw)
-  let thinkingText = (sp.logicPass || sp.planSummary || '').trim()
-  let displayBody = stripVnVoiceParamsPayload(sp.content)
-  if (!displayBody.trim() && thinkingText.trim()) {
-    const lp = thinkingText.trim()
-    if (!looksLikeStructuredCoT(lp) && lp.length > 35) {
-      displayBody = stripVnVoiceParamsPayload(lp)
-      thinkingText = ''
-    }
-  }
-  displayBody = extractAndStripPlotHtmlVisual(displayBody).content
-  displayBody = stripReaderCommentAnchors(extractAndStripReaderComments(displayBody).content)
-  return { thinkingText, displayBody }
+  const { thinkingText, body } = prepareAssistantBodyCore(raw, { keepReaderAnchors: false })
+  return { thinkingText, displayBody: body }
+}
+
+/**
+ * 故事流卡片正文：应用预设正则 / 去围栏，但保留【读者讨论位】锚点供穿插评论。
+ */
+export function prepareDatingFeedBody(raw: string): string {
+  return prepareAssistantBodyCore(raw, { keepReaderAnchors: true }).body
 }
 
 /** StoryBlock 展示：优先当前版本正文，并与 resolveDatingAssistantDisplayText 对齐 */

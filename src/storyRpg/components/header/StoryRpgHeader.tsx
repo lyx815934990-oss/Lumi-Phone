@@ -60,7 +60,7 @@ export function StoryRpgHeader({
   const avatar = characterAvatarUrl?.trim() || ''
 
   const iconBtn =
-    'flex size-8 shrink-0 items-center justify-center rounded-full text-[var(--sr-text-muted)] transition hover:bg-[var(--sr-glass)] hover:text-[var(--sr-gold)]'
+    'flex size-8 shrink-0 items-center justify-center rounded-[8px] border border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] text-[var(--sr-text-muted)] transition hover:border-[var(--sr-text-soft)] hover:text-[var(--sr-text)]'
   const actionBtn =
     '!size-8 !min-w-8 !shrink-0 !px-0'
 
@@ -137,12 +137,12 @@ export function StoryRpgHeader({
             <img
               src={avatar}
               alt=""
-              className="size-7 shrink-0 rounded-full border border-[var(--sr-border)] object-cover shadow-sm"
+              className="size-7 shrink-0 rounded-[6px] border border-[var(--sr-border)] object-cover"
               draggable={false}
             />
           ) : (
             <span
-              className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[var(--sr-border)] bg-[var(--sr-glass)] font-[family-name:var(--sr-font-serif)] text-[12px] text-[var(--sr-text-muted)]"
+              className="flex size-7 shrink-0 items-center justify-center rounded-[6px] border border-[var(--sr-border)] bg-[var(--sr-panel)] font-[family-name:var(--sr-font-serif)] text-[12px] text-[var(--sr-text-muted)]"
               aria-hidden
             >
               {(characterName || '?').slice(0, 1)}
@@ -163,7 +163,7 @@ export function StoryRpgHeader({
           onClick={resetProgress}
           ariaLabel="重置进度"
           title="重置当前角色进度"
-          className={`${actionBtn} border-red-400/25 text-red-400/90 hover:border-red-400/45 hover:text-red-400`}
+          className={`${actionBtn} !rounded-[8px] border-red-400/25 text-red-400/90 hover:border-red-400/45 hover:text-red-400`}
           {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-reset' }}
         >
           <RotateCcw className="size-3.5" strokeWidth={1.75} />

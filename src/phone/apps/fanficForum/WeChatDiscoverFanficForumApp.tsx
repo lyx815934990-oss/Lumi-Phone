@@ -6,6 +6,7 @@ export function WeChatDiscoverFanficForumApp({
   onBack,
   personaContacts = [],
   userDisplayName,
+  wechatAvatarUrl,
   wechatAccountId,
   playerIdentityId,
   className = '',
@@ -13,6 +14,8 @@ export function WeChatDiscoverFanficForumApp({
   onBack: () => void
   personaContacts?: WeChatPersonaContact[]
   userDisplayName: string
+  /** 微信头像；通讯社自定义头像与此隔离 */
+  wechatAvatarUrl?: string | null
   wechatAccountId?: string | null
   playerIdentityId?: string | null
   className?: string
@@ -22,6 +25,7 @@ export function WeChatDiscoverFanficForumApp({
       onBack={onBack}
       personaContacts={personaContacts}
       userDisplayName={userDisplayName}
+      wechatAvatarUrl={wechatAvatarUrl}
       wechatAccountId={wechatAccountId}
       playerIdentityId={playerIdentityId}
       className={className}

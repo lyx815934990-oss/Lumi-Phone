@@ -2,6 +2,10 @@ import { migrateLegacyRootPublicUrl } from '../../../../publicAssetUrl'
 import { repairCharacterAvatarForBundleImport } from '../../../utils/characterAvatarUrl'
 import { parseCharacterProfileImageHistory } from '../wechatCharacterProfileImageHistory'
 import { parseCharacterAppearanceRefImages } from '../characterAppearanceRefImages'
+import {
+  normalizeScheduleCalendarEvents,
+  normalizeScheduleEntries,
+} from '../schedule/scheduleEntries'
 import { sanitizeStoredWechatSignature } from './wechatSignatureStyleRules'
 import type {
   Character,
@@ -25,6 +29,7 @@ import type {
   MemorySummaryRetryItem,
   NetworkGraphViewRecord,
   NotificationAudioConfig,
+  PersonaPack,
   PlayerIdentity,
   PlayerNetworkLink,
   Relationship,
@@ -68,6 +73,8 @@ import {
   coerceStringListForStorage,
   coerceStickerTargetedEntriesForStorage,
 } from '../wechatMediaSendFrequency'
+import { parseStoredOnlineActionNarrationCountRange } from '../onlineActionNarration'
+import { parseStoredReplyBubbleCountRange } from '../replyBubbleCount'
 import {
   clampProactiveMessageIntervalSeconds,
   resolveProactiveMessageIntervalSeconds,
@@ -81,6 +88,7 @@ import {
 import { parseWeChatLocationPayloadFromDb } from '../location/wechatLocationUtils'
 import { parseWeChatTakeoutOrderPayloadFromDb } from '../takeout/takeoutOrderShareAiDirective'
 import { parseWeChatPulseSharePayloadFromDb } from '../pulse/pulseShareAiDirective'
+import { parseWeChatForumSharePayloadFromDb } from '../../fanficForum/forumWechatShare'
 import { buildCharacterFullTrashArchive, type PersonaDbTrashSource } from '../../recycleBin/archiveCharacterDeletion'
 import { suppressMomentMemoryArchiveFromMemory } from '../memory/momentMemoryArchiveSuppression'
 import { INDEXED_TRASH_RETENTION_MS, emitIndexedTrashChanged } from '../../recycleBin/recycleBinEvents'
@@ -171,6 +179,7 @@ import { pickRandomWechatDefaultAvatar } from '../wechatDefaultAvatars'
 import { formatWeChatMessageListTimestamp as formatWeChatMessageListTimestampFn } from './chatMessageTimestampFormat'
 import { emptyWorldBackgroundSettings, formatTimelineEventDate } from './types'
 import { DEFAULT_WORLD_BACKGROUND_ID } from './worldBackgroundConstants'
+import { normalizePersonaPack } from './personaPack'
 import { buildPresetWorldBackgrounds } from './worldBackgroundSeed'
 import { LUMI_ASSISTANT_AVATAR_URL } from '../lumiAssistantAssets'
 import {
@@ -222,7 +231,7 @@ import { characterBelongsToWechatAccount, stampWechatAccountOwner } from '../wec
 import { WECHAT_USER_PROFILE_KV_KEY, WECHAT_USER_PROFILE_KV_KEY_LEGACY } from '../wechatProfileTypes'
 
 const DB_NAME = 'wechat-personas-v1'
-const DB_VERSION = 32
+const DB_VERSION = 33
 
 /** 复合索引：按会话 + 时间戳范围查询（日历、按日跳转） */
 const CHAT_MSG_INDEX_CONV_TS = 'conversationKey_timestamp'
@@ -233,6 +242,7 @@ const WX_PRIVATE_ANCHOR_GROUP_TTL_MS = 45 * 60 * 1000
 /** 从某 NPC 私聊切回本群时，群 AI 优先承接该成员私聊语境（TTL 与私聊锚群一致） */
 const WX_GROUP_ANCHOR_PRIVATE_PEER_KV_PREFIX = 'wx-grp-anchor-pv:v1:'
 const STORE = 'characters'
+const PERSONA_PACK_STORE = 'personaPacks'
 const WORLD_BG_STORE = 'worldBackgrounds'
 const CHAT_MSG_STORE = 'chatMessages'
 const IDENTITY_STORE = 'playerIdentities'
@@ -800,7 +810,7 @@ function normalizeCharacter(input: unknown): Stored {
             })()
           : '',
     zodiac: typeof c.zodiac === 'string' ? c.zodiac : '',
-    identity: typeof c.identity === 'string' ? c.identity : '学生',
+    identity: typeof c.identity === 'string' ? c.identity : '',
     mbti: typeof raw.mbti === 'string' ? (raw.mbti as string) : '',
     animalArchetype:
       typeof raw.animalArchetype === 'string' ? (raw.animalArchetype as string).trim().toLowerCase() : '',
@@ -861,6 +871,10 @@ function normalizeCharacter(input: unknown): Stored {
       : undefined,
     generatedForCharacterId:
       typeof raw.generatedForCharacterId === 'string' ? (raw.generatedForCharacterId as string) : undefined,
+    packId: typeof raw.packId === 'string' && raw.packId.trim() ? raw.packId.trim() : undefined,
+    packSeat: raw.packSeat === 'romance' || raw.packSeat === 'npc' ? raw.packSeat : undefined,
+    wechatEnlisted:
+      raw.wechatEnlisted === true ? true : raw.wechatEnlisted === false ? false : undefined,
     interests: Array.isArray(raw.interests)
       ? (raw.interests as unknown[]).filter((x): x is string => typeof x === 'string')
       : undefined,
@@ -890,10 +904,33 @@ function normalizeCharacter(input: unknown): Stored {
     remark: typeof raw.remark === 'string' ? raw.remark.slice(0, 64) : '',
     isStarred: typeof raw.isStarred === 'boolean' ? raw.isStarred : false,
     isBlocked: typeof raw.isBlocked === 'boolean' ? raw.isBlocked : false,
+    blockedAt: (() => {
+      const n = Number((raw as { blockedAt?: unknown }).blockedAt)
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined
+    })(),
+    blockedByPeer: typeof (raw as { blockedByPeer?: unknown }).blockedByPeer === 'boolean'
+      ? !!(raw as { blockedByPeer?: boolean }).blockedByPeer
+      : false,
+    blockedByPeerAt: (() => {
+      const n = Number((raw as { blockedByPeerAt?: unknown }).blockedByPeerAt)
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined
+    })(),
     momentsPermission: {
       blocked: !!((raw as { momentsPermission?: { blocked?: unknown } }).momentsPermission?.blocked),
     },
     schedule: normalizeSchedule((raw as any).schedule),
+    scheduleEntries: (() => {
+      const normalized = normalizeScheduleEntries((raw as { scheduleEntries?: unknown }).scheduleEntries)
+      return normalized.length ? normalized : undefined
+    })(),
+    scheduleCalendarEvents: (() => {
+      const normalized = normalizeScheduleCalendarEvents(
+        (raw as { scheduleCalendarEvents?: unknown }).scheduleCalendarEvents,
+      )
+      return normalized.length ? normalized : undefined
+    })(),
+    scheduleCalendarAutoUpdateEnabled:
+      (raw as { scheduleCalendarAutoUpdateEnabled?: unknown }).scheduleCalendarAutoUpdateEnabled === true,
   }
 }
 
@@ -1571,6 +1608,8 @@ function normalizeWeChatChatMessage(input: unknown): WeChatChatMessage | null {
   const takeoutOrder = parseWeChatTakeoutOrderPayloadFromDb(rawTakeoutOrder)
   const rawPulseShare = (m as { pulseShare?: unknown }).pulseShare
   const pulseShare = parseWeChatPulseSharePayloadFromDb(rawPulseShare)
+  const rawForumShare = (m as { forumShare?: unknown }).forumShare
+  const forumShare = parseWeChatForumSharePayloadFromDb(rawForumShare)
   const rawSharedRecord = (m as { sharedRecord?: unknown }).sharedRecord
   const sharedRecord: WeChatSharedRecordPayload | undefined = (() => {
     if (!rawSharedRecord || typeof rawSharedRecord !== 'object') return undefined
@@ -1714,19 +1753,34 @@ function normalizeWeChatChatMessage(input: unknown): WeChatChatMessage | null {
     const o = rawExt as Record<string, unknown>
     const groupBotDarkBubble = o.groupBotDarkBubble === true
     const centerSystemStrip = o.centerSystemStrip === true
+    const actionNarration = o.actionNarration === true
     const shieldedMessageContent =
       typeof o.shieldedMessageContent === 'string'
         ? String(o.shieldedMessageContent).trim().slice(0, 8000)
         : undefined
     const muteSuppressStrip = o.muteSuppressStrip === true
     const mutedMessageVisibleToModeratorsOnly = o.mutedMessageVisibleToModeratorsOnly === true
-    if (groupBotDarkBubble || centerSystemStrip || mutedMessageVisibleToModeratorsOnly) {
+    const undeliveredDueToBlock = o.undeliveredDueToBlock === true
+    const blockRejectIcon = o.blockRejectIcon === true
+    if (
+      groupBotDarkBubble ||
+      centerSystemStrip ||
+      actionNarration ||
+      mutedMessageVisibleToModeratorsOnly ||
+      undeliveredDueToBlock ||
+      blockRejectIcon ||
+      shieldedMessageContent ||
+      muteSuppressStrip
+    ) {
       ext = {
         groupBotDarkBubble: groupBotDarkBubble ? true : undefined,
         centerSystemStrip: centerSystemStrip ? true : undefined,
+        actionNarration: actionNarration ? true : undefined,
         shieldedMessageContent: shieldedMessageContent || undefined,
         muteSuppressStrip: muteSuppressStrip ? true : undefined,
         mutedMessageVisibleToModeratorsOnly: mutedMessageVisibleToModeratorsOnly ? true : undefined,
+        undeliveredDueToBlock: undeliveredDueToBlock ? true : undefined,
+        blockRejectIcon: blockRejectIcon ? true : undefined,
       }
     }
   }
@@ -1777,6 +1831,7 @@ function normalizeWeChatChatMessage(input: unknown): WeChatChatMessage | null {
     locationShare,
     takeoutOrder,
     pulseShare,
+    forumShare,
     sharedRecord,
     chatHistory,
     images: images.length ? images : undefined,
@@ -1973,6 +2028,48 @@ function normalizeChatConversationSettingsRow(input: unknown): ChatConversationS
     ...(typeof (r as { innerOsSyncEnabled?: unknown }).innerOsSyncEnabled === 'boolean'
       ? { innerOsSyncEnabled: !!(r as { innerOsSyncEnabled: boolean }).innerOsSyncEnabled }
       : {}),
+    ...(typeof (r as { onlineActionNarrationEnabled?: unknown }).onlineActionNarrationEnabled ===
+    'boolean'
+      ? {
+          onlineActionNarrationEnabled: !!(r as { onlineActionNarrationEnabled: boolean })
+            .onlineActionNarrationEnabled,
+        }
+      : {}),
+    ...(() => {
+      const minRaw = (r as { onlineActionNarrationCountMin?: unknown }).onlineActionNarrationCountMin
+      const maxRaw = (r as { onlineActionNarrationCountMax?: unknown }).onlineActionNarrationCountMax
+      if (
+        !(typeof minRaw === 'number' && Number.isFinite(minRaw)) &&
+        !(typeof maxRaw === 'number' && Number.isFinite(maxRaw))
+      ) {
+        return {}
+      }
+      const range = parseStoredOnlineActionNarrationCountRange(minRaw, maxRaw)
+      return {
+        onlineActionNarrationCountMin: range.min,
+        onlineActionNarrationCountMax: range.max,
+      }
+    })(),
+    ...(typeof (r as { replyBubbleCountEnabled?: unknown }).replyBubbleCountEnabled === 'boolean'
+      ? {
+          replyBubbleCountEnabled: !!(r as { replyBubbleCountEnabled: boolean }).replyBubbleCountEnabled,
+        }
+      : {}),
+    ...(() => {
+      const minRaw = (r as { replyBubbleCountMin?: unknown }).replyBubbleCountMin
+      const maxRaw = (r as { replyBubbleCountMax?: unknown }).replyBubbleCountMax
+      if (
+        !(typeof minRaw === 'number' && Number.isFinite(minRaw)) &&
+        !(typeof maxRaw === 'number' && Number.isFinite(maxRaw))
+      ) {
+        return {}
+      }
+      const range = parseStoredReplyBubbleCountRange(minRaw, maxRaw)
+      return {
+        replyBubbleCountMin: range.min,
+        replyBubbleCountMax: range.max,
+      }
+    })(),
     ...(typeof (r as { recentPrivateInjectAiRounds?: unknown }).recentPrivateInjectAiRounds === 'number' &&
     Number.isFinite((r as { recentPrivateInjectAiRounds?: number }).recentPrivateInjectAiRounds)
       ? {
@@ -2280,6 +2377,46 @@ function mergeChatConversationSettingsRows(
   }
   if (typeof newer.innerOsSyncEnabled !== 'boolean' && typeof older.innerOsSyncEnabled === 'boolean') {
     merged.innerOsSyncEnabled = older.innerOsSyncEnabled
+  }
+  if (
+    typeof newer.onlineActionNarrationEnabled !== 'boolean' &&
+    typeof older.onlineActionNarrationEnabled === 'boolean'
+  ) {
+    merged.onlineActionNarrationEnabled = older.onlineActionNarrationEnabled
+  }
+  if (
+    !(typeof newer.onlineActionNarrationCountMin === 'number' && Number.isFinite(newer.onlineActionNarrationCountMin)) &&
+    typeof older.onlineActionNarrationCountMin === 'number' &&
+    Number.isFinite(older.onlineActionNarrationCountMin)
+  ) {
+    merged.onlineActionNarrationCountMin = older.onlineActionNarrationCountMin
+  }
+  if (
+    !(typeof newer.onlineActionNarrationCountMax === 'number' && Number.isFinite(newer.onlineActionNarrationCountMax)) &&
+    typeof older.onlineActionNarrationCountMax === 'number' &&
+    Number.isFinite(older.onlineActionNarrationCountMax)
+  ) {
+    merged.onlineActionNarrationCountMax = older.onlineActionNarrationCountMax
+  }
+  if (
+    typeof newer.replyBubbleCountEnabled !== 'boolean' &&
+    typeof older.replyBubbleCountEnabled === 'boolean'
+  ) {
+    merged.replyBubbleCountEnabled = older.replyBubbleCountEnabled
+  }
+  if (
+    !(typeof newer.replyBubbleCountMin === 'number' && Number.isFinite(newer.replyBubbleCountMin)) &&
+    typeof older.replyBubbleCountMin === 'number' &&
+    Number.isFinite(older.replyBubbleCountMin)
+  ) {
+    merged.replyBubbleCountMin = older.replyBubbleCountMin
+  }
+  if (
+    !(typeof newer.replyBubbleCountMax === 'number' && Number.isFinite(newer.replyBubbleCountMax)) &&
+    typeof older.replyBubbleCountMax === 'number' &&
+    Number.isFinite(older.replyBubbleCountMax)
+  ) {
+    merged.replyBubbleCountMax = older.replyBubbleCountMax
   }
   if (
     typeof newer.voiceSynthToneTokensEnabled !== 'boolean' &&
@@ -3796,6 +3933,10 @@ function openDb(): Promise<IDBDatabase> {
         pl.createIndex('playerIdentityId', 'playerIdentityId', { unique: false })
         pl.createIndex('characterId', 'characterId', { unique: false })
       }
+      if (!db.objectStoreNames.contains(PERSONA_PACK_STORE)) {
+        const ps = db.createObjectStore(PERSONA_PACK_STORE, { keyPath: 'id' })
+        ps.createIndex('updatedAt', 'updatedAt', { unique: false })
+      }
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error ?? new Error('open indexeddb failed'))
@@ -4548,12 +4689,25 @@ export class PersonaDb {
   /** 仅主角/独立角色（人脉 NPC、玩家身份行不在列表展示） */
   async listRootCharacters(): Promise<Stored[]> {
     const all = await this.listCharacters()
-    return all.filter((c) => !c.generatedForCharacterId && !c.isPlayerIdentity)
+    return all.filter((c) => !c.generatedForCharacterId && c.packSeat !== 'npc' && !c.isPlayerIdentity)
   }
 
   async listNpcsFor(mainCharacterId: string): Promise<Stored[]> {
     const all = await this.listCharacters()
-    return all.filter((c) => c.generatedForCharacterId === mainCharacterId)
+    const main = all.find((c) => c.id === mainCharacterId)
+    const packId = main?.packId?.trim()
+    const seen = new Set<string>()
+    const out: Stored[] = []
+    for (const c of all) {
+      if (c.id === mainCharacterId) continue
+      const ofMain = c.generatedForCharacterId === mainCharacterId
+      const packNpc = !!(packId && c.packId === packId && c.packSeat === 'npc')
+      if (!ofMain && !packNpc) continue
+      if (seen.has(c.id)) continue
+      seen.add(c.id)
+      out.push(c)
+    }
+    return out
   }
 
   async listCharactersForWechatAccount(wechatAccountId: string): Promise<Stored[]> {
@@ -4565,14 +4719,14 @@ export class PersonaDb {
 
   async listRootCharactersForWechatAccount(wechatAccountId: string): Promise<Stored[]> {
     const rows = await this.listCharactersForWechatAccount(wechatAccountId)
-    return rows.filter((c) => !c.generatedForCharacterId && !c.isPlayerIdentity)
+    return rows.filter((c) => !c.generatedForCharacterId && c.packSeat !== 'npc' && !c.isPlayerIdentity)
   }
 
   async listNpcsForWechatAccount(mainCharacterId: string, wechatAccountId: string): Promise<Stored[]> {
     const root = mainCharacterId.trim()
     const acc = wechatAccountId.trim()
     if (!root || !acc) return []
-    return (await this.listCharactersForWechatAccount(acc)).filter((c) => c.generatedForCharacterId === root)
+    return (await this.listNpcsFor(root)).filter((c) => !c.wechatAccountId?.trim() || c.wechatAccountId.trim() === acc)
   }
 
   /** 主账号首次启动：为无 wechatAccountId 的历史人设补归属（不复制数据） */
@@ -4701,13 +4855,92 @@ export class PersonaDb {
       const canonical = await resolveCanonicalCharacterId(rawId)
       if (!canonical || seen.has(canonical)) continue
       const ch = await this.getCharacterWithoutCanonicalRedirect(canonical)
-      if (!ch || ch.generatedForCharacterId || ch.isPlayerIdentity) continue
+      if (!ch || ch.generatedForCharacterId || ch.packSeat === 'npc' || ch.isPlayerIdentity) continue
       if (!characterBelongsToWechatAccount(ch, acc)) continue
       seen.add(ch.id)
       out.push(ch)
     }
 
     return out.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+  }
+
+  async listPersonaPacks(): Promise<PersonaPack[]> {
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(PERSONA_PACK_STORE)) {
+      db.close()
+      return []
+    }
+    const tx = db.transaction(PERSONA_PACK_STORE, 'readonly')
+    const req = tx.objectStore(PERSONA_PACK_STORE).getAll()
+    const raw = await new Promise<unknown[]>((resolve, reject) => {
+      req.onsuccess = () => resolve((req.result as unknown[]) ?? [])
+      req.onerror = () => reject(req.error ?? new Error('personaPacks getAll'))
+    })
+    await txDone(tx)
+    db.close()
+    return raw
+      .map((row) => normalizePersonaPack(row))
+      .filter((x): x is PersonaPack => !!x)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  async getPersonaPack(id: string): Promise<PersonaPack | null> {
+    const key = id.trim()
+    if (!key) return null
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(PERSONA_PACK_STORE)) {
+      db.close()
+      return null
+    }
+    const tx = db.transaction(PERSONA_PACK_STORE, 'readonly')
+    const req = tx.objectStore(PERSONA_PACK_STORE).get(key)
+    const row = await new Promise<unknown>((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error ?? new Error('personaPack get'))
+    })
+    await txDone(tx)
+    db.close()
+    return normalizePersonaPack(row)
+  }
+
+  async putPersonaPack(pack: PersonaPack): Promise<void> {
+    const next = normalizePersonaPack({ ...pack, updatedAt: Date.now() })
+    if (!next) throw new Error('invalid persona pack')
+    const db = await openDb()
+    const tx = db.transaction(PERSONA_PACK_STORE, 'readwrite')
+    tx.objectStore(PERSONA_PACK_STORE).put(next)
+    await txDone(tx)
+    db.close()
+  }
+
+  async deletePersonaPack(id: string): Promise<void> {
+    const key = id.trim()
+    if (!key) return
+    const db = await openDb()
+    if (!db.objectStoreNames.contains(PERSONA_PACK_STORE)) {
+      db.close()
+      return
+    }
+    const tx = db.transaction(PERSONA_PACK_STORE, 'readwrite')
+    tx.objectStore(PERSONA_PACK_STORE).delete(key)
+    await txDone(tx)
+    db.close()
+  }
+
+  /** 删除演出卡及其成员 / NPC 人设（通讯录条目由调用方另行清理） */
+  async deletePersonaPackAndMembers(packId: string): Promise<string[]> {
+    const pack = await this.getPersonaPack(packId)
+    if (!pack) return []
+    const ids = [...new Set([...pack.memberIds, ...pack.npcIds].map((x) => x.trim()).filter(Boolean))]
+    for (const id of ids) {
+      try {
+        await this.deleteCharacter(id)
+      } catch (e) {
+        console.warn('[persona-db] delete pack member failed', id, e)
+      }
+    }
+    await this.deletePersonaPack(packId)
+    return ids
   }
 
   async listNpcsForAccessibleRoot(
@@ -4762,7 +4995,18 @@ export class PersonaDb {
 
   async updateCharacterContactSettings(
     characterId: string,
-    patch: Partial<Pick<Stored, 'remark' | 'isStarred' | 'isBlocked' | 'momentsPermission'>>,
+    patch: Partial<
+      Pick<
+        Stored,
+        | 'remark'
+        | 'isStarred'
+        | 'isBlocked'
+        | 'blockedAt'
+        | 'blockedByPeer'
+        | 'blockedByPeerAt'
+        | 'momentsPermission'
+      >
+    >,
   ): Promise<Stored | null> {
     const current = await this.getCharacter(characterId)
     if (!current) return null
@@ -5903,16 +6147,65 @@ export class PersonaDb {
       })
     }
 
-    // 「删除聊天」后会话从信息列表隐藏；任一方产生新消息后重新显示（与微信体验一致）
-    const stUnhide = await this.getChatConversationSettings(conversationKey)
-    if (stUnhide?.hiddenFromMessageList) {
+    // 「不显示 / 删聊天」后会话从信息列表隐藏；再聊或新消息写入时重新显示（与微信一致）
+    await this.unhideConversationFromMessageList({
+      conversationKey,
+      peerCharacterId: peerForMerge,
+      playerIdentityId: normalized.playerIdentityId,
+    })
+  }
+
+  /**
+   * 取消「信息」Tab 中的「不显示」。
+   * - 先清当前会话键；
+   * - 再清同 peer 的其它隐藏行（避免旧身份键仍占着隐藏态，导致列表永远不出来）。
+   */
+  async unhideConversationFromMessageList(params: {
+    conversationKey: string
+    peerCharacterId?: string
+    playerIdentityId?: string
+  }): Promise<boolean> {
+    const ck = params.conversationKey.trim()
+    if (!ck) return false
+    const existing = await this.getChatConversationSettings(ck)
+    const peer =
+      params.peerCharacterId?.trim() ||
+      existing?.peerCharacterId?.trim() ||
+      ''
+    const pid =
+      params.playerIdentityId?.trim() ||
+      existing?.playerIdentityId?.trim() ||
+      ''
+    let changed = false
+    if (existing?.hiddenFromMessageList) {
+      const peerId = peer || existing.peerCharacterId.trim()
+      const pidId = pid || existing.playerIdentityId.trim()
+      if (!peerId || !pidId) return false
       await this.upsertChatConversationSettings({
-        conversationKey,
-        peerCharacterId: stUnhide.peerCharacterId,
-        playerIdentityId: stUnhide.playerIdentityId,
+        conversationKey: ck,
+        peerCharacterId: peerId,
+        playerIdentityId: pidId,
         hiddenFromMessageList: false,
       })
+      changed = true
     }
+    const peerForSiblings = peer || existing?.peerCharacterId?.trim() || ''
+    if (peerForSiblings) {
+      const all = await this.listAllChatConversationSettings()
+      for (const row of all) {
+        if (row.conversationKey === ck) continue
+        if (row.peerCharacterId.trim() !== peerForSiblings) continue
+        if (!row.hiddenFromMessageList) continue
+        await this.upsertChatConversationSettings({
+          conversationKey: row.conversationKey,
+          peerCharacterId: row.peerCharacterId,
+          playerIdentityId: row.playerIdentityId,
+          hiddenFromMessageList: false,
+        })
+        changed = true
+      }
+    }
+    return changed
   }
 
   /** 局部更新一条聊天消息（如红包拆封状态），写入后广播 wechat-storage-changed */
@@ -5934,6 +6227,7 @@ export class PersonaDb {
       | 'isRecalled'
       | 'recallTimestamp'
       | 'recalledBy'
+      | 'timestamp'
       | 'storyDay'
       | 'storyTime'
       | 'storyTimeLabel'
@@ -5943,6 +6237,7 @@ export class PersonaDb {
       | 'translationExpanded'
       | 'translationAudioUrl'
       | 'innerOs'
+      | 'ext'
       >
     > & {
       redPacket?: Partial<WeChatRedPacketPayload>
@@ -5959,6 +6254,10 @@ export class PersonaDb {
     const merged: WeChatChatMessage = {
       ...existing,
       ...patch,
+      ext:
+        patch.ext !== undefined
+          ? ({ ...(existing.ext ?? {}), ...patch.ext } as WeChatChatMessage['ext'])
+          : existing.ext,
       redPacket:
         patch.redPacket !== undefined
           ? existing.redPacket
@@ -10531,6 +10830,8 @@ export class PersonaDb {
       clearVoiceRoundTriggerPercent?: boolean
       clearImageRoundTriggerPercent?: boolean
       clearImageRoundCountRange?: boolean
+      clearOnlineActionNarrationCountRange?: boolean
+      clearReplyBubbleCountRange?: boolean
       /** 为 true 时清除本聊天生图风格覆盖，恢复跟随全局 API */
       clearImageGenStyleOverride?: boolean
       clearClassicEmojiRoundTriggerPercent?: boolean
@@ -10580,6 +10881,12 @@ export class PersonaDb {
         | 'translationVoiceId'
         | 'heartWhisperSyncEnabled'
         | 'innerOsSyncEnabled'
+        | 'onlineActionNarrationEnabled'
+        | 'onlineActionNarrationCountMin'
+        | 'onlineActionNarrationCountMax'
+        | 'replyBubbleCountEnabled'
+        | 'replyBubbleCountMin'
+        | 'replyBubbleCountMax'
         | 'imageRoundTriggerPercent'
         | 'imageRoundCountMin'
         | 'imageRoundCountMax'
@@ -10759,6 +11066,62 @@ export class PersonaDb {
         ? { innerOsSyncEnabled: params.innerOsSyncEnabled }
         : existing?.innerOsSyncEnabled != null
           ? { innerOsSyncEnabled: existing.innerOsSyncEnabled }
+          : {}),
+      ...(typeof params.onlineActionNarrationEnabled === 'boolean'
+        ? { onlineActionNarrationEnabled: params.onlineActionNarrationEnabled }
+        : existing?.onlineActionNarrationEnabled != null
+          ? { onlineActionNarrationEnabled: existing.onlineActionNarrationEnabled }
+          : {}),
+      ...(params.clearOnlineActionNarrationCountRange
+        ? {}
+        : typeof params.onlineActionNarrationCountMin === 'number' ||
+            typeof params.onlineActionNarrationCountMax === 'number' ||
+            existing?.onlineActionNarrationCountMin !== undefined ||
+            existing?.onlineActionNarrationCountMax !== undefined
+          ? (() => {
+              const merged = parseStoredOnlineActionNarrationCountRange(
+                typeof params.onlineActionNarrationCountMin === 'number' &&
+                  Number.isFinite(params.onlineActionNarrationCountMin)
+                  ? params.onlineActionNarrationCountMin
+                  : existing?.onlineActionNarrationCountMin,
+                typeof params.onlineActionNarrationCountMax === 'number' &&
+                  Number.isFinite(params.onlineActionNarrationCountMax)
+                  ? params.onlineActionNarrationCountMax
+                  : existing?.onlineActionNarrationCountMax,
+              )
+              return {
+                onlineActionNarrationCountMin: merged.min,
+                onlineActionNarrationCountMax: merged.max,
+              }
+            })()
+          : {}),
+      ...(typeof params.replyBubbleCountEnabled === 'boolean'
+        ? { replyBubbleCountEnabled: params.replyBubbleCountEnabled }
+        : existing?.replyBubbleCountEnabled != null
+          ? { replyBubbleCountEnabled: existing.replyBubbleCountEnabled }
+          : {}),
+      ...(params.clearReplyBubbleCountRange
+        ? {}
+        : typeof params.replyBubbleCountMin === 'number' ||
+            typeof params.replyBubbleCountMax === 'number' ||
+            existing?.replyBubbleCountMin !== undefined ||
+            existing?.replyBubbleCountMax !== undefined
+          ? (() => {
+              const merged = parseStoredReplyBubbleCountRange(
+                typeof params.replyBubbleCountMin === 'number' &&
+                  Number.isFinite(params.replyBubbleCountMin)
+                  ? params.replyBubbleCountMin
+                  : existing?.replyBubbleCountMin,
+                typeof params.replyBubbleCountMax === 'number' &&
+                  Number.isFinite(params.replyBubbleCountMax)
+                  ? params.replyBubbleCountMax
+                  : existing?.replyBubbleCountMax,
+              )
+              return {
+                replyBubbleCountMin: merged.min,
+                replyBubbleCountMax: merged.max,
+              }
+            })()
           : {}),
       ...(typeof params.recentPrivateInjectAiRounds === 'number' &&
       Number.isFinite(params.recentPrivateInjectAiRounds)

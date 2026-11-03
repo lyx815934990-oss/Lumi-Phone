@@ -7,7 +7,8 @@ import {
 } from '../../wechatAccountPersistence'
 import { countWeChatPersonaCoreStoreRecords } from '../../../dataArchive/scanWeChatPersonaIndexedDb'
 import { personaDb } from '../idb'
-import type { Character, PlayerIdentity } from '../types'
+import type { Character, PersonaPack, PlayerIdentity } from '../types'
+import { personaPackPremiseLabel } from '../personaPack'
 import {
   backfillAllNpcPlayerIdentityFromRootMains,
   backfillCharacterPlayerIdentityLinkMeta,
@@ -31,6 +32,10 @@ export function usePersonaRoster(linkedCharacterIds: readonly string[]) {
   const [identityNameById, setIdentityNameById] = useState<Record<string, string>>({})
   const [accountsBundle, setAccountsBundle] = useState<Awaited<ReturnType<typeof loadAccountsBundle>>>(null)
   const [loading, setLoading] = useState(false)
+  const [packLabelByCharacterId, setPackLabelByCharacterId] = useState<Record<string, string>>({})
+  const [ensemblePacks, setEnsemblePacks] = useState<PersonaPack[]>([])
+  /** 多人卡盒面头像：优先可攻略席首位 */
+  const [packCoverByPackId, setPackCoverByPackId] = useState<Record<string, Character>>({})
 
   const mainNameById = useMemo(() => {
     const map: Record<string, string> = {}
@@ -59,6 +64,9 @@ export function usePersonaRoster(linkedCharacterIds: readonly string[]) {
         setNpcCharacters([])
         setIdentityNameById({})
         setIdentityList([])
+        setPackLabelByCharacterId({})
+        setEnsemblePacks([])
+        setPackCoverByPackId({})
         return
       }
 
@@ -93,11 +101,55 @@ export function usePersonaRoster(linkedCharacterIds: readonly string[]) {
           (!selfExclusion || !isCharacterUserAccountSelf(c, selfExclusion)),
       )
 
-      const allChars = await personaDb.listCharactersForWechatAccount(acc)
+      const packs = await personaDb.listPersonaPacks()
+      const accPacks = packs.filter(
+        (p) => !p.wechatAccountId?.trim() || p.wechatAccountId.trim() === acc,
+      )
+      const ensemble = accPacks
+        .filter((p) => p.kind === 'ensemble')
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+      const packMemberIds = new Set<string>()
+      const packMap: Record<string, string> = {}
+      const coverByPack: Record<string, Character> = {}
+      const charById = new Map<string, Character>()
+      {
+        const allForCover = await personaDb.listCharactersForWechatAccount(acc)
+        for (const c of allForCover) {
+          const id = c.id.trim()
+          if (id) charById.set(id, c)
+        }
+      }
+      for (const p of ensemble) {
+        const label = `${personaPackPremiseLabel(p.premiseKind)} · ${p.title.trim() || '未命名'}`
+        for (const id of [...p.memberIds, ...p.npcIds]) {
+          const cid = id.trim()
+          if (!cid) continue
+          packMemberIds.add(cid)
+          packMap[cid] = label
+        }
+        const coverId =
+          p.memberIds.map((x) => x.trim()).find(Boolean) ||
+          p.anchorMemberId?.trim() ||
+          p.npcIds.map((x) => x.trim()).find(Boolean) ||
+          ''
+        const cover = coverId ? charById.get(coverId) : undefined
+        if (cover) coverByPack[p.id] = cover
+      }
+      // 多人卡成员不单独占文件袋格：整卡一张盒；名册里只留单人主角
+      const ensembleIds = new Set(ensemble.map((p) => p.id))
+      roots = roots.filter((c) => {
+        const pid = c.packId?.trim()
+        if (pid && ensembleIds.has(pid)) return false
+        if (packMemberIds.has(c.id.trim())) return false
+        return true
+      })
+
+      const allChars = [...charById.values()]
       const npcs = allChars.filter(
         (c) =>
           !isMainCharacter(c) &&
-          characterAccessibleToWechatAccount(c, acc, linkedCharacterIdSet),
+          characterAccessibleToWechatAccount(c, acc, linkedCharacterIdSet) &&
+          !(c.packId?.trim() && ensemble.some((p) => p.id === c.packId?.trim())),
       )
       npcs.sort((a, b) => b.updatedAt - a.updatedAt)
       roots.sort((a, b) => b.updatedAt - a.updatedAt)
@@ -108,6 +160,9 @@ export function usePersonaRoster(linkedCharacterIds: readonly string[]) {
       setIdentityList(idents)
       setIdentityNameById(await buildIdentityDisplayNameMapForCharacters(acc, [...roots, ...npcs]))
       setAccountsBundle(bundle)
+      setEnsemblePacks(ensemble)
+      setPackCoverByPackId(coverByPack)
+      setPackLabelByCharacterId(packMap)
     } catch (e) {
       console.warn('[persona-roster] refresh failed', e)
       window.alert(e instanceof Error ? e.message : '加载人物名册失败，请稍后重试')
@@ -125,6 +180,9 @@ export function usePersonaRoster(linkedCharacterIds: readonly string[]) {
     mainNameById,
     mainById,
     loading,
+    packLabelByCharacterId,
+    ensemblePacks,
+    packCoverByPackId,
     refresh,
   }
 }

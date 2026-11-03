@@ -55,6 +55,8 @@ function appendTextWithClassicEmojis(target: Node, text: string) {
   if (last === 0 && text) target.appendChild(document.createTextNode(text))
 }
 
+const COMPOSER_BLOCK_RE = /^(DIV|P|LI|SECTION|H[1-6])$/
+
 export function serializeWeChatComposerEl(root: HTMLElement): string {
   let out = ''
   const walk = (node: Node) => {
@@ -76,6 +78,9 @@ export function serializeWeChatComposerEl(root: HTMLElement): string {
       return
     }
     el.childNodes.forEach(walk)
+    if (el !== root && COMPOSER_BLOCK_RE.test(el.tagName) && !out.endsWith('\n')) {
+      out += '\n'
+    }
   }
   root.childNodes.forEach(walk)
   return out
@@ -84,7 +89,11 @@ export function serializeWeChatComposerEl(root: HTMLElement): string {
 export function applyWeChatComposerText(root: HTMLElement, text: string) {
   root.replaceChildren()
   if (!text) return
-  appendTextWithClassicEmojis(root, text)
+  const lines = String(text).replace(/\r\n/g, '\n').split('\n')
+  lines.forEach((line, i) => {
+    if (line) appendTextWithClassicEmojis(root, line)
+    if (i < lines.length - 1) root.appendChild(document.createElement('br'))
+  })
 }
 
 export function moveWeChatComposerCaretToEnd(root: HTMLElement) {

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Image as ImageIcon, Link as LinkIcon, Plus, X } from 'lucide-react'
+import { Image as ImageIcon, Link as LinkIcon, Plus, Sparkles, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useCustomization } from '../../CustomizationContext'
@@ -19,6 +19,8 @@ type Props = {
   onClose: () => void
   onToast: (msg: string) => void
   onSend: (payloads: WeChatChatImagePayload[]) => void | Promise<void>
+  /** 从「发送图片」切到 AI 生图发送面板 */
+  onOpenAiImage?: () => void
 }
 
 function isLikelyImageUrl(raw: string): boolean {
@@ -46,7 +48,7 @@ async function fileToChatImagePayload(file: File): Promise<WeChatChatImagePayloa
   return { base64, mime: 'image/jpeg' }
 }
 
-export function WeChatChatPhotoPickerSheet({ open, onClose, onToast, onSend }: Props) {
+export function WeChatChatPhotoPickerSheet({ open, onClose, onToast, onSend, onOpenAiImage }: Props) {
   const { state } = useCustomization()
   const disableTransitions = state.ui.disablePageTransitions
   const [tab, setTab] = useState<'album' | 'url'>('album')
@@ -176,7 +178,7 @@ export function WeChatChatPhotoPickerSheet({ open, onClose, onToast, onSend }: P
               </button>
             </div>
 
-            <div className="flex gap-2 px-4 pt-3">
+            <div className="flex flex-wrap gap-2 px-4 pt-3">
               <Pressable
                 type="button"
                 onClick={() => setTab('album')}
@@ -201,6 +203,19 @@ export function WeChatChatPhotoPickerSheet({ open, onClose, onToast, onSend }: P
                 <LinkIcon className="size-3.5" aria-hidden />
                 图片链接
               </Pressable>
+              {onOpenAiImage ? (
+                <Pressable
+                  type="button"
+                  onClick={() => {
+                    onClose()
+                    onOpenAiImage()
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-transparent bg-[#f5f5f5] px-3.5 py-1.5 text-[13px] text-[#4b5563]"
+                >
+                  <Sparkles className="size-3.5" aria-hidden />
+                  AI 生图
+                </Pressable>
+              ) : null}
             </div>
 
             <div className="max-h-[58dvh] overflow-y-auto px-4 pb-[max(16px,env(safe-area-inset-bottom,0px))] pt-3">

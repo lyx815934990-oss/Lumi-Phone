@@ -1,5 +1,22 @@
+/** 用户主动停止 / AbortSignal 中止 */
+export function isAbortError(err: unknown): boolean {
+  if (err == null) return false
+  if (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError') {
+    return true
+  }
+  if (err instanceof Error) {
+    if (err.name === 'AbortError') return true
+    const lower = err.message.toLowerCase()
+    return lower.includes('aborted') || lower.includes('abort') || lower.includes('已停止生成')
+  }
+  const lower = String(err).toLowerCase()
+  return lower.includes('aborted') || lower.includes('abort')
+}
+
 /** 将模型 API / fetch 原始错误转为可读中文（Safari 等常抛英文 `Load failed`） */
 export function formatApiClientError(err: unknown, emptyFallback = '请求失败，请稍后重试。'): string {
+  if (isAbortError(err)) return '已停止生成'
+
   const raw = err instanceof Error ? err.message : String(err ?? '')
   const lower = raw.toLowerCase()
 
@@ -21,7 +38,7 @@ export function formatApiClientError(err: unknown, emptyFallback = '请求失败
     lower.includes('network request failed') ||
     lower.includes('网络')
   ) {
-    return '网络请求中断（浏览器未收到完整响应）。网关侧可能已生成成功；请再试一次，或换更稳的线路/缩短目标字数。'
+    return '网络请求中断（浏览器未收到完整响应）。对端往往已经生成并计费——请勿马上重试，先确认是否已有正文落库；若确实没有，再换更稳线路后手动生成一次。'
   }
   if (
     lower.includes('importing a module script failed') ||

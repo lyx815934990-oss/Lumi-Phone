@@ -1,4 +1,4 @@
-﻿import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useRef } from 'react'
 import {
   ChipField,
@@ -40,7 +40,7 @@ import {
   type PersonaAiGenerateForm,
 } from './personaAiGenerateTypes'
 import type { Gender } from './types'
-import { genderLabelZh, randomChineseName } from './utils'
+import { genderLabelZh } from './utils'
 
 const TAB_EASE = [0.22, 1, 0.36, 1] as const
 
@@ -324,7 +324,6 @@ export function PersonaAiGenerateDossierForm({
                 onAvatarPick={pickAvatarFile}
                 onClearAvatar={() => patch({ avatarUrl: '' })}
                 onNameChange={(v) => patch({ nameHint: v })}
-                onRandomName={() => patch({ nameHint: randomChineseName(form.gender) })}
                 onAgeChange={(v) => patch({ ageHint: v })}
                 onRandomAge={() =>
                   patch({ ageHint: `${16 + Math.floor(Math.random() * 20)}岁` })

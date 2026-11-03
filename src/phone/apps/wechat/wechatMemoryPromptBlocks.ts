@@ -97,7 +97,7 @@ export function resolveRecentPrivateInjectEffectiveRounds(
 /**
  * 按主模式解析字数预算：
  * - `full_text`：用 Token 换算（未设则默认档）
- * - `near_rounds`：固定默认软上限（不吃 Token 滑条）
+ * - `near_rounds`：不设 token/字数上限（只按轮数取原文；返回硬顶供调用方识别「不裁」）
  */
 export function resolveRecentPrivateInjectEffectiveMaxChars(
   settings?: {
@@ -110,7 +110,7 @@ export function resolveRecentPrivateInjectEffectiveMaxChars(
       resolveRecentPrivateInjectMaxContextTokens(settings) ?? DATING_AI_DEFAULT_CONTEXT_TOKENS
     return privateInjectCharCapFromMaxContextTokens(tokens)
   }
-  return MEMORY_RECENT_PRIVATE_CHAT_INJECT_DEFAULT_CHAR_CAP
+  return UNSUMMARIZED_BLOCK_CHAR_HARD_MAX
 }
 
 /** @deprecated 请用 {@link resolveRecentPrivateInjectEffectiveMaxChars}；保留兼容旧调用 */
@@ -238,17 +238,32 @@ export async function buildMergedPrivateOnlineUnionBlock(params: {
       .filter((m) => idSet.has(m.id) && !m.isRecalled && !isMeetImportedWeChatMessageId(m.id))
       .sort((a, b) => a.timestamp - b.timestamp)
     if (!picked.length) return ''
+    const lastPlayerId = [...picked].reverse().find((m) => m.type === 'player' && !m.isRecalled)?.id
+    const lastPlayerChars = Math.max(
+      0,
+      String(picked.find((m) => m.id === lastPlayerId)?.content ?? '').trim().length,
+    )
+    const charCap = Math.max(
+      800,
+      Math.min(
+        UNSUMMARIZED_BLOCK_CHAR_HARD_MAX,
+        Math.max(
+          Math.floor(params.maxChars ?? 14_000),
+          lastPlayerChars >= 600 ? lastPlayerChars + 2000 : 0,
+        ),
+      ),
+    )
     const lines: string[] = []
     for (const m of picked) {
-      const line = formatPrivateLineUnsummarized(m, { includeTimestamp: true, maxChars: 2000 })
+      const line = formatPrivateLineUnsummarized(m, {
+        includeTimestamp: true,
+        maxChars: charCap,
+        keepFullBody: !!lastPlayerId && m.id === lastPlayerId && lastPlayerChars >= 600,
+      })
       if (line) lines.push(line)
     }
     if (!lines.length) return ''
     let body = lines.join('\n')
-    const charCap = Math.max(
-      800,
-      Math.min(UNSUMMARIZED_BLOCK_CHAR_HARD_MAX, Math.floor(params.maxChars ?? 14_000)),
-    )
     if (body.length > charCap) {
       const parts = body.split('\n')
       while (parts.join('\n').length > charCap && parts.length > 4) parts.shift()
@@ -365,6 +380,15 @@ function clipOneLine(s: string, max = 220): string {
   return `${t.slice(0, max)}…`
 }
 
+/** 用户超长粘贴（IF/小说）须保留换行，不能压成一行再截 220 字 */
+const LONG_PLAYER_MSG_MAX = 24_000
+
+function clipPreserveNewlines(s: string, max: number): string {
+  const t = String(s ?? '').trim()
+  if (t.length <= max) return t
+  return `${t.slice(0, max)}\n…（本条过长已截断）`
+}
+
 function resolveUnsummarizedFromTimestamp(
   memoryCursorTs: number | null,
   minMessageTimestamp?: number,
@@ -393,7 +417,7 @@ function formatUnsummarizedDualTimePrefix(
 
 export function formatPrivateLineUnsummarized(
   m: WeChatChatMessage,
-  opts?: { includeTimestamp?: boolean; maxChars?: number },
+  opts?: { includeTimestamp?: boolean; maxChars?: number; keepFullBody?: boolean },
 ): string | null {
   if (m.isRecalled) return null
   let raw = stripWechatGroupEventNoticePrefix(String(m.content ?? '')).trim()
@@ -424,10 +448,24 @@ export function formatPrivateLineUnsummarized(
   const timePrefix =
     opts?.includeTimestamp && m.timestamp ? formatUnsummarizedDualTimePrefix(m) : ''
   const max =
-    typeof opts?.maxChars === 'number' && Number.isFinite(opts.maxChars)
-      ? Math.max(80, Math.floor(opts.maxChars))
-      : 220
-  return `- ${timePrefix}[私聊・${who}] ${clipOneLine(raw, max)}`
+    opts?.keepFullBody === true
+      ? Math.max(
+          LONG_PLAYER_MSG_MAX,
+          typeof opts.maxChars === 'number' && Number.isFinite(opts.maxChars)
+            ? Math.floor(opts.maxChars)
+            : UNSUMMARIZED_BLOCK_CHAR_HARD_MAX,
+        )
+      : typeof opts?.maxChars === 'number' && Number.isFinite(opts.maxChars)
+        ? Math.max(80, Math.floor(opts.maxChars))
+        : 220
+  const clipBody = (body: string) =>
+    max >= 800 ? clipPreserveNewlines(body, max) : clipOneLine(body, max)
+  if (m.ext?.actionNarration === true) {
+    const body = raw.replace(/^【动描】\s*/u, '').trim() || raw
+    // 与线上协议一致用【动描】；勿用「私聊・旁白」标签（易被模型照抄进气泡）
+    return `- ${timePrefix}【动描】${clipBody(body)}`
+  }
+  return `- ${timePrefix}[私聊・${who}] ${clipBody(raw)}`
 }
 
 /**
@@ -547,6 +585,21 @@ export async function formatUnsummarizedPrivateChatBlock(params: {
   const nearLines: string[] = []
   const flatLines: string[] = []
 
+  const lastPlayerId = [...rows].reverse().find((m) => m.type === 'player' && !m.isRecalled)?.id
+  const lastPlayerChars = Math.max(
+    0,
+    String(rows.find((m) => m.id === lastPlayerId)?.content ?? '').trim().length,
+  )
+  const charCap = Math.max(
+    400,
+    Math.min(
+      UNSUMMARIZED_BLOCK_CHAR_HARD_MAX,
+      Math.max(
+        Math.floor(params.maxChars ?? MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP),
+        lastPlayerChars >= 600 ? lastPlayerChars + 2000 : 0,
+      ),
+    ),
+  )
   for (const m of rows) {
     if (isMeetImportedWeChatMessageId(m.id)) continue
     const storyMs = parseStoryAnchorLabelToMs(m.storyTimeLabel)
@@ -557,7 +610,11 @@ export async function formatUnsummarizedPrivateChatBlock(params: {
       isPast = m.timestamp < lastOfflineTs
     }
     if (dropEarlier && isPast) continue
-    const line = formatPrivateLineUnsummarized(m, { includeTimestamp: includeTs })
+    const line = formatPrivateLineUnsummarized(m, {
+      includeTimestamp: includeTs,
+      maxChars: charCap,
+      keepFullBody: !!lastPlayerId && m.id === lastPlayerId && lastPlayerChars >= 600,
+    })
     if (!line) continue
     if (!splitByTimeline || dropEarlier) {
       flatLines.push(line)
@@ -565,11 +622,6 @@ export async function formatUnsummarizedPrivateChatBlock(params: {
     }
     ;(isPast ? pastLines : nearLines).push(line)
   }
-
-  const charCap = Math.max(
-    400,
-    Math.min(UNSUMMARIZED_BLOCK_CHAR_HARD_MAX, Math.floor(params.maxChars ?? MEMORY_UNSUMMARIZED_BLOCK_CHAR_CAP)),
-  )
   const preferRecent = params.clipPreferRecent === true
 
   const clipBody = (lines: string[], cap: number): string => {
@@ -857,19 +909,24 @@ export async function buildRecentPrivateChatRoundsWithTimeBlock(params: {
     if (!usable.length) return ''
     const window = selectRecentWeChatMessagesAiRoundWindow(usable, rounds)
     if (!window.length) return ''
+    const requestedCap = Math.floor(params.maxChars ?? MEMORY_RECENT_PRIVATE_CHAT_INJECT_DEFAULT_CHAR_CAP)
+    const uncapped =
+      !Number.isFinite(requestedCap) || requestedCap >= UNSUMMARIZED_BLOCK_CHAR_HARD_MAX
+    const charCap = uncapped
+      ? UNSUMMARIZED_BLOCK_CHAR_HARD_MAX
+      : Math.max(800, Math.min(UNSUMMARIZED_BLOCK_CHAR_HARD_MAX, requestedCap))
     const lines: string[] = []
     for (const m of window) {
-      // 固定注入要保留近端原话，单条放宽截断（未总结块仍用默认短截）
-      const line = formatPrivateLineUnsummarized(m, { includeTimestamp: true, maxChars: 2000 })
+      const line = formatPrivateLineUnsummarized(m, {
+        includeTimestamp: true,
+        maxChars: charCap,
+        keepFullBody: true,
+      })
       if (line) lines.push(line)
     }
     if (!lines.length) return ''
     let body = lines.join('\n')
-    const charCap = Math.max(
-      800,
-      Math.min(UNSUMMARIZED_BLOCK_CHAR_HARD_MAX, Math.floor(params.maxChars ?? 14_000)),
-    )
-    if (body.length > charCap) {
+    if (!uncapped && body.length > charCap) {
       const parts = body.split('\n')
       while (parts.join('\n').length > charCap && parts.length > 4) parts.shift()
       body = parts.join('\n')
@@ -882,7 +939,7 @@ export async function buildRecentPrivateChatRoundsWithTimeBlock(params: {
     const timeHint =
       '每条前缀：有剧情锚点写 `[剧情 …｜系统 …]`（左侧为故事内时刻，须按此理解先后）；仅系统时写 `[系统 …·落库]`（真实落库，**不是**剧情时间）。'
     return (
-      `【板块·近端·最近 ${rounds} 轮线上私聊原文】（必注全文；不依赖总结游标）` +
+      `【板块·近端·最近 ${rounds} 轮线上私聊原文】（必注全文；不依赖总结游标${uncapped ? '；本模式不设字数上限' : ''}）` +
       `下列为最近 ${rounds} 轮**对方角色回复**及其间用户消息的气泡原文（${timeHint}）${filterNote}` +
       `「轮」= 一次角色回复（连发多气泡仍计 1 轮）；总结入库后未总结块可能为空，仍须承接此处原话与口吻，禁止只靠长期记忆摘要续写或声称「不记得原话」。\n\n` +
       body

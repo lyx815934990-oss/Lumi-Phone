@@ -21,6 +21,10 @@ export type ForumPost = {
    * @see AnimeCharacterPick
    */
   customPicks?: AnimeCharacterPick[]
+  /** 系统随机点赞底数（生成时写入；用户再点另计） */
+  likeCount?: number
+  /** 正文前的「作者的话」：文简介 + 写手碎碎念 */
+  authorNote?: string
 }
 
 export type ForumComment = {

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>日程成就弹窗 · 分区优化</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px 16px 48px; background: #1a1a1c; color: #e8e6e3;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    h1 { font-size: 18px; font-weight: 700; margin: 0 0 6px; }
+    .lead { font-size: 13px; color: #9a9690; margin: 0 0 20px; line-height: 1.5; }
+    .wrap {
+      max-width: 400px; margin: 0 auto; background: #242426;
+      border: 1px solid #333; border-radius: 14px; padding: 12px;
+    }
+    .wrap h2 { margin: 0 0 4px; font-size: 14px; }
+    .wrap p { margin: 0 0 10px; font-size: 11px; color: #8e8a84; line-height: 1.45; }
+    canvas { width: 100%; height: auto; border-radius: 10px; display: block; background: #000; }
+  </style>
+</head>
+<body>
+  <h1>D · 杂志印戳 · 色带分区</h1>
+  <p class="lead">已完成 = 朱红顶栏 + 暖粉底；新增 = 墨色顶栏 + 冷灰底。整块面板分开，不再靠小标签硬分。</p>
+  <div class="wrap">
+    <h2>预览</h2>
+    <p>行程有进展 · 完成 1 · 新增 1</p>
+    <canvas id="c" width="360" height="580"></canvas>
+  </div>
+  <script>
+    const W = 360, H = 580
+    const INK = '#1F1A14', PAGE = '#FFFDF8', MUTED = '#6E6458', FAINT = '#A89C8C'
+    const LINE = '#D8CFC2', ACCENT = '#B54A3C'
+
+    function rr(ctx, x, y, w, h, r) {
+      const R = Math.min(r, w / 2, h / 2)
+      ctx.beginPath()
+      ctx.moveTo(x + R, y)
+      ctx.arcTo(x + w, y, x + w, y + h, R)
+      ctx.arcTo(x + w, y + h, x, y + h, R)
+      ctx.arcTo(x, y + h, x, y, R)
+      ctx.arcTo(x, y, x + w, y, R)
+      ctx.closePath()
+    }
+
+    function panel(ctx, x, y, w, title, count, items, kind) {
+      const bar = kind === 'done' ? ACCENT : INK
+      const bg = kind === 'done' ? '#FBF0EC' : '#F2F4F3'
+      const glyph = kind === 'done' ? '✓' : '+'
+      const rowH = 40
+      const headH = 34
+      const h = headH + items.length * rowH + 8
+
+      rr(ctx, x, y, w, h, 12)
+      ctx.fillStyle = bg
+      ctx.fill()
+      ctx.strokeStyle = INK
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+
+      // top bar
+      ctx.save()
+      ctx.beginPath()
+      ctx.moveTo(x + 12, y)
+      ctx.lineTo(x + w - 12, y)
+      ctx.arcTo(x + w, y, x + w, y + 12, 12)
+      ctx.lineTo(x + w, y + headH)
+      ctx.lineTo(x, y + headH)
+      ctx.lineTo(x, y + 12)
+      ctx.arcTo(x, y, x + 12, y, 12)
+      ctx.closePath()
+      ctx.fillStyle = bar
+      ctx.fill()
+      ctx.restore()
+
+      ctx.fillStyle = '#FFFDF8'
+      ctx.font = '700 12px sans-serif'
+      ctx.textAlign = 'left'
+      ctx.fillText(title, x + 14, y + 22)
+
+      const chip = `${count} 项`
+      ctx.font = '700 10px sans-serif'
+      const cw = ctx.measureText(chip).width + 16
+      rr(ctx, x + w - cw - 10, y + 8, cw, 18, 999)
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'
+      ctx.fill()
+      ctx.fillStyle = '#FFFDF8'
+      ctx.textAlign = 'center'
+      ctx.fillText(chip, x + w - cw / 2 - 10, y + 21)
+      ctx.textAlign = 'left'
+
+      let yy = y + headH + 4
+      items.forEach((t, i) => {
+        if (i > 0) {
+          ctx.strokeStyle = 'rgba(31,26,20,0.08)'
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(x + 12, yy)
+          ctx.lineTo(x + w - 12, yy)
+          ctx.stroke()
+        }
+        // mark
+        ctx.beginPath()
+        ctx.arc(x + 24, yy + 20, 9, 0, Math.PI * 2)
+        if (kind === 'done') {
+          ctx.fillStyle = ACCENT
+          ctx.fill()
+          ctx.fillStyle = '#fff'
+        } else {
+          ctx.fillStyle = '#FFFDF8'
+          ctx.fill()
+          ctx.strokeStyle = INK
+          ctx.lineWidth = 1.5
+          ctx.stroke()
+          ctx.fillStyle = INK
+        }
+        ctx.font = '700 11px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(glyph, x + 24, yy + 24)
+        ctx.textAlign = 'left'
+
+        ctx.fillStyle = INK
+        ctx.font = '600 13px sans-serif'
+        ctx.fillText(t, x + 40, yy + 24)
+        yy += rowH
+      })
+      return y + h
+    }
+
+    const ctx = document.getElementById('c').getContext('2d')
+    ctx.fillStyle = '#0b0b0c'
+    ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = 'rgba(20,16,12,0.55)'
+    ctx.fillRect(0, 0, W, H)
+
+    const cardX = 28, cardY = 40, cardW = W - 56, cardH = 500
+    rr(ctx, cardX, cardY, cardW, cardH, 4)
+    ctx.fillStyle = PAGE
+    ctx.fill()
+    ctx.strokeStyle = INK
+    ctx.lineWidth = 2
+    ctx.stroke()
+
+    const mx = W / 2, my = cardY + 54
+    ctx.beginPath(); ctx.arc(mx, my, 34, 0, Math.PI * 2)
+    ctx.strokeStyle = ACCENT; ctx.lineWidth = 3; ctx.stroke()
+    ctx.beginPath(); ctx.arc(mx, my, 26, 0, Math.PI * 2)
+    ctx.strokeStyle = ACCENT; ctx.lineWidth = 1.5; ctx.stroke()
+    ctx.fillStyle = ACCENT
+    ctx.font = '700 12px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('UPDATE', mx, my + 4)
+
+    ctx.fillStyle = FAINT
+    ctx.font = '600 10px sans-serif'
+    ctx.fillText('MAGAZINE · QUEST', mx, cardY + 108)
+    ctx.fillStyle = INK
+    ctx.font = '700 22px sans-serif'
+    ctx.fillText('行程有进展', mx, cardY + 138)
+    ctx.fillStyle = MUTED
+    ctx.font = '13px sans-serif'
+    ctx.fillText('完成 1 · 新增 1', mx, cardY + 162)
+    ctx.textAlign = 'left'
+
+    ctx.strokeStyle = LINE
+    ctx.beginPath()
+    ctx.moveTo(cardX + 20, cardY + 178)
+    ctx.lineTo(cardX + cardW - 20, cardY + 178)
+    ctx.stroke()
+
+    let y = panel(ctx, cardX + 16, cardY + 196, cardW - 32, '已完成', 1, ['和朋友吃火锅'], 'done')
+    y = panel(ctx, cardX + 16, y + 12, cardW - 32, '新增', 1, ['期末复习突击'], 'new')
+
+    ctx.fillStyle = FAINT
+    ctx.font = '11px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('已写入角色日历日程 · 可在人设「日程表 · 日历」查看', mx, y + 28)
+    ctx.textAlign = 'left'
+
+    rr(ctx, cardX + 16, cardY + cardH - 56, cardW - 32, 40, 10)
+    ctx.fillStyle = ACCENT
+    ctx.fill()
+    ctx.fillStyle = PAGE
+    ctx.font = '700 15px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('收下', mx, cardY + cardH - 30)
+  </script>
+</body>
+</html>

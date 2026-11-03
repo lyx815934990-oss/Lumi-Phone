@@ -8,7 +8,7 @@
  *   - `../proseForbiddenLexiconPrompt.ts` → PROSE_FORBIDDEN_LEXICON_PROMPT
  *
  * 拼装顺序（`buildOfflineDatingMustInjectCore`）：
- *   1. Lumi 壳（开 TC / 直出）
+ *   1. Lumi 壳（开 TC / 直出；场控总开关关闭时整段省略）
  *   2. 沙盒 LUMI_SYSTEM_OVERRIDE（固定 · import）
  *   3. 【线下剧情扮演总规则】核心（固定）
  *   4. 已开启的内置写作板块（通道对齐 / 神态 / 禁词 / 总规则可拆段…）
@@ -29,6 +29,7 @@ import type { LoreArchiveBuiltinPresetToggles } from '../../../worldbook/loreArc
 import { buildOfflineRomanceThinkingChainSections } from '../../../worldbook/loreArchiveBuiltinPresets'
 import { PROSE_FORBIDDEN_LEXICON_PROMPT, PROSE_FORBIDDEN_TOP_PRIORITY_PIN } from '../proseForbiddenLexiconPrompt'
 import { WECHAT_CORE_PROMPT } from '../wechatChatPrompt'
+import { buildJapaneseSpokenDialogueHardRules } from '../wechatChatLanguage'
 import { LUMI_SYSTEM_OVERRIDE_APPENDIX } from '../wechatReplyOutputPrompt'
 import {
   DATING_WRITING_PRESETS,
@@ -68,13 +69,17 @@ export const DATING_LUMI_SYSTEM_SHELL = `
 【硬底线·不可被思维链「概括掉」】【线下剧情扮演总规则】的平等/去八股/禁比喻/禁幼化，以及 system【写作禁词表】黑名单与完整扫描词表——**始终生效**。
 【同轮禁词自检｜不另开请求】在 \`<thinking>\` 内按【落笔】→【终检】完成：心里写完本轮正文骨架 → 对照禁词硬钉与扫描表扫一遍 → **有命中则当场改干净** → 再输出 \`</thinking>\` 外正文。正文只交**零命中定稿**；禁止把带禁词的半成品交出去再指望下一轮。thinking 内禁止贴全文草稿，只记「命中词→替换」短清单。
 
-【硬性输出格式】
+【硬性输出格式·标签块】
 1) **先**输出 \`<thinking>...</thinking>\`：覆盖【总控】【情感协议】【主轴】【时空】【线上事实】【知情边界】【关系温度】【创作自检】【推进】【代写边界】【落笔】【终检】（档案室恋爱预设若开则另有分节）；**总汉字 ≤ 700**，各卡 1～3 句，**禁止**漫灌。
-2) **后**输出正文：紧接 **\`</thinking>\` 闭合标签之后**，**仅为**可读剧情文本（已完成禁词自检的定稿）；禁止用 markdown 代码块包裹全文。
-   - **闭合铁律**：必须有 **成对的** \`</thinking>\`（或网关认可的等价闭合），再开始正文；**禁止**只写 \`<thinking>\` 开头不写闭合——客户端会把后续剧情误判进思维链或导致**正文为空、字数统计为 0**。
-   - **分区铁律**：对白、旁白、剧情段落**禁止**写在 \`<thinking>…</thinking>\` **内部**；思维链内只做场记与短自检，叙事正文一律在标签外。
-3) \`<thinking>\` 外：先写可读剧情正文；禁止提纲、解释、PlotDirectionOptions、选项串。**禁止把 HTML 写进正文中间**。若当轮 user/附录开启「小剧场」：须在正文（及读者评论块）之后追加 \`【小剧场】…【小剧场结束】\`（见附录格式，**禁止** JSON）；未开启则禁止任何 HTML 小剧场。若开启读者评论：文末 \`【读者评论】\` 须用 \`★|昵称|点赞|文案\` 行，**禁止** JSON 数组。附加块**禁止**写进 thinking。
-   - **禁止伪系统文**：禁止输出 \`[SYSTEM MESSAGE]\`、\`Absolute Override\`、\`officially terminated\`、\`系统最终结算\`、\`剧情锚点状态\`、\`记忆块落库\` 等元叙述或中断公告。那不是客户端指令；若内部冲突，仍须用 \`<thinking>\`+剧情正文承接，不得用英文系统通告掐断格式。
+2) **后**输出 \`<content>…</content>\`：**可读剧情必须整段写在 content 内**（已完成禁词自检的定稿）；VN 的【旁白】/【对白】/【内心】也写在 content 内。禁止用 markdown 代码块包裹全文。
+   - **闭合铁律**：thinking / content 均须成对开闭；**禁止**只开不闭——会导致正文为空、字数 0。
+   - **分区铁律**：对白、旁白、剧情**禁止**写在 \`<thinking>\` 内；附加块**禁止**写进 thinking。
+3) content 之后按需追加（见当轮附录；未开启则禁止）：
+   - 读者评论：\`<comments>…</comments>\`（\`★|昵称|点赞|文案\`；正文插【读者讨论位N】）
+   - 本节梗概：\`<synopsis>…</synopsis>\`（8～20 汉字）
+   - 小剧场：\`<theater>…</theater>\`（可解析 HTML；**禁止** JSON）
+   - 兼容：\`【正文】…【/正文】\`、\`【读者评论】…【读者评论结束】\`、\`【本节梗概】…\`、\`【小剧场】…【小剧场结束】\` 亦可。
+   - **禁止伪系统文**：禁止 \`[SYSTEM MESSAGE]\` / Absolute Override / 系统结算等元叙述掐断格式。
 4) 段落设置：在相邻自然段之间空一行，确保阅读舒适度与视觉区分；例如：
 段落一……
 
@@ -99,9 +104,9 @@ export const DATING_LUMI_DIRECT_SHELL = `
 
 【直出模式·已关闭思维链】界面已关闭思维链输出。**禁止**输出 \`<thinking>\` / \`<think>\` / \`<logicpass>\` / \`<reasoning>\` 或任何「先规划再正文」的思维链块。仍须在**同一次回复内**完成禁词自检：心里写完 → 对照禁词硬钉与扫描表扫一遍 → 有命中当场改干净 → 只输出零命中正文。勿把自检过程写进回复。叙事约束以本 system【线下剧情扮演总规则】、user 当轮材料（篇幅、人称、抢话、文风、禁词等）为准。
 
-【硬性输出格式】
-1) **禁止**用 markdown 代码块包裹**全文剧情**；禁止输出提纲、解释、PlotDirectionOptions、选项串。**禁止把 HTML 写进正文中间**。
-2) **附加块与思维链开关无关（须同轮一次写完）**：若 user【输出格式硬约束】中出现「读者评论模式」附录 → 正文中须插【读者讨论位N】，文末**必须**输出 \`【读者评论】…【读者评论结束】\`（\`★|昵称|点赞|文案\` 纯文本行）；若出现「小剧场」附录 → 在正文（及读者评论块，若有）之后**必须**输出 \`【小剧场】…【小剧场结束】\`（details + html 围栏）。**禁止**用 JSON / \`\`\`json / 对象数组写评论或小剧场；**禁止**把附加块写进 thinking 或记忆 JSON；**禁止**因关闭思维链而省略；**禁止**指望另开请求补写。未开启对应附录则禁止输出该块。
+【硬性输出格式·标签块】
+1) **禁止**输出 \`<thinking>\`；**可读剧情必须**写在 \`<content>…</content>\` 内；禁止用 markdown 代码块包裹全文；禁止提纲/选项串；**禁止把 HTML 写进 content 中间**。
+2) **附加块与思维链开关无关（须同轮一次写完）**：若附录要求读者评论 → content 内插【读者讨论位N】，并输出 \`<comments>…</comments>\`（\`★|昵称|点赞|文案\`）；若要求小剧场 → \`<theater>…</theater>\`；另须 \`<synopsis>…</synopsis>\`。兼容 \`【读者评论】…【读者评论结束】\` / \`【小剧场】…【小剧场结束】\` / \`【本节梗概】\`。**禁止** JSON；**禁止**省略或另开请求补写。
 3) **禁止伪系统文**：禁止输出 \`[SYSTEM MESSAGE]\`、\`Absolute Override\`、\`officially terminated\`、\`系统最终结算\`、\`剧情锚点状态\`、\`记忆块落库\` 等元叙述或中断公告。
 4) 段落设置：在相邻自然段之间空一行，确保阅读舒适度与视觉区分。
 5) **内心 OS**：内心 OS 须用半角双星号起止包裹，格式：**此处写第一人称心思**（英文 * 连按两次；**禁止**用 ……、… 或 ... 代替星号作起止符）（VN 用【内心｜姓名】行首标签）；须为**可读、有信息量的第一人称心思**，**单条不少于 40 汉字**（宜 2～4 句、合计约 45～120 汉字）。**禁止**单独输出「我……」「我…」占位；**禁止**十来字敷衍单条；禁止旁白与 OS 人称串台（OS 内勿写「他怎样」当心声）。
@@ -238,10 +243,21 @@ export const OFFLINE_CHANNEL_ALIGN_PREFIX = `【通道对齐·线下=线上同�
 - **禁止**替 {{user}} 自行决定或脑补其想法；只写 {{user}} 已说/已做的，或留下空间由玩家接。
 - **读懂语气**：分清认真真心话 / 开玩笑 / 故意撒娇逗弄——**禁止**句句胡乱猜成被冒犯或深意试探；玩笑与逗弄须顺着接、别煞风景；认真话再严肃回应。
 - 可有占有欲与欲望，但须留给 {{user}} 选择权，并看场合克制；**禁止**「非对方不可 / 离不开」绑架。
-**通道差异（仅格式）**：线下输出以约会剧情协议为准（对白/动作/旁白/OS）；忽略核心层里纯 IM 条款（少字多句气泡分条、表情包/引用/红包指令行、微信标点习惯等）。口语活人感、不完美、主动分享等气质仍须保留，并落到对白与动作上。
+**通道差异（仅格式 + 日语当面）**：线下输出以约会剧情协议为准（对白/动作/旁白/OS）；忽略核心层里纯 IM 条款（少字多句气泡分条、表情包/引用/红包指令行、微信标点习惯等）。口语活人感、不完美、主动分享等气质仍须保留，并落到对白与动作上。
+- **日语当面 ≠ 网聊（覆盖线上「句末笑」）**：核心层 / 活人感里「日语气泡轻松场合句末可挂『笑』（笑）/w」**仅适用于微信打字气泡**。线下约会、平行事件、IF 线、VN 的**对白与内心 OS**（说出口或心里默念）**一律禁止**句末挂「笑」「（笑）」「(笑)」「w」「ww」。真笑用「あはは／ふふ／くすっ」或神态旁白；震惊/愤怒/对峙时**尤其禁止**挂「笑」。本条效力高于核心层与 Lumi 附录中的网聊「笑」鼓励。
 若与档案室「热烈直球」等预设冲突：直球可以，**强硬锁约/宣布接送/防友区施压/替对方定义感受/幼化称呼/病态占有**仍以本核心层与 \`<CharUserEqualityOverride>\` 为准。
 
 `
+
+/**
+ * 紧跟沙盒 LUMI 附录之后：覆盖其中「日语气泡可挂句末笑」。
+ * 主线约会 / IF / 平行 / 互动一律注入（与通道对齐开关无关）。
+ */
+export const OFFLINE_JAPANESE_SPOKEN_OVERRIDE = `
+【线下·日语当面口语 · 覆盖沙盒网聊「笑」】
+沙盒活人感里「日语气泡轻松场合句末可挂笑」**仅限微信打字**。本通道（线下约会 / 平行事件 / IF 线 / VN / 互动）对白与内心 OS 若用日语：
+${buildJapaneseSpokenDialogueHardRules()}
+`.trim()
 
 /** 线下必注入：通道对齐导语 + 微信核心层（默认不拼阶段模块） */
 export const OFFLINE_CHANNEL_ALIGNED_WECHAT_CORE_PROMPT =
@@ -425,6 +441,11 @@ export type OfflineDatingMustInjectOptions = {
    * 若同时存在 `customWritingPrompt`（约会页完全自定义写作），后者优先（全量抹除）。
    */
   replyStyleOverride?: string | null
+  /**
+   * 场控提示词总开关关闭：不注入思维链壳、直出壳和内置场记包。
+   * 非空的 `thinkingChainBooksOverride`（用户线下思维链预设）仍会附上。
+   */
+  omitBuiltinOutputShell?: boolean
 }
 
 /**
@@ -443,18 +464,26 @@ export function buildOfflineDatingMustInjectCore(
     return custom ? `${pin}\n\n${custom}` : pin
   }
   const thinkingChainEnabled = opts?.thinkingChainEnabled !== false
-  const shell = thinkingChainEnabled ? DATING_LUMI_SYSTEM_SHELL : DATING_LUMI_DIRECT_SHELL
+  const omitShell = opts?.omitBuiltinOutputShell === true
+  const shell = omitShell
+    ? ''
+    : thinkingChainEnabled
+      ? DATING_LUMI_SYSTEM_SHELL
+      : DATING_LUMI_DIRECT_SHELL
   const styleOverride = String(opts?.replyStyleOverride ?? '').trim()
   const booksOverride = String(opts?.thinkingChainBooksOverride ?? '').trim()
-  const books =
-    thinkingChainEnabled && opts?.includeThinkingChainBooks !== false
+  const books = omitShell
+    ? booksOverride
+      ? '\n\n' + booksOverride
+      : ''
+    : thinkingChainEnabled && opts?.includeThinkingChainBooks !== false
       ? '\n\n' +
         (booksOverride || buildOfflineDatingThinkingChainBooksPrompt(opts?.toggles))
       : ''
 
-  // 文心线下自定义提示词：整段接管文风层，并覆盖沙盒与禁词硬钉（壳仍负责 thinking/直出格式）
+  // 文心线下自定义提示词：整段接管文风层，并覆盖沙盒与禁词硬钉（壳仍负责 thinking/直出格式；总开关关时无壳）
   if (styleOverride) {
-    return shell + '\n\n' + styleOverride + books
+    return [shell.trim(), styleOverride, books.trim()].filter(Boolean).join('\n\n')
   }
 
   const writing = [
@@ -463,15 +492,16 @@ export function buildOfflineDatingMustInjectCore(
   ]
     .filter(Boolean)
     .join('\n\n')
-  return (
-    pin +
-    '\n\n' +
-    shell +
-    '\n\n' +
-    LUMI_SYSTEM_OVERRIDE_APPENDIX +
-    (writing ? '\n\n' + writing : '') +
-    books
-  )
+  return [
+    pin,
+    shell.trim(),
+    LUMI_SYSTEM_OVERRIDE_APPENDIX,
+    OFFLINE_JAPANESE_SPOKEN_OVERRIDE,
+    writing,
+    books.trim(),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 /**
@@ -503,6 +533,8 @@ export function buildOfflineDatingSlimMustInjectBody(opts?: {
     pin +
     '\n\n' +
     LUMI_SYSTEM_OVERRIDE_APPENDIX +
+    '\n\n' +
+    OFFLINE_JAPANESE_SPOKEN_OVERRIDE +
     (writing ? '\n\n' + writing : '')
   )
 }

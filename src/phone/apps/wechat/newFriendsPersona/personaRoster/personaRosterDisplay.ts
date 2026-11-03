@@ -85,6 +85,12 @@ export function metaGender(ch: Character): string {
   return genderLabelZh(ch.gender)
 }
 
+export function metaAge(ch: Character): string {
+  const n = ch.age
+  if (typeof n === 'number' && Number.isFinite(n) && n > 0) return `${Math.round(n)}岁`
+  return '未设置'
+}
+
 export function metaMbti(ch: Character): string {
   return ch.mbti?.trim() || '—'
 }

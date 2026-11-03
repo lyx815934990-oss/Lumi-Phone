@@ -310,14 +310,23 @@ export function PlotInjectRail({
         onPointerCancel={() => {
           dragRef.current = null
         }}
-        style={{ top: topPx }}
-        className="fixed left-0 z-[90] flex touch-none flex-col items-center rounded-r-xl border border-l-0 border-[var(--sr-border)] bg-[var(--sr-panel-elevated)]/95 px-1 py-2.5 text-[10px] font-medium tracking-[0.08em] text-[var(--sr-text-soft)] shadow-md backdrop-blur-sm transition-[border-color,color] hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-gold)] active:cursor-grabbing"
+        style={{
+          top: topPx,
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+        }}
+        className="fixed left-0 z-[90] flex touch-none select-none flex-col items-center rounded-r-xl border border-l-0 border-[var(--sr-border)] bg-[var(--sr-panel-elevated)]/95 px-1 py-2.5 text-[10px] font-medium tracking-[0.08em] text-[var(--sr-text-soft)] shadow-md backdrop-blur-sm transition-[border-color,color] hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-gold)] active:cursor-grabbing"
         aria-label="打开近端剧情注入快捷设置（可上下拖动）"
         title="点击设置 · 按住上下拖动"
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
+        {...{
+          onSelectStart: (e: Event) => e.preventDefault(),
+        }}
       >
-        <BookOpen className="mb-0.5 size-3.5" strokeWidth={1.75} />
-        <span>注入</span>
-        <span className="mt-0.5 max-w-[2.5rem] truncate text-[9px] text-[var(--sr-gold-dim)]">
+        <BookOpen className="pointer-events-none mb-0.5 size-3.5" strokeWidth={1.75} aria-hidden />
+        <span className="pointer-events-none select-none">注入</span>
+        <span className="pointer-events-none mt-0.5 max-w-[2.5rem] truncate select-none text-[9px] text-[var(--sr-gold-dim)]">
           {shortLabel}
           {rounds != null ? `·${rounds}` : ''}
         </span>

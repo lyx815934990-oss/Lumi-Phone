@@ -25,6 +25,14 @@ const ERROR_RULES: ErrorRule[] = [
     zh: '{p_balance_hint}',
   },
   {
+    test: /not enough anlas|insufficient anlas|anlas.*(insufficient|not enough)|out of anlas|anlas 不足|Anlas 不足/i,
+    zh: 'NovelAI Anlas / 额度不足（中转站也常透传此错误）。采样步数 >28 或超常规定尺寸会额外扣费；请先改回 ≤28，或给官方/中转账户充值后再试。',
+  },
+  {
+    test: /steps?.{0,24}(must be|should be|between|max|maximum|at most|<=?\s*28)|invalid.*steps|steps.*invalid/i,
+    zh: '采样步数不被接受。请先改回 28 再试；若用中转站，以其后台标注的步数上限为准（不少站与官方一样实际卡在 28）。',
+  },
+  {
     test: /recaptcha token is required|trial generation/i,
     zh: '{p}当前为试用/免费档账户，官方 API 要求 reCAPTCHA 验证；本应用暂不支持自动过验证。请订阅 NovelAI 付费套餐（Tablet/Opus 等）后使用 API Key，或改用其他生图引擎',
   },
@@ -101,6 +109,12 @@ function balanceInsufficientHint(provider: MomentsImageProvider): string {
       `${label}账户可用额度不足。` +
       '免费生图模型（如 Kolors）仍会从赠送额度扣费；请检查赠送额度是否用尽、是否已完成实名认证、API Key 是否与当前登录账户一致。' +
       '若使用的是付费模型，需充值后再试。'
+    )
+  }
+  if (provider === 'novelai') {
+    return (
+      `${label}账户 Anlas / 余额不足。` +
+      '采样步数超过 28、超常规定尺寸或批量生成都会消耗 Anlas；可先把步数改回 28，或前往 NovelAI 账户充值后再试。'
     )
   }
   return `${label}账户余额不足，请前往控制台充值后再试`

@@ -1,6 +1,14 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Dices, Minus, Plus, User } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import type { Gender } from './types'
+import { PersonaNameLanguagePicker } from './PersonaNameLanguagePicker'
+import {
+  loadPersonaNameLanguage,
+  randomPersonaName,
+  savePersonaNameLanguage,
+  type PersonaNameLanguage,
+} from './personaNamePools'
 import { PlatinumSwitch } from './PlatinumSwitch'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -424,7 +432,6 @@ export function IdentityQuickRow({
   onAvatarPick,
   onClearAvatar,
   onNameChange,
-  onRandomName,
   onAgeChange,
   onRandomAge,
   avatarInputRef,
@@ -432,16 +439,15 @@ export function IdentityQuickRow({
   avatarUrl: string
   name: string
   age: string
-  gender: string
+  gender: Gender
   onAvatarPick: (file: File | null) => void
   onClearAvatar: () => void
   onNameChange: (v: string) => void
-  onRandomName: () => void
   onAgeChange: (v: string) => void
   onRandomAge: () => void
   avatarInputRef: React.RefObject<HTMLInputElement | null>
 }) {
-  void gender
+  const [nameLanguage, setNameLanguage] = useState<PersonaNameLanguage>(() => loadPersonaNameLanguage())
   const bumpAge = (delta: number) => {
     const n = parseInt(age.replace(/\D/g, ''), 10)
     const base = Number.isFinite(n) ? n : 24
@@ -493,19 +499,27 @@ export function IdentityQuickRow({
       <div className="min-w-0 flex-1 space-y-3">
         <div>
           <SoftLabel en="Name" zh="姓名" />
-          <div className="relative">
+          <div className="relative flex items-center gap-1.5">
             <input
               value={name}
               onChange={(e) => onNameChange(e.target.value)}
               placeholder="留空由引擎命名"
-              maxLength={12}
-              className="w-full rounded-2xl border-0 bg-neutral-50 py-2.5 pl-3.5 pr-10 text-[15px] font-semibold tracking-tight text-neutral-900 outline-none placeholder:font-normal placeholder:text-neutral-300 focus:bg-white focus:shadow-[0_0_0_1px_rgba(23,23,23,0.06)]"
+              maxLength={24}
+              className="min-w-0 flex-1 rounded-2xl border-0 bg-neutral-50 py-2.5 pl-3.5 pr-3 text-[15px] font-semibold tracking-tight text-neutral-900 outline-none placeholder:font-normal placeholder:text-neutral-300 focus:bg-white focus:shadow-[0_0_0_1px_rgba(23,23,23,0.06)]"
+            />
+            <PersonaNameLanguagePicker
+              tone="soft"
+              value={nameLanguage}
+              onChange={(next) => {
+                setNameLanguage(next)
+                savePersonaNameLanguage(next)
+              }}
             />
             <button
               type="button"
               title="随机姓名"
-              onClick={onRandomName}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-full p-2 text-neutral-400 transition-colors hover:bg-neutral-100/90 hover:text-neutral-700"
+              onClick={() => onNameChange(randomPersonaName(gender, nameLanguage))}
+              className="shrink-0 rounded-full p-2 text-neutral-400 transition-colors hover:bg-neutral-100/90 hover:text-neutral-700"
               aria-label="随机姓名"
             >
               <Dices className="size-4" strokeWidth={1.5} />

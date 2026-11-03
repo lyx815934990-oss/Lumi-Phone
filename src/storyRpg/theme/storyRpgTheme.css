@@ -21,8 +21,8 @@
   --sr-header-bg: #f7f1f4;
   --sr-console-bg: #f7f1f4f5;
   --sr-prose-em: #a2a1a4;
-  --plot-dialogue-fg: var(--sr-text-muted);
-  --plot-inner-os-fg: var(--sr-gold-dim);
+  --plot-dialogue-fg: #3d5f7a;
+  --plot-inner-os-fg: #a35a68;
   --sr-font-serif: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
   --sr-font-ui: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --sr-header-bar-h: 60px;
@@ -129,6 +129,17 @@
   -webkit-user-drag: none;
 }
 
+/* IF 线 / 平行事件面板：允许长按选中复制 */
+.sr-prose.sr-prose-selectable,
+.sr-prose.sr-prose-selectable * {
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+  -webkit-touch-callout: default !important;
+  -webkit-user-drag: auto;
+}
+
 .sr-prose p {
   margin: 0 0 0.85em;
 }
@@ -142,22 +153,34 @@
   font-weight: 600;
 }
 
-/* 对白 / 内心 OS（由 parsePlotRichText 输出）：与正文统一字号 */
+/* 对白 / 内心：中间档——字色 + 轻提示，不用整块色条 */
 .sr-prose .sr-plot-dialogue {
-  font-style: italic;
-  font-weight: 400;
+  font-style: normal;
+  font-weight: 500;
   font-size: var(--dating-font-size, 15px);
   color: var(--plot-dialogue-fg);
   font-family: var(--dating-font-dialogue, var(--dating-font-narrative, var(--sr-font-serif)));
+  background: none;
+  padding: 0 0.02em;
+  /* 细软下划线，跨行不断 */
+  box-shadow: inset 0 -0.11em 0 color-mix(in srgb, var(--plot-dialogue-fg) 34%, transparent);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .sr-prose .sr-plot-inner-os {
   font-style: italic;
-  font-weight: 300;
-  letter-spacing: 0.03em;
+  font-weight: 400;
+  letter-spacing: 0.025em;
   font-size: var(--dating-font-size, 15px);
   color: var(--plot-inner-os-fg);
   font-family: var(--dating-font-inner-os, var(--dating-font-narrative, var(--sr-font-serif)));
+  /* 极淡底，比旧色条轻很多 */
+  background: color-mix(in srgb, var(--plot-inner-os-fg) 7%, transparent);
+  border-radius: 2px;
+  padding: 0.02em 0.14em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .sr-prose em {

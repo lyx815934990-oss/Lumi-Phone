@@ -5,6 +5,7 @@ import type { ApiConfig } from '../../api/types'
 import { generateWorldBookItemContent } from './ai'
 import { approximateChineseTextLength } from './worldBookItemGenConstants'
 import { LoreEntryEditorSheet } from './LoreEntryEditorSheet'
+import { BookOpenOverlay, WorldbookInkShelf } from './personaEditor/WorldbookInkShelf'
 import { PlatinumSwitch } from './PlatinumSwitch'
 import type { Character, PlayerIdentity, WorldBook, WorldBookItem } from './types'
 import { formatWorldBookItemLineForPrompt } from './worldBookPronounGuide'
@@ -41,7 +42,7 @@ import {
   resetWorldBookAfterItemToInitial,
   resetWorldBookAfterToInitial,
 } from './worldBookAfterPatch'
-const BG_PAGE = 'linear-gradient(180deg, #fafaf9 0%, #f5f5f4 48%, #f4f4f5 100%)'
+const BG_PAGE = '#EDEBE7'
 
 export function WorldBooksEditor({
   apiConfig,
@@ -61,6 +62,14 @@ export function WorldBooksEditor({
   linkedNpcsContext?: string
 }) {
   const [sheetEntry, setSheetEntry] = useState<null | { wbId: string; itemId: string }>(null)
+  const [openingBook, setOpeningBook] = useState<null | {
+    wbId: string
+    itemId: string
+    name: string
+    shelf: '固定' | '尾声'
+  }>(null)
+  const openingRef = useRef(openingBook)
+  openingRef.current = openingBook
   const [confirmDelete, setConfirmDelete] = useState<null | { kind: 'wb' | 'item'; wbId: string; itemId?: string; title: string }>(null)
   const [confirmResetEpilogue, setConfirmResetEpilogue] = useState(false)
   const [confirmMarkEpilogue, setConfirmMarkEpilogue] = useState(false)
@@ -453,20 +462,48 @@ export function WorldBooksEditor({
   const sheetWorldBook = sheetEntry ? worldBooks.find((w) => w.id === sheetEntry.wbId) : undefined
   const sheetItem = sheetWorldBook?.items?.find((it) => it.id === sheetEntry?.itemId)
 
-  const timingLabel = (p: WorldBookItem['priority']) =>
-    p === 'before' ? '[ 序言介入 Pre-Chat ]' : '[ 尾声延展 Post-Chat ]'
+  const finishOpening = useCallback(() => {
+    const cur = openingRef.current
+    openingRef.current = null
+    setOpeningBook(null)
+    if (cur) setSheetEntry({ wbId: cur.wbId, itemId: cur.itemId })
+  }, [])
+
+  const openVolumeItem = (wbId: string, item: WorldBookItem) => {
+    const next = {
+      wbId,
+      itemId: item.id,
+      name: item.name?.trim() || '未命名条目',
+      shelf: (item.priority === 'after' ? '尾声' : '固定') as '固定' | '尾声',
+    }
+    openingRef.current = next
+    setOpeningBook(next)
+  }
+
+  const addShelfItem = (wbId: string, priority: WorldBookItem['priority']) => {
+    const id = addItem(wbId)
+    if (priority === 'after') updateItem(wbId, id, { priority: 'after', name: '新尾声' })
+    const next = {
+      wbId,
+      itemId: id,
+      name: priority === 'after' ? '新尾声' : '新法则',
+      shelf: (priority === 'after' ? '尾声' : '固定') as '固定' | '尾声',
+    }
+    openingRef.current = next
+    setOpeningBook(next)
+  }
 
   const outlineBtn =
-    'inline-flex items-center gap-1.5 rounded-full border border-[#E3DFD9] bg-white px-3 py-1.5 text-[12px] font-medium text-[#5C5954] shadow-sm transition hover:border-[#D4D0C8] hover:bg-[#FAFAF9] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45'
+    'inline-flex items-center gap-1.5 rounded-full border border-[#D2D0CB] bg-[#F8F7F4] px-3 py-1.5 text-[12px] font-medium text-[#5A6574] transition hover:border-[#8A909A] hover:bg-[#EDEBE7] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45'
 
   return (
     <div className="relative min-h-[min(100vh,860px)] pb-36" style={{ background: BG_PAGE }}>
       <div className="px-5 pt-6 pb-4">
         <p
           className="font-medium uppercase"
-          style={{ fontSize: 10.5, letterSpacing: '0.08em', color: '#B4A9C9' }}
+          style={{ fontSize: 10.5, letterSpacing: '0.16em', color: '#5A6574' }}
         >
-          LORE ARCHIVE
+          02 LORE
         </p>
         <h2
           className="font-bold tracking-tight"
@@ -480,7 +517,7 @@ export function WorldBooksEditor({
         >
           {forPlayerIdentity
             ? '刻画玩家本人侧设定；与通讯录人设档案无关。'
-            : '双层法则：序言介入为基底，尾声延展为关系快照；轻触条目即可雕琢。'}
+            : '固定条目先入对话，尾声条目记关系此刻。点书脊先翻开，再进入条目。'}
         </p>
 
         <div className="mt-5 space-y-4">
@@ -715,7 +752,8 @@ export function WorldBooksEditor({
           worldBooks.map((wb) => (
             <motion.div
               key={wb.id}
-              className="overflow-hidden rounded-[22px] border border-gray-50 bg-white/95 shadow-[0_4px_24px_rgba(0,0,0,0.04)] backdrop-blur-md"
+              className="overflow-hidden rounded-[16px] border bg-[#F8F7F4]"
+              style={{ borderColor: '#D2D0CB' }}
             >
               <div
                 role="button"
@@ -741,7 +779,7 @@ export function WorldBooksEditor({
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                   onChange={(e) => updateWorldBook(wb.id, { name: e.target.value })}
-                  className="min-w-0 flex-1 border-0 bg-transparent text-[17px] font-semibold tracking-tight text-stone-900 outline-none placeholder:text-stone-300"
+                  className="min-w-0 flex-1 border-0 bg-transparent font-serif text-[17px] font-semibold tracking-tight text-[#1E2024] outline-none placeholder:text-[#9AA0A8]"
                   placeholder="世界之名"
                   aria-label="世界书名称"
                 />
@@ -771,46 +809,15 @@ export function WorldBooksEditor({
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ type: 'spring', damping: 32, stiffness: 360 }}
-                    className="overflow-hidden border-t border-stone-100/90"
+                    className="overflow-hidden border-t"
+                    style={{ borderColor: '#D2D0CB' }}
                   >
-                    <div className="ml-3 border-l border-dashed border-stone-200/90 pl-4 pr-3 pb-4 pt-2">
-                      {(wb.items ?? []).length === 0 ? (
-                        <p className="py-3 text-[13px] text-stone-400">暂无条目</p>
-                      ) : (
-                        <div className="space-y-1">
-                          {(wb.items ?? []).map((it) => (
-                            <div
-                              key={it.id}
-                              className="flex items-start justify-between gap-3 rounded-2xl px-2 py-2.5 transition-colors hover:bg-stone-50/90"
-                            >
-                              <button
-                                type="button"
-                                className="min-w-0 flex-1 text-left"
-                                onClick={() => setSheetEntry({ wbId: wb.id, itemId: it.id })}
-                              >
-                                <p className="truncate text-[14px] font-medium text-stone-900">{it.name?.trim() || '未命名法则'}</p>
-                                <p className="mt-1 font-mono text-[9px] tracking-wide text-stone-400">{timingLabel(it.priority)}</p>
-                              </button>
-                              <PlatinumSwitch
-                                checked={it.enabled}
-                                onChange={(v) => updateItem(wb.id, it.id, { enabled: v })}
-                                aria-label="条目生效"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        className="mt-3 w-full rounded-2xl border border-dashed border-stone-200/90 py-3 text-[13px] font-medium text-stone-600 transition-colors hover:border-stone-300 hover:bg-white/80"
-                        onClick={() => {
-                          const id = addItem(wb.id)
-                          setSheetEntry({ wbId: wb.id, itemId: id })
-                        }}
-                      >
-                        + 新增法则条目
-                      </button>
-                    </div>
+                    <WorldbookInkShelf
+                      items={wb.items ?? []}
+                      onOpen={(item) => openVolumeItem(wb.id, item)}
+                      onToggle={(item, enabled) => updateItem(wb.id, item.id, { enabled })}
+                      onAdd={(priority) => addShelfItem(wb.id, priority)}
+                    />
                   </motion.div>
                 ) : null}
               </AnimatePresence>
@@ -822,12 +829,16 @@ export function WorldBooksEditor({
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[1040] flex justify-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <button
           type="button"
-          className="pointer-events-auto w-full max-w-lg rounded-full bg-stone-950 py-4 text-[14px] font-medium tracking-[0.06em] text-white shadow-[0_12px_40px_rgba(0,0,0,0.22)] transition-transform active:scale-[0.99]"
+          className="pointer-events-auto w-full max-w-lg rounded-full border border-[#1E2024] bg-[#1E2024] py-4 text-[14px] font-medium tracking-[0.06em] text-[#F8F7F4] transition-transform active:scale-[0.99]"
           onClick={addWorldBook}
         >
-          + 缔造新世界 (New Worldbook)
+          + 缔造新世界
         </button>
       </div>
+
+      {openingBook ? (
+        <BookOpenOverlay title={openingBook.name} shelf={openingBook.shelf} onDone={finishOpening} />
+      ) : null}
 
       {sheetEntry && sheetWorldBook && sheetItem ? (
         <LoreEntryEditorSheet

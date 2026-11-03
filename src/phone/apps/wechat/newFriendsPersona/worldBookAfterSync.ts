@@ -8,7 +8,9 @@ import {
   hasChatAfterWorldBookItems,
   listChatAfterWorldBookItems,
   parseWorldBookAfterPatchBody,
+  summarizeWorldBookAfterPatchChanges,
   WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT,
+  type WorldBookAfterChangedEntry,
   type WorldBookAfterPatch,
 } from './worldBookAfterPatch'
 import type { WorldBookAfterRevertEntry } from '../dating/types'
@@ -423,6 +425,7 @@ export async function persistWorldBookAfterSyncPatches(
   }
   let applied = 0
   const revertByCharacterId = new Map<string, WorldBookAfterRevertEntry[]>()
+  const changedEntries: WorldBookAfterChangedEntry[] = []
   const traceRows: import('../memoryTraceTypes').MemoryTraceWorldBookAfterPatchRow[] = []
   let primaryCharacterId = ''
   for (const [cid, plist] of byChar) {
@@ -430,6 +433,7 @@ export async function persistWorldBookAfterSyncPatches(
     if (!row) continue
     if (!primaryCharacterId) primaryCharacterId = cid
     const snap = collectWorldBookAfterRevertSnapshot(row, plist)
+    changedEntries.push(...summarizeWorldBookAfterPatchChanges(row, plist))
     traceRows.push(...buildWorldBookAfterPatchRowsFromSingleCharacter(row, plist))
     const next = applyWorldBookAfterPatchesToCharacter(row, plist)
     if (next) {
@@ -441,7 +445,11 @@ export async function persistWorldBookAfterSyncPatches(
   if (applied > 0) {
     window.dispatchEvent(
       new CustomEvent(WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT, {
-        detail: { appliedPatchCount: applied, source: opts?.source ?? 'auto_summary' },
+        detail: {
+          appliedPatchCount: applied,
+          changedEntries,
+          source: opts?.source ?? 'auto_summary',
+        },
       }),
     )
     if (
@@ -484,11 +492,13 @@ export async function applyEpiloguePatchesFromAutoSummary(
 
   let applied = 0
   const revertByCharacterId = new Map<string, WorldBookAfterRevertEntry[]>()
+  const changedEntries: WorldBookAfterChangedEntry[] = []
   const traceRows: import('../memoryTraceTypes').MemoryTraceWorldBookAfterPatchRow[] = []
   for (const [cid, plist] of byChar) {
     const row = await personaDb.getCharacter(cid)
     if (!row) continue
     const snap = collectWorldBookAfterRevertSnapshot(row, plist)
+    changedEntries.push(...summarizeWorldBookAfterPatchChanges(row, plist))
     traceRows.push(...buildWorldBookAfterPatchRowsFromSingleCharacter(row, plist))
     const next = applyWorldBookAfterPatchesToCharacter(row, plist)
     if (next) {
@@ -500,7 +510,11 @@ export async function applyEpiloguePatchesFromAutoSummary(
   if (applied > 0) {
     window.dispatchEvent(
       new CustomEvent(WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT, {
-        detail: { appliedPatchCount: applied, source: 'auto_summary' },
+        detail: {
+          appliedPatchCount: applied,
+          changedEntries,
+          source: 'auto_summary',
+        },
       }),
     )
     void syncAutoSummaryEpilogueToLastMemoryTrace({

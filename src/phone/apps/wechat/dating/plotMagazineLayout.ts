@@ -1,4 +1,5 @@
 import type { PlotImageItem } from './types'
+import { unwrapDimensionProseLineWraps } from './datingPlotDimensionAi'
 
 export type PlotMagazineFloat = 'left' | 'right'
 
@@ -8,7 +9,7 @@ export type PlotMagazineSegment =
 
 /** 将剧情正文拆成可穿插配图的段落块（禁止在未闭合引号/对白内切开） */
 export function splitPlotBodyParagraphs(body: string): string[] {
-  const t = String(body ?? '').trim()
+  const t = unwrapDimensionProseLineWraps(String(body ?? '')).trim()
   if (!t) return []
 
   const byDouble = splitPreservingDialogueQuotes(t, /\n\s*\n+/)

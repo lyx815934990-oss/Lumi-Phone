@@ -3,12 +3,69 @@ import { useMemo, useState } from 'react'
 import { loadResolvedApiConfig } from '../../api/loadResolvedApiConfig'
 import { Pressable } from '../../../components/Pressable'
 import { AnimeCharacterPicker } from '../animeCharacterSearch'
-import { bindCommentsToPost, aiGenerateForumComments } from '../forumCommentsAi'
+import { bindCommentsToPost } from '../forumCommentsAi'
 import { aiGenerateCustomFanfic } from '../forumCustomFicAi'
 import { FORUM } from '../forumTheme'
 import type { AnimeCharacterPick } from '../forumTypes'
 import { pickPersonasForThread, type NetizenPersona } from '../netizenPersonas'
 import { createForumPostId, useForumStore } from '../useForumStore'
+
+function CountRow({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  disabled,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step?: number
+  disabled?: boolean
+  onChange: (n: number) => void
+}) {
+  const w = step >= 100 ? 10 : 6
+  return (
+    <div
+      className="flex items-center justify-between gap-3 rounded-[10px] px-3 py-2.5"
+      style={{
+        backgroundColor: FORUM.surface2,
+        border: `1px solid ${FORUM.hairline}`,
+      }}
+    >
+      <span style={{ fontSize: 13, color: FORUM.text, fontWeight: 500 }}>{label}</span>
+      <div className="flex items-center gap-2">
+        <Pressable
+          type="button"
+          disabled={disabled || value <= min}
+          onClick={() => onChange(Math.max(min, value - step))}
+          className="flex size-7 items-center justify-center rounded-full disabled:opacity-35"
+          style={{ backgroundColor: FORUM.bgAccent, color: FORUM.text }}
+        >
+          −
+        </Pressable>
+        <span
+          className="text-center font-bold tabular-nums"
+          style={{ color: FORUM.accent, width: w * 4 }}
+        >
+          {value}
+        </span>
+        <Pressable
+          type="button"
+          disabled={disabled || value >= max}
+          onClick={() => onChange(Math.min(max, value + step))}
+          className="flex size-7 items-center justify-center rounded-full disabled:opacity-35"
+          style={{ backgroundColor: FORUM.bgAccent, color: FORUM.text }}
+        >
+          +
+        </Pressable>
+      </div>
+    </div>
+  )
+}
 
 export function ForumCustomRequestSheet({
   open,
@@ -28,18 +85,22 @@ export function ForumCustomRequestSheet({
   const addComments = useForumStore((s) => s.addComments)
   const [picks, setPicks] = useState<AnimeCharacterPick[]>([])
   const [demand, setDemand] = useState('')
+  const [targetWordCountText, setTargetWordCountText] = useState('700')
+  const [commentCount, setCommentCount] = useState(6)
+  const [interactionCount, setInteractionCount] = useState(2)
   const [busy, setBusy] = useState(false)
-  const [phase, setPhase] = useState<'idle' | 'fic' | 'comments'>('idle')
+  const [phase, setPhase] = useState<'idle' | 'gen'>('idle')
 
   const hint = useMemo(() => {
-    if (phase === 'fic') {
-      return fixedAuthor ? `${fixedAuthor.username} 写文中…` : '网友写文中…'
+    if (phase === 'gen') {
+      return fixedAuthor
+        ? `${fixedAuthor.username} 正在一次生成正文与评论区…`
+        : '正在一次生成正文与评论区…'
     }
-    if (phase === 'comments') return '正在生成评论区…'
     if (fixedAuthor) {
-      return `由写手「${fixedAuthor.username}」执笔。搜索作品 → 多选角色 → 写一句想看的梗。`
+      return `由写手「${fixedAuthor.username}」执笔。搜索作品 → 多选角色 → 想看的梗可不填。正文与评论一次生成。`
     }
-    return '搜索作品 → 多选角色 → 写一句想看的梗，由论坛网友按人格写同人文（转化性创作，不复刻原作台词）。'
+    return '搜索作品 → 多选角色 → 想看的梗可不填。正文与评论一次生成。'
   }, [phase, fixedAuthor])
 
   if (!open) return null
@@ -50,12 +111,8 @@ export function ForumCustomRequestSheet({
       window.alert('请先选择至少一个角色')
       return
     }
-    if (!demand.trim()) {
-      window.alert('请填写一句话想看的梗')
-      return
-    }
     setBusy(true)
-    setPhase('fic')
+    setPhase('gen')
     try {
       const apiConfig = await loadResolvedApiConfig('chatCard')
       const author =
@@ -66,14 +123,21 @@ export function ForumCustomRequestSheet({
         })[0]
       if (!author) throw new Error('人格库为空')
 
+      const parsedWords = Math.floor(Number(targetWordCountText.trim()))
+      const targetWordCount =
+        Number.isFinite(parsedWords) && parsedWords > 0 ? parsedWords : 700
+      const postId = createForumPostId()
       const fic = await aiGenerateCustomFanfic({
         apiConfig,
         author,
         picks,
-        demand,
+        demand: demand.trim() || '按角色气质自由发挥一段日常互动，克制、有画面。',
+        targetWordCount,
+        commentCount,
+        replyCount: interactionCount,
+        seed: postId,
       })
 
-      const postId = createForumPostId()
       const digest = picks.map((p) => `${p.characterName}@${p.mediaTitle}`).join(' / ').slice(0, 120)
       addPost(characterId, {
         id: postId,
@@ -85,24 +149,10 @@ export function ForumCustomRequestSheet({
         createdAt: Date.now(),
         publicContextDigest: digest,
         customPicks: picks,
+        likeCount: 8 + Math.floor(Math.random() * 140),
       })
-
-      setPhase('comments')
-      try {
-        const comments = await aiGenerateForumComments({
-          apiConfig,
-          postTitle: fic.title,
-          postBody: fic.body,
-          postAuthorPersonaId: fic.authorPersonaId,
-          seed: postId,
-        })
-        addComments(characterId, bindCommentsToPost(comments, postId))
-      } catch (e) {
-        window.alert(
-          e instanceof Error
-            ? `同人文已保存，但评论区生成失败：${e.message}`
-            : '同人文已保存，但评论区生成失败',
-        )
+      if (fic.comments.length) {
+        addComments(characterId, bindCommentsToPost(fic.comments, postId))
       }
 
       setPicks([])
@@ -118,78 +168,134 @@ export function ForumCustomRequestSheet({
   }
 
   return (
-    <div className="absolute inset-0 z-[60] flex items-end justify-center" style={{ background: 'rgba(44,40,37,0.28)' }}>
-      <button
-        type="button"
-        className="absolute inset-0 cursor-default"
-        aria-label="关闭"
-        onClick={busy ? undefined : onClose}
-      />
+    <div
+      className="absolute inset-0 z-[60] flex flex-col"
+      style={{ backgroundColor: FORUM.surface1 }}
+      role="dialog"
+      aria-label="搜索原作角色"
+    >
       <div
-        className="relative z-10 flex max-h-[88%] w-full max-w-[520px] flex-col"
-        style={{
-          backgroundColor: FORUM.surface1,
-          borderTopLeftRadius: 22,
-          borderTopRightRadius: 22,
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        }}
+        className="flex shrink-0 items-start justify-between gap-3 px-[19px]"
+        style={{ paddingTop: `calc(${FORUM.headerPadTop} + 8px)` }}
       >
-        <div className="shrink-0 px-4 pt-4">
-          <div className="mx-auto mb-3 h-1 w-10 rounded-full" style={{ backgroundColor: FORUM.surface2 }} />
-          <h2 className="font-semibold" style={{ fontSize: 16, color: FORUM.text }}>
-            {fixedAuthor ? `${fixedAuthor.username} · 写选角文` : '自定义同人文'}
+        <div className="min-w-0">
+          <p className="font-semibold tracking-[0.12em]" style={{ fontSize: 10, color: FORUM.accent }}>
+            自定义同人
+          </p>
+          <h2 className="font-semibold" style={{ fontSize: 18, color: FORUM.text, marginTop: 2 }}>
+            {fixedAuthor ? `${fixedAuthor.username} · 搜索原作角色` : '搜索原作角色'}
           </h2>
           <p className="mt-1 leading-relaxed" style={{ fontSize: 12, color: FORUM.textMuted }}>
             {hint}
           </p>
         </div>
+        <Pressable
+          type="button"
+          disabled={busy}
+          onClick={onClose}
+          className="mt-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold disabled:opacity-50"
+          style={{
+            border: `1px solid ${FORUM.hairline}`,
+            backgroundColor: FORUM.bgAccent,
+            color: FORUM.text,
+          }}
+        >
+          返回
+        </Pressable>
+      </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <AnimeCharacterPicker selected={picks} onChange={setPicks} />
-          <div className="mt-3">
-            <label className="font-medium" style={{ fontSize: 12, color: FORUM.textMuted }}>
-              一句话想看的梗
-            </label>
-            <textarea
-              value={demand}
-              onChange={(e) => setDemand(e.target.value)}
+      <div className="min-h-0 flex-1 overflow-y-auto px-[19px] py-3 [scrollbar-width:none]">
+        <AnimeCharacterPicker selected={picks} onChange={setPicks} />
+        <div className="mt-3">
+          <label className="font-medium" style={{ fontSize: 12, color: FORUM.textMuted }}>
+            生成要求 <span style={{ fontWeight: 400 }}>（可不填）</span>
+          </label>
+          <textarea
+            value={demand}
+            onChange={(e) => setDemand(e.target.value)}
+            disabled={busy}
+            placeholder="例如：写他们在雨夜车站错过又重逢"
+            rows={5}
+            className="mt-1 w-full resize-y px-3 py-2.5 text-[14px] outline-none disabled:opacity-60"
+            style={{
+              borderRadius: 10,
+              backgroundColor: FORUM.surface2,
+              color: FORUM.text,
+              border: `1px solid ${FORUM.hairline}`,
+            }}
+          />
+        </div>
+
+        <div className="mt-3 flex flex-col gap-2">
+          <div
+            className="flex items-center justify-between gap-3 rounded-[10px] px-3 py-2.5"
+            style={{
+              backgroundColor: FORUM.surface2,
+              border: `1px solid ${FORUM.hairline}`,
+            }}
+          >
+            <span style={{ fontSize: 13, color: FORUM.text, fontWeight: 500 }}>正文约字数</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
               disabled={busy}
-              placeholder="例如：写他们在雨夜车站错过又重逢"
-              rows={2}
-              className="mt-1 w-full resize-none px-3 py-2.5 text-[14px] outline-none disabled:opacity-60"
+              value={targetWordCountText}
+              onChange={(e) => setTargetWordCountText(e.target.value.replace(/[^\d]/g, '').slice(0, 6))}
+              className="w-[5.5rem] shrink-0 rounded-[8px] px-2 py-1 text-center text-[14px] font-bold tabular-nums outline-none disabled:opacity-50"
               style={{
-                borderRadius: FORUM.radiusCard,
-                backgroundColor: FORUM.surface2,
-                color: FORUM.text,
-                border: 'none',
+                backgroundColor: FORUM.bgAccent,
+                color: FORUM.accent,
+                border: `1px solid ${FORUM.hairline}`,
               }}
+              aria-label="正文约字数"
             />
           </div>
+          <CountRow
+            label="评论条数"
+            value={commentCount}
+            min={2}
+            max={12}
+            disabled={busy}
+            onChange={setCommentCount}
+          />
+          <CountRow
+            label="楼中楼条数"
+            value={interactionCount}
+            min={0}
+            max={6}
+            disabled={busy}
+            onChange={setInteractionCount}
+          />
+          <p style={{ fontSize: 11, color: FORUM.textMuted }}>点赞由系统随机，无需设置。</p>
         </div>
+      </div>
 
-        <div
-          className="flex shrink-0 gap-2 px-4 py-3"
-          style={{ borderTop: `0.5px solid ${FORUM.hairline}` }}
+      <div
+        className="flex shrink-0 gap-2 px-[19px] pt-2"
+        style={{
+          borderTop: `0.5px solid ${FORUM.hairline}`,
+          paddingBottom: 'calc(14px + env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+        <Pressable
+          type="button"
+          disabled={busy}
+          onClick={onClose}
+          className="flex-1 rounded-[12px] py-3 text-center text-[14px] font-medium disabled:opacity-50"
+          style={{ background: FORUM.bgAccent, color: FORUM.text }}
         >
-          <Pressable
-            type="button"
-            disabled={busy}
-            onClick={onClose}
-            className="flex-1 rounded-[17px] py-3 text-center text-[14px] font-medium disabled:opacity-50"
-            style={{ background: FORUM.surface2, color: FORUM.text }}
-          >
-            取消
-          </Pressable>
-          <Pressable
-            type="button"
-            disabled={busy}
-            onClick={() => void run()}
-            className="flex-1 rounded-[17px] py-3 text-center text-[14px] font-medium disabled:opacity-60"
-            style={{ background: FORUM.accent, color: '#FFFDF8' }}
-          >
-            {busy ? '生成中…' : '开始写'}
-          </Pressable>
-        </div>
+          取消
+        </Pressable>
+        <Pressable
+          type="button"
+          disabled={busy}
+          onClick={() => void run()}
+          className="flex-1 rounded-[12px] py-3 text-center text-[14px] font-bold disabled:opacity-60"
+          style={{ background: FORUM.accent, color: FORUM.surface2 }}
+        >
+          {busy ? '生成中…' : '请网友执笔生成'}
+        </Pressable>
       </div>
     </div>
   )

@@ -302,6 +302,7 @@ export function extractObservationNotesPatchBlock(raw: string): {
   const { section, leftover } = cutTailAtMarkers(tail, [
     '---WB_AFTER_PATCH---',
     '---LIFE_LEDGER_PATCH---',
+    '---SCHEDULE_CAL_PATCH---',
     '---MEMORY---',
     '===MEMORY===',
     '---OBS---',

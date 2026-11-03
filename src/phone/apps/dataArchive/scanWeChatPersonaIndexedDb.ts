@@ -114,7 +114,7 @@ function phoneKvKeyToLabel(key: string): string {
   if (key.startsWith('wechat-accounts-bundle') || key.startsWith('wechat-user-profile')) return '微信 · 账号'
   if (key.startsWith('checkPhone.')) return '查手机'
   if (key.startsWith('listen-together-')) return '听一听'
-  if (key.startsWith('fanfic-forum')) return '同人论坛'
+  if (key.startsWith('fanfic-forum')) return '同人通讯社'
   if (key.startsWith('wechat-couple-space')) return '情侣空间'
   if (key.startsWith('wechat-subconscious') || key.startsWith('wechat-diary')) return '日记'
   if (key.startsWith('wechat-anonymous')) return '匿名提问'

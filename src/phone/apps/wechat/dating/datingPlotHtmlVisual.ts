@@ -4,6 +4,7 @@
  * 输出壳对齐酒馆 snow：完整 HTML+CSS+JS；消毒放行 script。
  */
 
+import { extractDatingTaggedBlocks, stripDatingTaggedKind } from './datingPlotTaggedBlocks'
 import { buildPlotHtmlVisualPresetAppendix } from './datingPlotHtmlVisualPresets'
 
 /** 场控面板 · 功能显示名 */
@@ -35,18 +36,24 @@ const BLOCK_RE = new RegExp(
 const BLOCK_OPEN_RE = new RegExp(String.raw`【\s*${BLOCK_NAME}\s*】\s*([\s\S]*)$`, 'iu')
 const BLOCK_XML_RE =
   /<plot_html\b(?:[^>]*\btitle=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/plot_html>/i
+const THEATER_XML_RE = /<theater\b[^>]*>([\s\S]*?)<\/theater>/i
 const SNOW_RE = /<snow\b[^>]*>([\s\S]*?)<\/snow>/i
 
-/** 仍禁止嵌套逃逸类标签；script 单独放行 */
+/** 仍禁止嵌套逃逸类标签；script 单独放行；stylesheet link 见下白名单 */
 const FORBIDDEN_TAG_RE =
-  /<\s*\/?\s*(iframe|object|embed|link|base|form|frame|frameset|applet)\b[^>]*>/gi
+  /<\s*\/?\s*(iframe|object|embed|base|form|frame|frameset|applet)\b[^>]*>/gi
+/** 非样式表的 <link> 仍剥（防导航/prefetch 逃逸） */
+const LINK_STRIP_RE =
+  /<\s*link\b(?![^>]*\brel\s*=\s*["'][^"']*stylesheet[^"']*["'])[^>]*>/gi
 /** meta 仅保留 charset / viewport */
 const META_STRIP_RE =
   /<\s*meta\b(?![^>]*\bcharset\b)(?![^>]*\bname\s*=\s*["']viewport["'])[^>]*>/gi
 const EVENT_ATTR_RE = /\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi
 const JS_URL_RE = /(?:href|src|xlink:href)\s*=\s*("|')\s*javascript:[^"']*\1/gi
 const DATA_URL_SCRIPT_RE = /(?:href|src)\s*=\s*("|')\s*data:text\/html[^"']*\1/gi
-const SCRIPT_SRC_RE = /<\s*script\b[^>]*\bsrc\s*=/gi
+/** 样式表仅放行 https CDN（月读标题美化 / Font Awesome） */
+const STYLESHEET_HREF_RE =
+  /<\s*link\b([^>]*\brel\s*=\s*["'][^"']*stylesheet[^"']*["'][^>]*)>/gi
 
 function trimBeforeMemoryDelimiter(text: string): string {
   let s = String(text || '')
@@ -76,9 +83,10 @@ function parseTitleLine(raw: string): { title: string; rest: string } {
 
 function unwrapHtmlFence(raw: string): string {
   let s = String(raw || '').trim()
-  const fenced = s.match(/```(?:html|HTML)?\s*\r?\n?([\s\S]*?)```/u)
+  // 仅 ```html；不要把 ```text（剧情走向）当成 HTML 围栏
+  const fenced = s.match(/```(?:html|HTML)\s*\r?\n?([\s\S]*?)```/u)
   if (fenced?.[1]) return fenced[1].trim()
-  const openFence = s.match(/```(?:html|HTML)?\s*\r?\n?([\s\S]*)$/u)
+  const openFence = s.match(/```(?:html|HTML)\s*\r?\n?([\s\S]*)$/u)
   if (openFence?.[1]) {
     return openFence[1]
       .replace(/【\s*(?:小剧场|剧情可视化|物证映像)\s*结束\s*】[\s\S]*$/u, '')
@@ -126,22 +134,53 @@ function parseSnowShell(raw: string): { title: string; emoji?: string; htmlSourc
   return { title, emoji, htmlSource }
 }
 
+/** 酒馆助手 third_party 同系 CDN（允许 script src） */
+const TRUSTED_SCRIPT_CDN_RE =
+  /cdn\.jsdelivr\.net|testingcf\.jsdelivr\.net|cdnjs\.cloudflare\.com|unpkg\.com/i
+
 export function sanitizePlotHtmlVisualHtml(raw: string): string {
   let html = String(raw || '').trim()
   if (!html) return ''
-  // 保留「小剧场构思」类注释以外的普通注释可剥；构思已在壳外解析
-  html = html.replace(/<!--(?!\s*小剧场构思)[\s\S]*?-->/g, '')
+  // 保留「小剧场构思」/ 助手兼容标记；其它注释可剥
+  html = html.replace(
+    /<!--(?!\s*(?:小剧场构思|LUMI_VUE_RUNTIME|LUMI_TH_LIBS))[\s\S]*?-->/g,
+    '',
+  )
   html = html.replace(FORBIDDEN_TAG_RE, '')
+  // 非 stylesheet 的 link 剥掉
+  html = html.replace(LINK_STRIP_RE, '')
+  // stylesheet 仅放行 https（cdnjs / fonts / jsdelivr 等）
+  html = html.replace(STYLESHEET_HREF_RE, (full, attrs: string) => {
+    const href = String(attrs).match(/\bhref\s*=\s*("|')(https:\/\/[^"']+)\1/i)?.[2]
+    if (href) return full
+    return ''
+  })
   html = html.replace(META_STRIP_RE, '')
   // 内联事件仍剥：互动应走 <script>，降低 XSS 面
   html = html.replace(EVENT_ATTR_RE, '')
   html = html.replace(JS_URL_RE, '')
   html = html.replace(DATA_URL_SCRIPT_RE, '')
-  // 禁止外链 script
-  html = html.replace(/<\s*script\b[^>]*\bsrc\s*=[^>]*>[\s\S]*?<\/script>/gi, '')
-  html = html.replace(SCRIPT_SRC_RE, '<script data-blocked-src ')
-  html = html.replace(/@import\b[^;]*;/gi, '')
-  if (html.length > HTML_MAX_CHARS) html = `${html.slice(0, HTML_MAX_CHARS)}<!-- truncated -->`
+  // 外链 script：仅放行助手同系 CDN（jQuery / Vue）；其余整段剥掉
+  html = html.replace(/<\s*script\b([^>]*)>([\s\S]*?)<\/script>/gi, (full, attrs: string) => {
+    const src = String(attrs).match(/\bsrc\s*=\s*("|')(https:\/\/[^"']+)\1/i)?.[2]
+    if (!src) return full
+    if (TRUSTED_SCRIPT_CDN_RE.test(src)) return full
+    return ''
+  })
+  // 残留未闭合的 src= 开标签（非受信 CDN）打标废掉
+  html = html.replace(/<\s*script\b[^>]*\bsrc\s*=/gi, (full) => {
+    if (TRUSTED_SCRIPT_CDN_RE.test(full)) return full
+    return '<script data-blocked-src '
+  })
+  // 危险 @import 剥掉；放行 https 字体（酒馆状态栏常用外链字体）
+  html = html.replace(/@import\b[^;]*;/gi, (stmt) =>
+    /https?:\/\//i.test(stmt) ? stmt : '',
+  )
+  // 月读前端美化文档可更大
+  const maxChars = /LUMI_VUE_RUNTIME|LUMI_TH_LIBS|__vccOpts/i.test(html)
+    ? Math.max(HTML_MAX_CHARS, 320_000)
+    : HTML_MAX_CHARS
+  if (html.length > maxChars) html = `${html.slice(0, maxChars)}<!-- truncated -->`
   return html.trim()
 }
 
@@ -235,6 +274,18 @@ function parseHtmlVisualInner(inner: string): PlotHtmlVisual | null {
 
 function findHtmlVisualBlock(text: string): { inner: string; start: number; end: number } | null {
   const src = String(text || '')
+  const tagged = extractDatingTaggedBlocks(src)
+  if (tagged.theater.trim()) {
+    return { inner: tagged.theater, start: -1, end: -1 }
+  }
+  const theaterXml = src.match(THEATER_XML_RE)
+  if (theaterXml && theaterXml.index !== undefined) {
+    return {
+      inner: theaterXml[1] || '',
+      start: theaterXml.index,
+      end: theaterXml.index + theaterXml[0].length,
+    }
+  }
   const xml = src.match(BLOCK_XML_RE)
   if (xml && xml.index !== undefined) {
     const title = xml[1]?.trim() || DEFAULT_TITLE
@@ -259,12 +310,14 @@ function findHtmlVisualBlock(text: string): { inner: string; start: number; end:
     }
   }
   // 裸 details+summary（模型常漏【小剧场】壳）
+  // 必须是 ```html / 完整文档；勿匹配 ```text（剧情走向等叙事折叠也会被误抽走）
   const detailsOnly = src.match(/<details\b[^>]*>[\s\S]*?<\/details>/i)
   if (
     detailsOnly &&
     detailsOnly.index !== undefined &&
     /<summary\b/i.test(detailsOnly[0]) &&
-    (/```(?:html)?/i.test(detailsOnly[0]) || /<!DOCTYPE\s+html/i.test(detailsOnly[0]))
+    (/```html\b/i.test(detailsOnly[0]) || /<!DOCTYPE\s+html/i.test(detailsOnly[0])) &&
+    !/剧情走向/u.test(detailsOnly[0])
   ) {
     return {
       inner: detailsOnly[0],
@@ -300,8 +353,12 @@ export function extractAndStripPlotHtmlVisual(raw: string): {
   const block = findHtmlVisualBlock(text)
   if (!block) return { content: text.trim(), visual: null }
   const visual = parseHtmlVisualInner(block.inner)
-  const content = (text.slice(0, block.start) + text.slice(block.end)).trim()
-  if (!visual) return { content, visual: null }
+  // 认出来却解析不成可用小剧场时，绝不删原文（否则「剧情走向」details 会直接消失）
+  if (!visual) return { content: text.trim(), visual: null }
+  const content =
+    block.start < 0
+      ? stripDatingTaggedKind(text, 'theater')
+      : (text.slice(0, block.start) + text.slice(block.end)).trim()
   return { content, visual: { ...visual, updatedAt: Date.now() } }
 }
 

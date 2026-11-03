@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#e8efe9" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>按量 vs 按次 · 费率对比</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg0: #e8efe9;
+      --bg1: #f4f7f4;
+      --ink: #14201a;
+      --muted: #5a6b62;
+      --line: #c5d4cb;
+      --card: rgba(255, 255, 255, 0.94);
+      --vol: #0d6e8a;
+      --vol-soft: #d4eef6;
+      --call: #b85a1a;
+      --call-soft: #fde8d6;
+      --best: #0d7a5f;
+      --best-soft: #c8f0df;
+      --danger: #b33a2e;
+      --shadow: 0 10px 28px rgba(20, 32, 26, 0.07);
+      --radius: 16px;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+      --sans: "Outfit", system-ui, -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+      --safe-b: env(safe-area-inset-bottom, 0px);
+      --safe-t: env(safe-area-inset-top, 0px);
+      --nav-h: 58px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; }
+    body {
+      font-family: var(--sans);
+      color: var(--ink);
+      background:
+        radial-gradient(700px 380px at 0% -5%, #cfe8d8 0%, transparent 55%),
+        radial-gradient(520px 320px at 100% 0%, #f3d9c4 0%, transparent 50%),
+        linear-gradient(165deg, var(--bg0), var(--bg1) 45%, #eef3ef);
+      min-height: 100dvh;
+      padding-bottom: calc(var(--nav-h) + var(--safe-b) + 0.75rem);
+    }
+
+    .app {
+      width: min(720px, 100%);
+      margin: 0 auto;
+    }
+
+    .top {
+      padding: calc(0.75rem + var(--safe-t)) 0.85rem 0.55rem;
+    }
+    .kicker {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--best);
+      font-weight: 600;
+      margin-bottom: 0.2rem;
+    }
+    h1 {
+      margin: 0 0 0.45rem;
+      font-size: clamp(1.25rem, 5vw, 1.7rem);
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+    }
+
+    .credit-box {
+      margin: 0 0 0.65rem;
+      padding: 0.65rem 0.75rem;
+      border-radius: 14px;
+      border: 1px solid #d7e4db;
+      background: rgba(255, 255, 255, 0.78);
+      display: grid;
+      gap: 0.4rem;
+    }
+    .credit-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 0.22rem 0.48rem;
+      border-radius: 999px;
+      line-height: 1.2;
+    }
+    .tag.free {
+      background: var(--best-soft);
+      color: var(--best);
+    }
+    .tag.warn {
+      background: #ffe3e0;
+      color: #c62828;
+      border: 1px solid #f5b5b0;
+    }
+    .em-red {
+      color: #c62828;
+      font-weight: 700;
+    }
+    .credit-author {
+      font-size: 0.86rem;
+      line-height: 1.45;
+      color: var(--ink);
+    }
+    .credit-author strong { font-weight: 700; }
+    .credit-author .xhs {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .credit-link {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      text-align: left;
+      font-family: var(--sans);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #6a7a71;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(20, 32, 26, 0.48);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0.75rem;
+      padding-bottom: calc(0.75rem + var(--safe-b));
+    }
+    .modal-mask[hidden] { display: none !important; }
+    @media (min-width: 560px) {
+      .modal-mask { align-items: center; }
+    }
+    .modal {
+      width: min(420px, 100%);
+      max-height: min(86dvh, 640px);
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      background: #fff;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 60px rgba(20, 32, 26, 0.22);
+      padding: 1rem 1rem 0.95rem;
+      display: grid;
+      gap: 0.7rem;
+    }
+    .modal h2 {
+      margin: 0;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+    .modal .modal-lead {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.45;
+    }
+    .modal-disclaimer {
+      margin: 0;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      color: var(--ink);
+      border: 1px solid #e2ebe5;
+      border-radius: 12px;
+      padding: 0.65rem 0.75rem;
+      background: #f7faf8;
+    }
+    .modal-disclaimer summary {
+      cursor: pointer;
+      list-style: none;
+      font-weight: 700;
+      font-size: 0.88rem;
+      color: var(--ink);
+      user-select: none;
+    }
+    .modal-disclaimer summary::-webkit-details-marker { display: none; }
+    .modal-disclaimer summary::after {
+      content: "（点击折叠）";
+      margin-left: 0.35rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .modal-disclaimer:not([open]) summary::after {
+      content: "（点击展开）";
+    }
+    .modal-disclaimer ul {
+      margin: 0.5rem 0 0;
+      padding-left: 1.15rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+    .modal-disclaimer li { margin: 0.28rem 0; }
+    .modal-actions {
+      display: grid;
+      gap: 0.45rem;
+    }
+    .modal-actions .btn { width: 100%; flex: none; }
+
+    .verdict-main {
+      border-radius: 14px;
+      padding: 0.75rem 0.85rem;
+      border: 1px solid #9fd9c2;
+      background: linear-gradient(125deg, var(--best-soft), #fff 72%);
+      display: grid;
+      gap: 0.15rem;
+    }
+    .verdict-main .lab {
+      font-family: var(--mono);
+      font-size: 0.66rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: var(--best);
+    }
+    .verdict-main .title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      word-break: break-word;
+    }
+    .verdict-main .meta {
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.35;
+    }
+    .verdict-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.45rem;
+      margin-top: 0.45rem;
+    }
+    .mini-card {
+      border-radius: 12px;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid var(--line);
+      background: #fff;
+      display: grid;
+      gap: 0.08rem;
+      min-width: 0;
+    }
+    .mini-card.vol { background: linear-gradient(125deg, var(--vol-soft), #fff 80%); border-color: #a8d5e4; }
+    .mini-card.call { background: linear-gradient(125deg, var(--call-soft), #fff 80%); border-color: #efc4a0; }
+    .mini-card .lab {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .mini-card.vol .lab { color: var(--vol); }
+    .mini-card.call .lab { color: var(--call); }
+    .mini-card .name {
+      font-size: 0.82rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mini-card .price {
+      font-family: var(--mono);
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+
+    .tabs-body {
+      padding: 0.55rem 0.85rem 1rem;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid rgba(197, 212, 203, 0.95);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 0.85rem;
+    }
+    .col-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.65rem;
+      flex-wrap: wrap;
+    }
+    .col-head h2 {
+      margin: 0;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .head-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      width: 100%;
+    }
+    @media (min-width: 480px) {
+      .head-actions { width: auto; }
+    }
+
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.7rem 0.7rem;
+      font-family: var(--mono);
+      font-size: 16px;
+      background: #fff;
+      color: var(--ink);
+      outline: none;
+      min-height: 44px;
+    }
+    input:focus {
+      border-color: var(--best);
+      box-shadow: 0 0 0 3px rgba(13, 122, 95, 0.14);
+    }
+
+    .btn {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      font-family: var(--sans);
+      font-weight: 600;
+      font-size: 0.88rem;
+      padding: 0.6rem 0.8rem;
+      border-radius: 12px;
+      cursor: pointer;
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1 1 auto;
+      white-space: nowrap;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn.primary { background: var(--ink); color: #f4faf6; border-color: var(--ink); }
+    .btn.ghost { background: #f3f8f5; }
+    @media (min-width: 480px) {
+      .btn { flex: 0 0 auto; }
+    }
+
+    .pill {
+      font-family: var(--mono);
+      font-size: 0.66rem;
+      padding: 0.16rem 0.42rem;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .pill.vol { background: var(--vol-soft); color: var(--vol); }
+    .pill.call { background: var(--call-soft); color: var(--call); }
+
+    .usage-list, .plans, .rank-list { display: grid; gap: 0.5rem; }
+    .usage-card, .plan-card, .rank-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      padding: 0.7rem;
+      display: grid;
+      gap: 0.45rem;
+    }
+    .plan-card.winner, .rank-card.best {
+      border-color: #7ec9aa;
+      background: linear-gradient(180deg, #f2fbf7, #fff);
+    }
+    .usage-top, .plan-top, .rank-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.4rem;
+    }
+    .usage-idx, .rank-idx {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--best);
+      background: var(--best-soft);
+      padding: 0.25rem 0.5rem;
+      border-radius: 999px;
+    }
+    .usage-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.45rem;
+    }
+    .usage-fields .span2 { grid-column: 1 / -1; }
+    .mini { display: grid; gap: 0.2rem; }
+    .mini em {
+      font-style: normal;
+      font-size: 0.7rem;
+      color: var(--muted);
+      font-family: var(--sans);
+    }
+    .hint {
+      margin-top: 0.65rem;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .hint b {
+      color: var(--ink);
+      background: #e7f2ec;
+      padding: 0.08rem 0.35rem;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+
+    .plan-rates {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.45rem;
+    }
+    .plan-rates.one { grid-template-columns: 1fr; }
+    .plan-top {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 0.35rem;
+      align-items: center;
+    }
+    .plan-foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+    .plan-cost, .rank-cost {
+      font-family: var(--mono);
+      font-weight: 600;
+      font-size: 1.02rem;
+    }
+    .plan-sub, .rank-sub {
+      font-size: 0.74rem;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .icon-btn {
+      border: 0;
+      background: #f3f6f4;
+      color: var(--muted);
+      cursor: pointer;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 1rem;
+    }
+    .icon-btn:disabled { opacity: 0.35; }
+    .badge-best {
+      font-family: var(--mono);
+      font-size: 0.66rem;
+      padding: 0.14rem 0.38rem;
+      border-radius: 999px;
+      background: var(--best-soft);
+      color: var(--best);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .bar {
+      height: 8px;
+      border-radius: 999px;
+      background: #e5eee8;
+      overflow: hidden;
+    }
+    .bar > i { display: block; height: 100%; border-radius: inherit; }
+    .bar.vol > i { background: linear-gradient(90deg, #1789a8, #55c0db); }
+    .bar.call > i { background: linear-gradient(90deg, #c46a28, #e39a5a); }
+    .empty { color: var(--muted); font-size: 0.9rem; padding: 0.4rem 0.1rem; }
+    .actions { margin-top: 0.75rem; }
+    .actions .btn { width: 100%; }
+
+    /* 底部主导航 Tab */
+    .tabbar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 50;
+      height: calc(var(--nav-h) + var(--safe-b));
+      padding: 0.35rem 0.4rem var(--safe-b);
+      background: rgba(244, 247, 244, 0.94);
+      backdrop-filter: blur(14px);
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.2rem;
+    }
+    .tabbar button {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-weight: 600;
+      font-size: 0.72rem;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.1rem;
+      min-height: 48px;
+      padding: 0.2rem;
+    }
+    .tabbar button .ico {
+      font-family: var(--mono);
+      font-size: 0.95rem;
+      line-height: 1;
+      font-weight: 600;
+    }
+    .tabbar button.active {
+      color: var(--ink);
+      background: #fff;
+      box-shadow: 0 2px 10px rgba(20, 32, 26, 0.06);
+    }
+    .tabbar button.active[data-main="vol"] { color: var(--vol); }
+    .tabbar button.active[data-main="call"] { color: var(--call); }
+    .tabbar button.active[data-main="rank"] { color: var(--best); }
+
+    @media (min-width: 860px) {
+      body { padding-bottom: calc(var(--nav-h) + var(--safe-b) + 0.5rem); }
+      .app { width: min(880px, calc(100% - 2rem)); }
+      .top { padding-top: 1.2rem; }
+      h1 { font-size: 1.85rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="top">
+      <div class="kicker">CNY · Tab 编辑</div>
+      <h1>按量 vs 按次</h1>
+      <div class="credit-box">
+        <div class="credit-badges">
+          <span class="tag free">此工具完全免费</span>
+          <span class="tag warn">严禁倒卖</span>
+        </div>
+        <div class="credit-author">
+          原创署名：<strong>小馨肥肉</strong>
+          <div class="xhs">小红书号：877611252</div>
+        </div>
+        <button type="button" class="credit-link" id="reopenNotice">查看使用须知与免责声明</button>
+      </div>
+      <div class="verdict-main">
+        <div class="lab">结论</div>
+        <div class="title" id="vMainTitle">—</div>
+        <div class="meta" id="vMainMeta">在下方 Tab 里分别编辑调用和费率</div>
+      </div>
+      <div class="verdict-pair">
+        <div class="mini-card vol">
+          <div class="lab">最便宜按量</div>
+          <div class="name" id="vVolTitle">—</div>
+          <div class="price" id="vVolPrice"></div>
+        </div>
+        <div class="mini-card call">
+          <div class="lab">最便宜按次</div>
+          <div class="name" id="vCallTitle">—</div>
+          <div class="price" id="vCallPrice"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabs-body">
+      <section class="tab-panel active" data-panel="usage" id="panelUsage">
+        <div class="panel">
+          <div class="col-head">
+            <h2>调用清单</h2>
+            <div class="head-actions">
+              <button class="btn primary" type="button" id="addUsage">＋ 追加</button>
+              <button class="btn ghost" type="button" id="clearUsages">清空</button>
+            </div>
+          </div>
+          <div class="usage-list" id="usageList"></div>
+          <div class="hint">
+            结算 <b>人民币 ¥</b><br />
+            <span id="usageSummary">—</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-panel="vol" id="panelVol">
+        <div class="panel">
+          <div class="col-head">
+            <h2><span class="pill vol">按量</span> Token 计费</h2>
+            <div class="head-actions">
+              <button class="btn primary" type="button" id="addVol">＋ 添加</button>
+            </div>
+          </div>
+          <div class="plans" id="volPlans"></div>
+          <div class="hint">单价单位：¥ / 每 100 万 token</div>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-panel="call" id="panelCall">
+        <div class="panel">
+          <div class="col-head">
+            <h2><span class="pill call">按次</span> 调用计费</h2>
+            <div class="head-actions">
+              <button class="btn primary" type="button" id="addCall">＋ 添加</button>
+            </div>
+          </div>
+          <div class="plans" id="callPlans"></div>
+          <div class="hint">每次调用固定价格，与 token 多少无关</div>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-panel="rank" id="panelRank">
+        <div class="panel">
+          <div class="col-head">
+            <h2>方案排名</h2>
+          </div>
+          <div class="rank-list" id="rankList"></div>
+          <div class="actions">
+            <button class="btn ghost" type="button" id="resetPresets">恢复示例</button>
+          </div>
+          <div class="hint">按量 = Σ(输入/1e6×输入价 + 输出/1e6×输出价)；按次 = 单价 × 次数。数据保存在本机。</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="modal-mask" id="noticeModal" hidden role="dialog" aria-modal="true" aria-labelledby="noticeTitle">
+    <div class="modal">
+      <div class="credit-badges">
+        <span class="tag free">此工具完全免费</span>
+        <span class="tag warn">严禁倒卖</span>
+      </div>
+      <h2 id="noticeTitle">使用须知与免责声明</h2>
+      <p class="modal-lead">
+        原创署名：<strong>小馨肥肉</strong> · 小红书号：877611252<br />
+        首次使用请阅读以下说明，确认后即可开始对比。
+      </p>
+      <details class="modal-disclaimer" id="noticeDetails" open>
+        <summary>声明全文</summary>
+        <ul>
+          <li>本工具由「小馨肥肉」原创制作，仅供个人学习与自用费用估算，<span class="em-red">完全免费</span>。</li>
+          <li><span class="em-red">严禁</span>将本工具以任何形式<span class="em-red">倒卖、收费传播、二次打包售卖</span>或<span class="em-red">冒充付费产品</span>。</li>
+          <li>页面内费率、用量与计算结果<span class="em-red">仅供参考</span>，不构成任何消费、投资或商业建议；实际账单以各服务商官方计价为准。</li>
+          <li>因使用本工具产生的费用差异、决策损失或其他后果，作者<span class="em-red">不承担法律责任</span>。</li>
+          <li>数据默认保存在本机浏览器本地，请自行注意隐私与备份；作者无法访问你的输入内容。</li>
+        </ul>
+      </details>
+      <div class="modal-actions">
+        <button class="btn primary" type="button" id="noticeAccept">我已阅读并同意</button>
+      </div>
+    </div>
+  </div>
+
+  <nav class="tabbar" role="tablist" aria-label="编辑分区">
+    <button type="button" class="active" data-main="usage" aria-selected="true">
+      <span class="ico">①</span>
+      <span>调用</span>
+    </button>
+    <button type="button" data-main="vol" aria-selected="false">
+      <span class="ico">量</span>
+      <span>按量</span>
+    </button>
+    <button type="button" data-main="call" aria-selected="false">
+      <span class="ico">次</span>
+      <span>按次</span>
+    </button>
+    <button type="button" data-main="rank" aria-selected="false">
+      <span class="ico">榜</span>
+      <span>排名</span>
+    </button>
+  </nav>
+
+  <script>
+    const STORAGE_KEY = "billing-mode-compare-cny-v3";
+    const NOTICE_KEY = "billing-mode-notice-accepted-v1";
+
+    const PRESETS = {
+      usages: [
+        { id: "u1", label: "普通闲聊", inTokens: 2000, outTokens: 800, repeat: 1 },
+        { id: "u2", label: "长设定对话", inTokens: 12000, outTokens: 1500, repeat: 1 },
+      ],
+      volume: [
+        { id: "v1", name: "示例·经济模型", inPerM: 1.5, outPerM: 6 },
+        { id: "v2", name: "示例·旗舰模型", inPerM: 15, outPerM: 60 },
+        { id: "v3", name: "示例·中转站 A", inPerM: 3, outPerM: 12 },
+      ],
+      perCall: [
+        { id: "c1", name: "示例·按次套餐", pricePerCall: 0.02 },
+        { id: "c2", name: "示例·按次高端", pricePerCall: 0.08 },
+        { id: "c3", name: "示例·按次便宜", pricePerCall: 0.008 },
+      ],
+    };
+
+    const state = {
+      usages: structuredClone(PRESETS.usages),
+      volume: structuredClone(PRESETS.volume),
+      perCall: structuredClone(PRESETS.perCall),
+      mainTab: "usage",
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const el = {
+      usageList: $("usageList"),
+      usageSummary: $("usageSummary"),
+      volPlans: $("volPlans"),
+      callPlans: $("callPlans"),
+      rankList: $("rankList"),
+      vMainTitle: $("vMainTitle"),
+      vMainMeta: $("vMainMeta"),
+      vVolTitle: $("vVolTitle"),
+      vVolPrice: $("vVolPrice"),
+      vCallTitle: $("vCallTitle"),
+      vCallPrice: $("vCallPrice"),
+      tabsBody: document.querySelector(".tabs-body"),
+    };
+
+    function uid(prefix) {
+      return prefix + "_" + Math.random().toString(36).slice(2, 8);
+    }
+    function num(v, fb = 0) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fb;
+    }
+    function esc(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("<", "&lt;");
+    }
+    function money(v) {
+      if (!Number.isFinite(v)) return "—";
+      if (v === 0) return "¥0";
+      if (v < 0.0001) return "¥" + v.toExponential(2);
+      if (v < 0.01) return "¥" + v.toFixed(6);
+      if (v < 1) return "¥" + v.toFixed(4);
+      if (v < 100) return "¥" + v.toFixed(3);
+      return "¥" + v.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          // 兼容上一版存储
+          const old = localStorage.getItem("billing-mode-compare-cny-v2");
+          if (old) {
+            const data = JSON.parse(old);
+            if (Array.isArray(data.usages) && data.usages.length) state.usages = data.usages;
+            if (Array.isArray(data.volume)) state.volume = data.volume;
+            if (Array.isArray(data.perCall)) state.perCall = data.perCall;
+          }
+          return;
+        }
+        const data = JSON.parse(raw);
+        if (Array.isArray(data.usages) && data.usages.length) state.usages = data.usages;
+        if (Array.isArray(data.volume)) state.volume = data.volume;
+        if (Array.isArray(data.perCall)) state.perCall = data.perCall;
+        if (["usage", "vol", "call", "rank"].includes(data.mainTab)) state.mainTab = data.mainTab;
+      } catch (_) {}
+    }
+
+    function save() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        usages: state.usages,
+        volume: state.volume,
+        perCall: state.perCall,
+        mainTab: state.mainTab,
+      }));
+    }
+
+    function usageStats() {
+      let totalCalls = 0;
+      let totalIn = 0;
+      let totalOut = 0;
+      state.usages.forEach((u) => {
+        const r = Math.max(1, Math.floor(num(u.repeat, 1)));
+        totalCalls += r;
+        totalIn += Math.max(0, num(u.inTokens)) * r;
+        totalOut += Math.max(0, num(u.outTokens)) * r;
+      });
+      return { totalCalls, totalIn, totalOut, rows: state.usages.length };
+    }
+
+    function costVolumeOnce(plan, inTok, outTok) {
+      return (inTok / 1e6) * num(plan.inPerM) + (outTok / 1e6) * num(plan.outPerM);
+    }
+    function costPerCallOnce(plan) {
+      return num(plan.pricePerCall);
+    }
+
+    function totalForVolume(plan) {
+      let total = 0;
+      state.usages.forEach((u) => {
+        const repeat = Math.max(1, Math.floor(num(u.repeat, 1)));
+        total += costVolumeOnce(plan, Math.max(0, num(u.inTokens)), Math.max(0, num(u.outTokens))) * repeat;
+      });
+      return total;
+    }
+    function totalForPerCall(plan) {
+      let total = 0;
+      state.usages.forEach((u) => {
+        const repeat = Math.max(1, Math.floor(num(u.repeat, 1)));
+        total += costPerCallOnce(plan) * repeat;
+      });
+      return total;
+    }
+
+    function allRows() {
+      const { totalCalls } = usageStats();
+      const rows = [];
+      state.volume.forEach((p) => {
+        const total = totalForVolume(p);
+        rows.push({
+          id: p.id, name: p.name, mode: "volume", modeLabel: "按量",
+          avg: totalCalls > 0 ? total / totalCalls : 0, total,
+        });
+      });
+      state.perCall.forEach((p) => {
+        const total = totalForPerCall(p);
+        rows.push({
+          id: p.id, name: p.name, mode: "perCall", modeLabel: "按次",
+          avg: totalCalls > 0 ? total / totalCalls : 0, total,
+        });
+      });
+      return rows.sort((a, b) => a.total - b.total);
+    }
+
+    function setMainTab(tab, scrollPage = true) {
+      state.mainTab = tab;
+      document.querySelectorAll(".tabbar button").forEach((btn) => {
+        const on = btn.dataset.main === tab;
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      document.querySelectorAll(".tab-panel").forEach((panel) => {
+        panel.classList.toggle("active", panel.dataset.panel === tab);
+      });
+      if (scrollPage) {
+        const y = el.tabsBody.getBoundingClientRect().top + window.scrollY - 8;
+        window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+      }
+      save();
+    }
+
+    function renderUsages() {
+      el.usageList.innerHTML = "";
+      if (!state.usages.length) {
+        el.usageList.innerHTML = '<div class="empty">还没有调用，点「追加」。</div>';
+      }
+      state.usages.forEach((u, idx) => {
+        const card = document.createElement("div");
+        card.className = "usage-card";
+        card.innerHTML = `
+          <div class="usage-top">
+            <span class="usage-idx">第 ${idx + 1} 次</span>
+            <button class="icon-btn" type="button" data-del aria-label="删除" ${state.usages.length <= 1 ? "disabled" : ""}>✕</button>
+          </div>
+          <div class="usage-fields">
+            <label class="mini span2">
+              <em>备注</em>
+              <input type="text" data-k="label" value="${esc(u.label || "")}" placeholder="例如：长文总结" />
+            </label>
+            <label class="mini">
+              <em>输入 Token</em>
+              <input type="number" inputmode="numeric" min="0" step="1" data-k="inTokens" value="${u.inTokens}" />
+            </label>
+            <label class="mini">
+              <em>输出 Token</em>
+              <input type="number" inputmode="numeric" min="0" step="1" data-k="outTokens" value="${u.outTokens}" />
+            </label>
+            <label class="mini span2">
+              <em>相同用量重复几次</em>
+              <input type="number" inputmode="numeric" min="1" step="1" data-k="repeat" value="${u.repeat ?? 1}" />
+            </label>
+          </div>
+        `;
+        card.querySelectorAll("[data-k]").forEach((input) => {
+          const apply = () => {
+            const key = input.getAttribute("data-k");
+            if (key === "label") state.usages[idx].label = input.value.trim();
+            else if (key === "repeat") state.usages[idx].repeat = Math.max(1, Math.floor(num(input.value, 1)));
+            else state.usages[idx][key] = Math.max(0, num(input.value));
+            render(false);
+          };
+          input.addEventListener("change", apply);
+          input.addEventListener("blur", apply);
+        });
+        const del = card.querySelector("[data-del]");
+        if (!del.disabled) {
+          del.addEventListener("click", () => {
+            state.usages.splice(idx, 1);
+            render();
+          });
+        }
+        el.usageList.appendChild(card);
+      });
+      const s = usageStats();
+      el.usageSummary.textContent =
+        `共 ${s.rows} 种 · 合计 ${s.totalCalls} 次 · 输入 ${s.totalIn.toLocaleString()} / 输出 ${s.totalOut.toLocaleString()} tokens`;
+    }
+
+    function renderPlans(bestId) {
+      const { totalCalls } = usageStats();
+      el.volPlans.innerHTML = "";
+      if (!state.volume.length) el.volPlans.innerHTML = '<div class="empty">还没有按量方案。</div>';
+      state.volume.forEach((p, idx) => {
+        const total = totalForVolume(p);
+        const avg = totalCalls > 0 ? total / totalCalls : 0;
+        const card = document.createElement("div");
+        card.className = "plan-card" + (p.id === bestId ? " winner" : "");
+        card.innerHTML = `
+          <div class="plan-top">
+            <input type="text" data-k="name" value="${esc(p.name)}" />
+            ${p.id === bestId ? '<span class="badge-best">最优</span>' : "<span></span>"}
+            <button class="icon-btn" type="button" data-del aria-label="删除">✕</button>
+          </div>
+          <div class="plan-rates">
+            <label class="mini"><em>输入 ¥/1M</em>
+              <input type="number" inputmode="decimal" min="0" step="0.01" data-k="inPerM" value="${p.inPerM}" /></label>
+            <label class="mini"><em>输出 ¥/1M</em>
+              <input type="number" inputmode="decimal" min="0" step="0.01" data-k="outPerM" value="${p.outPerM}" /></label>
+          </div>
+          <div class="plan-foot">
+            <div class="plan-cost">${money(total)}</div>
+            <div class="plan-sub">均次 ${money(avg)}</div>
+          </div>
+        `;
+        bindPlanInputs(card, state.volume, idx);
+        el.volPlans.appendChild(card);
+      });
+
+      el.callPlans.innerHTML = "";
+      if (!state.perCall.length) el.callPlans.innerHTML = '<div class="empty">还没有按次方案。</div>';
+      state.perCall.forEach((p, idx) => {
+        const total = totalForPerCall(p);
+        const avg = totalCalls > 0 ? total / totalCalls : 0;
+        const card = document.createElement("div");
+        card.className = "plan-card" + (p.id === bestId ? " winner" : "");
+        card.innerHTML = `
+          <div class="plan-top">
+            <input type="text" data-k="name" value="${esc(p.name)}" />
+            ${p.id === bestId ? '<span class="badge-best">最优</span>' : "<span></span>"}
+            <button class="icon-btn" type="button" data-del aria-label="删除">✕</button>
+          </div>
+          <div class="plan-rates one">
+            <label class="mini"><em>每次价格 ¥</em>
+              <input type="number" inputmode="decimal" min="0" step="0.001" data-k="pricePerCall" value="${p.pricePerCall}" /></label>
+          </div>
+          <div class="plan-foot">
+            <div class="plan-cost">${money(total)}</div>
+            <div class="plan-sub">均次 ${money(avg)}</div>
+          </div>
+        `;
+        bindPlanInputs(card, state.perCall, idx);
+        el.callPlans.appendChild(card);
+      });
+    }
+
+    function bindPlanInputs(card, list, idx) {
+      card.querySelectorAll("[data-k]").forEach((input) => {
+        const apply = () => {
+          const key = input.getAttribute("data-k");
+          if (key === "name") list[idx].name = input.value.trim() || "未命名方案";
+          else list[idx][key] = num(input.value);
+          render(false);
+        };
+        input.addEventListener("change", apply);
+        input.addEventListener("blur", apply);
+      });
+      card.querySelector("[data-del]").addEventListener("click", () => {
+        list.splice(idx, 1);
+        render();
+      });
+    }
+
+    function renderVerdict(rows) {
+      const bestVol = rows.find((r) => r.mode === "volume");
+      const bestCall = rows.find((r) => r.mode === "perCall");
+      const best = rows[0];
+      const { totalCalls } = usageStats();
+
+      el.vVolTitle.textContent = bestVol ? bestVol.name : "暂无";
+      el.vVolPrice.textContent = bestVol ? money(bestVol.total) : "";
+      el.vCallTitle.textContent = bestCall ? bestCall.name : "暂无";
+      el.vCallPrice.textContent = bestCall ? money(bestCall.total) : "";
+
+      let mainTitle = "—";
+      let mainMeta = "在 Tab 里填写调用和费率";
+      if (!state.usages.length) {
+        mainMeta = "请先在「调用」里追加用量";
+      } else if (!best) {
+        mainMeta = "请在「按量 / 按次」里添加方案";
+      } else if (bestVol && bestCall) {
+        const diff = Math.abs(bestVol.total - bestCall.total);
+        const cheaperMode = bestVol.total <= bestCall.total ? "按量" : "按次";
+        const savePct = (diff / Math.max(bestVol.total, bestCall.total)) * 100;
+        mainTitle = `${cheaperMode}更划算 · ${money(best.total)}`;
+        mainMeta = `共 ${totalCalls} 次 · 「${best.name}」比另一种省 ${money(diff)}（${savePct.toFixed(0)}%）`;
+      } else {
+        mainTitle = `${best.modeLabel}可用 · ${money(best.total)}`;
+        mainMeta = `「${best.name}」· 两边都加才能对比`;
+      }
+      el.vMainTitle.textContent = mainTitle;
+      el.vMainMeta.textContent = mainMeta;
+    }
+
+    function renderRank(rows) {
+      el.rankList.innerHTML = "";
+      if (!rows.length) {
+        el.rankList.innerHTML = '<div class="empty">暂无方案，先去「按量 / 按次」添加。</div>';
+        return;
+      }
+      const max = Math.max(...rows.map((r) => r.total));
+      const best = rows[0];
+      rows.forEach((r, i) => {
+        const vs = best.total > 0 ? r.total / best.total : 1;
+        const pct = max > 0 ? (r.total / max) * 100 : 0;
+        const card = document.createElement("div");
+        card.className = "rank-card" + (i === 0 ? " best" : "");
+        card.innerHTML = `
+          <div class="rank-top">
+            <span class="rank-idx">#${i + 1}</span>
+            <span class="pill ${r.mode === "volume" ? "vol" : "call"}">${r.modeLabel}</span>
+            ${i === 0 ? '<span class="badge-best">最便宜</span>' : `<span class="rank-sub">${vs.toFixed(2)}×</span>`}
+          </div>
+          <strong style="font-size:1rem;word-break:break-word">${esc(r.name)}</strong>
+          <div class="plan-foot">
+            <div class="rank-cost">${money(r.total)}</div>
+            <div class="rank-sub">均次 ${money(r.avg)}</div>
+          </div>
+          <div class="bar ${r.mode === "volume" ? "vol" : "call"}"><i style="width:${pct.toFixed(1)}%"></i></div>
+        `;
+        el.rankList.appendChild(card);
+      });
+    }
+
+    let focusSnapshot = null;
+    function captureFocus() {
+      const a = document.activeElement;
+      if (!a || !a.getAttribute) return null;
+      const k = a.getAttribute("data-k");
+      if (!k) return null;
+      const card = a.closest(".usage-card, .plan-card");
+      if (!card) return null;
+      const list = card.parentElement;
+      return {
+        listId: list.id,
+        cardIdx: [...list.children].indexOf(card),
+        key: k,
+        selStart: a.selectionStart,
+        selEnd: a.selectionEnd,
+      };
+    }
+    function restoreFocus(snap) {
+      if (!snap) return;
+      const list = document.getElementById(snap.listId);
+      const input = list?.children?.[snap.cardIdx]?.querySelector(`[data-k="${snap.key}"]`);
+      if (!input) return;
+      input.focus();
+      try {
+        if (typeof snap.selStart === "number") input.setSelectionRange(snap.selStart, snap.selEnd);
+      } catch (_) {}
+    }
+
+    function render(resetFocus = true) {
+      if (!resetFocus) focusSnapshot = captureFocus();
+      const rows = allRows();
+      const bestId = rows[0]?.id || null;
+      renderUsages();
+      renderVerdict(rows);
+      renderPlans(bestId);
+      renderRank(rows);
+      setMainTab(state.mainTab, false);
+      save();
+      if (!resetFocus) requestAnimationFrame(() => restoreFocus(focusSnapshot));
+    }
+
+    document.querySelectorAll(".tabbar button").forEach((btn) => {
+      btn.addEventListener("click", () => setMainTab(btn.dataset.main, true));
+    });
+
+    $("addUsage").addEventListener("click", () => {
+      const last = state.usages[state.usages.length - 1];
+      state.usages.push({
+        id: uid("u"),
+        label: "",
+        inTokens: last ? last.inTokens : 2000,
+        outTokens: last ? last.outTokens : 800,
+        repeat: 1,
+      });
+      setMainTab("usage", false);
+      render();
+      el.usageList.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    $("clearUsages").addEventListener("click", () => {
+      if (!confirm("清空调用清单，只留一次？")) return;
+      state.usages = [{ id: uid("u"), label: "", inTokens: 2000, outTokens: 800, repeat: 1 }];
+      render();
+    });
+    $("addVol").addEventListener("click", () => {
+      state.volume.push({ id: uid("v"), name: "新按量方案", inPerM: 2, outPerM: 8 });
+      setMainTab("vol", false);
+      render();
+    });
+    $("addCall").addEventListener("click", () => {
+      state.perCall.push({ id: uid("c"), name: "新按次方案", pricePerCall: 0.01 });
+      setMainTab("call", false);
+      render();
+    });
+    $("resetPresets").addEventListener("click", () => {
+      if (!confirm("恢复示例费率和示例调用？")) return;
+      state.usages = structuredClone(PRESETS.usages);
+      state.volume = structuredClone(PRESETS.volume);
+      state.perCall = structuredClone(PRESETS.perCall);
+      render();
+    });
+
+    const noticeModal = $("noticeModal");
+    const noticeDetails = $("noticeDetails");
+
+    function openNotice(forceExpand = true) {
+      noticeModal.hidden = false;
+      document.body.style.overflow = "hidden";
+      if (forceExpand) noticeDetails.open = true;
+      $("noticeAccept").focus();
+    }
+    function closeNotice(persist) {
+      noticeModal.hidden = true;
+      document.body.style.overflow = "";
+      if (persist) localStorage.setItem(NOTICE_KEY, "1");
+    }
+
+    $("noticeAccept").addEventListener("click", () => closeNotice(true));
+    $("reopenNotice").addEventListener("click", () => openNotice(true));
+    noticeModal.addEventListener("click", (e) => {
+      // 首次未确认前不允许点遮罩关闭
+      if (e.target === noticeModal && localStorage.getItem(NOTICE_KEY) === "1") {
+        closeNotice(false);
+      }
+    });
+
+    load();
+    render();
+    if (localStorage.getItem(NOTICE_KEY) !== "1") openNotice(true);
+  </script>
+</body>
+</html>

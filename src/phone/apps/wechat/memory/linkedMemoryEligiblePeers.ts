@@ -327,8 +327,23 @@ export async function listAllLinkedMemoryEligibleCharacters(archiveOwnerId: stri
   allIds: Set<string>
 }> {
   const owner = archiveOwnerId.trim()
-  const npcs = (await personaDb.listNpcsFor(owner)) as Character[]
+  const npcs = [...((await personaDb.listNpcsFor(owner)) as Character[])]
   const boundProtagonists = await listRelationshipBoundProtagonistPeers(owner)
+  const ownerRow = await personaDb.getCharacter(owner).catch(() => null)
+  const packId = ownerRow?.packId?.trim()
+  if (packId) {
+    const pack = await personaDb.getPersonaPack(packId).catch(() => null)
+    const extraIds = [...(pack?.memberIds ?? []), ...(pack?.npcIds ?? [])]
+    for (const rawId of extraIds) {
+      const id = rawId.trim()
+      if (!id || id === owner) continue
+      if (npcs.some((c) => c.id === id) || boundProtagonists.some((c) => c.id === id)) continue
+      const ch = await personaDb.getCharacter(id).catch(() => null)
+      if (!ch) continue
+      if (ch.packSeat === 'npc' || ch.generatedForCharacterId) npcs.push(ch)
+      else boundProtagonists.push(ch)
+    }
+  }
   const seen = new Set<string>()
   const all: Character[] = []
   for (const row of [...npcs, ...boundProtagonists]) {

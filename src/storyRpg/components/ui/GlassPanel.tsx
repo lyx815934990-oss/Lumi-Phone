@@ -11,7 +11,7 @@ export function GlassPanel({ children, className = '', highlight = false, id }: 
   return (
     <div
       id={id}
-      className={`relative overflow-hidden rounded-[18px] border border-[var(--sr-border)] bg-[var(--sr-glass)] backdrop-blur-md ${highlight ? 'sr-highlight-border' : ''} ${className}`}
+      className={`relative overflow-hidden rounded-[14px] border border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] ${highlight ? 'sr-highlight-border' : ''} ${className}`}
     >
       {children}
     </div>

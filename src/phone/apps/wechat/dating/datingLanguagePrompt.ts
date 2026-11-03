@@ -3,6 +3,7 @@ import type { TranslationRuntime } from '../../api/translationProviders'
 import {
   batchTranslateWeChatBubbleTexts,
   buildCharacterVoiceTranslationRules,
+  buildJapaneseSpokenDialogueHardRules,
   buildRelationAwareTranslationGlossary,
   looksLikeTruncatedTranslation,
   normalizeWeChatChatLanguageCode,
@@ -599,6 +600,18 @@ export function buildDatingLanguageAppendix(params: {
 `.trim(),
       )
     }
+  }
+
+  // 对白或 OS 为日语时：当面口语禁止网聊句末「笑」（覆盖微信核心层鼓励）
+  if (dialogueCode === 'ja' || osCode === 'ja') {
+    parts.push(
+      `
+【日语当面口语 · 覆盖网聊习惯 · 硬项】
+本轮对白/内心为日语时，场景是**当面说出口或心里默念**（线下约会 / 平行事件 / IF 线 / VN），**不是**微信文字气泡。
+${buildJapaneseSpokenDialogueHardRules()}
+- 若上文或其它 system 段写过「日语气泡可挂句末笑」：那只适用于线上私聊；**本轮以本条为准，禁止挂笑。**
+`.trim(),
+    )
   }
 
   if (dialogueSyncOn || osSyncOn) {

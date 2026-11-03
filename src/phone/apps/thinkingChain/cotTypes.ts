@@ -16,10 +16,61 @@ export type CoTEntry = {
   tags: string[]
 }
 
+/** 预设内正则：对模型可见输出做查找替换（仅本预设启用时生效） */
+export type CotRegexRule = {
+  id: string
+  order: number
+  /** 规则名 */
+  name: string
+  /** 查找：普通模式，或 /pattern/flags */
+  find: string
+  /** 替换（支持 $1；`\n` `\t` 会转义） */
+  replace: string
+  enabled: boolean
+  /**
+   * 配套分组（如「留光」「众生相」）；导入时从【名称】前缀推断。
+   * 编辑器按配套分 tab 展示，避免全部堆在一个正则页。
+   */
+  group?: string
+  /**
+   * 对齐酒馆：仅作用于「拼进 prompt 的历史」（如只留摘要）。
+   * 展示正文时不应套用这类规则。
+   */
+  promptOnly?: boolean
+  /**
+   * 对齐酒馆：仅作用于展示（美化 HTML 等）。
+   * 与 promptOnly 同时为 true 时两边都生效。
+   */
+  markdownOnly?: boolean
+}
+
+/** 无前缀时的默认配套名 */
+export const COT_REGEX_GROUP_OTHER = '其他'
+
+/** 从 group 字段或规则名【配套】前缀解析分组 */
+export function inferCotRegexGroup(rule: Pick<CotRegexRule, 'name' | 'group'>): string {
+  const g = String(rule.group ?? '').trim()
+  if (g) return g.slice(0, 24)
+  const n = String(rule.name ?? '').trim()
+  const bracket = n.match(/^【\s*([^】]+?)\s*】/)
+  if (bracket?.[1]?.trim()) return bracket[1].trim().slice(0, 24)
+  const sq = n.match(/^\[\s*([^\]]+?)\s*\]/)
+  if (sq?.[1]?.trim()) return sq[1].trim().slice(0, 24)
+  // 月读美化-… / MoM美化-… → 月读 / MoM
+  const mom = n.match(/^([A-Za-z\u4e00-\u9fff]{2,16})美化/)
+  if (mom?.[1]?.trim()) return mom[1].trim().slice(0, 24)
+  // 月读必开-[1]… / 月读选开-… → 月读
+  const suite = n.match(/^([A-Za-z\u4e00-\u9fff]{2,12})(?:必开|选开|美化)[-—\[（(]/)
+  if (suite?.[1]?.trim()) return suite[1].trim().slice(0, 24)
+  return COT_REGEX_GROUP_OTHER
+}
+
 export type CoTPreset = {
   id: string
   name: string
   entries: CoTEntry[]
+  /** 输出美化 / 清理正则（不注入 prompt） */
+  regexRules: CotRegexRule[]
   /** 整套预设的作用范围 */
   scope: CotPresetScope
   /** 提示词 or 思维链 */

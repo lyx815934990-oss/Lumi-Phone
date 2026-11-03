@@ -70,22 +70,23 @@ export function buildPlotHtmlVisualCastGenderBlock(opts?: {
 /** 主轮瘦身：保留硬规则，砍掉重复铺陈（完整长规范会挤掉同轮评论块） */
 export const SHARED_RULES_COMPACT = `## ${PRODUCT_NAME}·精简规范
 手机优先短 HTML；有 \`title-custom\` + 少量标签即可（篇幅紧时**不必**完整文档/大段 script）。
-禁外链/iframe。简体中文，贴本轮细节≥1处，落实 ritualHook。优先闭合【小剧场】标记，勿为堆交互挤掉读者评论。`
+禁外链/iframe。简体中文，贴本轮细节≥1处，落实 ritualHook。优先闭合 \`</theater>\`（或【小剧场结束】），勿为堆交互挤掉读者评论。`
 
 export const OUTPUT_FORMAT_COMPACT = `## 强制输出格式（精简·同轮必出）
-正文与读者评论写完后、记忆分隔符之前**必须同轮**追加（禁止省略、禁止指望另开请求补写）：
+\`</content>\` 与读者评论写完后、记忆分隔符之前**必须同轮**追加（禁止省略、禁止指望另开请求补写）：
 
-【小剧场】
+<theater>
 <details>
 <summary>{{emoji}} {{标题}}</summary>
 \`\`\`html
 （可交互 HTML：须含标签结构，勿空壳）
 \`\`\`
 </details>
-【小剧场结束】
+</theater>
 
-禁止放进 <thinking>；不要多个小剧场。篇幅紧也须先闭合标记并写出可解析 HTML（可短片段），**禁止**整段省略。
-**禁止**用 JSON / JSON 对象 / \`\`\`json 输出小剧场；只能是上述中文标记 + HTML（或 details+html 围栏）。`
+兼容旧壳：【小剧场】…【小剧场结束】。
+禁止放进 thinking；不要多个小剧场。篇幅紧也须先闭合标记并写出可解析 HTML（可短片段），**禁止**整段省略。
+**禁止**用 JSON / JSON 对象 / \`\`\`json 输出小剧场；只能是 \`<theater>\`（或旧【小剧场】）+ HTML（或 details+html 围栏）。`
 
 
 function formatStructure(lines: string[]): string {
@@ -227,7 +228,7 @@ export function buildPlotHtmlVisualPresetAppendix(opts?: {
 
   return (
     `【${PRODUCT_NAME}·预设｜强制·同轮】本轮已开启「${PRODUCT_NAME}」。` +
-    `须在**同一次回复**内、剧情正文（及读者评论，若有）之后追加【小剧场】…【小剧场结束】；` +
+    `须在**同一次回复**内、\`</content>\`（及 \`<comments>\`，若有）之后追加 \`<theater>…</theater>\`（兼容【小剧场】…【小剧场结束】）；` +
     `与思维链开关无关。**禁止**省略、**禁止**指望二次请求补写、**禁止** JSON 格式、**禁止**写进 thinking / 记忆 JSON。篇幅吃紧时优先保证闭合标记与可解析 HTML（可短片段）。\n` +
     `${genderBlock}` +
     `${poolHint}\n\n` +

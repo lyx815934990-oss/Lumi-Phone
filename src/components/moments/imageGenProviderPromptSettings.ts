@@ -400,8 +400,25 @@ function buildNovelaiFieldMetas(modelName: string, relay = false): ImageGenPromp
   void modelName
   void relay
   return [
-    { id: 'novelai.steps', label: '采样步数', type: 'number', min: 1, max: 50, step: 1 },
-    { id: 'novelai.cfg', label: '提示词相关性（CFG）', type: 'number', min: 1, max: 20, step: 0.5 },
+    {
+      id: 'novelai.steps',
+      label: '采样步数',
+      description:
+        '建议填 28。官方 Opus 免扣 Anlas 多为 ≤28；走中转站时也常透传同一限制（或中转自设上限）。填 30+ 被拒时先改回 28；若中转按次计费仍失败，把完整报错发给站长核对步数上限与余额。',
+      type: 'number',
+      min: 1,
+      max: 50,
+      step: 1,
+    },
+    {
+      id: 'novelai.cfg',
+      label: '提示词相关性（CFG）',
+      description: '常见 5～6；过大容易过饱和或发硬。',
+      type: 'number',
+      min: 1,
+      max: 20,
+      step: 0.5,
+    },
     {
       id: 'novelai.sampler',
       label: '采样器',

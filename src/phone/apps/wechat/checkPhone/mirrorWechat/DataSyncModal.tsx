@@ -10,7 +10,7 @@ import {
 import type { MirrorWeChatContact } from './types'
 import { isMirrorGroupContact } from './types'
 import { MirrorChatListAvatar } from './WeChatGroupAvatarMosaic'
-import type { SpyChatTimeSpanUnit } from '../spyWechatAi'
+import type { SpyChatLanguageMode, SpyChatTimeSpanUnit } from '../spyWechatAi'
 
 const CODE_LINES = [
   'bind_relations();',
@@ -202,6 +202,12 @@ export function DataSyncModal({
   onIngestChatToMemoryChange,
   generateLanguage,
   onGenerateLanguageChange,
+  chatLanguageMode,
+  onChatLanguageModeChange,
+  characterSideLanguage,
+  onCharacterSideLanguageChange,
+  peerSideLanguage,
+  onPeerSideLanguageChange,
   syncTranslation,
   onSyncTranslationChange,
   translationLanguage,
@@ -258,6 +264,13 @@ export function DataSyncModal({
   onIngestChatToMemoryChange: (v: boolean) => void
   generateLanguage: WeChatChatLanguageCode
   onGenerateLanguageChange: (v: WeChatChatLanguageCode) => void
+  /** 仅「信息」勾选时生效：统一 / 左右分侧 / 按人设自动 */
+  chatLanguageMode: SpyChatLanguageMode
+  onChatLanguageModeChange: (v: SpyChatLanguageMode) => void
+  characterSideLanguage: WeChatChatLanguageCode
+  onCharacterSideLanguageChange: (v: WeChatChatLanguageCode) => void
+  peerSideLanguage: WeChatChatLanguageCode
+  onPeerSideLanguageChange: (v: WeChatChatLanguageCode) => void
   syncTranslation: boolean
   onSyncTranslationChange: (v: boolean) => void
   translationLanguage: WeChatChatLanguageCode
@@ -587,25 +600,143 @@ export function DataSyncModal({
                             <div className="text-[11px] text-[#8b8e93]">生成语言</div>
                             <div className="text-[10px] text-[#b0b3b8]">
                               {scopes.includes('chats')
-                                ? '气泡 / 备注 / 朋友圈'
+                                ? '聊天气泡（可分侧 / 按人设）'
                                 : scopes.includes('contacts')
                                   ? '备注与昵称'
                                   : '朋友圈正文'}
                             </div>
                           </div>
-                          <select
-                            value={generateLanguage}
-                            onChange={(e) =>
-                              onGenerateLanguageChange(e.target.value as WeChatChatLanguageCode)
-                            }
-                            className="w-full rounded-[12px] border border-[#e4e6ea] bg-[#fafbfc] px-3 py-2 text-[13px] text-[#121315] outline-none"
-                          >
-                            {WECHAT_CHAT_LANGUAGE_OPTIONS.map((opt) => (
-                              <option key={opt.code} value={opt.code}>
-                                {opt.label}（{opt.native}）
-                              </option>
-                            ))}
-                          </select>
+
+                          {scopes.includes('chats') ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {(
+                                [
+                                  { id: 'unified' as const, label: '统一语言' },
+                                  { id: 'split' as const, label: '左右分语言' },
+                                  { id: 'auto_persona' as const, label: '按人设自动' },
+                                ] as const
+                              ).map((m) => {
+                                const on = chatLanguageMode === m.id
+                                return (
+                                  <Pressable
+                                    key={m.id}
+                                    type="button"
+                                    onClick={() => onChatLanguageModeChange(m.id)}
+                                    className={`rounded-full px-2.5 py-1 text-[11px] ${
+                                      on
+                                        ? 'bg-[#16171a] text-white'
+                                        : 'border border-[#e4e6ea] bg-white text-[#3a3c42]'
+                                    }`}
+                                  >
+                                    {m.label}
+                                  </Pressable>
+                                )
+                              })}
+                            </div>
+                          ) : null}
+
+                          {scopes.includes('chats') && chatLanguageMode === 'split' ? (
+                            <div className="space-y-2">
+                              <div>
+                                <div className="mb-1 flex items-baseline justify-between gap-2">
+                                  <div className="text-[11px] text-[#8b8e93]">左侧 · 联系人（P）</div>
+                                  <div className="text-[10px] text-[#b0b3b8]">对方气泡 / 群成员</div>
+                                </div>
+                                <select
+                                  value={peerSideLanguage}
+                                  onChange={(e) =>
+                                    onPeerSideLanguageChange(
+                                      e.target.value as WeChatChatLanguageCode,
+                                    )
+                                  }
+                                  className="w-full rounded-[12px] border border-[#e4e6ea] bg-[#fafbfc] px-3 py-2 text-[13px] text-[#121315] outline-none"
+                                >
+                                  {WECHAT_CHAT_LANGUAGE_OPTIONS.map((opt) => (
+                                    <option key={opt.code} value={opt.code}>
+                                      {opt.label}（{opt.native}）
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <div className="mb-1 flex items-baseline justify-between gap-2">
+                                  <div className="text-[11px] text-[#8b8e93]">右侧 · 角色（C）</div>
+                                  <div className="text-[10px] text-[#b0b3b8]">机主气泡</div>
+                                </div>
+                                <select
+                                  value={characterSideLanguage}
+                                  onChange={(e) =>
+                                    onCharacterSideLanguageChange(
+                                      e.target.value as WeChatChatLanguageCode,
+                                    )
+                                  }
+                                  className="w-full rounded-[12px] border border-[#e4e6ea] bg-[#fafbfc] px-3 py-2 text-[13px] text-[#121315] outline-none"
+                                >
+                                  {WECHAT_CHAT_LANGUAGE_OPTIONS.map((opt) => (
+                                    <option key={opt.code} value={opt.code}>
+                                      {opt.label}（{opt.native}）
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              {peerSideLanguage === characterSideLanguage ? (
+                                <div className="text-[10px] leading-[1.4] text-[#a16207]">
+                                  左右语言相同，效果等同「统一语言」；若要双语对照请另选一侧。
+                                </div>
+                              ) : (
+                                <div className="text-[10px] leading-[1.4] text-[#a8abb1]">
+                                  例：左中文、右日语 → 对方用中文、角色用日语回；群聊成员跟左侧语言。
+                                </div>
+                              )}
+                            </div>
+                          ) : scopes.includes('chats') && chatLanguageMode === 'auto_persona' ? (
+                            <div className="rounded-[12px] bg-[#f5f6f8] px-3 py-2 text-[11px] leading-[1.45] text-[#3a3c42]">
+                              模型会按各人设/国籍/母语习惯分别选语言：私聊两侧可不同；群聊里中国人、日本人、韩国人会各自用对应语言发言。证据不足时默认简体中文。
+                            </div>
+                          ) : (
+                            <select
+                              value={generateLanguage}
+                              onChange={(e) =>
+                                onGenerateLanguageChange(e.target.value as WeChatChatLanguageCode)
+                              }
+                              className="w-full rounded-[12px] border border-[#e4e6ea] bg-[#fafbfc] px-3 py-2 text-[13px] text-[#121315] outline-none"
+                            >
+                              {WECHAT_CHAT_LANGUAGE_OPTIONS.map((opt) => (
+                                <option key={opt.code} value={opt.code}>
+                                  {opt.label}（{opt.native}）
+                                </option>
+                              ))}
+                            </select>
+                          )}
+
+                          {/* 聊天用了分侧/自动时，通讯录·朋友圈仍需要单独语言 */}
+                          {scopes.includes('chats') &&
+                          chatLanguageMode !== 'unified' &&
+                          scopes.some((s) => s === 'contacts' || s === 'moments') ? (
+                            <div>
+                              <div className="mb-1 text-[11px] text-[#8b8e93]">
+                                {scopes.includes('contacts') && scopes.includes('moments')
+                                  ? '备注 / 朋友圈语言'
+                                  : scopes.includes('contacts')
+                                    ? '通讯录备注语言'
+                                    : '朋友圈正文语言'}
+                              </div>
+                              <select
+                                value={generateLanguage}
+                                onChange={(e) =>
+                                  onGenerateLanguageChange(e.target.value as WeChatChatLanguageCode)
+                                }
+                                className="w-full rounded-[12px] border border-[#e4e6ea] bg-[#fafbfc] px-3 py-2 text-[13px] text-[#121315] outline-none"
+                              >
+                                {WECHAT_CHAT_LANGUAGE_OPTIONS.map((opt) => (
+                                  <option key={opt.code} value={opt.code}>
+                                    {opt.label}（{opt.native}）
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : null}
+
                           {!scopes.includes('chats') ? (
                             <div className="text-[10px] leading-[1.4] text-[#a8abb1]">
                               {scopes.includes('contacts')
@@ -613,6 +744,7 @@ export function DataSyncModal({
                                 : '朋友圈正文用上方语言；「自带翻译」仅作用于聊天气泡。'}
                             </div>
                           ) : null}
+
                           {/* 自带翻译只写入聊天气泡，与通讯录/朋友圈无关 */}
                           {scopes.includes('chats') ? (
                             <>
@@ -620,7 +752,11 @@ export function DataSyncModal({
                                 <span className="min-w-0">
                                   <span className="block">自带翻译</span>
                                   <span className="mt-0.5 block text-[10px] text-[#9a9da3]">
-                                    气泡原文用上方语言；勾选后每条文字气泡附译文（可点「翻译」展开）
+                                    {chatLanguageMode === 'auto_persona'
+                                      ? '原文按人设多语；勾选后每条气泡附统一译文（可点「翻译」展开）'
+                                      : chatLanguageMode === 'split'
+                                        ? '左右原文可不同；勾选后每条气泡附统一译文（可点「翻译」展开）'
+                                        : '气泡原文用上方语言；勾选后每条文字气泡附译文（可点「翻译」展开）'}
                                   </span>
                                 </span>
                                 <input
@@ -647,9 +783,23 @@ export function DataSyncModal({
                                       </option>
                                     ))}
                                   </select>
-                                  {translationLanguage === generateLanguage ? (
+                                  {chatLanguageMode === 'unified' &&
+                                  translationLanguage === generateLanguage ? (
                                     <div className="mt-1.5 text-[10px] leading-[1.4] text-[#a16207]">
                                       译文语言与生成语言相同，将不会写入翻译行；请另选目标语言。
+                                    </div>
+                                  ) : null}
+                                  {chatLanguageMode === 'split' &&
+                                  translationLanguage === peerSideLanguage &&
+                                  translationLanguage === characterSideLanguage ? (
+                                    <div className="mt-1.5 text-[10px] leading-[1.4] text-[#a16207]">
+                                      译文语言与左右两侧相同，将不会写入翻译行；请另选目标语言。
+                                    </div>
+                                  ) : null}
+                                  {chatLanguageMode === 'auto_persona' ||
+                                  chatLanguageMode === 'split' ? (
+                                    <div className="mt-1.5 text-[10px] leading-[1.4] text-[#a8abb1]">
+                                      原文若已是译文语言可不附译；原文是其它语言时必须附成上方所选语言。
                                     </div>
                                   ) : null}
                                 </div>

@@ -91,6 +91,16 @@ function messageItemShellEqual(a: MessageItemShellProps, b: MessageItemShellProp
 
 export const MemoizedMessageItem = memo(MessageItemShellInner, messageItemShellEqual)
 
+/** 正文内容指纹：同长度改字（如「逗」→「都」）也必须变，否则 memo 挡住编辑后重绘 */
+function fingerprintTextContent(text: string): string {
+  const t = String(text ?? '')
+  let h = 5381
+  for (let i = 0; i < t.length; i += 1) {
+    h = (Math.imul(h, 33) ^ t.charCodeAt(i)) >>> 0
+  }
+  return `${t.length}:${h.toString(36)}`
+}
+
 /** 非 memo 消息行的 props 指纹，供父级决定是否跳过重建 children */
 export function chatMsgRenderFingerprint(m: {
   id: string
@@ -131,13 +141,14 @@ export function chatMsgRenderFingerprint(m: {
     img0?.base64?.length ?? 0,
     img0?.type ?? '',
   ].join(':')
-  const tr = `${(m.translatedText ?? '').length}:${m.translationExpanded ? 1 : 0}:${(m.translatedText ?? '').slice(0, 24)}`
-  const base = `${m.id}|${m.status ?? ''}|${m.isRecalled ? 1 : 0}|${m.otherAnimated ? 1 : 0}|${m.selfAnimated ? 1 : 0}|${(m.text ?? '').length}|${mediaKey}|tr:${tr}`
+  const trRaw = m.translatedText ?? ''
+  const tr = `${fingerprintTextContent(trRaw)}:${m.translationExpanded ? 1 : 0}`
+  const base = `${m.id}|${m.status ?? ''}|${m.isRecalled ? 1 : 0}|${m.otherAnimated ? 1 : 0}|${m.selfAnimated ? 1 : 0}|${fingerprintTextContent(m.text ?? '')}|${mediaKey}|tr:${tr}`
   const cs = m.coupleSpaceInvite
   const withCs = cs
-    ? `${base}|cs:${cs.kind ?? ''}:${cs.inviteId ?? ''}:${cs.charResponded ?? ''}:${cs.userResponded ?? ''}:${cs.outcome ?? ''}:${(cs.title ?? '').slice(0, 24)}:${(cs.replyText ?? '').slice(0, 24)}`
+    ? `${base}|cs:${cs.kind ?? ''}:${cs.inviteId ?? ''}:${cs.charResponded ?? ''}:${cs.userResponded ?? ''}:${cs.outcome ?? ''}:${fingerprintTextContent(cs.title ?? '')}:${fingerprintTextContent(cs.replyText ?? '')}`
     : base
   const mg = m.miniGameInvite
   if (!mg) return withCs
-  return `${withCs}|mg:${mg.kind ?? ''}:${mg.inviteId ?? ''}:${mg.charResponded ?? ''}:${mg.userResponded ?? ''}:${mg.matchResult ?? ''}:${(mg.replyText ?? '').slice(0, 48)}`
+  return `${withCs}|mg:${mg.kind ?? ''}:${mg.inviteId ?? ''}:${mg.charResponded ?? ''}:${mg.userResponded ?? ''}:${mg.matchResult ?? ''}:${fingerprintTextContent(mg.replyText ?? '')}`
 }

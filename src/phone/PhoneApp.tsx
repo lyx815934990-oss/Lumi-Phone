@@ -40,7 +40,7 @@ import {
   waitForStatusCheckOverlay,
 } from './userSystem/userSystemApi'
 import { isUserActivated, needsUserInfoCorrection, type UserAccountTab, type UserLoginStatus } from './userSystem/types'
-import { isLocalDevBypassAuth, LOCAL_DEV_MOCK_STATUS } from './userSystem/localDevMode'
+import { isLocalDevBypassAuth, shouldBypassUserAuth, LOCAL_DEV_MOCK_STATUS } from './userSystem/localDevMode'
 import { ApiSettingsProvider } from './apps/api/ApiSettingsContext'
 import { LUMI_SYS_FIRST_BOOT_KEY } from './apps/dataArchive/constants'
 import {
@@ -119,6 +119,11 @@ const CoupleSpaceDesktopApp = lazyWithRetry(() =>
 const ThinkingChainApp = lazyWithRetry(() =>
   import('./apps/thinkingChain/ThinkingChainApp').then((m) => ({
     default: m.ThinkingChainApp,
+  })),
+)
+const LangStudyApp = lazyWithRetry(() =>
+  import('./apps/langStudy/LangStudyApp').then((m) => ({
+    default: m.LangStudyApp,
   })),
 )
 const LumiTasteApp = lazyWithRetry(() =>
@@ -226,6 +231,7 @@ function buildPageProps(disableTransitions: boolean) {
 }
 const ENTRY_NOTICE_KEY = 'entry-notice-accepted-v1'
 const localDevBypassAuth = isLocalDevBypassAuth()
+const bypassUserAuth = shouldBypassUserAuth()
 
 export function PhoneApp() {
   const { state } = useCustomization()
@@ -242,9 +248,9 @@ export function PhoneApp() {
   const [ageConfirmed, setAgeConfirmed] = useState(false)
   const [riskConfirmed, setRiskConfirmed] = useState(false)
   const [userAuthStatus, setUserAuthStatus] = useState<UserLoginStatus | null>(
-    () => (localDevBypassAuth ? LOCAL_DEV_MOCK_STATUS : null),
+    () => (bypassUserAuth ? LOCAL_DEV_MOCK_STATUS : null),
   )
-  const [userAuthReady, setUserAuthReady] = useState(() => localDevBypassAuth)
+  const [userAuthReady, setUserAuthReady] = useState(() => bypassUserAuth)
   const [banNotice, setBanNotice] = useState<string | null>(() => readBannedNotice()?.message ?? null)
   const [sessionKickedNotice, setSessionKickedNotice] = useState<string | null>(() => readSessionKickedNotice())
   const [authVerifyError, setAuthVerifyError] = useState<string | null>(null)
@@ -265,7 +271,7 @@ export function PhoneApp() {
   /** 微信 lazy 失败后递增，强制换新实例（否则「再试一次」仍命中旧的 rejected Promise） */
   const [wechatLazyEpoch, setWechatLazyEpoch] = useState(0)
   const WeChatApp = useMemo(() => createWeChatLazy(), [wechatLazyEpoch])
-  const openVerifiedRef = useRef(localDevBypassAuth || readAuthVerified())
+  const openVerifiedRef = useRef(bypassUserAuth || readAuthVerified())
   /** 本次页面加载是否已做过开屏后的唯一一次账号检测（刷新页面会重置） */
   const sessionBootAuthDoneRef = useRef(false)
 
@@ -340,7 +346,7 @@ export function PhoneApp() {
   }, [bootDone, showSplash])
 
   useEffect(() => {
-    if (localDevBypassAuth) openVerifiedRef.current = true
+    if (bypassUserAuth) openVerifiedRef.current = true
   }, [])
 
   useEffect(() => {
@@ -452,7 +458,7 @@ export function PhoneApp() {
   }, [ageConfirmed, riskConfirmed])
 
   const refreshUserAuth = useCallback(async () => {
-    if (localDevBypassAuth) {
+    if (bypassUserAuth) {
       openVerifiedRef.current = true
       setAuthChecking(false)
       setUserAuthStatus(LOCAL_DEV_MOCK_STATUS)
@@ -551,7 +557,7 @@ export function PhoneApp() {
   }, [handleKickedToLogin])
 
   useEffect(() => {
-    if (localDevBypassAuth) return
+    if (bypassUserAuth) return
     if (!bootDone || showSplash || showEntryNotice) return
     if (sessionBootAuthDoneRef.current) return
     sessionBootAuthDoneRef.current = true
@@ -565,7 +571,7 @@ export function PhoneApp() {
   const needsCorrection = needsUserInfoCorrection(userAuthStatus)
 
   const showUserAuthModal =
-    !localDevBypassAuth &&
+    !bypassUserAuth &&
     bootDone &&
     !showSplash &&
     !showEntryNotice &&
@@ -578,7 +584,7 @@ export function PhoneApp() {
       !isUserActivated(userAuthStatus))
 
   const showInfoCorrectionModal =
-    !localDevBypassAuth &&
+    !bypassUserAuth &&
     bootDone &&
     !showSplash &&
     !showEntryNotice &&
@@ -588,7 +594,7 @@ export function PhoneApp() {
     !!userAuthStatus
 
   const showAccountStatusChecking =
-    !localDevBypassAuth &&
+    !bypassUserAuth &&
     bootDone &&
     !showSplash &&
     !showEntryNotice &&
@@ -607,7 +613,7 @@ export function PhoneApp() {
     !showUserAuthModal &&
     !showInfoCorrectionModal &&
     route.name === 'home' &&
-    (localDevBypassAuth ||
+    (bypassUserAuth ||
       (userAuthReady && !!userAuthStatus && isUserActivated(userAuthStatus)))
 
   useEffect(() => {
@@ -971,6 +977,8 @@ export function PhoneApp() {
                     <CoupleSpaceDesktopApp onBack={goHome} />
                   ) : route.id === 'thinkingChain' ? (
                     <ThinkingChainApp onBack={goHome} />
+                  ) : route.id === 'langStudy' ? (
+                    <LangStudyApp onBack={goHome} />
                   ) : route.id === 'takeout' ? (
                     <LumiTasteApp onBack={goHome} />
                   ) : (

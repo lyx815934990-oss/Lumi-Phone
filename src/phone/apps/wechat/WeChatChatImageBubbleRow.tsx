@@ -90,6 +90,8 @@ export function WeChatChatImageBubbleRow({
   const showAwaiting = awaitingConfirm && !generating && !genFailed
   const showGenerating = generating && !genFailed
   const showFailed = genFailed && !showGenerating && !showAwaiting
+  /** 大图重新生成：仍有旧图，但需显示生成中（关大图后也保持） */
+  const showRegenBusy = regenerating && !!src.trim() && !showGenerating && !showFailed && !showAwaiting
   const descText = description.trim()
 
   useEffect(() => {
@@ -236,9 +238,25 @@ export function WeChatChatImageBubbleRow({
               ? 'block h-auto max-h-[min(200px,36vh)] w-[160px] max-w-[46vw] select-none object-contain'
               : 'block h-auto max-h-[min(360px,50vh)] w-[180px] max-w-[56vw] select-none object-contain'
           }
-          style={{ borderRadius: bubbleRadius }}
+          style={{
+            borderRadius: bubbleRadius,
+            opacity: showRegenBusy ? 0.55 : 1,
+          }}
           draggable={false}
         />
+        {showRegenBusy ? (
+          <span
+            className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/25"
+            style={{ borderRadius: bubbleRadius }}
+            aria-live="polite"
+          >
+            <span
+              className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/25 border-t-white/90"
+              aria-hidden
+            />
+            <span className="text-[11px] font-medium text-white/95">重新生成中…</span>
+          </span>
+        ) : null}
         {selected ? (
           <span
             className="pointer-events-none absolute inset-0"
@@ -269,6 +287,7 @@ export function WeChatChatImageBubbleRow({
     showAwaiting,
     showFailed,
     showGenerating,
+    showRegenBusy,
     src,
   ])
 
@@ -370,17 +389,18 @@ export function WeChatChatImageBubbleRow({
           <div className="ml-[24px] mr-auto min-w-0">{imageBlock}</div>
         )}
       </div>
-      {!showGenerating && !showFailed && !showAwaiting ? (
+      {src.trim() && !showFailed && !showAwaiting ? (
         <ChatImageLightbox
           open={lightboxOpen}
           src={src}
           onClose={() => setLightboxOpen(false)}
           regenPrompt={canRegenerate ? regenPrompt : undefined}
-          regenerating={regenerating}
+          regenerating={regenerating || showRegenBusy}
           onRegenerate={
             canRegenerate && onRegenerate
-              ? async (prompt) => {
-                  await onRegenerate(prompt)
+              ? (prompt) => {
+                  // 不 await：关大图后继续生成
+                  void Promise.resolve(onRegenerate(prompt))
                 }
               : undefined
           }
@@ -457,17 +477,17 @@ export function WeChatChatImageBubbleRow({
         <div className="mr-[24px] ml-auto min-w-0">{imageBlock}</div>
       )}
       </div>
-      {!showGenerating && !showFailed && !showAwaiting ? (
+      {src.trim() && !showFailed && !showAwaiting ? (
         <ChatImageLightbox
           open={lightboxOpen}
           src={src}
           onClose={() => setLightboxOpen(false)}
           regenPrompt={canRegenerate ? regenPrompt : undefined}
-          regenerating={regenerating}
+          regenerating={regenerating || showRegenBusy}
           onRegenerate={
             canRegenerate && onRegenerate
-              ? async (prompt) => {
-                  await onRegenerate(prompt)
+              ? (prompt) => {
+                  void Promise.resolve(onRegenerate(prompt))
                 }
               : undefined
           }

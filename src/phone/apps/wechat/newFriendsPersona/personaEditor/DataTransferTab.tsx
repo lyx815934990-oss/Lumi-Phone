@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
+import { INK_KICKER, INK_LEAD, INK_SECTION, INK_TITLE } from './personaEditorTabs'
 import { Download, Upload } from 'lucide-react'
 import { useId, useRef, useState } from 'react'
 
@@ -47,18 +48,18 @@ export function DataTransferTab({
         : '导出数据包'
 
   return (
-    <section className="relative overflow-hidden rounded-[14px] border border-neutral-200/90 bg-white px-4 pb-10 pt-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-      <header className="mb-8 border-b border-neutral-100 pb-4">
-        <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-neutral-400">09 DATA · 中枢</p>
-        <h2 className="mt-2 text-[17px] font-semibold tracking-tight text-[#1C1C1E]">导入 / 导出</h2>
-        <p className="mt-2 text-[11px] font-light leading-relaxed text-neutral-500">
+    <section className={`relative overflow-hidden ${INK_SECTION} px-4 pb-10 pt-5`}>
+      <header className="mb-8 border-b border-[#D2D0CB] pb-4">
+        <p className={INK_KICKER}>10 DATA · 中枢</p>
+        <h2 className={INK_TITLE}>导入 / 导出</h2>
+        <p className={INK_LEAD}>
           本页可导出人设包或数据包；导入仅接受人设包（避免与编辑页身份绑定冲突）。数据包请在名册底部「导入角色数据包」导入。
         </p>
       </header>
 
       <div className="flex flex-col gap-4">
-        <div className="rounded-[12px] border border-neutral-200 bg-[#FAFAFA] p-3">
-          <p className="mb-2 text-[11px] font-medium text-neutral-500">导出类型</p>
+        <div className="rounded-[12px] border border-[#D2D0CB] bg-[#EDEBE7] p-3">
+          <p className="mb-2 font-mono text-[11px] font-medium text-[#5A6574]">导出类型</p>
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -66,12 +67,12 @@ export function DataTransferTab({
               onClick={() => setExportKind('persona')}
               className={`rounded-[10px] border px-3 py-3 text-left transition-colors disabled:opacity-60 ${
                 exportKind === 'persona'
-                  ? 'border-[#1C1C1E] bg-white text-[#1C1C1E]'
-                  : 'border-transparent bg-transparent text-neutral-500 hover:bg-white/70'
+                  ? 'border-[#1E2024] bg-[#F8F7F4] text-[#1E2024]'
+                  : 'border-transparent bg-transparent text-[#6A6E76] hover:bg-[#F8F7F4]/70'
               }`}
             >
               <span className="block text-[13px] font-semibold tracking-wide">人设包</span>
-              <span className="mt-1 block text-[10px] leading-snug text-neutral-400">档案 · 关系 · 背景</span>
+              <span className="mt-1 block text-[10px] leading-snug text-[#9AA0A8]">档案 · 关系 · 背景</span>
             </button>
             <button
               type="button"
@@ -79,8 +80,8 @@ export function DataTransferTab({
               onClick={() => canRuntime && setExportKind('runtime')}
               className={`rounded-[10px] border px-3 py-3 text-left transition-colors disabled:opacity-60 ${
                 exportKind === 'runtime'
-                  ? 'border-[#1C1C1E] bg-white text-[#1C1C1E]'
-                  : 'border-transparent bg-transparent text-neutral-500 hover:bg-white/70'
+                  ? 'border-[#1E2024] bg-[#F8F7F4] text-[#1E2024]'
+                  : 'border-transparent bg-transparent text-[#6A6E76] hover:bg-[#F8F7F4]/70'
               }`}
             >
               <span className="block text-[13px] font-semibold tracking-wide">数据包</span>
@@ -99,7 +100,7 @@ export function DataTransferTab({
               else onExport()
             })
           }
-          className="flex w-full items-center justify-center gap-3 rounded-[12px] border border-neutral-200 bg-[#FAFAFA] py-4 text-[14px] font-semibold tracking-wide text-[#1C1C1E] transition-colors hover:bg-neutral-100 disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-3 rounded-[12px] border border-[#D2D0CB] bg-[#EDEBE7] py-4 text-[14px] font-semibold tracking-wide text-[#1E2024] transition-colors hover:bg-[#E2E5EA] disabled:opacity-60"
         >
           <Download className="size-5" strokeWidth={1.5} />
           {exportLabel}
@@ -109,7 +110,7 @@ export function DataTransferTab({
           type="button"
           disabled={busy}
           onClick={() => runWithScan(() => fileRef.current?.click())}
-          className="flex w-full items-center justify-center gap-3 rounded-[12px] border border-neutral-200 bg-white py-4 text-[14px] font-semibold tracking-wide text-[#1C1C1E] transition-colors hover:bg-neutral-50 disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-3 rounded-[12px] border border-[#1E2024] bg-[#1E2024] py-4 text-[14px] font-semibold tracking-wide text-[#F8F7F4] transition-colors hover:opacity-90 disabled:opacity-60"
         >
           <Upload className="size-5" strokeWidth={1.5} />
           导入人设包
@@ -133,14 +134,13 @@ export function DataTransferTab({
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="absolute inset-x-0 top-0 h-[2px] bg-[#D4AF37]"
+              className="absolute inset-x-0 top-0 h-[2px] bg-[#5A6574]"
               initial={{ top: '15%' }}
               animate={{ top: ['15%', '85%', '15%'] }}
               transition={{ duration: 1.15, ease: 'easeInOut', repeat: Infinity }}
-              style={{ boxShadow: '0 0 28px rgba(212,175,55,0.35)' }}
             />
             <p className="absolute bottom-24 left-0 right-0 text-center font-mono text-[10px] uppercase tracking-[0.45em] text-white/75">
-              Archive Channel · Scanning
+              Ink Channel · Scanning
             </p>
           </motion.div>
         ) : null}

@@ -354,6 +354,16 @@ export function StoryNodeCard({
     showCopyToast(ok ? '已复制' : '复制失败，请检查浏览器剪贴板权限')
   }, [plainBodyText, showCopyToast])
 
+  const handleCopyIfLine = useCallback(async () => {
+    const text = String(node.ifLineContent ?? '').trim()
+    if (!text) {
+      showCopyToast('暂无 IF 线可复制')
+      return
+    }
+    const ok = await copyTextToClipboard(text)
+    showCopyToast(ok ? '已复制 IF 线' : '复制失败，请检查浏览器剪贴板权限')
+  }, [node.ifLineContent, showCopyToast])
+
   const requestDelete = useCallback(() => {
     if (!onDelete || interactionLocked || isRegenerating) return
     setCtxOpen(false)
@@ -382,6 +392,15 @@ export function StoryNodeCard({
         },
       },
     ]
+    if (node.hasIfLine && node.ifLineContent?.trim()) {
+      items.push({
+        id: 'copy-if',
+        label: '复制IF线',
+        onSelect: () => {
+          void handleCopyIfLine()
+        },
+      })
+    }
     if (onEdit) {
       items.push({
         id: 'edit',
@@ -411,11 +430,14 @@ export function StoryNodeCard({
   }, [
     canRegenerate,
     handleCopy,
+    handleCopyIfLine,
     interactionLocked,
     isRegenerating,
     onDelete,
     onEdit,
     onRegenerate,
+    node.hasIfLine,
+    node.ifLineContent,
     requestDelete,
   ])
 
@@ -621,8 +643,9 @@ export function StoryNodeCard({
 
           {bodySegments.map((seg, i) => {
             if (seg.type === 'text') {
+              // 旁白用 sr-prose；情感卡 / 美化 HTML 由 renderStoryPlotContent 自行包层，避免标签被当纯文本
               return (
-                <div key={`t-${i}`} className="sr-prose">
+                <div key={`t-${i}`} className="sr-prose [&_.lumi-emotion-status-card]:font-[family-name:var(--sr-font-serif)]">
                   {renderStoryPlotContent(seg.text)}
                 </div>
               )
@@ -774,6 +797,22 @@ export function StoryNodeCard({
                   void handleCopy()
                 }}
               />
+              {node.hasIfLine && node.ifLineContent?.trim() ? (
+                <button
+                  type="button"
+                  aria-label="复制IF线"
+                  title="复制IF线"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void handleCopyIfLine()
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="inline-flex h-8 items-center gap-1 rounded-full border border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] px-2 text-[10px] font-medium text-[var(--sr-text-soft)] transition hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-text)]"
+                >
+                  <Copy className="size-3" strokeWidth={1.75} aria-hidden />
+                  IF
+                </button>
+              ) : null}
               {onEdit ? (
                 <CardActionIcon
                   label="编辑"

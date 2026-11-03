@@ -18,9 +18,17 @@ import type {
   GroupChatRow,
   HeartWhisper,
   PlayerIdentity,
+  ScheduleCalendarEvent,
+  ScheduleEntry,
   ScheduleTable,
   WeChatReplyToMeta,
 } from './newFriendsPersona/types'
+import {
+  estimateScheduleSpanEnd,
+  formatScheduleNowPromptBlock,
+  resolveCharacterScheduleEntries,
+  resolveScheduleClock,
+} from './schedule/scheduleEntries'
 import { genderLabelZh } from './newFriendsPersona/utils'
 import { loadPrivateChatNetworkRelationshipsBlock } from './networkRelationshipsPrompt'
 import { buildPrivateChatNetworkNpcPronounBlock } from './privateChatNetworkNpcPronoun'
@@ -43,6 +51,17 @@ import {
   extractLifeLedgerPatchBlock,
   type LifeLedgerInlinePatch,
 } from './lifeMutable/lifeLedgerPatch'
+import {
+  buildScheduleCalendarPatchOutputAppendix,
+  extractScheduleCalendarPatchBlock,
+  formatExistingCalendarEventsHint,
+  type ScheduleCalInlineOp,
+} from './schedule/scheduleCalendarPatch'
+import {
+  closePastScheduleCalendarEvents,
+  formatScheduleCalendarPromptBlock,
+  resolveCalendarAnchor,
+} from './schedule/scheduleEntries'
 import {
   buildMemorySummaryCharGenderDirective,
   buildMemorySummaryIdentityRosterBlock,
@@ -105,16 +124,33 @@ import {
   resolveOnlineReplyStyleAppendix,
   resolveOnlineThinkingChainAppendix,
 } from '../thinkingChain/cotAssemble'
+import { applyActiveCotRegexForScene } from '../thinkingChain/cotApplyRegex'
+import { expandWechatTaggedReplyToPlain } from './wechatTaggedBlocks'
 import { getActivePresetForScene } from '../thinkingChain/cotStore'
 import { recordLastPromptMaterial } from './lastPromptMaterialStore'
 import type { LoreArchiveBuiltinPresetToggles } from '../../worldbook/loreArchiveBuiltinPresets'
 import {
   buildWechatReplyOutputLanguageAppendix,
   buildWechatSyncTranslationAppendix,
+  buildWechatTurnFormatLockAppendix,
   looksLikeJapaneseBubbleText,
+  sanitizeTranslatorAssistantLeakBubble,
   stripJapaneseTrailingLaughMarker,
 } from './wechatChatLanguage'
+import { buildWechatBlockRelationAppendix } from './wechatBlock'
 import { buildWechatInnerOsSyncAppendix } from './wechatInnerOsSync'
+import {
+  buildOnlineActionNarrationDisabledAppendix,
+  buildOnlineActionNarrationOutputAppendix,
+  parseOnlineActionNarrationLine,
+  parseStoredOnlineActionNarrationCountRange,
+  type OnlineActionNarrationCountRange,
+} from './onlineActionNarration'
+import {
+  buildReplyBubbleCountAppendix,
+  isReplyBubbleCountEnabled,
+  parseStoredReplyBubbleCountRange,
+} from './replyBubbleCount'
 import { buildWeChatPulseDmScreenshotOutputBlock } from './pulse/pulseDmScreenshotAiDirective'
 import { splitRawByForwardHistory } from './chatHistory/parseForwardHistoryXml'
 import type { WeChatChatHistoryPayload } from './newFriendsPersona/types'
@@ -169,7 +205,7 @@ function buildWechatStylePlusFormatAppendix(
  */
 const WECHAT_CONTINUE_WHEN_LAST_IS_ASSISTANT_NUDGE =
   '[系统·继续回复] 用户本回合没有新发消息（可能点了「继续回复」或催回复）。' +
-  '请你以**角色本人**身份继续发微信气泡（assistant 侧输出）。' +
+  '历史末尾已是你方气泡：请在其后**接写新的**微信气泡（assistant 侧），不要重答上一轮用户消息，不要复述已出现过的内容。' +
   '禁止替用户发言、禁止模拟用户发消息。对白里「我」指角色、「你」指用户。'
 
 function ensureChatMessagesDoNotEndWithAssistantTurn(
@@ -819,24 +855,133 @@ function buildRecentMeetAiRoundsSection(notes?: string): string {
   return `\n\n---\n【板块·近端·最近遇见原文参考】（可能已写入长期记忆；仅供承接口吻，非待总结材料）\n${t}\n`
 }
 
-export function buildScheduleSection(params: { playerIdentity: ScheduleTable | null; character: ScheduleTable | null }): string {
-  const chunks: string[] = []
-  if (params.playerIdentity) {
-    chunks.push(`【用户的日程安排】\n${safeScheduleJson(params.playerIdentity)}`)
+export function buildScheduleSection(params: {
+  playerIdentity: ScheduleTable | null
+  character: ScheduleTable | null
+  playerEntries?: ScheduleEntry[] | null
+  characterEntries?: ScheduleEntry[] | null
+  playerCalendarEvents?: ScheduleCalendarEvent[] | null
+  characterCalendarEvents?: ScheduleCalendarEvent[] | null
+  currentTimeMs?: number
+  /** currentTimeMs 已是剧情/自定义微信时钟（非墙钟） */
+  currentTimeIsStory?: boolean
+  storyDay?: string | null
+  storyTime?: string | null
+  storyNowLabel?: string | null
+  /**
+   * 线下时间跨度：有则注入跨度内碰到的日程；
+   * 也可传 plotPace，由客户端估算结束点。
+   */
+  spanEnd?: { day?: string | null; time?: string | null; label?: string | null } | null
+  plotPace?: {
+    preset?: string
+    customAmount?: number
+    customUnit?: string
+  } | null
+}): string {
+  const clock = resolveScheduleClock({
+    currentTimeMs: params.currentTimeMs,
+    currentTimeIsStory: params.currentTimeIsStory,
+    storyDay: params.storyDay,
+    storyTime: params.storyTime,
+    storyNowLabel: params.storyNowLabel,
+  })
+  const calAnchor = resolveCalendarAnchor({
+    currentTimeMs: params.currentTimeMs,
+    currentTimeIsStory: params.currentTimeIsStory,
+    storyDay: params.storyDay,
+    storyTime: params.storyTime,
+    storyNowLabel: params.storyNowLabel,
+  })
+  let spanEndClock = params.spanEnd
+    ? resolveScheduleClock({
+        storyDay: params.spanEnd.day,
+        storyTime: params.spanEnd.time,
+        storyNowLabel: params.spanEnd.label,
+        currentTimeIsStory: true,
+      })
+    : null
+  if (!spanEndClock && params.plotPace) {
+    spanEndClock = estimateScheduleSpanEnd(clock, params.plotPace)
   }
-  if (params.character) {
-    chunks.push(`【角色的日程安排】\n${safeScheduleJson(params.character)}`)
+  const chunks: string[] = []
+  const charEntries =
+    params.characterEntries?.length
+      ? params.characterEntries
+      : params.character
+        ? resolveCharacterScheduleEntries({
+            schedule: params.character,
+            scheduleEntries: params.characterEntries,
+          })
+        : []
+  const userEntries =
+    params.playerEntries?.length
+      ? params.playerEntries
+      : params.playerIdentity
+        ? resolveCharacterScheduleEntries({
+            schedule: params.playerIdentity,
+            scheduleEntries: params.playerEntries,
+          })
+        : []
+
+  if (params.character || charEntries.length) {
+    chunks.push(
+      formatScheduleNowPromptBlock({
+        roleLabel: '角色',
+        entries: charEntries,
+        clock,
+        spanEnd: spanEndClock,
+      }),
+    )
+  }
+  if (params.playerIdentity || userEntries.length) {
+    chunks.push(
+      formatScheduleNowPromptBlock({
+        roleLabel: '用户',
+        entries: userEntries,
+        clock,
+        spanEnd: spanEndClock,
+      }),
+    )
+  }
+  const charCal = closePastScheduleCalendarEvents(
+    params.characterCalendarEvents ?? [],
+    calAnchor,
+  )
+  const userCal = closePastScheduleCalendarEvents(
+    params.playerCalendarEvents ?? [],
+    calAnchor,
+  )
+  const hasWeekly = !!(charEntries.length || userEntries.length || params.character || params.playerIdentity)
+  const hasCal = !!(charCal.length || userCal.length)
+  if (hasWeekly && hasCal) {
+    chunks.unshift(
+      [
+        `【日程两层·并用规则】`,
+        `1. 【周循环·生活习惯】= 没有重大特殊事项时的日常作息底色（按星期几对照，每周重复）。`,
+        `2. 【日历·特殊事件】= 落在具体公历日的重大/一次性安排；**同日或同时段冲突时日历优先**，周循环让位或仅作背景。`,
+        `3. 开口说多久由你判断（客户端不截固定天数）：先答用户问到的时段；再按人设分享欲决定要不要顺带提更远的已登记事项——分享欲强可多提，内敛则点到为止。勿编造未登记硬安排，勿否认已登记事项。`,
+      ].join('\n'),
+    )
+  }
+  if (charCal.length) {
+    const block = formatScheduleCalendarPromptBlock({
+      roleLabel: '角色',
+      events: charCal,
+      anchor: calAnchor,
+    })
+    if (block) chunks.push(block)
+  }
+  if (userCal.length) {
+    const block = formatScheduleCalendarPromptBlock({
+      roleLabel: '用户',
+      events: userCal,
+      anchor: calAnchor,
+    })
+    if (block) chunks.push(block)
   }
   if (!chunks.length) return ''
   return `\n\n---\n${chunks.join('\n\n')}\n`
-}
-
-function safeScheduleJson(s: ScheduleTable): string {
-  try {
-    return JSON.stringify(s, null, 2)
-  } catch {
-    return '{"error":"schedule_stringify_failed"}'
-  }
 }
 
 export { formatCurrentTimeBlock, resolveTimePromptSection } from './time/wechatTimeUtils'
@@ -884,6 +1029,12 @@ export function buildSystemContent(params: {
   replyBias?: string
   /** 当前会话时间戳（毫秒）；未传时默认系统时间 */
   currentTimeMs?: number
+  /** currentTimeMs 已是剧情/自定义微信时钟（非墙钟兜底） */
+  currentTimeIsStory?: boolean
+  /** 剧情「现在」标签（优先于墙钟匹配星期与日程） */
+  storyNowLabel?: string | null
+  storyDay?: string | null
+  storyTime?: string | null
   /** false 时不注入系统时间点，改由模型据聊天内容推断时段 */
   timePerceptionEnabled?: boolean
   /** 档案室「世界线法则」已拼好的片段；优先于 chatMemberIds */
@@ -1042,9 +1193,22 @@ export function buildSystemContent(params: {
     currentTimeMs: params.currentTimeMs,
     forLumiAssistant: isLumiAssistant,
   })
+  const timelineStoryLabel =
+    params.storyNowLabel?.trim() ||
+    params.storyTimelineNotes?.match(/(\d{4}年\d{1,2}月\d{1,2}日[^\n]{0,24}?\d{1,2}:\d{2})/)?.[1] ||
+    null
   const schedule = buildScheduleSection({
     playerIdentity: (params.playerIdentity?.schedule as ScheduleTable | undefined) ?? null,
     character: (params.character?.schedule as ScheduleTable | undefined) ?? null,
+    playerEntries: params.playerIdentity?.scheduleEntries ?? null,
+    characterEntries: params.character?.scheduleEntries ?? null,
+    playerCalendarEvents: params.playerIdentity?.scheduleCalendarEvents ?? null,
+    characterCalendarEvents: params.character?.scheduleCalendarEvents ?? null,
+    currentTimeMs: params.currentTimeMs,
+    currentTimeIsStory: params.currentTimeIsStory ?? !!timelineStoryLabel,
+    storyDay: params.storyDay,
+    storyTime: params.storyTime,
+    storyNowLabel: timelineStoryLabel,
   })
   const meetContinuity = params.meetWechatContinuityBlock?.trim()
     ? `\n\n---\n${params.meetWechatContinuityBlock.trim()}\n`
@@ -1077,6 +1241,7 @@ export function buildSystemContent(params: {
         `输出格式硬约束（换行分条/禁 JSON/Markdown）次之；` +
         `不得捏造与「尚未总结」「剧情时间轴·当前状态」「尾声延展」明文冲突的已定事实。\n`
       : `\n\n---\n【效力层级·微信私聊｜七板块记忆参考】` +
+        `**【本轮输出格式锁】**（回复语言 / 同步翻译开·关与目标语，见 earlyOutput 与文末钉）**压过**对话历史仿写 > ` +
         `**【贴人设活人感 × 反爹味 × 反油腻】并列置顶铁则**（须同时满足；照顾型年上亦零爹味油腻豁免）> ` +
         `输出格式硬约束 ≈ **档案室档1**（若有；仅次于输出规范、高于人设）> ` +
         `**角色档案 + 私藏侧写 + 可变人生账本 + 人设世界书 + 档案室档2**` +
@@ -1180,12 +1345,14 @@ export function buildSystemContent(params: {
     : params.promptMode === 'persona' && params.character && params.relationshipStage
       ? buildWeChatSystemPrompt(params.relationshipStage)
       : WECHAT_ROLEPLAY_SYSTEM_PROMPT
+  const blockRelation = buildWechatBlockRelationAppendix(params.character)
+  const blockBlock = blockRelation ? `\n\n---\n${blockRelation}\n` : ''
   const rawMain =
     `${roleplayPrompt}${priorityLadder}` +
     `${replyBias}${regenAppendix}${earlyOutput}${loreBlockTier1}${fictionCot}` +
     `${pi}${userPulse}${extra}${networkRelationships}${networkNpcPronoun}${mutualFriendChainBlock}` +
     `${memoryTail}` +
-    `${altProbe}${currentTime}${schedule}${peerLine}`
+    `${altProbe}${currentTime}${schedule}${peerLine}${blockBlock}`
   return appendLinkPreview(linkedExpand(rawMain))
 }
 
@@ -1298,8 +1465,48 @@ export async function materializeSystemContent(params: BuildSystemContentParams)
   })
 }
 
+/** 末尾连续用户气泡合计超过此字数，视为「长粘贴」（小说/IF 全文等），须完整进模型 */
+const LONG_USER_BURST_CHARS = 600
+
+function collectTrailingUserBurst(turns: ChatTranscriptTurn[]): { start: number; text: string } | null {
+  let end = turns.length - 1
+  while (end >= 0 && turns[end]?.from !== 'self') end -= 1
+  if (end < 0) return null
+  let start = end
+  while (start > 0 && turns[start - 1]?.from === 'self') start -= 1
+  const text = turns
+    .slice(start, end + 1)
+    .map((t) => String(t.text || '').trim())
+    .filter(Boolean)
+    .join('\n\n')
+    .trim()
+  return text ? { start, text } : null
+}
+
+function expandHistoryTailForLatestUserBurst(turns: ChatTranscriptTurn[]): ChatTranscriptTurn[] {
+  const n = turns.length
+  if (n <= WECHAT_HISTORY_MAX_MESSAGES) return turns
+  let tailStart = n - WECHAT_HISTORY_MAX_MESSAGES
+  const burst = collectTrailingUserBurst(turns)
+  if (burst && burst.text.length >= LONG_USER_BURST_CHARS && burst.start < tailStart) {
+    tailStart = burst.start
+  }
+  return turns.slice(tailStart)
+}
+
+function buildLatestUserLongMessagePin(turns: ChatTranscriptTurn[]): string | null {
+  const burst = collectTrailingUserBurst(turns)
+  if (!burst || burst.text.length < LONG_USER_BURST_CHARS) return null
+  return (
+    `【本轮用户长消息·已完整送达】下面是用户刚才发给你的原文（不是摘要、不是「还没发」）。` +
+    `你已经收到全文。禁止再说「还没发」「把剧情/正文发给我」「发后续」「続きを送って」等索要同一份内容。` +
+    `请按已读完整内容、用微信口吻回应（可讨论、给感想，勿假装没看见）。\n\n` +
+    burst.text
+  )
+}
+
 function transcriptToMessages(turns: ChatTranscriptTurn[], opts?: { groupChat?: boolean }): OpenAiCompatibleMessage[] {
-  const tail = turns.slice(-WECHAT_HISTORY_MAX_MESSAGES)
+  const tail = expandHistoryTailForLatestUserBurst(turns)
   const out: OpenAiCompatibleMessage[] = []
   const groupChat = !!opts?.groupChat
   for (const t of tail) {
@@ -1521,6 +1728,7 @@ function extractThinkingBlock(raw: string): { visible: string; thinking?: string
 
 export type WeChatPeerReplyOrderedSegment =
   | { kind: 'bubble'; text: string }
+  | { kind: 'action'; text: string }
   | { kind: 'forward_history'; forwardHistory: WeChatChatHistoryPayload }
 
 export type WeChatPeerReplyResult = {
@@ -1548,6 +1756,10 @@ export type WeChatPeerReplyResult = {
   lifeLedgerPatches?: LifeLedgerInlinePatch[]
   /** 主回复已输出合法 ---LIFE_LEDGER_PATCH--- 标记（含「无变化」） */
   lifeLedgerJudged?: boolean
+  /** 主回复末尾「日历日程」补丁操作（若有） */
+  scheduleCalendarOps?: ScheduleCalInlineOp[]
+  /** 主回复已输出合法 ---SCHEDULE_CAL_PATCH--- 标记（含「无变化」） */
+  scheduleCalendarJudged?: boolean
   /** 共同好友链：主回复末尾标记块（已从可见气泡剥离） */
   mutualFriendChain?: MutualFriendChainPayload | null
   /** 同轮主回复末尾剥离的心语档案（每轮同步心语） */
@@ -1609,6 +1821,8 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
   if (!t0) {
     return {
       bubbles: [],
+      scheduleCalendarOps: undefined,
+      scheduleCalendarJudged: false,
       worldBookPatches: undefined,
       worldBookEpilogueJudged: false,
       observationNotesPatches: undefined,
@@ -1649,7 +1863,15 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
     patches: lifeLedgerPatches,
     judged: lifeLedgerJudged,
   } = extractLifeLedgerPatchBlock(afterWbPatch)
-  const parts = splitRawByForwardHistory(afterLifeLedger)
+  const {
+    rest: afterScheduleCal,
+    ops: scheduleCalendarOps,
+    judged: scheduleCalendarJudged,
+  } = extractScheduleCalendarPatchBlock(afterLifeLedger)
+  const afterPresetRegex = applyActiveCotRegexForScene(afterScheduleCal, 'online')
+  // 标签壳（msg/tr/wechat_reply）→ 换行协议；无标签则原样
+  const afterTagged = expandWechatTaggedReplyToPlain(afterPresetRegex).text
+  const parts = splitRawByForwardHistory(afterTagged)
   let orderedSegments: WeChatPeerReplyOrderedSegment[] = []
   let bubbles: string[] = []
   const danmakuMerged: string[] = []
@@ -1664,8 +1886,15 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
     const { bubbles: chunkBubbles, danmakuLines } = parsePlainChunkToWeChatBubbles(part.text)
     danmakuMerged.push(...danmakuLines)
     for (const b of chunkBubbles) {
-      orderedSegments.push({ kind: 'bubble', text: b })
-      bubbles.push(b)
+      const actionBody = parseOnlineActionNarrationLine(b)
+      if (actionBody != null) {
+        orderedSegments.push({ kind: 'action', text: actionBody })
+        continue
+      }
+      const cleaned = sanitizeTranslatorAssistantLeakBubble(b)
+      if (cleaned == null) continue
+      orderedSegments.push({ kind: 'bubble', text: cleaned })
+      bubbles.push(cleaned)
     }
   }
 
@@ -1680,6 +1909,8 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
       observationNotesJudged,
       lifeLedgerPatches: lifeLedgerPatches.length ? lifeLedgerPatches : undefined,
       lifeLedgerJudged,
+      scheduleCalendarOps: scheduleCalendarOps.length ? scheduleCalendarOps : undefined,
+      scheduleCalendarJudged,
       orderedSegments,
       heartWhisper: inlineHeartWhisper,
       groupHeartWhisperEntries: inlineGroupHeartWhisper ?? undefined,
@@ -1729,6 +1960,8 @@ export function parseWeChatPeerReplyWithThinking(raw: string): WeChatPeerReplyRe
     observationNotesJudged,
     lifeLedgerPatches: lifeLedgerPatches.length ? lifeLedgerPatches : undefined,
     lifeLedgerJudged,
+    scheduleCalendarOps: scheduleCalendarOps.length ? scheduleCalendarOps : undefined,
+    scheduleCalendarJudged,
     forwardHistory: forwardHistory ?? undefined,
     mutualFriendChain: mutualFriendFromRaw ?? mfStrip.payload,
     heartWhisper: inlineHeartWhisper,
@@ -1809,10 +2042,13 @@ function buildWechatOutputProtocolAppendix(
   voiceSynth?: { toneTokens?: boolean; emotion?: boolean },
 ): string {
   const toggles = getLoreArchiveBuiltinPresetTogglesSnapshot()
+  const syncByModel =
+    translationSyncEnabled === true && translationDedicatedApi !== true
   const output = buildWechatStylePlusFormatAppendix(toggles, {
     omitRomance: true,
     voiceSynthToneTokensEnabled: voiceSynth?.toneTokens === true,
     voiceSynthEmotionEnabled: voiceSynth?.emotion === true,
+    syncTranslationByModel: syncByModel,
   })
   const lang = buildWechatReplyOutputLanguageAppendix(replyOutputLanguage, replyVoiceLanguage, {
     translationSyncEnabled,
@@ -1871,6 +2107,14 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   innerOsSyncEnabled?: boolean
   /** 每轮主回复末尾同轮产出心语 XML */
   heartWhisperSyncEnabled?: boolean
+  /** 线上动描：允许 `【动描】` 旁白行与气泡穿插 */
+  onlineActionNarrationEnabled?: boolean
+  onlineActionNarrationCountMin?: number
+  onlineActionNarrationCountMax?: number
+  /** 每轮可见气泡条数限制（开启后压过文风软引导） */
+  replyBubbleCountEnabled?: boolean
+  replyBubbleCountMin?: number
+  replyBubbleCountMax?: number
   /** 语音消息：是否允许合成语气词 / 情绪标签（默认关） */
   voiceSynthToneTokensEnabled?: boolean
   voiceSynthEmotionEnabled?: boolean
@@ -1915,6 +2159,25 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
   const syncOsBlock = params.innerOsSyncEnabled === true ? buildWechatInnerOsSyncAppendix() : ''
   const syncHwBlock =
     params.heartWhisperSyncEnabled === true ? buildWechatHeartWhisperInlineSyncAppendix('private') : ''
+  const actionNarrationCountRange: OnlineActionNarrationCountRange | undefined =
+    params.onlineActionNarrationEnabled === true
+      ? parseStoredOnlineActionNarrationCountRange(
+          params.onlineActionNarrationCountMin,
+          params.onlineActionNarrationCountMax,
+        )
+      : undefined
+  const actionNarrationBlock =
+    params.onlineActionNarrationEnabled === true
+      ? buildOnlineActionNarrationOutputAppendix(
+          params.character?.wechatNickname?.trim() || params.character?.name?.trim() || '对方',
+          actionNarrationCountRange,
+        )
+      : buildOnlineActionNarrationDisabledAppendix()
+  const replyBubbleCountBlock = isReplyBubbleCountEnabled(params.replyBubbleCountEnabled)
+    ? buildReplyBubbleCountAppendix(
+        parseStoredReplyBubbleCountRange(params.replyBubbleCountMin, params.replyBubbleCountMax),
+      )
+    : ''
   const syncTrBlock =
     params.translationSyncEnabled === true
       ? buildWechatSyncTranslationAppendix(params.translationLanguage, {
@@ -1941,7 +2204,14 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
             : undefined,
         })
       : ''
-  const langAppend = [langBlock, syncOsBlock, syncTrBlock, syncHwBlock]
+  const langAppend = [
+    langBlock,
+    syncOsBlock,
+    syncTrBlock,
+    syncHwBlock,
+    actionNarrationBlock,
+    replyBubbleCountBlock,
+  ]
     .filter(Boolean)
     .map((s) => `\n\n${s}`)
     .join('')
@@ -1953,6 +2223,8 @@ function buildPersonaPrivateChatSelfServiceAppendix(params: {
       omitRomance: true,
       voiceSynthToneTokensEnabled: params.voiceSynthToneTokensEnabled === true,
       voiceSynthEmotionEnabled: params.voiceSynthEmotionEnabled === true,
+      syncTranslationByModel:
+        params.translationSyncEnabled === true && params.translationDedicatedApi !== true,
     })}${forwardBlock}${pulseDmShotBlock}${thinkingBlock}${profileImageBlock}${profileStateBlock}${memeLexiconBlock}${mimicStyleBlock}${langAppend}\n\n${WECHAT_CHARACTER_PROFILE_UPDATE_APPENDIX}${pinCatalog ? `\n\n${pinCatalog}` : ''}${userMomentsCatalog ? `\n\n${userMomentsCatalog}` : ''}\n\n${WECHAT_CHARACTER_MOMENT_PUBLISH_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_SONG_SHARE_APPENDIX}\n\n${WECHAT_CHARACTER_MOMENT_PIN_APPENDIX}\n\n${WECHAT_CHARACTER_PRESENCE_MURMUR_APPENDIX}`,
   )
 }
@@ -2192,6 +2464,13 @@ export async function requestWeChatPeerReplyBubbles(params: {
   innerOsSyncEnabled?: boolean
   /** 每轮主回复末尾同轮产出心语 XML */
   heartWhisperSyncEnabled?: boolean
+  /** 线上动描：允许 `【动描】` 旁白行与气泡穿插 */
+  onlineActionNarrationEnabled?: boolean
+  onlineActionNarrationCountMin?: number
+  onlineActionNarrationCountMax?: number
+  replyBubbleCountEnabled?: boolean
+  replyBubbleCountMin?: number
+  replyBubbleCountMax?: number
   includeForwardHistoryCard?: boolean
   includePulseDmScreenshot?: boolean
   includeProfileImageChange?: boolean
@@ -2201,6 +2480,14 @@ export async function requestWeChatPeerReplyBubbles(params: {
   voiceSynthToneTokensEnabled?: boolean
   voiceSynthEmotionEnabled?: boolean
   currentTimeMs?: number
+  /** currentTimeMs 已是剧情/自定义微信时钟（非墙钟兜底） */
+  currentTimeIsStory?: boolean
+  /** 剧情「现在」标签（优先于墙钟匹配星期与日程） */
+  storyNowLabel?: string | null
+  /** 剧情日（如 2026年10月21日），供日历补丁锚点 */
+  storyDay?: string | null
+  /** 剧情时刻（如 14:30），供日历补丁锚点 */
+  storyTime?: string | null
   timePerceptionEnabled?: boolean
   danmakuConfig?: WeChatDanmakuInlineConfig
   /** 群聊：历史统一走 user 角色并带发言者前缀，避免多角色 assistant 交错 */
@@ -2346,6 +2633,15 @@ export async function requestWeChatPeerReplyBubbles(params: {
     : isLumi
       ? `【撤回】仅在明显误发时可极少使用输出协议中的撤回格式；禁止用于恋爱拉扯或虚构剧情。`
       : WECHAT_CHARACTER_RECALL_GUIDE
+  const turnFormatLock = params.friendRequestAdjudication
+    ? ''
+    : buildWechatTurnFormatLockAppendix({
+        replyOutputLanguage: params.replyOutputLanguage,
+        replyVoiceLanguage: params.replyVoiceLanguage,
+        translationSyncEnabled: params.translationSyncEnabled === true,
+        translationLanguage: params.translationLanguage,
+        translationDedicatedApi: params.translationDedicatedApi === true,
+      })
   const outputAppendix = params.friendRequestAdjudication
     ? WECHAT_FRIEND_REQUEST_ADJUDICATION_OUTPUT_APPENDIX
     : isLumi
@@ -2365,6 +2661,12 @@ export async function requestWeChatPeerReplyBubbles(params: {
           translationDedicatedApi: params.translationDedicatedApi === true,
           innerOsSyncEnabled: params.innerOsSyncEnabled === true,
           heartWhisperSyncEnabled: params.heartWhisperSyncEnabled === true,
+          onlineActionNarrationEnabled: params.onlineActionNarrationEnabled === true,
+          onlineActionNarrationCountMin: params.onlineActionNarrationCountMin,
+          onlineActionNarrationCountMax: params.onlineActionNarrationCountMax,
+          replyBubbleCountEnabled: params.replyBubbleCountEnabled === true,
+          replyBubbleCountMin: params.replyBubbleCountMin,
+          replyBubbleCountMax: params.replyBubbleCountMax,
           includeForwardHistoryCard: params.includeForwardHistoryCard === true,
           includePulseDmScreenshot: params.includePulseDmScreenshot === true,
           includeProfileImageChange: params.includeProfileImageChange === true,
@@ -2373,7 +2675,9 @@ export async function requestWeChatPeerReplyBubbles(params: {
           voiceSynthToneTokensEnabled: params.voiceSynthToneTokensEnabled === true,
           voiceSynthEmotionEnabled: params.voiceSynthEmotionEnabled === true,
         })
-  let earlyOutputAppendix = outputAppendix
+  let earlyOutputAppendix = turnFormatLock
+    ? `${turnFormatLock}\n\n${outputAppendix}`
+    : outputAppendix
   if (
     !params.friendRequestAdjudication &&
     !isLumi &&
@@ -2401,7 +2705,7 @@ export async function requestWeChatPeerReplyBubbles(params: {
             .then((d) => (d ? needsObservationJudgementFill(d) : true))
             .catch(() => true),
         ])
-        earlyOutputAppendix = `${outputAppendix}\n\n${buildObservationNotesPatchOutputAppendix({
+        earlyOutputAppendix = `${earlyOutputAppendix}\n\n${buildObservationNotesPatchOutputAppendix({
           initialFill: initialFill || needJudgement,
         })}`
       }
@@ -2430,6 +2734,31 @@ export async function requestWeChatPeerReplyBubbles(params: {
       /* ignore */
     }
   }
+  if (
+    !params.friendRequestAdjudication &&
+    !isLumi &&
+    params.promptMode === 'persona' &&
+    params.character?.scheduleCalendarAutoUpdateEnabled === true
+  ) {
+    try {
+      const calAnchor = resolveCalendarAnchor({
+        currentTimeMs: params.currentTimeMs,
+        currentTimeIsStory: params.currentTimeIsStory,
+        storyNowLabel: params.storyNowLabel,
+        storyDay: params.storyDay,
+        storyTime: params.storyTime,
+      })
+      const hint = formatExistingCalendarEventsHint(
+        params.character.scheduleCalendarEvents ?? [],
+      )
+      earlyOutputAppendix = `${earlyOutputAppendix}\n\n${buildScheduleCalendarPatchOutputAppendix({
+        anchorLabel: calAnchor.label,
+        existingEventsHint: hint || null,
+      })}`
+    } catch {
+      /* ignore */
+    }
+  }
   const base = await materializeSystemContent({
     character: params.character,
     playerIdentity: params.playerIdentity,
@@ -2453,6 +2782,8 @@ export async function requestWeChatPeerReplyBubbles(params: {
     recentMeetAiRoundsNotes: params.recentMeetAiRoundsNotes,
     replyBias: params.replyBias,
     currentTimeMs: params.currentTimeMs,
+    currentTimeIsStory: params.currentTimeIsStory,
+    storyNowLabel: params.storyNowLabel,
     timePerceptionEnabled: params.timePerceptionEnabled,
     chatMemberIds: wbMemberIds,
     globalWechatPlate: params.globalWechatPlate,
@@ -2496,6 +2827,17 @@ export async function requestWeChatPeerReplyBubbles(params: {
       role: 'user',
       content: params.proactiveInitiationNudge?.trim() || PROACTIVE_INITIATION_USER_NUDGE,
     })
+  }
+  // 文末再钉本轮格式锁：压过历史里旧 [译] / 对照译仿写（与 earlyOutput 首部呼应）
+  if (turnFormatLock.trim()) {
+    messages.push({
+      role: 'user',
+      content: `${turnFormatLock}\n请只按本轮格式锁与 system 输出协议回复；勿仿写上文旧译格式。`,
+    })
+  }
+  const longUserPin = buildLatestUserLongMessagePin(params.transcript)
+  if (longUserPin) {
+    messages.push({ role: 'user', content: longUserPin })
   }
   // 继续回复等：历史以角色回合结尾时补 user，避免 Gemini 400
   ensureChatMessagesDoNotEndWithAssistantTurn(
@@ -2541,6 +2883,8 @@ export async function requestWeChatPeerReplyBubbles(params: {
     observationNotesJudged: parsed.observationNotesJudged,
     lifeLedgerPatches: parsed.lifeLedgerPatches,
     lifeLedgerJudged: parsed.lifeLedgerJudged,
+    scheduleCalendarOps: parsed.scheduleCalendarOps,
+    scheduleCalendarJudged: parsed.scheduleCalendarJudged,
     forwardHistory: parsed.forwardHistory,
     rawText: text,
     mutualFriendChain: parsed.mutualFriendChain,
@@ -2836,12 +3180,22 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   translationDedicatedApi?: boolean
   innerOsSyncEnabled?: boolean
   heartWhisperSyncEnabled?: boolean
+  onlineActionNarrationEnabled?: boolean
+  onlineActionNarrationCountMin?: number
+  onlineActionNarrationCountMax?: number
+  replyBubbleCountEnabled?: boolean
+  replyBubbleCountMin?: number
+  replyBubbleCountMax?: number
   includeForwardHistoryCard?: boolean
   includePulseDmScreenshot?: boolean
   includeProfileImageChange?: boolean
   includeInternetMemeLexicon?: boolean
   includeMimicUserSpeakingStyle?: boolean
   currentTimeMs?: number
+  /** currentTimeMs 已是剧情/自定义微信时钟（非墙钟兜底） */
+  currentTimeIsStory?: boolean
+  /** 剧情「现在」标签（优先于墙钟匹配星期与日程） */
+  storyNowLabel?: string | null
   timePerceptionEnabled?: boolean
   danmakuConfig?: WeChatDanmakuInlineConfig
   groupChatTranscript?: boolean
@@ -2933,6 +3287,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
     recentMeetAiRoundsNotes: params.recentMeetAiRoundsNotes,
     replyBias: params.replyBias,
     currentTimeMs: params.currentTimeMs,
+    currentTimeIsStory: params.currentTimeIsStory,
+    storyNowLabel: params.storyNowLabel,
     timePerceptionEnabled: params.timePerceptionEnabled,
     chatMemberIds: wbMemberIds,
     globalWechatPlate: params.globalWechatPlate,
@@ -3010,6 +3366,13 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   const recallGuide = isLumi
     ? `【撤回】仅在明显误发时可极少使用输出协议中的撤回格式；禁止用于恋爱拉扯或虚构剧情。`
     : WECHAT_CHARACTER_RECALL_GUIDE
+  const turnFormatLockVision = buildWechatTurnFormatLockAppendix({
+    replyOutputLanguage: params.replyOutputLanguage,
+    replyVoiceLanguage: params.replyVoiceLanguage,
+    translationSyncEnabled: params.translationSyncEnabled === true,
+    translationLanguage: params.translationLanguage,
+    translationDedicatedApi: params.translationDedicatedApi === true,
+  })
   const outputAppendix = isLumi
     ? WECHAT_LUMI_ASSISTANT_OUTPUT_APPENDIX
     : buildPersonaPrivateChatSelfServiceAppendix({
@@ -3027,6 +3390,12 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
         translationDedicatedApi: params.translationDedicatedApi === true,
         innerOsSyncEnabled: params.innerOsSyncEnabled === true,
         heartWhisperSyncEnabled: params.heartWhisperSyncEnabled === true,
+        onlineActionNarrationEnabled: params.onlineActionNarrationEnabled === true,
+        onlineActionNarrationCountMin: params.onlineActionNarrationCountMin,
+        onlineActionNarrationCountMax: params.onlineActionNarrationCountMax,
+        replyBubbleCountEnabled: params.replyBubbleCountEnabled === true,
+        replyBubbleCountMin: params.replyBubbleCountMin,
+        replyBubbleCountMax: params.replyBubbleCountMax,
         includeForwardHistoryCard: params.includeForwardHistoryCard === true,
         includePulseDmScreenshot: params.includePulseDmScreenshot === true,
         includeProfileImageChange: params.includeProfileImageChange === true,
@@ -3035,13 +3404,16 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
         voiceSynthToneTokensEnabled: params.voiceSynthToneTokensEnabled === true,
         voiceSynthEmotionEnabled: params.voiceSynthEmotionEnabled === true,
       })
+  const visionOutputAppendix = turnFormatLockVision
+    ? `${turnFormatLockVision}\n\n${outputAppendix}`
+    : outputAppendix
   const imageAppendixTitle = params.userImageIsScreenShare ? '【一起刷·屏幕画面附加要求】' : '【图片消息附加要求】'
   // 与纯文字链路一致：头像/记忆配图须先转成 data URL，否则站内相对路径会拖垮整次识图请求
   const visionPolicy = resolveApiVisionInput(cfg)
   if (!visionPolicy.enabled) {
     logConsole('ai', `[识图] 已跳过用户发图识图 · ${visionPolicy.reason}`)
     const historySkip = transcriptToMessages(params.transcript, { groupChat: params.groupChatTranscript })
-    const skipSystem = `${busyPrefix ? `${busyPrefix.trim()}\n\n---\n\n` : ''}${base}\n\n${recallGuide}\n\n---\n${imageAppendixTitle}\n${imgRules}\n\n${outputAppendix}${
+    const skipSystem = `${busyPrefix ? `${busyPrefix.trim()}\n\n---\n\n` : ''}${base}\n\n${recallGuide}\n\n---\n${imageAppendixTitle}\n${imgRules}\n\n${visionOutputAppendix}${
       params.userImageIsScreenShare
         ? ''
         : `${mediaFreqBlock ? `\n\n---\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n---\n\n${danmakuInstruction}` : ''}\n\n---\n\n${stickerBlock}${imageGenBlock ? `\n\n---\n\n${imageGenBlock}` : ''}`
@@ -3051,6 +3423,14 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       ...historySkip,
       ...(params.perRoundMemoryAppendix?.trim()
         ? [{ role: 'user' as const, content: params.perRoundMemoryAppendix.trim() }]
+        : []),
+      ...(turnFormatLockVision.trim()
+        ? [
+            {
+              role: 'user' as const,
+              content: `${turnFormatLockVision}\n请只按本轮格式锁与 system 输出协议回复；勿仿写上文旧译格式。`,
+            },
+          ]
         : []),
       {
         role: 'user',
@@ -3081,6 +3461,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       observationNotesJudged: pSkip.observationNotesJudged,
       lifeLedgerPatches: pSkip.lifeLedgerPatches,
       lifeLedgerJudged: pSkip.lifeLedgerJudged,
+      scheduleCalendarOps: pSkip.scheduleCalendarOps,
+      scheduleCalendarJudged: pSkip.scheduleCalendarJudged,
       forwardHistory: pSkip.forwardHistory,
       mutualFriendChain: pSkip.mutualFriendChain,
       heartWhisper: pSkip.heartWhisper,
@@ -3104,13 +3486,14 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
   const userChatAvatarAppendix = playerWechatAvatarUrl
     ? `\n\n---\n${WECHAT_USER_CHAT_AVATAR_APPENDIX}\n`
     : ''
-  const system = `${busyPrefix ? `${busyPrefix.trim()}\n\n---\n\n` : ''}${base}${userChatAvatarAppendix}${memoryImagesAppendix}\n\n---\n\n${recallGuide}\n\n---\n${imageAppendixTitle}\n${imgRules}\n\n${outputAppendix}${
+  const system = `${busyPrefix ? `${busyPrefix.trim()}\n\n---\n\n` : ''}${base}${userChatAvatarAppendix}${memoryImagesAppendix}\n\n---\n\n${recallGuide}\n\n---\n${imageAppendixTitle}\n${imgRules}\n\n${visionOutputAppendix}${
     params.userImageIsScreenShare
       ? ''
       : `${mediaFreqBlock ? `\n\n---\n\n${mediaFreqBlock}` : ''}${danmakuInstruction ? `\n\n---\n\n${danmakuInstruction}` : ''}\n\n---\n\n${stickerBlock}${imageGenBlock ? `\n\n---\n\n${imageGenBlock}` : ''}`
   }`
 
   const history = transcriptToMessages(params.transcript, { groupChat: params.groupChatTranscript })
+  const longUserPinVision = buildLatestUserLongMessagePin(params.transcript)
 
   // vision user message: text + dataURL image
   const dataUrl = `data:${params.imageMime};base64,${params.imageBase64}`
@@ -3135,6 +3518,17 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
     ...history,
     ...(params.perRoundMemoryAppendix?.trim()
       ? [{ role: 'user', content: params.perRoundMemoryAppendix.trim() }]
+      : []),
+    ...(turnFormatLockVision.trim()
+      ? [
+          {
+            role: 'user' as const,
+            content: `${turnFormatLockVision}\n请只按本轮格式锁与 system 输出协议回复；勿仿写上文旧译格式。`,
+          },
+        ]
+      : []),
+    ...(longUserPinVision
+      ? [{ role: 'user' as const, content: longUserPinVision }]
       : []),
     {
       role: 'user',
@@ -3186,6 +3580,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       observationNotesJudged: p0.observationNotesJudged,
       lifeLedgerPatches: p0.lifeLedgerPatches,
       lifeLedgerJudged: p0.lifeLedgerJudged,
+      scheduleCalendarOps: p0.scheduleCalendarOps,
+      scheduleCalendarJudged: p0.scheduleCalendarJudged,
       forwardHistory: p0.forwardHistory,
       mutualFriendChain: p0.mutualFriendChain,
       heartWhisper: p0.heartWhisper,
@@ -3219,6 +3615,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
         observationNotesJudged: p1.observationNotesJudged,
         lifeLedgerPatches: p1.lifeLedgerPatches,
         lifeLedgerJudged: p1.lifeLedgerJudged,
+        scheduleCalendarOps: p1.scheduleCalendarOps,
+        scheduleCalendarJudged: p1.scheduleCalendarJudged,
         forwardHistory: p1.forwardHistory,
         mutualFriendChain: p1.mutualFriendChain,
         heartWhisper: p1.heartWhisper,
@@ -3302,6 +3700,8 @@ export async function requestWeChatPeerReplyBubblesWithImage(params: {
       observationNotesJudged: p2.observationNotesJudged,
       lifeLedgerPatches: p2.lifeLedgerPatches,
       lifeLedgerJudged: p2.lifeLedgerJudged,
+      scheduleCalendarOps: p2.scheduleCalendarOps,
+      scheduleCalendarJudged: p2.scheduleCalendarJudged,
       forwardHistory: p2.forwardHistory,
       mutualFriendChain: p2.mutualFriendChain,
       heartWhisper: p2.heartWhisper,
@@ -3939,6 +4339,7 @@ const ONLINE_WECHAT_MEMORY_SUMMARY_SYSTEM = `
 要求：
 - **只输出三行结构**（见下方格式），禁止 JSON、禁止思维链、禁止英文分析。
 - **全文第三人称**；只总结材料中可直接核对的事实（谁说了什么、确认/约定了什么、结果怎样）。
+- 材料中的 \`【动描】\` / 旁白行：是角色手机侧线下动作/神态的客观描写，**应纳入总结作背景事实**（写清角色当时在做什么）；**不要**写成用户已被告知或双方共知，除非同段材料里有明确对白告知。
 - 禁止心理臆测、文学修辞、分析报告口吻；不要写「用户说」「对方说」等元话语。
 - 标题与关键词须从材料提炼，便于日后检索。
 ${ONLINE_WECHAT_MEMORY_PROSE_OUTPUT_RULE}
@@ -4229,6 +4630,7 @@ const UNIFIED_MEMORY_SUMMARY_SYSTEM = `
 - **只输出三行结构**（见下方格式），禁止 JSON。
 - **全文第三人称**；把线上与线下里**实际发生**的信息合成一条连贯备忘；玩家用 **{{user}}**，对方用 **{{char}}**；**禁止**「我」；线下主角用 {{archive_char}}，其他人设用 {{id:UUID}}（遵守【记忆正文·指称铁律】）。
 - 只总结本次材料中可直接核对的事实：谁说了什么、做了什么、约定了什么、场景与结果；禁止混入材料外的剧情。
+- 线上 \`【动描】\` / 旁白：属 {{char}} 侧线下动作事实，**应写入总结作背景**；**勿**写成 {{user}} 已知情，除非同段有明确对白告知。
 - 禁止写“我怎么想/我觉得/我感到”等主观心理；禁止推断角色未说出口的心理。
 - 若某一栏为「（无）」，不要编造该栏内容；另一栏有内容则正常总结。
 - 口语化、具体、可回忆；正文长度以 60～200 字为宜（信息很少时可更短）。
@@ -4478,6 +4880,7 @@ const UNIFIED_MEMORY_SUMMARY_SYSTEM_WITH_LINKED = `
 你是「长期记忆」提取助手。用户会提供三段正文材料：「线上聊天摘录」「线下约会剧情摘录」「人脉 NPC 线下关联摘录」，任一段可能为「（无）」。
 要求：
 - primary：把「线上」与「线下约会剧情摘录」里**实际发生**的信息合成一条连贯备忘，**全文第三人称**；玩家 **{{user}}**、对方 **{{char}}**；**禁止「我」**；须遵守【记忆正文·指称铁律】；若某一栏为「（无）」，勿编造该栏。
+- 线上 \`【动描】\` / 旁白：属 {{char}} 侧动作事实，**应纳入 primary 背景**；**勿**写成 {{user}} 已知，除非同段有明确对白告知。
 - 线上摘录若出现「转发【收藏】」：须把原发送者与人脉关系写进总结，**禁止**用角色 id 简码代替姓名占位符。
 - linked：综合「人脉子角色 / 已绑定主角 线下关联摘录」与「线下约会剧情摘录」；为 id 表中有可核对事实的角色各写一条（含已绑定主角，不仅 NPC）；**全文第三人称**；指称用 **{{user}}、{{archive_char}}、{{char}}、{{id:人设UUID}}**；摘录为「（无）」时若约会剧情正文仍有该 id 之事实，**仍须**写 linked（约会特则）。
 - 只总结材料中可直接核对的事实；禁止主观心理臆测；禁止材料外剧情。
@@ -4902,59 +5305,377 @@ export async function requestGroupChatMemorySummary(params: {
   }
 }
 
-const SCHEDULE_AI_TABLE_SYSTEM = `
-请根据用户的要求，生成一个结构化的日程表数据。
-输出格式必须是纯 JSON，不要任何多余文字。
-JSON 格式如下：
-{
-"headers": ["表头 1", "表头 2", "表头 3"],
-"rows": [
-["单元格 1 内容", "单元格 2 内容", "单元格 3 内容"],
-["单元格 4 内容", "单元格 5 内容", "单元格 6 内容"]
-]
-}
+const SCHEDULE_AI_OCCUPATION_LOCK = `
+【身份锚定｜硬性｜禁止模板填空】
+1. 作息必须严格依据「身份 / 简介 / 世界书 / 可变人生 / 近期锚点」推断职业与生活节奏；禁止套用「默认大学生课表」。
+2. 若材料**未明确**其为在校学生/学员/备考生，**禁止**编造：上课、自习、期中、期末、考试周、校园、图书馆复习、交作业、开题答辩等学业内容。
+3. 仅当身份或世界书明确写明在读/校园生活时，才可使用 #学业 与校园场所；否则优先工作/排练/通勤/社交/休憩/兴趣，贴合其职业与爱好。
+4. 用户补充要求可细化节奏，但**不得**在与人设冲突时强行写成学生身份；人设优先于补充要求中的校园幻想。
+5. 近期聊天/记忆里出现的约定、加班、演出、约会等，应优先落成日程；不得无视已有生活锚点去发明无关考试。
 `.trim()
 
-function parseScheduleTableJson(text: string): { headers: string[]; rows: string[][] } {
-  const stripFence = (s: string) =>
-    s
-      .trim()
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim()
+const SCHEDULE_AI_WEEK_SYSTEM = `
+你是角色生活日程编排助手。生成**一整周（周一至周日）**日常背景生活日程。
 
-  const t = stripFence(text)
-  const start = t.indexOf('{')
-  const end = t.lastIndexOf('}')
-  const raw = start >= 0 && end > start ? t.slice(start, end + 1) : t
-  const j = JSON.parse(raw) as { headers?: unknown; rows?: unknown }
-  const headers = Array.isArray(j.headers)
-    ? j.headers.map((x) => String(x ?? '').trim()).filter(Boolean)
-    : []
-  const rows = Array.isArray(j.rows)
-    ? j.rows
-        .filter((r): r is unknown[] => Array.isArray(r))
-        .map((r) => r.map((x) => String(x ?? '')))
-    : []
-  if (!headers.length) throw new Error('AI 未返回 headers')
-  if (!rows.length) throw new Error('AI 未返回 rows')
-  return { headers: headers.slice(0, 24), rows: rows.slice(0, 120) }
+【输出铁则｜必须遵守】
+1. 只输出纯文本日程行，禁止 JSON、禁止代码块、禁止 Markdown 表格、禁止解释说明。
+2. 每行一条日程，格式固定为：
+周一 08:30-09:00 活动名称 #标签 @地点 ~30分钟
+3. 星期必须写「周一…周日」；时间用 24 小时制 HH:mm-HH:mm。
+4. #标签、@地点、~时长 均可省略；有则紧跟活动名之后，顺序建议：活动 #标签 @地点 ~时长。
+5. 时长写法示例：~30分钟 / ~2小时 / ~1.5小时 / ~2h / ~1天；没有时长就不要写 ~。#标签、@地点、~时长必须写在活动名**之后**，且各自独立，禁止把 @地点 ~时长 粘进活动名正文。
+6. 标签用短词（工作/社交/休憩/排练等；#学业仅限在校生人设），禁止「剧情」。
+7. 一次输出整周多条（尽量每天都有若干条，可有空闲日）；不要只写单日或单条。
+8. 日程须符合人设与世界书；若有「用户补充要求」，在不违背人设前提下优先满足。
+
+${SCHEDULE_AI_OCCUPATION_LOCK}
+
+【示例｜按人设选用，勿默认校园】
+周一 08:30-09:00 晨间慢跑 #休憩 @小区北门跑道 ~30分钟
+周一 10:00-12:00 排练厅排舞 #工作 @星河演艺中心B2 ~2小时
+周三 09:30-18:00 门店排班 #工作 @市中心咖啡店 ~8小时
+（仅当人设为在校生时才可写）周二 14:00-16:00 图书馆自习 #学业 @校图书馆三楼
+`.trim()
+
+/**
+ * 日程 AI 注入上下文：人设卡 + 世界书 + 可变人生 + 记忆/近聊锚点。
+ * 避免只靠短简介时模型套用「大学生课表」模板。
+ */
+export async function resolveScheduleAiPersonaContext(params: {
+  characterId?: string | null
+  /** 已有薄摘要时作兜底 */
+  personaContext?: string | null
+}): Promise<string> {
+  const fallback = String(params.personaContext ?? '').trim()
+  const cid = String(params.characterId ?? '').trim()
+  if (!cid) return fallback
+
+  let character: Character | null = null
+  try {
+    character = (await personaDb.getCharacter(cid)) as Character | null
+    if (!character) {
+      character = (await personaDb.getPlayerIdentity(cid)) as Character | null
+    }
+  } catch {
+    character = null
+  }
+  if (!character) return fallback
+
+  const parts: string[] = []
+  try {
+    const life = await loadPairLifePromptContext({ character, playerIdentity: null })
+    const card = buildCharacterCard(character, {
+      bioMaxChars: 900,
+      lifeOverlay: life.characterOverlay,
+    })
+    if (card.trim()) parts.push(`【基础信息】\n${card.trim()}`)
+    if (life.characterBlock.trim()) {
+      parts.push(life.characterBlock.trim())
+    }
+  } catch {
+    const card = buildCharacterCard(character, { bioMaxChars: 900 })
+    if (card.trim()) parts.push(`【基础信息】\n${card.trim()}`)
+  }
+
+  try {
+    const wb = buildWorldBookText(character, 2800).trim()
+    if (wb) parts.push(`【世界书｜生活与身份事实】\n${wb}`)
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const mem = (await personaDb.formatCharacterMemoriesForPrompt(cid)).trim()
+    if (mem) {
+      parts.push(`【长期记忆摘录｜作息/约定锚点】\n${mem.slice(0, 1600)}`)
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const recent = await personaDb.listWeChatChatMessagesRecentByCharacter({
+      characterId: cid,
+      limit: 40,
+    })
+    const anchors = recent
+      .slice(-28)
+      .map((m) => {
+        const text = String(m.content || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+        if (!text) return null
+        // 跳过系统灰条 / 动描等噪声
+        if (text.startsWith('【系统】') || text.startsWith('【动描】')) return null
+        const dir = m.type === 'character' ? '[角色]' : '[用户]'
+        return `${dir} ${text.slice(0, 72)}`
+      })
+      .filter((x): x is string => !!x)
+    if (anchors.length) {
+      parts.push(
+        `【近期私聊锚点｜优先兑现其中的约定/加班/活动】\n${anchors.join('\n')}`,
+      )
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const rich = parts.join('\n\n').trim()
+  if (rich) return rich.slice(0, 9000)
+  return fallback
 }
 
+function buildScheduleWeekAiUserMessage(params: {
+  userRequirement?: string | null
+  personaContext?: string | null
+}): string {
+  const persona = String(params.personaContext ?? '').trim()
+  const req = String(params.userRequirement ?? '').trim()
+  const parts: string[] = []
+  if (persona) {
+    parts.push(`【人设与上下文｜最高事实依据】\n${persona.slice(0, 9000)}`)
+  }
+  if (req) {
+    parts.push(
+      `【用户补充要求｜在不违背人设身份前提下优先】\n${req.slice(0, 2000)}\n` +
+        `请按人设职业与生活节奏编排整周日程；禁止在非学生人设上编造校园考试/自习。`,
+    )
+  } else if (persona) {
+    parts.push(
+      `【生成指令】用户未另写要求：严格根据上方人设/世界书/记忆与近聊，推断其真实合理的一周日常；禁止默认大学生课表。`,
+    )
+  } else {
+    parts.push(`【生成指令】请生成一份普通人一周日常（上班/家务/兴趣均可；勿默认校园考试）。`)
+  }
+  parts.push(
+    `【硬约束】只输出日程纯文本行（周一…周日 HH:mm-HH:mm 活动 #标签 @地点 ~时长）；不要 JSON；不要只写单日或单条；身份未写在校则禁止学业向条目。`,
+  )
+  return parts.join('\n\n')
+}
+
+/** @deprecated 旧表格 JSON；请用 requestScheduleWeekEntriesFromAi */
 export async function requestScheduleTableFromAi(params: {
   apiConfig: ApiConfig | null
-  userRequirement: string
+  userRequirement?: string | null
+  personaContext?: string | null
 }): Promise<{ headers: string[]; rows: string[][] }> {
+  const entries = await requestScheduleWeekEntriesFromAi(params)
+  const { scheduleEntriesToDailyTable } = await import('./schedule/scheduleEntries')
+  const table = scheduleEntriesToDailyTable(entries, null)
+  return {
+    headers: table.headers,
+    rows: table.rows.map((r) => r.map((c) => String(c.content ?? ''))),
+  }
+}
+
+/** AI 全局生成一整周日程条目（纯文本行，非 JSON） */
+export async function requestScheduleWeekEntriesFromAi(params: {
+  apiConfig: ApiConfig | null
+  /** 可留白：留白则主要依据人设生成 */
+  userRequirement?: string | null
+  /** 人设卡片摘要；有则注入（建议同时传 characterId 以加载世界书/近聊） */
+  personaContext?: string | null
+  /** 角色或玩家身份 id：用于注入世界书、可变人生、记忆与近聊 */
+  characterId?: string | null
+}): Promise<ScheduleEntry[]> {
   const cfg = params.apiConfig
   if (!cfg?.apiUrl?.trim() || !cfg.apiKey?.trim() || !cfg.modelId?.trim()) {
     throw new Error('未配置 AI API')
   }
+  const persona = (
+    await resolveScheduleAiPersonaContext({
+      characterId: params.characterId,
+      personaContext: params.personaContext,
+    })
+  ).trim()
+  const req = String(params.userRequirement ?? '').trim()
+  if (!persona && !req) {
+    throw new Error('无人设内容且未填写要求，无法生成')
+  }
+  const { parseScheduleWeekPlainText } = await import('./schedule/scheduleEntries')
+  const userContent = buildScheduleWeekAiUserMessage({
+    userRequirement: req || null,
+    personaContext: persona || null,
+  })
   const messages: OpenAiCompatibleMessage[] = [
-    { role: 'system', content: SCHEDULE_AI_TABLE_SYSTEM },
-    { role: 'user', content: params.userRequirement.trim() },
+    { role: 'system', content: SCHEDULE_AI_WEEK_SYSTEM },
+    { role: 'user', content: userContent },
   ]
-  const text = await openAiCompatibleChat(cfg, messages, { temperature: 0.4, max_tokens: 1400 })
-  return parseScheduleTableJson(text)
+  let text = await openAiCompatibleChat(cfg, messages, { temperature: 0.45, max_tokens: 3200 })
+  let entries = parseScheduleWeekPlainText(text)
+  if (!entries.length) {
+    // 二次纠偏：模型常夹解释/JSON，再要一轮纯文本行
+    const retryMessages: OpenAiCompatibleMessage[] = [
+      ...messages,
+      { role: 'assistant', content: text.slice(0, 3500) },
+      {
+        role: 'user',
+        content:
+          '上一轮未能解析。请**只**重新输出纯文本日程行，禁止 JSON/代码块/解释。每行格式：\n' +
+          '周一 08:30-09:00 活动名称 #标签 @地点 ~30分钟\n' +
+          '须覆盖周一至周日；结束时刻可省略。',
+      },
+    ]
+    text = await openAiCompatibleChat(cfg, retryMessages, { temperature: 0.2, max_tokens: 3200 })
+    entries = parseScheduleWeekPlainText(text)
+  }
+  if (!entries.length) {
+    const snip = text.replace(/\s+/g, ' ').trim().slice(0, 120)
+    throw new Error(
+      snip
+        ? `未能解析出有效日程行（需纯文本如「周一 08:30-09:00 活动」）。原文片段：${snip}`
+        : '未能解析出有效日程行，请重试',
+    )
+  }
+  return entries
+}
+
+const SCHEDULE_AI_CALENDAR_SYSTEM = `
+你是角色「重要事件行程」编排助手。生成**日历形式**的一次性/阶段性安排（非每周循环作息）。
+
+【输出铁则｜必须遵守】
+1. 只输出纯文本日程行，禁止 JSON、禁止代码块、禁止 Markdown 表格、禁止解释说明。
+2. 每行一条，格式固定为：
+2026年10月22日 19:00-20:30 活动名称 #标签 @地点 ~90分钟
+3. 日期必须写公历「YYYY年M月D日」；也可用 今天/明天/后天（系统会按锚点换算，优先写绝对公历日）。
+4. 时间用 24 小时制；结束时刻可省略：2026年10月22日 19:00 活动名
+5. #标签、@地点、~时长 均可省略。
+6. 只写「重要事件」：约会、演出、出差、聚会、截止日、工作约定等；考试/答辩仅限人设确为在校生；不要铺日常刷牙上班流水账。
+7. 输出条数必须严格等于用户指定的「重要事件数量」。
+8. 所有事项日期必须落在用户指定的时间跨度内（从锚点日起算）。
+9. 日程须符合人设与世界书；若有「用户补充要求」，在不违背人设前提下优先满足。
+
+${SCHEDULE_AI_OCCUPATION_LOCK}
+
+【示例｜按人设选用，勿默认校园】
+2026年10月22日 19:00-21:00 和朋友吃火锅 #社交 @老街火锅店 ~2小时
+明天 10:00-12:00 拍摄宣传片 #工作 @摄影棚A
+2026年10月28日 09:00-18:00 客户提案日 #工作 @客户公司会议室 ~1天
+（仅当人设为在校生时才可写）2026年10月25日 14:00-17:00 期末复习突击 #学业 @图书馆三楼 ~3小时
+`.trim()
+
+function buildScheduleCalendarAiUserMessage(params: {
+  userRequirement?: string | null
+  personaContext?: string | null
+  anchorLabel: string
+  spanDays: number
+  eventCount: number
+  spanEndDay: string
+}): string {
+  const persona = String(params.personaContext ?? '').trim()
+  const req = String(params.userRequirement ?? '').trim()
+  const parts: string[] = []
+  parts.push(
+    `【时间锚点】${params.anchorLabel}\n` +
+      `【生成跨度】从锚点日起共 ${params.spanDays} 天（含锚点日；末日约 ${params.spanEndDay}）\n` +
+      `【重要事件数量】必须正好输出 ${params.eventCount} 条（不多不少）`,
+  )
+  if (persona) {
+    parts.push(`【人设与上下文｜最高事实依据】\n${persona.slice(0, 9000)}`)
+  }
+  if (req) {
+    parts.push(
+      `【用户补充要求｜在不违背人设身份前提下优先】\n${req.slice(0, 2000)}\n` +
+        `请在吻合人设与跨度/条数硬约束的前提下编排；禁止在非学生人设上编造期中/期末/考试。`,
+    )
+  } else if (persona) {
+    parts.push(
+      `【生成指令】用户未另写要求：根据人设/世界书/近聊，在跨度内推断 ${params.eventCount} 条合理重要事件；禁止默认校园考试周。`,
+    )
+  } else {
+    parts.push(
+      `【生成指令】请在跨度内生成 ${params.eventCount} 条普通人重要事件（约会/出差/聚会等；勿默认考试）。`,
+    )
+  }
+  parts.push(
+    `【硬约束】只输出纯文本行（公历日 HH:mm[-HH:mm] 活动 #标签 @地点 ~时长）；禁止 JSON；条数=${params.eventCount}；日期须在跨度内；身份未写在校则禁止学业向条目。`,
+  )
+  return parts.join('\n\n')
+}
+
+/** AI 生成日历重要事件（纯文本行，非 JSON） */
+export async function requestScheduleCalendarEventsFromAi(params: {
+  apiConfig: ApiConfig | null
+  userRequirement?: string | null
+  personaContext?: string | null
+  characterId?: string | null
+  /** 锚点标签，如「2026年10月21日 15:00」 */
+  anchorLabel?: string | null
+  /** 锚点公历日 */
+  anchorStoryDay?: string | null
+  /** 生成跨度（天），含锚点日 */
+  spanDays: number
+  /** 重要事件条数（实际生成数量） */
+  eventCount: number
+}): Promise<ScheduleCalendarEvent[]> {
+  const cfg = params.apiConfig
+  if (!cfg?.apiUrl?.trim() || !cfg.apiKey?.trim() || !cfg.modelId?.trim()) {
+    throw new Error('未配置 AI API')
+  }
+  const persona = (
+    await resolveScheduleAiPersonaContext({
+      characterId: params.characterId,
+      personaContext: params.personaContext,
+    })
+  ).trim()
+  const req = String(params.userRequirement ?? '').trim()
+  if (!persona && !req) {
+    throw new Error('无人设内容且未填写要求，无法生成')
+  }
+  const spanDays = Math.max(1, Math.min(90, Math.round(params.spanDays) || 7))
+  const eventCount = Math.max(1, Math.min(40, Math.round(params.eventCount) || 5))
+  const { formatGregorianStoryDay, shiftGregorianStoryDay, parseScheduleCalendarPlainText } =
+    await import('./schedule/scheduleEntries')
+  const anchorDay =
+    String(params.anchorStoryDay ?? '').trim() || formatGregorianStoryDay(new Date())
+  const anchorLabel = String(params.anchorLabel ?? '').trim() || anchorDay
+  const spanEndDay = shiftGregorianStoryDay(anchorDay, spanDays - 1)
+
+  const userContent = buildScheduleCalendarAiUserMessage({
+    userRequirement: req || null,
+    personaContext: persona || null,
+    anchorLabel,
+    spanDays,
+    eventCount,
+    spanEndDay,
+  })
+  const messages: OpenAiCompatibleMessage[] = [
+    { role: 'system', content: SCHEDULE_AI_CALENDAR_SYSTEM },
+    { role: 'user', content: userContent },
+  ]
+  const maxTokens = Math.min(4000, 400 + eventCount * 80)
+  let text = await openAiCompatibleChat(cfg, messages, {
+    temperature: 0.5,
+    max_tokens: maxTokens,
+  })
+  let events = parseScheduleCalendarPlainText(text, anchorDay)
+  if (!events.length) {
+    const retryMessages: OpenAiCompatibleMessage[] = [
+      ...messages,
+      { role: 'assistant', content: text.slice(0, 3500) },
+      {
+        role: 'user',
+        content:
+          `上一轮未能解析。请**只**重新输出正好 ${eventCount} 条纯文本行，禁止 JSON/代码块/解释。每行格式：\n` +
+          `2026年10月22日 19:00-20:30 活动名称 #标签 @地点 ~90分钟\n` +
+          `日期须在 ${anchorDay} 起 ${spanDays} 天内；结束时刻可省略。`,
+      },
+    ]
+    text = await openAiCompatibleChat(cfg, retryMessages, {
+      temperature: 0.2,
+      max_tokens: maxTokens,
+    })
+    events = parseScheduleCalendarPlainText(text, anchorDay)
+  }
+  if (!events.length) {
+    const snip = text.replace(/\s+/g, ' ').trim().slice(0, 120)
+    throw new Error(
+      snip
+        ? `未能解析出有效日历事项（需纯文本如「2026年10月22日 19:00 活动」）。原文片段：${snip}`
+        : '未能解析出有效日历事项，请重试',
+    )
+  }
+  return events.slice(0, eventCount)
 }
 
 /** 综艺弹幕：先锁输出形态，再写风格，便于模型遵守行数与零废话。 */
@@ -5310,6 +6031,7 @@ export type WeChatGroupMultiSpeakerMemberPrompt = {
   unsummarizedPrivateNotes?: string
   /** 该成员人设编辑页日程表（仅本角色 SPEAKER 台词可作依据） */
   schedule?: ScheduleTable | null
+  scheduleEntries?: ScheduleEntry[] | null
 }
 
 export type WeChatGroupMultiSpeakerSegment = { characterId: string; text: string }
@@ -5353,6 +6075,9 @@ export function buildWeChatGroupMultiSpeakerSystem(params: {
   chatMemberIds?: string[]
   /** 当前会话玩家身份日程表 */
   playerSchedule?: ScheduleTable | null
+  playerScheduleEntries?: ScheduleEntry[] | null
+  /** 剧情「现在」标签（优先于墙钟匹配星期与日程） */
+  storyNowLabel?: string | null
   /** 是否注入后台思维链 CoT 附录（默认关） */
   includeThinkingChain?: boolean
   /** 本会话角色文字气泡输出语言 */
@@ -5390,13 +6115,27 @@ export function buildWeChatGroupMultiSpeakerSystem(params: {
       const relRom = (m.relationshipRomanceProfile || '').trim().slice(0, 4200)
       const digest = (m.privateChatDigest || '').trim().slice(0, 4500)
       const unsPrivM = (m.unsummarizedPrivateNotes || '').trim().slice(0, 2200)
-      const sched = m.schedule ? safeScheduleJson(m.schedule) : ''
+      const sched =
+        m.schedule || (m.scheduleEntries && m.scheduleEntries.length)
+          ? formatScheduleNowPromptBlock({
+              roleLabel: '角色',
+              entries: resolveCharacterScheduleEntries({
+                schedule: m.schedule ?? undefined,
+                scheduleEntries: m.scheduleEntries,
+              }),
+              clock: resolveScheduleClock({
+                currentTimeMs: params.currentTimeMs,
+                currentTimeIsStory: true,
+                storyNowLabel: params.storyNowLabel,
+              }),
+            })
+          : ''
       return (
         `### 成员「${(m.groupNickname || '').trim() || m.charId}」角色ID=\`${m.charId}\`\n` +
         `${(m.characterCard || '').trim()}\n` +
         (wbg ? `【世界背景摘录】\n${wbg}\n` : '') +
         (wb ? `【世界书摘录】\n${wb}\n` : '') +
-        (sched ? `【日程安排】\n${sched}\n` : '') +
+        (sched ? `${sched}\n` : '') +
         (mem ? `【长期记忆摘录】\n${mem}\n` : '') +
         (relRom
           ? `【与用户的关系与好感站位（程序摘录｜仅供本角色校准群内吃醋、阴阳与亲密度）】\n${relRom}\n`
@@ -5427,9 +6166,22 @@ export function buildWeChatGroupMultiSpeakerSystem(params: {
     ? `\n\n---\n【线下剧情摘录（多成员合并；与会话相关者自辨）】\n${params.offlinePlotsCombined.trim().slice(0, 12000)}\n`
     : ''
   const bias = params.replyBias?.trim() ? `\n\n---\n【本轮回复偏向】\n${params.replyBias.trim()}\n` : ''
-  const playerScheduleBlock = params.playerSchedule
-    ? `\n\n---\n【用户的日程安排】\n${safeScheduleJson(params.playerSchedule)}\n`
-    : ''
+  const playerScheduleEntriesResolved = resolveCharacterScheduleEntries({
+    schedule: params.playerSchedule ?? undefined,
+    scheduleEntries: params.playerScheduleEntries,
+  })
+  const playerScheduleBlock =
+    params.playerSchedule || playerScheduleEntriesResolved.length
+      ? `\n\n---\n${formatScheduleNowPromptBlock({
+          roleLabel: '用户',
+          entries: playerScheduleEntriesResolved,
+          clock: resolveScheduleClock({
+            currentTimeMs: params.currentTimeMs,
+            currentTimeIsStory: true,
+            storyNowLabel: params.storyNowLabel,
+          }),
+        })}\n`
+      : ''
   const time = resolveTimePromptSection({
     timePerceptionEnabled: params.timePerceptionEnabled,
     currentTimeMs: params.currentTimeMs,
@@ -5572,7 +6324,8 @@ export function parseWeChatGroupMultiSpeakerModelText(
     judged: worldBookEpilogueJudged,
   } = extractWorldBookAfterPatchBlock(afterHeartWhisper)
   const { visible, danmakuLines } = extractDanmakuBlock(afterWbPatch)
-  const normalized = visible.replace(/\\n/g, '\n').trim()
+  const afterPresetRegex = applyActiveCotRegexForScene(visible, 'online')
+  const normalized = afterPresetRegex.replace(/\\n/g, '\n').trim()
   if (!normalized) {
     return {
       orderedItems: [],

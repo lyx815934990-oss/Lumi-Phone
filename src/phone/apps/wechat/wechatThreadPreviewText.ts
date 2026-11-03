@@ -48,8 +48,10 @@ type NotifyPreviewMessage = {
   locationShare?: unknown | null
   takeoutOrder?: unknown | null
   pulseShare?: unknown | null
+  forumShare?: unknown | null
   sharedRecord?: unknown | null
   chatHistory?: unknown | null
+  ext?: { actionNarration?: boolean } | null
 }
 
 /** 微信「信息」会话列表末条预览（与通知摘要规则一致） */
@@ -77,6 +79,7 @@ export function formatWeChatNotifyPreviewFromStoredMessage(msg: NotifyPreviewMes
   if (msg.locationShare) return '[位置]'
   if (msg.takeoutOrder) return '[外卖]'
   if (msg.pulseShare) return '[微博]'
+  if (msg.forumShare) return '[同人]'
   if (msg.sharedRecord) return '[收藏]'
   if (msg.chatHistory) return '[聊天记录]'
   if (msg.musicSync) return '[音乐]'
@@ -84,5 +87,11 @@ export function formatWeChatNotifyPreviewFromStoredMessage(msg: NotifyPreviewMes
   if (isWeChatStickerPreviewContent(msg.content)) return '[动画表情]'
   if (msg.imageGenPending) return '[图片]'
   if (msg.images?.length) return '[图片]'
+  if (msg.ext?.actionNarration === true) {
+    const body = stripGroupEventNoticePrefixLocal(String(msg.content ?? '').trim())
+      .replace(/^【动描】\s*/u, '')
+      .trim()
+    return body ? `〔旁白〕${body}` : '〔旁白〕'
+  }
   return formatWeChatMessagesTabPreviewFromStoredMessageContent(msg.content)
 }

@@ -78,6 +78,26 @@ function clip(s: string, cap: number): string {
   return t.length <= cap ? t : `${t.slice(0, cap)}\n…（已截断）`
 }
 
+/** 用户在对齐弹窗填写的额外要求（截断后注入提示词） */
+function formatUserAlignNotesBlock(raw: string | undefined | null): string {
+  const t = clip(String(raw ?? '').trim(), 1200)
+  if (!t) return ''
+  return `【用户额外对齐要求（硬 · 优先落实）】
+${t}
+→ 在不违反近端「现在」事实与共同好友一致性的前提下，须尽量落实上述要求（如：人设未写明也可合理补全；删掉的条目按证据补回等）。`
+}
+
+/** 用户手删/清空后的补缺硬规则（两处提示词共用） */
+const ALIGN_REFILL_AFTER_EDIT_RULE = `3b. **用户编辑后的缺口须补回（硬）**：当前账本是用户编辑后的基线。用户删掉的家人/社交圈/住所/车产/宠物条目，或清空的字段，视为「待补缺口」，**不是**「刻意永久不要」。
+- 世界书 / 身份卡 / 近端证据里已有、但当前账本缺失的具名对象或事实 → **必须补回/补齐**（写入完整条目，勿只写 status：无变化）。
+- 人设未写细的空白（如家庭几乎没写）仍须按规则合理补全；若用户额外要求里写了「可补充人设未提内容」，更应主动补合理条目。
+- **禁止**因「列表还剩几条」就把已删对象当成终态；**禁止**看见删空字段就输出无变化。`
+
+function buildAlignUserNotesSection(userAlignNotes?: string | null): string {
+  const block = formatUserAlignNotesBlock(userAlignNotes)
+  return block ? `\n${block}\n` : ''
+}
+
 function stripLeadingBracketTitle(raw: string): string {
   return String(raw ?? '')
     .trim()
@@ -131,7 +151,9 @@ function sheetNeedsBlankFill(sheet: LifeMutableSheet): boolean {
     !sheet.realEstates.length ||
     !sheet.family.length ||
     !sheet.socialCircle.length ||
-    sheet.vehicles.every((v) => !v.model.trim())
+    sheet.vehicles.every((v) => !v.model.trim()) ||
+    !String(sheet.occupationMain ?? '').trim() ||
+    !String(sheet.relationshipStatus ?? '').trim()
   )
 }
 
@@ -184,12 +206,14 @@ function applyAlignFromAiObject(params: {
   boundPlayer: PlayerIdentity | null | undefined
   towardUserText: string
   nearEndText: string
+  /** 用户写了额外对齐要求时，禁止因模型「无变化」而跳过合并 */
+  forceApply?: boolean
 }): LifeAlignFromMemoryResult {
   const { sheet, obj, span, subjectCard } = params
   const needsBlankFill = sheetNeedsBlankFill(sheet)
   const hasObviousVague = sheetHasVagueLifePlaces(sheet)
-  // 模型说无变化，但账本仍空或缺项：忽略 noChange，继续走补齐（禁止因「某」字硬失败）
-  const ignoreNoChange = needsBlankFill || hasObviousVague
+  // 模型说无变化，但账本仍空或缺项 / 用户有额外要求：忽略 noChange，继续走补齐
+  const ignoreNoChange = needsBlankFill || hasObviousVague || !!params.forceApply
 
   // 感情状态完全以模型输出为准，不再本地 enforce 覆盖
   const finish = (after: LifeMutableSheet) =>
@@ -482,6 +506,8 @@ export async function runLifeAlignFromMemory(params: {
   apiConfig: ApiConfig | null
   /** 另一侧账本：共同社交圈客观事实须与此一致 */
   counterpartSheet?: LifeMutableSheet | null
+  /** 用户在对齐弹窗填写的额外要求 */
+  userAlignNotes?: string
   /** 进度提示（加载上下文 / 请求模型等） */
   onProgress?: (stage: LifeAlignProgressStage, detail: string) => void
   signal?: AbortSignal
@@ -637,6 +663,7 @@ ${playerIdentityPriorityRule}
     }
 2. 账本填剧情「现在」：职业、存款、感情、可去住所、车产、家庭、社交圈、宠物、当前姓名性别。
 3. **补齐空白与允许新增（硬）**：字段或列表为空时须填出可用内容。**列表已有内容时仍须追加**：近端/世界书出现账本里还没有的具名家人、朋友同事、可去住所、车辆、宠物 → 必须写入对应列表（旧条目保留，新条目追加）；禁止把「列表非空」当成冻结。已有内容与更高优先级证据一致、且近端无新人新房新车时该字段可省略；与身份卡冲突的旧内容必须改。
+${ALIGN_REFILL_AFTER_EDIT_RULE}
 4. **可去住所 realEstates**：列出本人**所有可住/可去**的地点（可多项），不是只写一个「现居」。学生常见：学校宿舍 + 自家住所；上班族可有租房 + 老家等。近端新提到的合租/常去处须**追加**。每条须含：label（称呼，如「学校宿舍」）、placeKind（home|dorm|rent|family|work|other）、location（**虚构市+区+具体校名或路门牌+楼栋+房间号**；**禁止**「某高校/某大学/某小区」及任何含「某」的地址；**勿套用固定示范城市**，按人设/世界书自行新编）、ownedBySubject（产权是否归本人名下，布尔）、isPrimary（是否当前主居，通常仅一条 true）、tenure（own|rent|""）、valueWan（估值，单位万元，数字字符串，如「280」；宿舍/租住可空或写月租相关估值）。面积户型不明可空。宿舍/家人处一般 ownedBySubject=false；自购商品房 true。
 5. **车产 vehicles**：有车写**完整品牌车型**（如奥迪A6L）并填 valueWan（估值，单位万元，如「45」）；**禁止**空 model。近端买车/换车 → **追加或更新**并写清车型与价值。明确无车或完全无依据时，须输出 1 条且 model 为「无」（note 可写「无车产」，valueWan 可空），禁止空数组。
 6. **家庭 family**：世界书有父母/兄弟姐妹等则照写。**若世界书几乎没写家庭**：须合理补全 2～4 名核心亲属（通常含父母，可按年龄段补兄弟姐妹），贴合角色年龄阶层与背景，勿离谱网文设定。近端新出现的具名亲属 → **必须追加**。每位必须含：name（**真实姓名**，禁止「X父/X母/爸爸/妈妈」）、relation（父亲/母亲/继父…）、gender、ageAtStart（开篇岁数）、age（**剧情现在**岁数）、birthdayMD（月日，如「3月12日」或「03-12」）、occupationOrSchool、alive、residence（须具体到虚构城市+路门牌+楼栋房间，勿只写「重组家庭住所」或「某小区」）、livesWithSubject。健康可简写。
@@ -654,7 +681,7 @@ ${playerIdentityPriorityRule}
         ? '近端线上/线下已写明的「现在」事实（感情、存款、住址、升学/换工作、明确的新校名新专业、新人脉/新家人）优先；身份卡仅在近端未提及时作背景基线。仅当身份卡已修订而近端仍复读旧校名时，才以身份卡压过近端旧表述。'
         : '年级「现在」口径 → 近端明示与剧情日优先于世界书开篇；其余取更近更具体；职业感情等有依据才改；新人脉/新家人/新住所有依据必须追加。'
     }空白补齐允许轻度合理推断。共同社交对象客观事实以「对方账本社交圈锚点」为准，不得另编一套学校。
-10. 仅当账本**已无空白且**与证据完全一致、且**地址/校名无「某」等模糊占位**、且**共同好友客观事实与对方账本一致**、且**occupation/学历年级已是「现在」而非停在开篇**、且**未漏掉近端已写明的感情/住址/升学/新人脉新家人新住所新车等动态**时才写 status：无变化。仍有空住所/空车产/空家庭/空社交圈、或家庭/社交圈年龄仍停在开篇、或职业仍是空话、或住所/家庭地址仍笼统/含「某」、或宿舍缺楼栋房间号、或共同好友学校与对方不一致、或**近端已写大四/大二而账本仍大三/大一**、或**近端已写分手/同居等而账本未改**、或**近端已具名新人/新房/新车而账本未追加**时**禁止**无变化。
+10. 仅当账本**已无空白且**与证据完全一致、且**地址/校名无「某」等模糊占位**、且**共同好友客观事实与对方账本一致**、且**occupation/学历年级已是「现在」而非停在开篇**、且**未漏掉近端已写明的感情/住址/升学/新人脉新家人新住所新车等动态**、且**未漏掉世界书/身份卡已有而账本缺失的具名对象**、且**用户额外对齐要求已落实（若有）**时才写 status：无变化。仍有空住所/空车产/空家庭/空社交圈、或家庭/社交圈年龄仍停在开篇、或职业仍是空话、或住所/家庭地址仍笼统/含「某」、或宿舍缺楼栋房间号、或共同好友学校与对方不一致、或**近端已写大四/大二而账本仍大三/大一**、或**近端已写分手/同居等而账本未改**、或**近端已具名新人/新房/新车而账本未追加**、或**证据有名而账本被用户删空未补回**时**禁止**无变化。
 11. 只输出 LIFE_ALIGN 纯文本块（见用户消息格式说明），不要 JSON、不要 Markdown、不要聊天。
 
 ${buildSharedSocialCircleConsistencyRule()}
@@ -670,7 +697,7 @@ ${buildLifeRelationAlignHardRule()}`
 
     const userTask = `${cardHeader}
 ${cardFactLine(subjectCard)}
-
+${buildAlignUserNotesSection(params.userAlignNotes)}
 ${ledgerBlock}
 
 【剧情时钟（年龄对齐硬依据）】
@@ -751,6 +778,7 @@ ${ALIGN_TEXT_FORMAT_BLOCK}`
       boundPlayer,
       towardUserText: towardUserEvidence,
       nearEndText: nearEndBundle,
+      forceApply: !!String(params.userAlignNotes ?? '').trim() || sheetNeedsBlankFill(params.sheet),
     })
     if (applied.status === 'updated') {
       report('done', `已更新 ${applied.changed.length} 项`)
@@ -771,6 +799,8 @@ export async function runLifeAlignPairFromMemory(params: {
   playerSheet: LifeMutableSheet
   span: LifeStorySpan
   apiConfig: ApiConfig | null
+  /** 用户在对齐弹窗填写的额外要求 */
+  userAlignNotes?: string
   onProgress?: (stage: LifeAlignProgressStage, detail: string) => void
   signal?: AbortSignal
 }): Promise<LifeAlignPairFromMemoryResult> {
@@ -902,13 +932,14 @@ export async function runLifeAlignPairFromMemory(params: {
 1. 角色：人设世界书与建档卡=开篇锚点；近端线上/线下=「现在」证据。玩家：近端=「现在」动态第一证据；身份卡=近端未提及时的背景基线。
 2. 账本填剧情「现在」：职业、存款、感情、可去住所、车产、家庭、社交圈、宠物、当前姓名性别。
 3. **补齐空白与允许新增（硬）**：字段或列表为空时须推断填出可用内容。列表已有内容时，近端新具名家人/人脉/住所/车产/宠物仍须**追加**；禁止把非空列表当成冻结。
+${ALIGN_REFILL_AFTER_EDIT_RULE}
 4. **可去住所 realEstates**：列齐可住/可去地点；近端新地点须追加；location 须虚构市+区+具体校名或路门牌+楼栋房间；禁止含「某」；有产权/可估时填 valueWan（万元）。
 5. **车产 vehicles**：有车写完整品牌车型与 valueWan（万元）；禁止空 model；新车追加并写清车型。无车须 1 条 model「无」，禁止空数组。
 6. **家庭 family** / **社交圈 socialCircle**：须具体职业/校名；age=现在岁，ageAtStart=开篇岁；同龄人随主体过年数推进；近端新具名人必须追加。
 7. **共同好友硬一致（硬）**：两边社交圈同名之人，性别/年龄/生日/学校或职业/住址必须完全一致；仅 relation/attitude/note 可不同。
 8. educationTrack/educationGradeAtStart 是开篇学年；现在年级写在 educationNote 与 occupationMain；近端与剧情日优先于世界书开篇年级。
 9. storyStartDay / ageAtStart 默认勿动；近端明确现在几岁可输出 currentAge。
-10. 某侧账本已无空白、与证据一致、地址无「某」、共同好友与对方一致、年级已是「现在」、且未漏掉近端已写明动态（含新人/新房/新车）时，该侧写 status：无变化；否则禁止无变化。
+10. 某侧账本已无空白、与证据一致、地址无「某」、共同好友与对方一致、年级已是「现在」、未漏掉近端已写明动态（含新人/新房/新车）、未漏掉世界书/身份卡已有而账本缺失的具名对象、且用户额外对齐要求已落实（若有）时，该侧写 status：无变化；否则禁止无变化。
 11. 只输出 LIFE_ALIGN 纯文本块：同一 <<<LIFE_ALIGN>>> 包络内连续两个 [LIFE_ALIGN]（subject 分别为 character 与 player），不要 JSON、不要 Markdown、不要聊天。
 
 ${buildSharedSocialCircleConsistencyRule()}
@@ -919,7 +950,7 @@ ${buildLifeRelationAlignHardRule()}`
 
     const userTask = `【角色 · 建档卡（年龄/职业可能随剧情推进过时，仅作开篇对照）】
 ${cardFactLine(character)}
-
+${buildAlignUserNotesSection(params.userAlignNotes)}
 ${charLedgerBlock}
 
 【角色 · 当前账本（纯文本 · 请按同格式增改；禁止输出 JSON）】${
@@ -983,6 +1014,10 @@ ${ALIGN_TEXT_FORMAT_BLOCK}`
       return failBoth('模型未返回可解析的双主体 LIFE_ALIGN 文本（可再试一次）')
     }
 
+    const forceApply =
+      !!String(params.userAlignNotes ?? '').trim() ||
+      sheetNeedsBlankFill(params.characterSheet) ||
+      sheetNeedsBlankFill(params.playerSheet)
     const characterResult = applyAlignFromAiObject({
       sheet: params.characterSheet,
       obj: pairObj.character,
@@ -993,6 +1028,7 @@ ${ALIGN_TEXT_FORMAT_BLOCK}`
       boundPlayer,
       towardUserText: towardUserEvidence,
       nearEndText: nearEndBundle,
+      forceApply,
     })
     const playerResult = applyAlignFromAiObject({
       sheet: params.playerSheet,
@@ -1004,6 +1040,7 @@ ${ALIGN_TEXT_FORMAT_BLOCK}`
       boundPlayer,
       towardUserText: towardUserEvidence,
       nearEndText: nearEndBundle,
+      forceApply,
     })
     report('done', '角色与玩家对齐完成')
     return { character: characterResult, player: playerResult }

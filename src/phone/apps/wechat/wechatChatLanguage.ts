@@ -4,6 +4,7 @@ import {
   type TranslationRuntime,
 } from '../api/translationProviders'
 import { openAiCompatibleChat } from './newFriendsPersona/ai'
+import { isOnlineActionNarrationBubbleText } from './onlineActionNarration'
 
 /** 会话「回复输出语言 / 翻译目标语言」选项 */
 export const WECHAT_CHAT_LANGUAGE_OPTIONS = [
@@ -64,19 +65,111 @@ function buildTraditionalChineseScriptHardRules(): string {
 /**
  * 日语气泡：真日文网聊里句末「笑」「（笑）」「w」≈ lol，是常见语气标点。
  * 轻松场合允许自然挂尾；不必每条都加，严肃场景可不加。
+ * 仅用于微信文字气泡；线下约会/IF/平行当面口语见 {@link buildJapaneseSpokenDialogueHardRules}。
  */
 function buildJapaneseChatStyleHardRules(): string {
   return `
-- **日语口语硬项（句末「笑」）**：
-  - 日语网聊习惯：轻松闲聊、吐槽、接梗、半开玩笑时，句末常挂「笑」「（笑）」「(笑)」「w」「ww」等（≈中文「哈哈」/lol），**允许且鼓励自然使用**，不要刻意回避。
+- **日语口语硬项（句末「笑」·仅网聊）**：
+  - 日语**网聊文字气泡**习惯：轻松闲聊、吐槽、接梗、半开玩笑时，句末常挂「笑」「（笑）」「(笑)」「w」「ww」等（≈中文「哈哈」/lol），**允许且鼓励自然使用**，不要刻意回避。
   - 不必每条都加；严肃、安抚、对峙、认真表态时可只用终助词（ね / よ / な / か 等）或标点收束。
   - 「あはは」「ふふ」「くすっ」等口头笑声也可，与句末「笑」不冲突。
-  - 合格例：「了解した笑」「うん（笑）」「大丈夫だよ笑」「それマジ？笑」「わかった」。`.trim()
+  - 合格例：「了解した笑」「うん（笑）」「大丈夫だよ笑」「それマジ？笑」「わかった」。
+- **禁止翻译腔出戏（硬项）**：你是角色在发微信，**不是**翻译助手。禁止在气泡里写英文多方案对照、语法讲解（如 “Here are a few natural ways to translate”“Key Nuances”“Casual / Friendly”“Oshiete kurenai?” 释义等）；禁止先发日文再跟一整段英文译法说明。`.trim()
+}
+
+/**
+ * 线下当面 / 剧情对白·内心 OS：说出口的日语 ≠ 打字网聊。
+ * 禁止句末挂「笑」「w」；震惊/愤怒/对峙时尤其禁止。
+ */
+export function buildJapaneseSpokenDialogueHardRules(): string {
+  return `
+- **日语当面口语硬项（禁止网聊句末「笑」）**：
+  - 线下约会、平行事件、IF 线、VN 等**当面说出口的对白 / 内心 OS** 不是微信打字：日本人说话**不会**在句末挂「笑」「（笑）」「(笑)」「w」「ww」当语气标点。
+  - **一律禁止**对白或 OS 句末、段末出现上述网聊笑标；同步译文也**禁止**把原文没有的「笑」译进去，或把网聊「笑」硬译成中文「笑」。
+  - 真要笑出声：写口头笑声「あはは」「ふふ」「くすっ」「ははっ」等，或用旁白/神态写嘴角、憋笑——**不要**用网聊「笑」字挂尾。
+  - 震惊、愤怒、吃醋、对峙、崩溃、哭喊等情绪下**尤其禁止**挂「笑」（否则像在嘲讽或出戏）。
+  - 反例（禁止）：「触るな！！笑」「なんだよそれ笑」「胸がはち切れそうなんだよ！！笑」
+  - 合格收束：终助词（ね/よ/な/か/ぞ/ぜ）或「！」「？」「……」「！！」、或口头笑声词本身。`.trim()
 }
 
 /** 兼容旧调用：已不再剥句末「笑」/（笑）/w（日语网聊习惯保留） */
 export function stripJapaneseTrailingLaughMarker(text: string): string {
   return String(text ?? '')
+}
+
+/**
+ * 模型出戏成「编剧拆解 / 翻译讲义」：不是合法译文，也不是角色气泡。
+ * 例：`**第 1 条（旁白）**：打破漫不经心…` / `日文对话翻译（方便参考语气）`
+ */
+export function looksLikeScriptMetaAnalysisNotTranslation(text: string): boolean {
+  const t = String(text ?? '').trim()
+  if (!t) return false
+  if (/^\*{0,2}第\s*[\d０-９]+(?:\s*[、，,～~\-－]\s*[\d０-９]+)*\s*条/.test(t)) return true
+  if (/（旁白）|（对话）|（对白）|（内心）/.test(t) && /第\s*[\d０-９]+/.test(t)) return true
+  if (/日文对话翻译|方便参考语气|打破漫不经心|掌控谈话|保持距离感的温和/.test(t)) return true
+  if (/用[「「"'].{0,12}[」」"'].{0,24}掩饰/.test(t)) return true
+  if (/Here are a few (?:natural )?ways to translate|#{1,3}\s*Key Nuances|Casual\s*\/\s*Friendly/i.test(t))
+    return true
+  // 截图类「翻译讲义」：多版本译法 / 拆解参考（不是一句忠实译文）
+  if (
+    /自然口语版|拆解参考|强调突然感|几种译法|多种译法|翻译选项|译法对比|参考语气|语气拆解|字词拆解/.test(
+      t,
+    )
+  )
+    return true
+  if (/傲娇\s*[／/]\s*害羞|害羞版|傲娇版|直球版|软化版/.test(t) && /译|翻译|版/.test(t)) return true
+  if (/(?:^|\n)\s*(?:[-*•]|\d+[.)、])\s*.{0,8}版[：:]/.test(t)) return true
+  if (/Playful\s*\/\s*Flirtatious|Direct\s*\/\s*Soft Request|Most Common/i.test(t)) return true
+  return false
+}
+
+/** 合法译文候选；若是剧本分析/翻译讲义则返回 null（错语种见下方带 targetLanguage 的重载逻辑） */
+export function sanitizeWeChatSyncTranslationText(
+  text: string,
+  opts?: { targetLanguage?: string | null },
+): string | null {
+  // 先剥 `[译]` / `（对方语音）` 等协议·通道泄漏，再判讲义/语种
+  const t = stripWeChatTranslationChannelLeakPrefix(
+    stripWeChatSyncTranslationMarkerPrefix(text),
+  )
+  if (!t) return null
+  if (looksLikeScriptMetaAnalysisNotTranslation(t)) return null
+  if (
+    opts?.targetLanguage != null &&
+    looksLikeWrongTargetTranslationLanguage(t, opts.targetLanguage)
+  )
+    return null
+  return t
+}
+
+/**
+ * 模型出戏成「翻译助手 / 编剧拆解」时：整段丢弃，或截掉对白后的讲义。
+ * 返回清理后的气泡；整段都是泄漏则返回 null。
+ */
+export function sanitizeTranslatorAssistantLeakBubble(text: string): string | null {
+  const t = String(text ?? '').trim()
+  if (!t) return null
+  if (looksLikeScriptMetaAnalysisNotTranslation(t)) return null
+  const wholeLeak =
+    /^(?:Here are a few (?:natural )?ways to translate|#{1,3}\s*Key Nuances|Casual\s*\/\s*Friendly\s*(?:\(|Most Common)|Playful\s*\/\s*Flirtatious|Direct\s*\/\s*Soft Request)\b/i
+  if (wholeLeak.test(t)) return null
+  const splitAt = t.search(
+    /\n\s*(?:Here are a few (?:natural )?ways to translate|#{1,3}\s*Key Nuances|Casual\s*\/\s*Friendly\s*(?:\(|Most Common)|Playful\s*\/\s*Flirtatious|Direct\s*\/\s*Soft Request|\*{0,2}第\s*[\d０-９]+.*条|---+.*日文对话翻译|自然口语版|拆解参考|几种译法|翻译选项)\b/i,
+  )
+  if (splitAt > 0) {
+    const kept = t.slice(0, splitAt).trim()
+    return kept || null
+  }
+  if (/translate this depending on the context/i.test(t)) {
+    const idx = t.search(/\n\s*Here are\b/i)
+    if (idx > 0) {
+      const kept = t.slice(0, idx).trim()
+      return kept || null
+    }
+    // 纯英文翻译讲义、无角色对白
+    if (!/[\u3040-\u30ff\u3400-\u9fff]/.test(t.slice(0, 80))) return null
+  }
+  return t
 }
 
 /** 注入 system：文字气泡 / 语音脚本可分别指定语言（含默认简体，防止被历史繁体带偏） */
@@ -121,15 +214,14 @@ export function buildWechatReplyOutputLanguageAppendix(
   const syncHard = syncOn
     ? dedicated
       ? `
-- **禁止中日（或其它语言）混着发气泡（硬项）**：用户可见文字气泡只能是 **${textNative}**。同步翻译由客户端完成，**禁止**输出 \`[译]\`，也禁止把 ${transLabel}（${transNative}）译文当作普通气泡发出去。`
+- **禁止中日（或其它语言）混着发气泡（硬项）**：用户可见文字气泡只能是 **${textNative}**。同步翻译由客户端完成，**禁止**输出 \`[译]\` / \`<tr>\`，也禁止把 ${transLabel}（${transNative}）译文当作普通气泡发出去。`
       : `
-- **禁止中日（或其它语言）混着发气泡（硬项）**：用户可见文字气泡只能是 **${textNative}**。若开启同步翻译，**${transLabel}（${transNative}）译文只能写在单独的 \`[译]……\` 行**，禁止把译文当作下一条普通气泡发出去（错误例：先发日文「いい夢見てね。」再发中文气泡「做个好梦。」）。
-- **禁止**在同一条可见气泡里中日夹杂正文（假名专名/少量对方语言词可保留）；中文整句只能进 \`[译]\`。`
-    : textCode === 'zh-CN' || textCode === 'zh-TW'
-      ? `
-- **禁止**把其它语言整句当作可见气泡混发（主体必须是 ${textNative}）；也不要先发一种中文形体再跟另一条简繁对照复述。`
-      : `
-- **禁止**把其它语言整句当作可见气泡混发（主体必须是 ${textNative}）；不要先发 ${textNative} 再跟一条简体中文复述。`
+- **禁止中日（或其它语言）混着发气泡（硬项）**：用户可见文字气泡只能是 **${textNative}**。本轮同步翻译**已开启**：译文目标必须是 **${transLabel}（${transNative}）**，只能写在 \`<tr>…</tr>\` 或 \`[译]……\`；禁止把译文当作下一条普通气泡（错误例：先发日文再发中文气泡）。
+- **禁止**在同一条可见气泡里中日夹杂正文（假名专名/少量对方语言词可保留）；译文整句只能进 \`<tr>\` / \`[译]\`。
+- **禁止**把译文写成英文讲义 / Key Nuances / 多种译法；目标是 ${transNative} 时 \`[译]\` 内必须是 ${transNative}，禁止英文。`
+    : `
+- **本轮同步翻译已关闭（硬项·压过历史）**：对话历史里即使用户曾经开过翻译、assistant 侧出现过 \`[译]\` / 中文对照 / 翻译讲义，**本轮也禁止**输出 \`[译]\` / \`<tr>\` / \`【译】\`，禁止再跟一条对照译文或「自然口语版/拆解参考」。只发 **${textNative}** 可见气泡。
+- **禁止翻译腔出戏**：禁止英文/中文「多种译法」「Key Nuances」「Here are a few ways to translate」等教学体；你是角色聊天，不是翻译工具。`
 
   if (same) {
     return `
@@ -196,6 +288,47 @@ export function summarizeChatReplyLanguageSettings(params: {
 }
 
 const SYNC_TRANSLATION_LINE_RE = /^(?:\[译\]|【译】|\[翻译\]|【翻译】)\s*(.*)$/u
+/** 译文正文里误嵌的协议前缀（如 `<tr>[译]中文</tr>` → 剥后仍带 `[译]`） */
+const SYNC_TRANSLATION_MARKER_PREFIX_RE = /^(?:\[译\]|【译】|\[翻译\]|【翻译】)\s*/u
+
+/**
+ * 去掉译文正文开头重复的 `[译]` / `【译】` 等协议标记（可叠多层）。
+ * 展示层与落库前均须走此清洗，避免译文面板里露出协议字样。
+ */
+export function stripWeChatSyncTranslationMarkerPrefix(text: string): string {
+  let t = String(text ?? '').trim()
+  for (let i = 0; i < 6 && t; i += 1) {
+    const next = t.replace(SYNC_TRANSLATION_MARKER_PREFIX_RE, '').trim()
+    if (next === t) break
+    t = next
+  }
+  return t
+}
+
+/**
+ * 历史转写里语音写作 `（对方语音）…` 时，模型常把通道标签仿写进 `[译]`。
+ * 译文只应保留对白正文；通道/情绪标签一律剥掉。
+ */
+const TRANSLATION_CHANNEL_LEAK_PREFIX_RE =
+  /^(?:[（(]\s*(?:对方|用户|自己|角色|联系人)?\s*语音(?:\s*[，,、]\s*情绪[：:][^）)]*)?\s*[）)]|[（(]\s*语音(?:\s*[，,、]\s*情绪[：:][^）)]*)?\s*[）)]|\[语音\]|【语音】)\s*/u
+
+export function stripWeChatTranslationChannelLeakPrefix(text: string): string {
+  let t = String(text ?? '').trim()
+  for (let i = 0; i < 4 && t; i += 1) {
+    const next = t.replace(TRANSLATION_CHANNEL_LEAK_PREFIX_RE, '').trim()
+    if (next === t) break
+    t = next
+  }
+  // 姓名+语音：`（花村恒语音）` / `（盛亦语音，情绪：…）`
+  for (let i = 0; i < 2 && t; i += 1) {
+    const next = t
+      .replace(/^[（(]\s*[^\s）)]{1,24}语音(?:\s*[，,、]\s*情绪[：:][^）)]*)?\s*[）)]\s*/u, '')
+      .trim()
+    if (next === t) break
+    t = next
+  }
+  return t
+}
 
 /** 注入 system：同步翻译附录。dedicatedApi=true 时由客户端翻译服务商生成，否则由聊天模型写 [译]。 */
 export function buildWechatSyncTranslationAppendix(
@@ -227,9 +360,10 @@ export function buildWechatSyncTranslationAppendix(
     return `
 【同步翻译 · 客户端翻译 API · 硬项】
 本会话已开启同步翻译，且使用**翻译副接口**。译文由客户端调用翻译服务商生成（目标：${label} / ${target}），**不要**由你在回复里写译文。
-- **禁止**输出 \`[译]\` / \`【译】\` / \`[翻译]\` 行。
+- **禁止**输出 \`<tr>\` / \`[译]\` / \`【译】\` / \`[翻译]\` 行。
 - **禁止**把 ${target} 译文写成普通可见气泡（错误例：日文后再跟一条中文「做个好梦。」）。
-- 可见文字气泡与 \`语音 \` 脚本正文只用 **${replyNative}**；专名/假名昵称可保留。
+- **禁止**输出「自然口语版 / 拆解参考 / 几种译法」等翻译讲义。
+- 可见文字气泡用 \`<msg>…</msg>\`（或旧换行协议），正文只用 **${replyNative}**；专名/假名昵称可保留。
 - 红包/转账/表情包/图片/指令行保持原协议，不要夹译文。
 `.trim()
   }
@@ -241,14 +375,18 @@ export function buildWechatSyncTranslationAppendix(
     speakerPersonaBrief: opts?.speakerPersonaBrief,
   })
   return `
-【同步输出翻译 · 硬项】
-本会话已开启同步翻译（由聊天模型同轮输出）。每条**可见文字气泡**与每条 \`语音 \` 行之后，必须紧跟单独一行：
-\`[译]……\`
-其中「……」为用 **${label}（${target}）** 书写、**忠于上一行原文**的译文（像系统翻译：通顺但不加戏；禁止另写一句、禁止「（轻笑）」等原文没有的括号舞台指示；假名专名可保留）。
-- \`[译]\` 行**不**算用户可见气泡条数；客户端只把上一行当气泡。
-- **禁止**把译文写成普通可见气泡；可见气泡只用 **${replyNative}**。
-- 红包/转账/表情包/图片/指令行等**不要**跟 \`[译]\`。
-- 群聊：每个 SPEAKER 文字气泡后同样跟一行 \`[译]\`。
+【同步输出翻译 · 硬项 · 本轮生效】
+本会话**本轮**已开启同步翻译（由聊天模型同轮输出）。每条**可见文字气泡**（\`<msg>…</msg>\`）与每条 \`语音 \` 行之后，必须紧跟：
+\`<tr>……</tr>\`（推荐）或单独一行 \`[译]……\`
+其中「……」为用 **${label}（${target}）** 书写、**忠于上一气泡原文**的**一句**译文（像系统翻译：通顺但不加戏；禁止另写一句、禁止「（轻笑）」等原文没有的括号舞台指示；假名专名可保留）。
+- **目标语硬锁**：\`[译]\` / \`<tr>\` 内必须是 **${target}**；若目标是中文，**禁止**写成英文、禁止 Key Nuances / ways to translate / 思考过程。
+- \`<tr>\` / \`[译]\` **不**算用户可见气泡；客户端只把上一 msg 当气泡。
+- **禁止**把译文写成普通可见气泡或塞进 \`<msg>\`；可见气泡只用 **${replyNative}**。
+- **禁止通道标签进译文（硬）**：历史里若出现 \`[语音]\` / \`（对方语音）\` / \`（用户语音）\` / \`（××语音）\`，那是**系统给模型看的通道说明**，**禁止**写进 \`<tr>\` / \`[译]\` 正文；译文只保留对白本身。文字气泡的译文也**禁止**冒充「对方语音」。
+- **禁止**在译文里写剧本分析 / 条目标注 / 多版本选项（如 \`第 1 条（旁白）\`、\`自然口语版\`、\`拆解参考\`、\`强调突然感\`、\`傲娇/害羞版\`、\`几种译法\`、\`方便参考语气\`）；译文只能是上一行原文的**唯一忠实译句**。
+- 红包/转账/表情包/图片/指令行等**不要**跟译文。
+- 群聊：每个 SPEAKER 文字气泡后同样跟一条译文。
+- **压过历史**：上文若出现过其它译法/其它目标语，以**本轮** ${target} 为准，禁止照抄旧轮格式出戏。
 
 ${voice}
 
@@ -259,30 +397,90 @@ ${glossary}
 export function parseWeChatSyncTranslationLine(line: string): string | null {
   const m = String(line ?? '').trim().match(SYNC_TRANSLATION_LINE_RE)
   if (!m) return null
-  return String(m[1] ?? '').trim()
+  return stripWeChatSyncTranslationMarkerPrefix(String(m[1] ?? ''))
 }
 
 /** 从气泡行列表剥离 `[译]`，译文挂到上一行 */
-export function peelWeChatSyncTranslationLines(lines: string[]): {
+export function peelWeChatSyncTranslationLines(
+  lines: string[],
+  opts?: { targetLanguage?: string | null; /** true：剥掉 [译] 但不挂载（本轮同步关） */ discardTranslations?: boolean },
+): {
   lines: string[]
   translations: Array<string | undefined>
 } {
   const outLines: string[] = []
   const translations: Array<string | undefined> = []
+  const discard = opts?.discardTranslations === true
   for (const raw of lines) {
     const line = String(raw ?? '')
-    const tr = parseWeChatSyncTranslationLine(line)
-    if (tr != null) {
-      if (outLines.length > 0) {
-        const prev = translations[outLines.length - 1]
-        translations[outLines.length - 1] = tr || prev
+    const trRaw = parseWeChatSyncTranslationLine(line)
+    if (trRaw != null) {
+      if (!discard) {
+        const tr = sanitizeWeChatSyncTranslationText(trRaw, {
+          targetLanguage: opts?.targetLanguage,
+        })
+        if (tr && outLines.length > 0) {
+          const prev = translations[outLines.length - 1]
+          translations[outLines.length - 1] = tr || prev
+        }
       }
+      // 假译文 / 同步关闭：整行丢弃，不挂到气泡、不当气泡
       continue
     }
+    // 未标 [译] 的编剧拆解行：直接丢掉，避免被吸成译文或当气泡
+    if (looksLikeScriptMetaAnalysisNotTranslation(line.trim())) continue
     outLines.push(line)
     translations.push(undefined)
   }
   return { lines: outLines, translations }
+}
+
+/**
+ * 本轮格式锁（语言 + 同步翻译开/关）。须压过对话历史里的旧 [译] 仿写。
+ * 放 earlyOutput 与 messages 末尾各一份。
+ */
+export function buildWechatTurnFormatLockAppendix(opts: {
+  replyOutputLanguage?: string | null
+  replyVoiceLanguage?: string | null
+  translationSyncEnabled?: boolean
+  translationLanguage?: string | null
+  translationDedicatedApi?: boolean
+}): string {
+  const textCode = normalizeWeChatChatLanguageCode(opts.replyOutputLanguage)
+  const textNative = weChatChatLanguageNativeName(textCode)
+  const textLabel = weChatChatLanguageLabel(textCode)
+  const syncOn = opts.translationSyncEnabled === true
+  const dedicated = opts.translationDedicatedApi === true
+  const transCode = normalizeWeChatChatLanguageCode(
+    opts.translationLanguage,
+    WECHAT_CHAT_DEFAULT_TRANSLATION_LANGUAGE,
+  )
+  const transNative = weChatChatLanguageNativeName(transCode)
+  const transLabel = weChatChatLanguageLabel(transCode)
+
+  if (!syncOn) {
+    return (
+      `【本轮输出格式锁 · 最高优先 · 压过上下文】` +
+      `可见气泡语言：**${textLabel}（${textNative}）**。` +
+      `**同步翻译：关**。` +
+      `历史里即使用户开过翻译、出现过 \`[译]\` / 中英对照 / 翻译讲义，**本轮禁止**输出 \`[译]\`/\`<tr>\`/\`【译】\`，禁止对照复述与思考过程式译法。` +
+      `只按本轮格式指令；上下文仅供剧情事实，不得覆盖本锁。`
+    )
+  }
+  if (dedicated) {
+    return (
+      `【本轮输出格式锁 · 最高优先 · 压过上下文】` +
+      `可见气泡语言：**${textLabel}（${textNative}）**。` +
+      `**同步翻译：开（客户端副接口）**；目标译文 **${transLabel}（${transNative}）** 由客户端生成。` +
+      `**禁止**模型输出 \`[译]\`/\`<tr>\` 或把译文当气泡；禁止英文讲义。历史旧译格式勿照抄。`
+    )
+  }
+  return (
+    `【本轮输出格式锁 · 最高优先 · 压过上下文】` +
+    `可见气泡语言：**${textLabel}（${textNative}）**。` +
+    `**同步翻译：开（模型同轮）**；\`[译]\`/\`<tr>\` 内必须是 **${transLabel}（${transNative}）** 的一句忠实译文。` +
+    `禁止英文讲义、Key Nuances、多种译法、思考过程；禁止把 \`（对方语音）\`/\`[语音]\` 等通道标签写进译文。历史旧译格式以**本轮**为准。`
+  )
 }
 
 const KANA_RE = /[\u3040-\u309f\u30a0-\u30ff]/u
@@ -292,6 +490,37 @@ const LATIN_RE = /[A-Za-z]/g
 
 function countMatches(re: RegExp, s: string): number {
   return s.match(re)?.length ?? 0
+}
+
+/**
+ * 译文语言是否明显偏离目标（如目标简体中文却输出英文讲义）。
+ * 软判定：宁可放过边缘混写，也不误杀正常短译。
+ */
+export function looksLikeWrongTargetTranslationLanguage(
+  text: string,
+  targetCode?: string | null,
+): boolean {
+  const t = String(text ?? '').trim()
+  if (!t) return true
+  const code = normalizeWeChatChatLanguageCode(
+    targetCode,
+    WECHAT_CHAT_DEFAULT_TRANSLATION_LANGUAGE,
+  )
+  const han = countMatches(HAN_RE, t)
+  const latin = countMatches(LATIN_RE, t)
+  const kana = countMatches(KANA_RE, t)
+  const hangul = countMatches(HANGUL_RE, t)
+  if (code === 'zh-CN' || code === 'zh-TW') {
+    if (latin >= 14 && han < 4) return true
+    if (/^(?:Here |The |This |Key |Casual |Playful |Direct |Translation |Nuance )/i.test(t))
+      return true
+    if (/\b(?:ways to translate|Key Nuances|Most Common)\b/i.test(t)) return true
+  } else if (code === 'en') {
+    if (kana + hangul + han >= 8 && latin < 6) return true
+  } else if (code === 'ja') {
+    if (latin >= 16 && kana < 2) return true
+  }
+  return false
 }
 
 /** 日语气泡：有假名 */
@@ -305,14 +534,26 @@ export function looksLikeKoreanBubbleText(s: string): boolean {
 }
 
 /**
+ * 整行由一个或多个【…】片段构成（可夹空白）：角色常用来做「加密按键 / 特效字」等可见气泡。
+ * 这类行虽常是中文、无假名，但**不是**漏发的译文，禁止被语言过滤器吞掉或挂到上一句日文上。
+ */
+export function looksLikeDecorativeFullwidthBracketCipherText(s: string): boolean {
+  const t = String(s ?? '').trim()
+  if (!t || !t.includes('【') || !t.includes('】')) return false
+  return /^(?:【[^】\n]{1,32}】\s*)+$/u.test(t)
+}
+
+/**
  * 像「译入中文」漏发的整句：有汉字、几乎无假名/谚文。
  * （日文也用汉字，故无假名时才判中文）
+ * 不含整行【…】【…】特效字（那是有意可见气泡，不是漏译）。
  */
 export function looksLikeChineseTranslationLeakText(s: string): boolean {
   const t = s.trim()
   if (!t || t.length < 2) return false
   if (KANA_RE.test(t) || HANGUL_RE.test(t)) return false
   if (parseWeChatSyncTranslationLine(t) != null) return false
+  if (looksLikeDecorativeFullwidthBracketCipherText(t)) return false
   const han = countMatches(HAN_RE, t)
   if (han < 2) return false
   const latin = countMatches(LATIN_RE, t)
@@ -436,8 +677,9 @@ export function normalizeLeakedWeChatTranslationBubbles(
   const pushBodyWithOptionalTr = (body: string, tr?: string) => {
     const b = body.trim()
     if (!b) return
+    if (looksLikeScriptMetaAnalysisNotTranslation(b)) return
     out.push(b)
-    const t = tr?.trim()
+    const t = sanitizeWeChatSyncTranslationText(tr ?? '')
     if (t && syncOn) out.push(`[译]${t}`)
   }
 
@@ -451,8 +693,20 @@ export function normalizeLeakedWeChatTranslationBubbles(
       continue
     }
 
+    // 旁白/泄漏标签：绝不当成「漏发的中文译文」挂到上一句日文上
+    if (isOnlineActionNarrationBubbleText(trimmed)) {
+      out.push(trimmed)
+      continue
+    }
+
     if (isSpecial(trimmed)) {
       out.push(raw)
+      continue
+    }
+
+    // 【加密按键】类特效字：有意可见气泡，禁止当漏译吸收/丢弃
+    if (looksLikeDecorativeFullwidthBracketCipherText(trimmed)) {
+      out.push(trimmed)
       continue
     }
 
@@ -460,33 +714,50 @@ export function normalizeLeakedWeChatTranslationBubbles(
       replyLanguage: replyCode,
       translationLanguage: transCode,
     })
-    let body = split.body
+    const body = split.body
     let pendingTr = split.leakedTranslation
 
     const bodyForLang =
       body.replace(/^(?:\[语音\]|【语音】)\s*/u, '').replace(/^<<SPEAKER:[^>\n]+>>\s*/i, '').trim() ||
       body
 
-    // 下一条整行是漏发的译文语言 → 收成 [译] / 丢弃
+    // 下一条整行是漏发的译文语言 → 收成 [译] / 丢弃（编剧拆解假译文一律丢掉）
     const next = i + 1 < lines.length ? String(lines[i + 1] ?? '').trim() : ''
-    const nextIsTr =
-      !!next &&
-      parseWeChatSyncTranslationLine(next) == null &&
-      !isSpecial(next) &&
-      looksLikeTranslationLanguageText(next, transCode) &&
-      !looksLikeReplyLanguageBubbleText(next, replyCode) &&
-      looksLikeReplyLanguageBubbleText(bodyForLang, replyCode)
-
-    if (nextIsTr) {
-      pendingTr = pendingTr ? `${pendingTr}${next}` : next
+    const nextNext = i + 2 < lines.length ? String(lines[i + 2] ?? '').trim() : ''
+    // 下下行已是显式 [译] → 下行是有意可见气泡（语码切换），勿当本行漏译吸收
+    const nextHasOwnExplicitTr = !!nextNext && parseWeChatSyncTranslationLine(nextNext) != null
+    if (next && looksLikeScriptMetaAnalysisNotTranslation(next)) {
       i += 1
+      pendingTr = sanitizeWeChatSyncTranslationText(pendingTr ?? '') ?? undefined
+    } else {
+      const nextIsTr =
+        !!next &&
+        parseWeChatSyncTranslationLine(next) == null &&
+        !isSpecial(next) &&
+        !looksLikeDecorativeFullwidthBracketCipherText(next) &&
+        !nextHasOwnExplicitTr &&
+        looksLikeTranslationLanguageText(next, transCode) &&
+        !looksLikeReplyLanguageBubbleText(next, replyCode) &&
+        looksLikeReplyLanguageBubbleText(bodyForLang, replyCode)
+
+      if (nextIsTr) {
+        const safeNext = sanitizeWeChatSyncTranslationText(next)
+        if (safeNext) pendingTr = pendingTr ? `${pendingTr}${safeNext}` : safeNext
+        i += 1
+      }
     }
+    pendingTr = sanitizeWeChatSyncTranslationText(pendingTr ?? '') ?? undefined
 
     // 本行本身就是错语言整句（前面没有可挂的原文）→ sync 时丢弃，避免单独中文气泡
     if (
       looksLikeTranslationLanguageText(body, transCode) &&
       !looksLikeReplyLanguageBubbleText(body, replyCode)
     ) {
+      // 下一条已是显式 [译]：模型有意把本行当可见气泡（语码切换），勿吞掉
+      if (next && parseWeChatSyncTranslationLine(next) != null) {
+        pushBodyWithOptionalTr(body, undefined)
+        continue
+      }
       // 尝试挂到上一条可见气泡
       if (syncOn && pendingTr) {
         // body 本身就是译文；若 out 末尾是气泡且还没有 [译]，挂上去
@@ -663,7 +934,7 @@ ${personaBit}
 - **语义锚点**：原文提到的每个意思都要有对应；禁止换话题、换笑点、脑补潜台词。
 - **禁止画蛇添足（最高）**：
   - **禁止**加原文没有的括号舞台指示：如「（轻笑）（笑）（叹气）（沉默）（小声）」——即便原文有「あはは/哈哈」也只译成口头笑声，**不要**另加括号标注。
-  - **禁止**加协议/UI 标记：\`语音 \` \`发图\` \`[译]\` 「转文字」等。
+  - **禁止**加协议/UI/通道标记：\`语音 \` \`发图\` \`[译]\` 「转文字」、\`（对方语音）\` \`（用户语音）\` \`（××语音）\` \`[语音]\` 等（历史转写标签勿照抄进译文）。
   - **禁止**加原文没有的动作描写、心理旁白、解释性插入语。
 - **原文已有的笑声/语气**：如「あはは」「（笑）」「……」可自然译成「啊哈哈」「（笑）」「……」；**没有就不要造**。
 - **禁止机翻腔**：如「连××的那份」「进行了～」「感到了心动」「不禁」「令人」等；换成自然口语，但仍对应原意。
@@ -998,9 +1269,10 @@ function sanitizeWeChatBubbleTranslationOutput(raw: string, source: string): str
   t = t
     .replace(/^(译文|翻译|Translation)\s*[:：]\s*/i, '')
     .replace(/^【[^】]{0,12}】\s*/, '')
-    // 模型常把协议行名塞进译文
+    // 模型常把协议行名 / 历史通道标签塞进译文
     .replace(/^(?:\[语音\]|【语音】|\[图片\]|【图片】|\[译\]|【译】|\[翻译\]|【翻译】)\s*/u, '')
-    .trim()
+  t = stripWeChatTranslationChannelLeakPrefix(t)
+  t = t.trim()
 
   // 原文没有括号舞台指示时，剥掉译文里臆造的短括号标注（轻笑/笑/叹气…）
   const srcHasStageParen = /[（(][^）)]{0,10}[）)]/.test(source)

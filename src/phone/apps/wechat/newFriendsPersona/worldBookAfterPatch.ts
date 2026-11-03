@@ -23,12 +23,22 @@ export const WB_AFTER_PATCH_MARKER = '\n---WB_AFTER_PATCH---\n'
 /** 成功将「尾声延展」世界书补丁写入人设后派发（例：约会页挂载临时提示） */
 export const WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT = 'phone:worldbook-after-patch-updated'
 
+/** 弹窗展示用：条目名 + 完整正文（原先 → 现在） */
+export type WorldBookAfterChangedEntry = {
+  bookName: string
+  itemName: string
+  previousPreview: string
+  currentPreview: string
+}
+
 /** {@link WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT} 的 `detail`（可选，缺省时提示组件按 1 条处理） */
 export type WorldBookAfterPatchUpdatedEventDetail = {
   /** 本轮模型 JSON 中、且已成功写入人设的补丁条数 */
   appliedPatchCount: number
+  /** 具体变更条目（写库前快照对比） */
+  changedEntries?: WorldBookAfterChangedEntry[]
   /** 补丁来源：模型 inline / 回合间编辑助手 / 自动总结 / 每轮专用判断 */
-  source?: 'model_inline' | 'post_reply' | 'auto_summary' | 'per_round'
+  source?: 'model_inline' | 'post_reply' | 'auto_summary' | 'per_round' | 'retry_revert'
 }
 
 const MAX_ITEM_CONTENT_CHARS = 12000
@@ -39,6 +49,40 @@ export type WorldBookAfterPatch = {
   worldBookId: string
   itemId: string
   newContent: string
+}
+
+/** 弹窗用完整正文；保留换行，仅收束多余空白，不做省略截断 */
+function previewEpilogueBody(raw: string): string {
+  const t = String(raw ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  if (!t) return '（空）'
+  return t
+}
+
+/** 写库前对比：生成弹窗用的条目完整变更正文 */
+export function summarizeWorldBookAfterPatchChanges(
+  character: Character,
+  patches: WorldBookAfterPatch[],
+): WorldBookAfterChangedEntry[] {
+  const out: WorldBookAfterChangedEntry[] = []
+  for (const p of patches) {
+    const wb = character.worldBooks?.find((w) => w.id === p.worldBookId)
+    const it = wb?.items?.find((i) => i.id === p.itemId)
+    if (!wb || !it || it.priority !== 'after') continue
+    const before = String(it.content ?? '')
+    const after = sanitizeEpilogueExtensionNewContent(p.newContent)
+    if (before.trim() === after.trim()) continue
+    out.push({
+      bookName: String(wb.name ?? '').trim() || '世界书',
+      itemName: String(it.name ?? '').trim() || '尾声条目',
+      previousPreview: previewEpilogueBody(before),
+      currentPreview: previewEpilogueBody(after),
+    })
+  }
+  return out
 }
 
 export function getWorldBookAfterItemContent(
@@ -426,12 +470,13 @@ export function extractWorldBookAfterPatchBlock(raw: string): {
   judged: boolean
 } {
   const src = String(raw ?? '')
-  const marker = '---WB_AFTER_PATCH---'
-  const idx = src.indexOf(marker)
-  if (idx < 0) return { rest: src, patches: [], judged: false }
+  const found = src.match(/---WB_AFTER_PATCH(?:---)?(?![A-Za-z0-9])/)
+  if (!found || found.index == null) return { rest: src, patches: [], judged: false }
+  const idx = found.index
+  const markerLen = found[0].length
 
   const head = src.slice(0, idx)
-  const tail = src.slice(idx + marker.length).trimStart()
+  const tail = src.slice(idx + markerLen).trimStart()
 
   const memPos = findDatingMemoryDelimiterIndex(tail)
   const obsPos = tail.indexOf('---OBS_NOTES_PATCH---')

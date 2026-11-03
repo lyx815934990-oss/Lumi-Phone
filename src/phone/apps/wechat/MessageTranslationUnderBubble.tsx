@@ -114,12 +114,12 @@ export function MessageTranslationUnderBubble({
     </button>
   )
 
-  // 无气泡本体时：按钮顶对齐，展开面板增高也不挤按钮
+  // 无气泡本体时：按钮绝对定位到旁侧，不从译文面板宽度里扣空间
   if (!children) {
     return (
-      <div className={`inline-flex max-w-full ${isSelf ? 'items-end' : 'items-start'}`}>
-        <div className={`flex min-w-0 items-start gap-1 ${isSelf ? 'flex-row-reverse' : 'flex-row'}`}>
-          <div className="min-w-0 max-w-full">{panel}</div>
+      <div className={`relative inline-flex max-w-full overflow-visible ${isSelf ? 'items-end' : 'items-start'}`}>
+        <div className="min-w-0 max-w-full">{panel}</div>
+        <div className={`absolute top-0 z-[2] ${isSelf ? 'right-full mr-1' : 'left-full ml-1'}`}>
           {toggle}
         </div>
       </div>
@@ -127,18 +127,28 @@ export function MessageTranslationUnderBubble({
   }
 
   /**
-   * 气泡+译文同列：外层 inline-block 限宽换行（勿用 w-max，长文会撑出屏外）；
-   * 展开时 stretch 同宽，译文短也拉满。旁侧「翻译」横向不换行。
+   * 气泡+译文同列：旁侧「翻译」绝对定位到气泡外（对侧空隙），
+   * 勿再 max-w-[calc(100%-2.75rem)]，否则同步翻译开时 char 侧会比自己侧更窄。
    */
   return (
-    <div className={`inline-flex max-w-full gap-x-1 ${isSelf ? 'flex-row-reverse items-end' : 'flex-row items-end'}`}>
-      <div className="inline-block max-w-[calc(100%-2.75rem)] align-top">
-        <div className={`flex max-w-full flex-col ${open ? 'w-full items-stretch' : isSelf ? 'items-end' : 'items-start'}`}>
+    <div
+      className={`relative inline-flex max-w-full overflow-visible ${
+        isSelf ? 'justify-end' : 'justify-start'
+      }`}
+    >
+      <div className="min-w-0 max-w-full">
+        <div
+          className={`flex max-w-full flex-col ${
+            open ? 'w-full items-stretch' : isSelf ? 'items-end' : 'items-start'
+          }`}
+        >
           <div className={open ? 'w-full min-w-0 max-w-full' : 'max-w-full'}>{children}</div>
           <div className="w-full min-w-0 max-w-full">{panel}</div>
         </div>
       </div>
-      {toggle}
+      <div className={`absolute top-0 z-[2] ${isSelf ? 'right-full mr-1' : 'left-full ml-1'}`}>
+        {toggle}
+      </div>
     </div>
   )
 }

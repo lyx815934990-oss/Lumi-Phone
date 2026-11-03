@@ -190,6 +190,22 @@ export function IconThinkingChain(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+/** 外语：打开的书 + 字母 A（背单词意象） */
+export function IconLangStudy(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M5.5 6.2v11.6c0 .7.5 1.2 1.2 1.2H12" />
+      <path d="M18.5 6.2v11.6c0 .7-.5 1.2-1.2 1.2H12" />
+      <path d="M12 6.2v12.8" />
+      <path d="M5.5 6.2c1.8 1 3.6 1 6.5 0" />
+      <path d="M18.5 6.2c-1.8 1-3.6 1-6.5 0" />
+      <path d="M8.2 11.2h2.2M8.2 13.6h2.8" opacity="0.7" />
+      <path d="M14.4 10.4l1.1 3.4h.05l1.1-3.4" />
+      <path d="M14.7 12.6h2.1" />
+    </svg>
+  )
+}
+
 const map = {
   wechat: IconWeChat,
   takeout: IconTakeout,
@@ -206,6 +222,7 @@ const map = {
   evolution: IconEvolution,
   coupleSpace: IconCoupleSpace,
   thinkingChain: IconThinkingChain,
+  langStudy: IconLangStudy,
 } as const
 
 export function AppLineIcon({

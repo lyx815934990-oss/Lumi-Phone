@@ -314,6 +314,7 @@ const FLOATING_SHORTCUT_APP_IDS: ReadonlyArray<AppSlot['id']> = [
   'evolution',
   'coupleSpace',
   'thinkingChain',
+  'langStudy',
 ]
 
 const FLOATING_SHORTCUT_MAX = 12
@@ -1307,6 +1308,7 @@ function normalizeAppPageStyles(parsed: unknown): CustomizationState['appPageSty
     evolution: migrateAppPage({ ...def.evolution, ...record.evolution }),
     coupleSpace: migrateAppPage({ ...def.coupleSpace, ...record.coupleSpace }),
     thinkingChain: migrateAppPage({ ...def.thinkingChain, ...record.thinkingChain }),
+    langStudy: migrateAppPage({ ...def.langStudy, ...record.langStudy }),
   }
 }
 

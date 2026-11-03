@@ -6,8 +6,8 @@ import { datingAdvancedControlTutorialBody } from './datingAdvancedControlTutori
 export const DATING_ADVANCED_CONTROL_COACH_TARGET_ATTR = 'data-ac-coach'
 export const DATING_ADVANCED_CONTROL_COACH_ROOT_ATTR = 'data-ac-coach-root'
 export const DATING_ADVANCED_CONTROL_COACH_SCOPE = 'dating-advanced-control'
-/** v3：补「最大上下文 Token」锚点 */
-export const DATING_ADVANCED_CONTROL_COACH_SEEN_KEY = 'dating-advanced-control-coach-completed-v3'
+/** v4：补「SSE 流式」锚点 */
+export const DATING_ADVANCED_CONTROL_COACH_SEEN_KEY = 'dating-advanced-control-coach-completed-v4'
 
 export const DATING_ADVANCED_CONTROL_COACH_STEPS: MemoryCoachStep[] = [
   {
@@ -20,6 +20,12 @@ export const DATING_ADVANCED_CONTROL_COACH_STEPS: MemoryCoachStep[] = [
     target: 'ac-help',
     title: '场控说明入口',
     body: '标题右侧「场控说明」打开文字版；「高亮引导」会逐个点亮下面每个开关并说明作用。随时可从这里重看。',
+    cardPlacement: 'below',
+  },
+  {
+    target: 'ac-console-master',
+    title: '场控提示词总开关',
+    body: datingAdvancedControlTutorialBody('场控提示词总开关'),
     cardPlacement: 'below',
   },
   {
@@ -50,6 +56,12 @@ export const DATING_ADVANCED_CONTROL_COACH_STEPS: MemoryCoachStep[] = [
     target: 'ac-thinking',
     title: '思维链',
     body: datingAdvancedControlTutorialBody('思维链'),
+    cardPlacement: 'below',
+  },
+  {
+    target: 'ac-sse',
+    title: 'SSE 流式',
+    body: datingAdvancedControlTutorialBody('SSE 流式'),
     cardPlacement: 'below',
   },
   {

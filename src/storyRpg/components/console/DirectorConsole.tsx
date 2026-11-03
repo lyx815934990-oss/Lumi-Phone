@@ -24,6 +24,7 @@ const MODE_COACH_TARGET: Partial<Record<DirectorActionId, string>> = {
   side: 'sr-mode-side',
   parallel: 'sr-mode-parallel',
   'if-line': 'sr-mode-if',
+  sse: 'sr-mode-sse',
   continue: 'sr-mode-continue',
   npc: 'sr-mode-npc',
 }
@@ -87,7 +88,7 @@ function QuickInputBar({
   }
 
   return (
-    <div className="flex items-end gap-2 rounded-2xl border border-[var(--sr-border)] bg-[var(--sr-glass)] p-2 backdrop-blur-md">
+    <div className="flex items-end gap-2 rounded-[12px] border border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] p-2">
       <div
         className="flex shrink-0 flex-col gap-1 pb-1"
         {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-insert-marks' }}
@@ -95,7 +96,7 @@ function QuickInputBar({
         <button
           type="button"
           onClick={() => insertPair('\u201C', '\u201D')}
-          className="rounded-lg px-1.5 py-0.5 font-serif text-[15px] text-[var(--sr-text-muted)] hover:bg-[var(--sr-glass-strong)] hover:text-[var(--sr-gold)]"
+          className="rounded-[6px] px-1.5 py-0.5 font-serif text-[15px] text-[var(--sr-text-muted)] hover:bg-[var(--sr-panel)] hover:text-[var(--sr-text)]"
           title="插入对白"
           {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-insert-quote' }}
         >
@@ -104,7 +105,7 @@ function QuickInputBar({
         <button
           type="button"
           onClick={() => insertPair('**', '**')}
-          className="rounded-lg px-1.5 py-0.5 font-mono text-[12px] text-[var(--sr-text-muted)] hover:bg-[var(--sr-glass-strong)] hover:text-[var(--sr-gold)]"
+          className="rounded-[6px] px-1.5 py-0.5 font-mono text-[12px] text-[var(--sr-text-muted)] hover:bg-[var(--sr-panel)] hover:text-[var(--sr-text)]"
           title="内心 OS"
           {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-insert-os' }}
         >
@@ -152,9 +153,9 @@ function QuickInputBar({
             if (onHeartWhisper) onHeartWhisper()
             else patchSettings({ heartWhisperMode: !heartWhisperMode })
           }}
-          className={`rounded-full p-1.5 transition ${
+          className={`rounded-[8px] p-1.5 transition ${
             heartWhisperMode && !onHeartWhisper
-              ? 'bg-[var(--sr-gold)]/20 text-[var(--sr-gold)]'
+              ? 'bg-[var(--sr-text)]/10 text-[var(--sr-text)]'
               : 'text-[var(--sr-text-faint)] hover:text-[var(--sr-text-soft)]'
           }`}
           aria-label="心语"
@@ -166,7 +167,7 @@ function QuickInputBar({
           type="button"
           disabled={loading || !composerText.trim()}
           onClick={handleSend}
-          className="flex size-9 items-center justify-center rounded-full bg-[var(--sr-gold)] text-[var(--sr-gold-on)] transition hover:brightness-110 disabled:opacity-35"
+          className="flex size-9 items-center justify-center rounded-[8px] bg-[var(--sr-text)] text-[var(--sr-panel-elevated)] transition hover:opacity-90 disabled:opacity-35"
           aria-label="发送"
         >
           <Send className="size-4" />
@@ -193,7 +194,7 @@ function DirectorActionBar({
         <button
           type="button"
           onClick={onOpenModeHelp}
-          className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[var(--sr-border)] bg-[var(--sr-glass)] text-[var(--sr-text-muted)] transition hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-gold)]"
+          className="flex size-8 shrink-0 items-center justify-center rounded-[8px] border border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] text-[var(--sr-text-muted)] transition hover:border-[var(--sr-text-soft)] hover:text-[var(--sr-text)]"
           aria-label="模式说明"
           title="上帝 / 导演 / 侧写说明"
         >
@@ -232,14 +233,14 @@ function PendingControlTagStrip({
       aria-label="本轮附带功能"
       {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-pending-tags' }}
     >
-      <span className="mt-0.5 shrink-0 pt-px text-[10px] font-medium tracking-wide text-[var(--sr-text-faint)]">
+      <span className="mt-0.5 shrink-0 pt-px font-mono text-[9px] font-medium tracking-[0.14em] text-[var(--sr-text-faint)]">
         本轮
       </span>
       <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
         {tags.map((tag) => (
           <span
             key={tag.id}
-            className="inline-flex items-center rounded-full border border-[var(--sr-gold)]/30 bg-[var(--sr-gold)]/10 px-2 py-0.5 text-[10px] font-medium leading-none tracking-wide text-[var(--sr-text-soft)]"
+            className="inline-flex items-center rounded-[6px] border border-[var(--sr-border)] bg-[var(--sr-panel)] px-2 py-0.5 font-mono text-[10px] font-medium leading-none tracking-[0.08em] text-[var(--sr-text-soft)]"
           >
             {tag.label}
           </span>
@@ -292,7 +293,7 @@ export function DirectorConsole({
             node as HTMLDivElement | null
         }
       }}
-      className="fixed inset-x-0 z-[90] border-t border-[var(--sr-border)] px-3 pt-2 backdrop-blur-xl transition-[bottom,transform] duration-200 will-change-transform"
+      className="fixed inset-x-0 z-[90] border-t border-[var(--sr-border)] px-3 pt-2 transition-[bottom,transform] duration-200 will-change-transform"
       style={{
         bottom: keyboardInsetPx > 0 ? keyboardInsetPx : 0,
         paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
@@ -311,7 +312,7 @@ export function DirectorConsole({
           <button
             type="button"
             onClick={() => (onOpenAdvanced ? onOpenAdvanced() : storeOpenAdvanced(true))}
-            className="flex size-10 items-center justify-center rounded-full border border-[var(--sr-border)] bg-[var(--sr-glass)] text-lg text-[var(--sr-gold)] transition hover:bg-[var(--sr-glass-strong)]"
+            className="flex size-10 items-center justify-center rounded-[8px] border border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] text-lg text-[var(--sr-text)] transition hover:border-[var(--sr-text-soft)]"
             aria-label="高级场控"
             {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-advanced' }}
           >
@@ -321,7 +322,7 @@ export function DirectorConsole({
             <button
               type="button"
               onClick={onOpenWenxin}
-              className="flex size-10 items-center justify-center rounded-full border border-[var(--sr-border)] bg-[var(--sr-glass)] text-[var(--sr-gold)] transition hover:bg-[var(--sr-glass-strong)]"
+              className="flex size-10 items-center justify-center rounded-[8px] border border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] text-[var(--sr-text)] transition hover:border-[var(--sr-text-soft)]"
               aria-label="文心"
               title="文心 · 提示词与思维链"
               {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-wenxin' }}

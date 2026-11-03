@@ -152,6 +152,7 @@ export type AppSlot = {
     | 'evolution'
     | 'coupleSpace'
     | 'thinkingChain'
+    | 'langStudy'
   label: string
   /** 可选：自定义图标图片 URL（优先于线框 SVG） */
   iconImageUrl: string
@@ -1198,12 +1199,13 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
     { id: 'evolution', label: '系统演进录', iconImageUrl: '', iconRadius: 18 },
     { id: 'coupleSpace', label: '情侣空间', iconImageUrl: '', iconRadius: 18 },
     { id: 'thinkingChain', label: '文心', iconImageUrl: '', iconRadius: 18 },
+    { id: 'langStudy', label: '外语', iconImageUrl: '', iconRadius: 18 },
   ],
   desktopLayout: [
     'voiceprint',
     'dataArchive',
     'appearance',
-    'recycleBin',
+    'langStudy',
     'sandbox',
     'evolution',
     'coupleSpace',
@@ -1298,6 +1300,14 @@ export const DEFAULT_CUSTOMIZATION: CustomizationState = {
       cardBg: '#ffffff',
       fontFamily:
         '"Cormorant Garamond", "Noto Serif SC", "STSong", "Songti SC", serif',
+    },
+    langStudy: {
+      ...DEFAULT_APP_PAGE_STYLE,
+      pageBg: '#F4F7F5',
+      headerBg: 'rgba(244,247,245,0.94)',
+      cardBg: '#ffffff',
+      fontFamily:
+        '"Inter", "Noto Sans SC", system-ui, -apple-system, "PingFang SC", sans-serif',
     },
   },
   dockStyle: {

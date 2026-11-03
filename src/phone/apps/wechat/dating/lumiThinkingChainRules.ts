@@ -43,12 +43,15 @@ export function buildDatingStyleSystemPrompt(
   toggles?: LoreArchiveBuiltinPresetToggles | null,
   opts?: {
     thinkingChainEnabled?: boolean
+    /** 场控总开关关闭：不注入内置思维链壳 / 直出壳 / 内置场记包 */
+    omitBuiltinOutputShell?: boolean
     writingPresets?: DatingWritingPresetToggles | null
     /** 传入字符串时替换全部内置线下 must-inject，仅用自定义正文 */
     customWritingPrompt?: string | null
   },
 ): string {
-  const thinkingChainEnabled = opts?.thinkingChainEnabled !== false
+  const omitBuiltinOutputShell = opts?.omitBuiltinOutputShell === true
+  const thinkingChainEnabled = opts?.thinkingChainEnabled !== false && !omitBuiltinOutputShell
   const usingCustom = typeof opts?.customWritingPrompt === 'string'
   const resolved = resolveLoreArchiveBuiltinPresetToggles(toggles)
   const innerOsPresetNote = resolved.offlineRichInnerOs
@@ -118,9 +121,12 @@ export function buildDatingStyleSystemPrompt(
     : ''
   const userReplyStyle = !usingCustom ? resolveOfflineReplyStyleAppendix() : null
   const userCotBooks =
-    thinkingChainEnabled && !usingCustom ? resolveOfflineThinkingChainBooksPrompt() : null
+    !usingCustom && (opts?.thinkingChainEnabled !== false || omitBuiltinOutputShell)
+      ? resolveOfflineThinkingChainBooksPrompt()
+      : null
   const core = buildOfflineDatingMustInjectCore({
-    thinkingChainEnabled,
+    thinkingChainEnabled: opts?.thinkingChainEnabled !== false,
+    omitBuiltinOutputShell,
     toggles,
     writingPresets: opts?.writingPresets,
     customWritingPrompt: usingCustom ? opts?.customWritingPrompt : null,

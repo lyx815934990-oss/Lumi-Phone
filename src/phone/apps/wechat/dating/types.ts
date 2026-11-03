@@ -19,11 +19,14 @@ export function clampDatingLengthTargetChars(raw: number): number {
   )
 }
 
+/** IF 线 / 平行事件：允许比主线更高的目标字数（完整故事、双视角等） */
+export const DATING_PLOT_DIMENSION_LENGTH_MAX = 20_000
+
 /** 平行事件 / IF 线面板：允许 1～上限任意整数，编辑时不强制 60 下限 */
 export function parsePlotDimensionLengthTarget(raw: number | string, fallback = 500): number {
   const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim())
   if (!Number.isFinite(n)) return fallback
-  return Math.max(1, Math.min(DATING_AI_LENGTH_TARGET_MAX, Math.round(n)))
+  return Math.max(1, Math.min(DATING_PLOT_DIMENSION_LENGTH_MAX, Math.round(n)))
 }
 /** 送入约会剧情模型的上下文预算上限（词符/token；仍受 API/模型实际上限） */
 export const DATING_AI_MAX_CONTEXT_TOKENS = 200_000
@@ -63,11 +66,17 @@ export function clampDatingPlotSummaryInjectRounds(raw: number): number {
   )
 }
 
+/** 线下剧情 SSE：显式 false 才关；缺省 / 未写视为开 */
+export function isDatingPlotSseEnabled(raw: unknown): boolean {
+  return raw !== false
+}
+
 /**
  * 剧情 completion 等待上限（毫秒）。
+ * `0` = 不设客户端超时，一直等到接口返回（仍可能被浏览器/中转链路断开）。
  * 输出 token 上限改由 API 设置页「最大 Token」控制（留空则系统默认 12800）。
  */
-export const DATING_PLOT_COMPLETION_TIMEOUT_MS = 240_000
+export const DATING_PLOT_COMPLETION_TIMEOUT_MS = 0
 
 /** 发剧情前：记忆注入 / 时钟同步等准备步骤上限（毫秒） */
 export const DATING_PLOT_PREPARE_TIMEOUT_MS = 90_000
@@ -147,6 +156,17 @@ export type NarrativeGenOptions = {
    * 关闭则直出剧情正文（更快、更省 token）。默认开启。
    */
   thinkingChainEnabled?: boolean
+  /**
+   * 线下剧情是否走 SSE 流式。缺省 true。
+   * 关则整包返回（与 API 设置页「流式」无关，仅本角色约会存档）。
+   */
+  plotSseEnabled?: boolean
+  /**
+   * 场控提示词总开关。缺省 true。
+   * false：不注入人称 / 字数 / 时间推进 / 抢话 / 评论 / 小剧场 / 输出语言 / 直出壳 / 思维链壳 / 导演 / 上帝 / 侧幕，改由线下预设决定。
+   * 【本节梗概】、剧情时间轴当前状态、尾声延展判断仍为客户端固定注入，不受本开关与预设覆盖。
+   */
+  consolePromptsEnabled?: boolean
   /**
    * 读者评论模式：同轮在正文后输出【读者评论】块（不另发请求）。
    * 缺省 false（需用户在高级场控中自行开启）。
@@ -377,6 +397,8 @@ export type PlotDimensionArtifact = {
   innerOsTranslations?: PlotDialogueTranslation[]
   /** 平行事件写入剧情摘要表时的结构化 delta（非原文） */
   timelineDelta?: import('../memory/storyTimelineTypes').StoryTimelineSummaryDelta
+  /** 本段生成耗时（毫秒；从发起模型请求到正文可落盘，含同步译） */
+  generationDurationMs?: number
 }
 
 /** 平行 / IF 生成时的旁白·对白·内心 OS 语言（与主线分设一致） */
@@ -425,6 +447,15 @@ export type CharacterArchive = {
    * 关闭则模型直出正文。默认 true；普通模式与 VN 共用。
    */
   thinkingChainEnabled?: boolean
+  /**
+   * 线下剧情 SSE 流式。缺省 true；关则整包返回。仅影响约会剧情 / IF / 平行，不改 API 设置页全局流式。
+   */
+  plotSseEnabled?: boolean
+  /**
+   * 场控提示词总开关。缺省开：人称、字数、时间推进、抢话、评论、小剧场、输出语言、直出/思维链壳、导演、上帝、侧幕仍由场控注入。
+   * 关闭后这些不注入，只保留线下预设提示词；【本节梗概】、剧情时间轴、尾声判断仍固定注入。
+   */
+  consolePromptsEnabled?: boolean
   /** 读者评论模式（小说随笔式折叠条，同轮生成）；缺省关 */
   commentModeEnabled?: boolean
   /** 小剧场：剧情相关 HTML 可视化（同轮生成）；缺省关 */
@@ -447,6 +478,10 @@ export type CharacterArchive = {
   branchContinuationHint?: string
   /** 线下/VN 剧情生成：目标正文字数（汉字），与界面「目标字数」同步落盘，避免切换角色后仍用默认 500 */
   datingLengthTargetChars?: number
+  /** IF 线面板「目标字数」；与主线 datingLengthTargetChars 独立 */
+  datingIfLengthTargetChars?: number
+  /** 平行事件面板「目标字数」；与主线独立 */
+  datingParallelLengthTargetChars?: number
   /**
    * 线下剧情注入上下文的最大 token 预算（8k～200k）。
    * `full_text` 模式下「最近剧情」按预算自最新往历史装填；记忆/未总结段同比缩放；缺省等同满档 200k。

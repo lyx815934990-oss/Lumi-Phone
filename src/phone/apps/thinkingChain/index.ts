@@ -5,7 +5,15 @@ export {
   resolveOfflineThinkingChainBooksPrompt,
   resolveOnlineReplyStyleAppendix,
   resolveOnlineThinkingChainAppendix,
+  type CotAssembleMacroOpts,
 } from './cotAssemble'
+export { expandCotInjectMacros } from './cotMacroExpand'
+export {
+  clearCotGlobalVars,
+  getCotGlobalVars,
+  setCotGlobalVar,
+  setCotGlobalVars,
+} from './cotGlobalVarsStore'
 export {
   COT_SYSTEM_PRESET_ID,
   type CoTEntry,

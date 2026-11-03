@@ -1,0 +1,195 @@
+import type { ReactNode } from 'react'
+
+import type { WeChatBubbleTheme } from '../../../types'
+import { resolveBubbleAvatarRadiusPx, resolveBubbleAvatarSizePx } from '../../../types'
+import {
+  ChatGroupSenderNicknameWithRank,
+  ChatGroupSpeakerRankOnAvatar,
+} from '../../wechat/group/ChatGroupSpeakerAvatarWrap'
+import { useSpecialChatCardLongPress } from '../../wechat/hooks/useSpecialChatCardLongPress'
+import { WeChatAvatarChromeWrap } from '../../wechat/WeChatAvatarChromeWrap'
+import type { WeChatForumSharePayload } from '../../wechat/newFriendsPersona/types'
+import { ForumShareMessageCard } from './ForumShareMessageCard'
+
+type Props = {
+  id: string
+  isSelf: boolean
+  data: WeChatForumSharePayload
+  bubble: WeChatBubbleTheme
+  showAvatar: boolean
+  showAvatarColumn: boolean
+  chatSelfAvatarUrl?: string
+  chatOtherAvatarUrl?: string
+  chatOtherSenderNickname?: string
+  chatOtherAvatarRankBadge?: 'owner' | 'admin' | null
+  chatSelfAvatarRankBadge?: 'owner' | 'admin' | null
+  groupRankShowBesideNickname?: boolean
+  onOpen?: () => void
+  multiSelectAvatar?: ReactNode
+  selected?: boolean
+  onLongPress?: (anchorRect: DOMRect) => void
+}
+
+export function ForumShareChatRow({
+  id,
+  isSelf,
+  data,
+  bubble,
+  showAvatar,
+  showAvatarColumn,
+  chatSelfAvatarUrl,
+  chatOtherAvatarUrl,
+  chatOtherSenderNickname,
+  chatOtherAvatarRankBadge = null,
+  chatSelfAvatarRankBadge: _chatSelfAvatarRankBadge = null,
+  groupRankShowBesideNickname = true,
+  onOpen,
+  multiSelectAvatar,
+  selected = false,
+  onLongPress,
+}: Props) {
+  const avatarSide = isSelf ? 'self' : 'other'
+  const avatarPx = resolveBubbleAvatarSizePx(bubble, avatarSide)
+  const avatarRadiusPx = resolveBubbleAvatarRadiusPx(bubble, avatarSide)
+  const { anchorRef, bind, pressStyle } = useSpecialChatCardLongPress(onLongPress, selected)
+  const card = (
+    <div
+      ref={anchorRef}
+      className="relative inline-block select-none transition-[transform,opacity] duration-150 ease-out"
+      style={pressStyle}
+      {...bind}
+    >
+      <ForumShareMessageCard data={data} onOpen={onOpen} />
+    </div>
+  )
+  const showAvatarVisual = showAvatar && showAvatarColumn
+  const reserveAvatarGutter = showAvatar
+  const rankBeside = groupRankShowBesideNickname !== false
+  const avatarGutter = <div className="shrink-0" style={{ width: avatarPx, height: avatarPx }} aria-hidden />
+  const otherAvatarFallback = (
+    <div
+      className="shrink-0"
+      style={{
+        width: avatarPx,
+        height: avatarPx,
+        borderRadius: `${avatarRadiusPx}px`,
+        background: 'rgba(0,0,0,0.06)',
+        border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+      }}
+      aria-hidden
+    />
+  )
+
+  if (isSelf) {
+    return (
+      <div className="w-[100vw] max-w-[100vw] shrink-0 overflow-x-visible" data-wx-msg-id={id}>
+        <div className="ml-auto mr-[24px] flex max-w-full flex-row-reverse items-start gap-[12px]">
+          {showAvatarVisual || multiSelectAvatar ? (
+            multiSelectAvatar ?? (
+              chatSelfAvatarUrl?.trim() ? (
+                <img
+                  src={chatSelfAvatarUrl.trim()}
+                  alt=""
+                  width={avatarPx}
+                  height={avatarPx}
+                  className="shrink-0 object-cover"
+                  style={{
+                    width: avatarPx,
+                    height: avatarPx,
+                    borderRadius: `${avatarRadiusPx}px`,
+                    border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                  }}
+                  aria-hidden
+                />
+              ) : (
+                <div
+                  className="shrink-0"
+                  style={{
+                    width: avatarPx,
+                    height: avatarPx,
+                    borderRadius: `${avatarRadiusPx}px`,
+                    background: 'rgba(0,0,0,0.06)',
+                    border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                  }}
+                  aria-hidden
+                />
+              )
+            )
+          ) : reserveAvatarGutter ? (
+            avatarGutter
+          ) : null}
+          <div className="min-w-0 max-w-[calc(100vw-96px)]">{card}</div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-[100vw] max-w-[100vw] shrink-0 overflow-x-visible" data-wx-msg-id={id}>
+      <div className="ml-[24px] mr-auto flex max-w-full items-start gap-[12px]">
+        {showAvatarVisual || multiSelectAvatar ? (
+          multiSelectAvatar ?? (
+            <div className="relative shrink-0">
+              {!rankBeside ? (
+                <ChatGroupSpeakerRankOnAvatar chromeSide="other" rankBadge={chatOtherAvatarRankBadge} sizePx={avatarPx}>
+                  {chatOtherAvatarUrl?.trim() ? (
+                    <img
+                      src={chatOtherAvatarUrl.trim()}
+                      alt=""
+                      width={avatarPx}
+                      height={avatarPx}
+                      className="shrink-0 object-cover"
+                      style={{
+                        width: avatarPx,
+                        height: avatarPx,
+                        borderRadius: `${avatarRadiusPx}px`,
+                        border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                      }}
+                      aria-hidden
+                    />
+                  ) : (
+                    otherAvatarFallback
+                  )}
+                </ChatGroupSpeakerRankOnAvatar>
+              ) : (
+                <WeChatAvatarChromeWrap side="other" sizePx={avatarPx}>
+                  {chatOtherAvatarUrl?.trim() ? (
+                    <img
+                      src={chatOtherAvatarUrl.trim()}
+                      alt=""
+                      width={avatarPx}
+                      height={avatarPx}
+                      className="shrink-0 object-cover"
+                      style={{
+                        width: avatarPx,
+                        height: avatarPx,
+                        borderRadius: `${avatarRadiusPx}px`,
+                        border: '1px solid color-mix(in oklab, var(--wx-border) 70%, transparent)',
+                      }}
+                      aria-hidden
+                    />
+                  ) : (
+                    otherAvatarFallback
+                  )}
+                </WeChatAvatarChromeWrap>
+              )}
+            </div>
+          )
+        ) : reserveAvatarGutter ? (
+          multiSelectAvatar ?? avatarGutter
+        ) : null}
+        <div className="min-w-0 max-w-[calc(100vw-96px)]">
+          {!multiSelectAvatar && rankBeside && chatOtherSenderNickname ? (
+            <ChatGroupSenderNicknameWithRank
+              nickname={chatOtherSenderNickname}
+              rankBadge={chatOtherAvatarRankBadge}
+            />
+          ) : !multiSelectAvatar && chatOtherSenderNickname ? (
+            <p className="mb-1 text-[12px] text-[#888888]">{chatOtherSenderNickname}</p>
+          ) : null}
+          {card}
+        </div>
+      </div>
+    </div>
+  )
+}

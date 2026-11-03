@@ -272,6 +272,23 @@ export function AdvancedControlSheet({
         className="grid grid-cols-2 gap-3 pb-2"
         {...{ [DATING_ADVANCED_CONTROL_COACH_ROOT_ATTR]: DATING_ADVANCED_CONTROL_COACH_SCOPE }}
       >
+        <BentoCard className="col-span-2" {...coachTargetProps('ac-console-master')}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <SectionLabel>场控提示词</SectionLabel>
+              <p className="text-[12px] leading-relaxed text-[var(--sr-text)]">
+                {settings.consolePromptsEnabled !== false
+                  ? '开：内置功能（人称、字数、直出/思维链、导演、上帝、侧幕等）和线下预设一起注入。'
+                  : '关：只取消内置功能提示词，改走预设。线上消息、剧情时间轴、最近剧情仍照常注入。'}
+              </p>
+            </div>
+            <CapsuleSwitch
+              checked={settings.consolePromptsEnabled !== false}
+              onCheckedChange={(v) => patchSettings({ consolePromptsEnabled: v })}
+            />
+          </div>
+        </BentoCard>
+
         <BentoCard className="col-span-2" {...coachTargetProps('ac-perspective')}>
           <SectionLabel>人称选择</SectionLabel>
           <div className="flex flex-wrap gap-2">
@@ -440,6 +457,13 @@ export function AdvancedControlSheet({
               label="思维链"
               checked={settings.thinkingChainEnabled}
               onCheckedChange={(v) => patchSettings({ thinkingChainEnabled: v })}
+            />
+          </div>
+          <div {...coachTargetProps('ac-sse')}>
+            <CapsuleSwitch
+              label="SSE 流式"
+              checked={settings.plotSseEnabled !== false}
+              onCheckedChange={(v) => patchSettings({ plotSseEnabled: v })}
             />
           </div>
           <div {...coachTargetProps('ac-interrupt')}>

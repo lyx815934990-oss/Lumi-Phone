@@ -1,4 +1,5 @@
 import type { PlotItem } from '../../phone/apps/wechat/dating/types'
+import { prepareDatingFeedBody } from '../../phone/apps/wechat/dating/plotCoT'
 import { resolvePlotStoryEndDisplayLabel } from '../../phone/apps/wechat/dating/plotStoryTimeLabel'
 import {
   type PlotSummaryTitleOptions,
@@ -30,8 +31,10 @@ export function plotItemToStoryNode(plot: PlotItem, opts?: PlotSummaryTitleOptio
       }
     : undefined
 
-  // 保留讨论位锚点，供卡片按锚点多处穿插评论；渲染正文段时再剥离
-  const rawBody = String(slices?.body ?? plot.content ?? '')
+  // AI：套用文心正则 / 去代码围栏；保留讨论位锚点供卡片穿插评论
+  const rawStored = String(slices?.body ?? plot.content ?? '')
+  const rawBody =
+    plot.type === 'ai' ? prepareDatingFeedBody(rawStored) : rawStored
   const content = rawBody
 
   return {
@@ -46,6 +49,8 @@ export function plotItemToStoryNode(plot: PlotItem, opts?: PlotSummaryTitleOptio
     summaryBody: resolvePlotSummaryBody({ ...plot, content: rawBody }, opts) || undefined,
     hasParallelEvent: !!plot.parallelEvent?.content?.trim(),
     hasIfLine: !!plot.ifLine?.content?.trim(),
+    ifLineContent: plot.ifLine?.content?.trim() || undefined,
+    parallelEventContent: plot.parallelEvent?.content?.trim() || undefined,
     isHighlight: comments?.some((c) => c.highlight) ?? false,
     chainOfThought: plot.logicPass?.trim() || undefined,
     images: plot.plotImages?.map((img) => ({

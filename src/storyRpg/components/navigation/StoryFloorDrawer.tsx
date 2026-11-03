@@ -307,14 +307,24 @@ export function StoryFloorRailButton({ onClick }: { onClick: () => void }) {
       onPointerCancel={() => {
         dragRef.current = null
       }}
-      style={{ top: topPx }}
-      className="fixed left-0 z-[90] flex touch-none flex-col items-center rounded-r-xl border border-l-0 border-[var(--sr-border)] bg-[var(--sr-panel-elevated)]/95 px-1 py-2.5 text-[10px] font-medium tracking-[0.12em] text-[var(--sr-text-soft)] shadow-md backdrop-blur-sm transition-[border-color,color] hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-gold)] active:cursor-grabbing"
+      style={{
+        top: topPx,
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+      }}
+      className="fixed left-0 z-[90] flex touch-none select-none flex-col items-center rounded-r-xl border border-l-0 border-[var(--sr-border)] bg-[var(--sr-panel-elevated)]/95 px-1 py-2.5 text-[10px] font-medium tracking-[0.12em] text-[var(--sr-text-soft)] shadow-md backdrop-blur-sm transition-[border-color,color] hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-gold)] active:cursor-grabbing"
       aria-label="打开楼层目录（可上下拖动）"
       title="点击打开 · 按住上下拖动"
-      {...{ [DATING_STORY_COACH_TARGET_ATTR]: 'sr-floor' }}
+      draggable={false}
+      onDragStart={(e) => e.preventDefault()}
+      {...{
+        [DATING_STORY_COACH_TARGET_ATTR]: 'sr-floor',
+        // React 无 onSelectStart；原生事件阻止拖选带上本按钮
+        onSelectStart: (e: Event) => e.preventDefault(),
+      }}
     >
-      <Layers className="mb-0.5 size-3.5" strokeWidth={1.75} />
-      楼层
+      <Layers className="pointer-events-none mb-0.5 size-3.5" strokeWidth={1.75} aria-hidden />
+      <span className="pointer-events-none select-none">楼层</span>
     </button>
   )
 }

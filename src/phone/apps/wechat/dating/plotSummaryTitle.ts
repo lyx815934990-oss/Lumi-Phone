@@ -11,6 +11,8 @@ import { getAiPlotActiveTimelineDelta } from './plotTimelineDelta'
 import { getAiPlotVersionSlices } from './plotVersions'
 import type { PlotItem } from './types'
 
+import { extractDatingTaggedBlocks } from './datingPlotTaggedBlocks'
+
 const SYNOPSIS_TAIL_RES = [
   /\n?【本节梗概】\s*([^\n]{1,80})\s*$/u,
   /\n?【剧情摘要】\s*([^\n]{1,80})\s*$/u,
@@ -53,7 +55,18 @@ export function buildTimelineRowBodyMapFromRows(rows: StoryTimelinePlotRow[]): M
 
 /** 从正文尾部拆出摘要行（供 parse 时写入 planSummary） */
 export function extractPlotSynopsisTail(text: string): { summary: string; content: string } {
-  let body = String(text || '')
+  let body = String(text || '').replace(/\n---WB_AFTER_PATCH(?:---)?(?![A-Za-z0-9])[\s\S]*$/u, '')
+  const tagged = extractDatingTaggedBlocks(body)
+  if (tagged.synopsis.trim()) {
+    const summary = tagged.synopsis.trim().replace(/\s+/g, ' ').slice(0, 48)
+    // 正文优先 content 标签；否则去掉 synopsis 块后的剩余
+    const withoutSyn = body
+      .replace(/<synopsis\b[^>]*>[\s\S]*?<\/synopsis>/gi, '')
+      .replace(/【\s*(?:synopsis|summary|本节梗概|剧情摘要|梗概)\s*】[\s\S]*?(?:【\s*\/\s*(?:synopsis|summary|本节梗概|剧情摘要|梗概)\s*】|【\s*(?:synopsis|summary|本节梗概|剧情摘要|梗概)\s*结束\s*】|$)/giu, '')
+      .trim()
+    const content = (tagged.content.trim() || withoutSyn || tagged.rest).trim()
+    return { summary, content }
+  }
   let summary = ''
   for (const re of SYNOPSIS_TAIL_RES) {
     const m = body.match(re)

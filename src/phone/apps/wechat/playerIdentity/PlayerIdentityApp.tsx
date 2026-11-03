@@ -16,6 +16,7 @@ import { MbtiPersonalityPickerGrid } from '../newFriendsPersona/MbtiPersonalityP
 import { WorldBooksEditor } from '../newFriendsPersona/WorldBooksEditor'
 import type { ScheduleTable } from '../newFriendsPersona/types'
 import { ScheduleEditorScreen } from '../schedule/ScheduleEditorScreen'
+import { buildCharacterCard } from '../wechatChatAi'
 import {
   isMbtiPersonalityWorldBookName,
 } from '../mbtiPersonalityWorldBook'
@@ -1695,9 +1696,21 @@ function IdentityEditPage({
         title="日程表"
         apiConfig={apiConfig}
         initial={(data.schedule as ScheduleTable | undefined) ?? null}
+        initialEntries={data.scheduleEntries ?? null}
+        initialCalendarEvents={data.scheduleCalendarEvents ?? null}
+        initialCalendarAutoUpdateEnabled={data.scheduleCalendarAutoUpdateEnabled === true}
+        personaContext={buildCharacterCard(data, { bioMaxChars: 900 })}
+        characterId={data.id?.trim() || null}
         onClose={() => setScheduleOpen(false)}
-        onSave={async (next) => {
-          const merged: PlayerIdentity = { ...data, schedule: next, updatedAt: Date.now() }
+        onSave={async (payload) => {
+          const merged: PlayerIdentity = {
+            ...data,
+            schedule: payload.table,
+            scheduleEntries: payload.entries,
+            scheduleCalendarEvents: payload.calendarEvents,
+            scheduleCalendarAutoUpdateEnabled: payload.calendarAutoUpdateEnabled,
+            updatedAt: Date.now(),
+          }
           setData(merged)
           setDirty(true)
           await personaDb.upsertPlayerIdentity(merged)

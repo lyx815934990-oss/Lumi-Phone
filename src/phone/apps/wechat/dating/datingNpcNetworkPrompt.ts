@@ -65,10 +65,13 @@ async function formatFullPeerProfileForDatingPrompt(
 export async function loadDatingNpcNetworkPromptBlock(params: {
   mainCharacterId: string
   mainRealName: string
+  /** 本轮指定出场的人脉/同卡角色；只对这些人注入完整世界书 */
+  presentPeerIds?: readonly string[]
 }): Promise<string> {
   const perspectiveId = params.mainCharacterId.trim()
   if (!perspectiveId) return ''
   const mainLabel = params.mainRealName.trim() || '约会对象'
+  const presentSet = new Set((params.presentPeerIds ?? []).map((x) => x.trim()).filter(Boolean))
 
   try {
     const archCtx = await resolveOfflineDatingArchiveContext(perspectiveId)
@@ -93,23 +96,41 @@ export async function loadDatingNpcNetworkPromptBlock(params: {
 
     if (!peers.length && !relBlock.trim() && !pronounBlock.trim()) return ''
 
-    const caps = allocatePeerCaps(peers.length)
+    const presentPeers = presentSet.size
+      ? peers.filter((c) => presentSet.has(c.id.trim()))
+      : []
+    const rosterPeers = presentSet.size
+      ? peers.filter((c) => !presentSet.has(c.id.trim()))
+      : peers
+
+    const caps = allocatePeerCaps(Math.max(1, presentPeers.length))
     const profileSections: string[] = []
-    for (const ch of peers) {
+    for (const ch of presentPeers) {
       profileSections.push(
         await formatFullPeerProfileForDatingPrompt(ch, peerRoleLabel(ch, rootId), caps),
       )
     }
 
+    const rosterLines = rosterPeers.map((ch) => {
+      const name = (ch.name || ch.wechatNickname || '').trim() || '未命名'
+      const ident = ch.identity?.trim()
+      const role = peerRoleLabel(ch, rootId)
+      return `- ${name}（${role}${ident ? ` · ${ident}` : ''}；本轮未指定出场，**不要**读取其完整人设，勿让其无故登场）`
+    })
+
     const intro =
-      `【主角人脉网·完整人设·须参考】下列为「${mainLabel}」人脉圈内**其它角色**的完整档案（档案 / 简介 / 世界书 / 关系），` +
-      `线下剧情中若让其出场、对白或被人提及，须与下表一致，**禁止**写成 generic 路人腔或与档案矛盾的言行。` +
-      `须优先使用表内真实姓名；勿用新全名顶替已有职能位。无名龙套可用「工作人员」「路人」等弱指代。\n\n` +
-      `【当前约会对象】${mainLabel}（完整档案已在「角色信息 / 世界书」中注入，此处不重复。）`
+      presentSet.size
+        ? `【人脉/同卡·按在场注入】「${mainLabel}」圈内角色很多，**本轮只注入指定出场者的完整档案**。未列出完整档案的人默认不在场、不知道本轮细节。无名龙套可用「工作人员」「路人」。\n\n` +
+          `【当前约会对象】${mainLabel}（完整档案已在「角色信息 / 世界书」中注入，此处不重复。）`
+        : `【人脉/同卡·名单（未指定出场）】下列仅姓名与身份，**不要**当完整人设用。若本轮需要某人出场，请用「人脉NPC插入」点名，下一轮才会注入其世界书。\n\n` +
+          `【当前约会对象】${mainLabel}（完整档案已在「角色信息 / 世界书」中注入。）`
 
     const bodyParts = [intro]
     if (profileSections.length) {
-      bodyParts.push('\n【人脉角色·完整档案】\n' + profileSections.join('\n\n---\n\n'))
+      bodyParts.push('\n【本轮在场·完整人设】\n' + profileSections.join('\n\n---\n\n'))
+    }
+    if (rosterLines.length) {
+      bodyParts.push('【本轮未出场·仅名单】\n' + rosterLines.join('\n'))
     }
     if (relBlock.trim()) bodyParts.push(relBlock.trim())
     if (pronounBlock.trim()) bodyParts.push(pronounBlock.trim())

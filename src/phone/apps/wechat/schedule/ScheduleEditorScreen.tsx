@@ -1,193 +1,229 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Bold, Eraser, Highlighter, Italic, Minus, Plus, Redo2, Strikethrough, Underline, Undo2 } from 'lucide-react'
+import { Clock3, Hourglass, MapPin } from 'lucide-react'
+import { useEffect, useId, useMemo, useState } from 'react'
 
 import type { ApiConfig } from '../../api/types'
-import type { ScheduleTable, TableCell, TableCellStyle } from '../newFriendsPersona/types'
-import { cloneScheduleTemplate, SCHEDULE_TEMPLATE_DAILY, SCHEDULE_TEMPLATE_STUDENT } from './scheduleTemplates'
-import { requestScheduleTableFromAi } from '../wechatChatAi'
+import type {
+  ScheduleCalendarEvent,
+  ScheduleCalendarEventStatus,
+  ScheduleDayOfWeek,
+  ScheduleDurationUnit,
+  ScheduleEntry,
+  ScheduleTable,
+} from '../newFriendsPersona/types'
+import {
+  SCHEDULE_TAG_PRESETS,
+  closePastScheduleCalendarEvents,
+  eventsForCalendarDay,
+  formatScheduleDuration,
+  normalizeScheduleCalendarEvents,
+  normalizeScheduleEntries,
+  parseScheduleTableToEntries,
+  resolveCalendarAnchor,
+  scheduleDayLabel,
+  scheduleEntriesToDailyTable,
+  scheduleTagAccent,
+} from './scheduleEntries'
+import { ScheduleMonthCalendar } from './ScheduleMonthCalendar'
+import {
+  requestScheduleCalendarEventsFromAi,
+  requestScheduleWeekEntriesFromAi,
+} from '../wechatChatAi'
 
-const COLORS = {
-  bg: '#f5f5f5',
-  card: '#ffffff',
-  text: '#111111',
-  sub: '#666666',
-  faint: '#9b9b9b',
-  border: '#e5e5e5',
+const CAL_AI_SPAN_OPTS = [
+  { days: 3, label: '3 天' },
+  { days: 7, label: '1 周' },
+  { days: 14, label: '2 周' },
+  { days: 30, label: '1 个月' },
+] as const
+
+const MODE_SCENE_HINT = {
+  weekly:
+    '生活习惯层：没有大事时每周怎么过（按职业作息：上班/排练/通勤/兴趣等；勿默认校园）。与日历冲突时让位日历。',
+  calendar:
+    '特殊事件层：约会、演出、出差、聚会等一次性安排（考试仅限在校生人设），优先于周循环。可开自动更新由对话写入。',
+} as const
+
+const C = {
+  page: '#F3EEE6',
+  panel: '#FFFDF8',
+  ink: '#1F1A14',
+  muted: '#6E6458',
+  faint: '#A89C8C',
+  line: '#D8CFC2',
+  accent: '#B54A3C',
+  accentSoft: '#F2E0DB',
 }
 
-function defaultEmptySchedule(): ScheduleTable {
-  const now = Date.now()
-  const makeStyle = (): TableCellStyle => ({
-    bold: false,
-    italic: false,
-    underline: false,
-    strikethrough: false,
-    highlight: false,
-    align: 'left',
-  })
-  const cell = (content = ''): TableCell => ({ content, style: makeStyle(), colspan: 1, rowspan: 1 })
-  return {
-    id: `t-${now}`,
-    name: '日程表',
-    headers: ['列1', '列2', '列3'],
-    rows: [
-      [cell(), cell(), cell()],
-      [cell(), cell(), cell()],
-      [cell(), cell(), cell()],
-    ],
-    columnWidths: [96, 96, 96],
-    rowHeights: [44, 44, 44],
-    style: { headerStyle: 'dark', borderStyle: 'solid', rowHeight: 'normal' },
-    createdAt: now,
-    updatedAt: Date.now(),
-  }
-}
+const DAYS: ScheduleDayOfWeek[] = [0, 1, 2, 3, 4, 5, 6]
+const DURATION_UNITS: { id: ScheduleDurationUnit; label: string }[] = [
+  { id: 'minute', label: '分钟' },
+  { id: 'hour', label: '小时' },
+  { id: 'day', label: '天' },
+]
 
-function clampMin1(n: number) {
-  return Math.max(1, Math.floor(n))
-}
-
-/** 按下后移动超过该距离视为滚动/拖拽，不触发单击选中、不进入长按框选 */
-const SCHEDULE_TAP_SLOP_PX = 18
-/** 长按触发框选（略加长，减少与滑动的误触） */
-const SCHEDULE_LONG_PRESS_MS = 520
-
-function sanitizeTable(t: ScheduleTable): ScheduleTable {
-  const now = Date.now()
-  const baseStyle: TableCellStyle = {
-    bold: false,
-    italic: false,
-    underline: false,
-    strikethrough: false,
-    highlight: false,
-    align: 'left',
-  }
-  const toCell = (raw: any): TableCell => {
-    if (raw && typeof raw === 'object' && typeof raw.content === 'string') {
-      const s = raw.style ?? {}
-      const align = s.align === 'center' || s.align === 'right' ? s.align : 'left'
-      return {
-        content: String(raw.content ?? ''),
-        style: {
-          bold: !!s.bold,
-          italic: !!s.italic,
-          underline: !!s.underline,
-          strikethrough: !!s.strikethrough,
-          highlight: !!s.highlight,
-          align,
-        },
-        colspan: typeof raw.colspan === 'number' && Number.isFinite(raw.colspan) ? Math.max(1, Math.floor(raw.colspan)) : 1,
-        rowspan: typeof raw.rowspan === 'number' && Number.isFinite(raw.rowspan) ? Math.max(1, Math.floor(raw.rowspan)) : 1,
-      }
-    }
-    // 兼容：字符串
-    return { content: String(raw ?? ''), style: { ...baseStyle }, colspan: 1, rowspan: 1 }
-  }
-
-  const headers = Array.isArray(t.headers) ? t.headers.map((x) => String(x ?? '').trim()) : []
-  const cols = clampMin1(headers.length || 1)
-  const safeHeaders = headers.length ? headers.slice(0, cols) : new Array(cols).fill('')
-
-  const rowsRaw = Array.isArray(t.rows) ? t.rows : []
-  const safeRows: TableCell[][] = rowsRaw
-    .filter((r) => Array.isArray(r))
-    .map((r) => (r as any[]).slice(0, cols).map(toCell))
-    .map((r) => {
-      const out = [...r]
-      while (out.length < cols) out.push(toCell(''))
-      return out
-    })
-
-  const styleIn = t.style ?? { headerStyle: 'dark', borderStyle: 'solid', rowHeight: 'normal' }
-  const style = {
-    headerStyle: styleIn.headerStyle === 'light' || styleIn.headerStyle === 'none' ? styleIn.headerStyle : 'dark',
-    borderStyle: styleIn.borderStyle === 'dashed' || styleIn.borderStyle === 'none' ? styleIn.borderStyle : 'solid',
-    rowHeight: styleIn.rowHeight === 'compact' || styleIn.rowHeight === 'loose' ? styleIn.rowHeight : 'normal',
-  } as const
-
-  const id = String((t as any).id ?? '').trim() || `t-${now}`
-  const createdAt = typeof (t as any).createdAt === 'number' ? (t as any).createdAt : now
-  const updatedAt = typeof (t as any).updatedAt === 'number' ? (t as any).updatedAt : now
-  const columnWidthsIn = Array.isArray((t as any).columnWidths) ? ((t as any).columnWidths as any[]) : []
-  const columnWidths = columnWidthsIn
-    .map((x) => (typeof x === 'number' && Number.isFinite(x) ? Math.min(300, Math.max(50, Math.floor(x))) : 96))
-    .slice(0, cols)
-  while (columnWidths.length < cols) columnWidths.push(96)
-  const rowHeightsIn = Array.isArray((t as any).rowHeights) ? ((t as any).rowHeights as any[]) : []
-  const rowHeights = rowHeightsIn
-    .map((x) => (typeof x === 'number' && Number.isFinite(x) ? Math.min(300, Math.max(44, Math.floor(x))) : 44))
-    .slice(0, safeRows.length)
-  while (rowHeights.length < safeRows.length) rowHeights.push(44)
-
-  const minRows = safeRows.length ? safeRows : [[toCell('')]]
-  if (!minRows.length) minRows.push([toCell('')])
-
-  return {
-    id,
-    name: String(t.name ?? '').trim().slice(0, 40) || '日程表',
-    headers: safeHeaders,
-    rows: minRows,
-    columnWidths,
-    rowHeights: rowHeights.length ? rowHeights : new Array(minRows.length).fill(44),
-    style,
-    createdAt,
-    updatedAt,
-  }
-}
-
-function rowHeightPx(mode: ScheduleTable['style']['rowHeight']): number {
-  if (mode === 'compact') return 38
-  if (mode === 'loose') return 56
-  return 46
-}
-
-function headerBg(mode: ScheduleTable['style']['headerStyle']): { bg: string; color: string } {
-  if (mode === 'none') return { bg: '#ffffff', color: '#111111' }
-  if (mode === 'light') return { bg: '#f2f2f2', color: '#111111' }
-  return { bg: '#111111', color: '#ffffff' }
-}
-
-function borderCss(mode: ScheduleTable['style']['borderStyle']): string {
-  if (mode === 'none') return 'none'
-  if (mode === 'dashed') return `1px dashed ${COLORS.border}`
-  return `1px solid ${COLORS.border}`
-}
-
-// 富文本改为“结构化样式”，避免移动端 contentEditable 的 IME/选区 bug
-
-function buildCellKey(r: number, c: number) {
-  return `${r}-${c}`
-}
-
-function parseCellKey(k: string): { r: number; c: number } | null {
-  const m = /^(\d+)-(\d+)$/.exec(k)
-  if (!m) return null
-  return { r: parseInt(m[1]!, 10), c: parseInt(m[2]!, 10) }
-}
-
-function rangeRect(a: { r: number; c: number }, b: { r: number; c: number }) {
-  const r0 = Math.min(a.r, b.r)
-  const r1 = Math.max(a.r, b.r)
-  const c0 = Math.min(a.c, b.c)
-  const c1 = Math.max(a.c, b.c)
-  return { r0, r1, c0, c1 }
-}
-
-function spanCoversCell(anchor: { r: number; c: number; rowspan: number; colspan: number }, cell: { r: number; c: number }): boolean {
+/** 左侧时间轨：开始 → 结束，带时钟图标与竖向分隔 */
+function ScheduleTimeRail({
+  startTime,
+  endTime,
+}: {
+  startTime: string
+  endTime: string | null
+}) {
   return (
-    cell.r >= anchor.r &&
-    cell.r < anchor.r + Math.max(1, anchor.rowspan) &&
-    cell.c >= anchor.c &&
-    cell.c < anchor.c + Math.max(1, anchor.colspan)
+    <div className="flex w-[58px] shrink-0 flex-col items-center gap-1 pt-0.5">
+      <div
+        className="flex h-5 w-5 items-center justify-center border"
+        style={{ borderColor: C.accent, background: C.accentSoft, borderRadius: 3, color: C.accent }}
+      >
+        <Clock3 size={11} strokeWidth={2.25} />
+      </div>
+      <div className="font-mono text-[12.5px] font-bold leading-none tracking-tight" style={{ color: C.ink }}>
+        {startTime}
+      </div>
+      <div className="flex flex-1 flex-col items-center py-0.5" aria-hidden>
+        <div className="h-full min-h-[14px] w-px" style={{ background: C.accent, opacity: 0.55 }} />
+        <div
+          className="my-0.5 h-1.5 w-1.5 rotate-45 border"
+          style={{ borderColor: C.accent, background: C.panel }}
+        />
+        <div className="h-full min-h-[14px] w-px" style={{ background: C.line }} />
+      </div>
+      <div className="font-mono text-[11px] leading-none" style={{ color: C.faint }}>
+        {endTime || '—'}
+      </div>
+    </div>
   )
+}
+
+/** 地点 / 时长分区芯片 */
+function ScheduleMetaChips({
+  location,
+  durationLabel,
+  extra,
+}: {
+  location?: string | null
+  durationLabel?: string | null
+  extra?: string | null
+}) {
+  const loc = String(location ?? '').trim()
+  const dur = String(durationLabel ?? '').trim()
+  const hasLoc = Boolean(loc)
+  const hasDur = Boolean(dur)
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      <span
+        className="inline-flex max-w-full items-center gap-1 border px-1.5 py-1 text-[11px] leading-none"
+        style={{
+          borderColor: hasLoc ? '#C9B8A8' : C.line,
+          background: hasLoc ? '#F7F1EA' : C.page,
+          color: hasLoc ? C.muted : C.faint,
+          borderRadius: 3,
+        }}
+        title={hasLoc ? loc : '未填地点'}
+      >
+        <MapPin size={11} strokeWidth={2.2} style={{ color: hasLoc ? C.accent : C.faint, flexShrink: 0 }} />
+        <span className="truncate">{hasLoc ? loc : '地点未填'}</span>
+      </span>
+      <span
+        className="inline-flex items-center gap-1 border px-1.5 py-1 text-[11px] leading-none"
+        style={{
+          borderColor: hasDur ? '#C9B8A8' : C.line,
+          background: hasDur ? '#F7F1EA' : C.page,
+          color: hasDur ? C.muted : C.faint,
+          borderRadius: 3,
+        }}
+      >
+        <Hourglass size={11} strokeWidth={2.2} style={{ color: hasDur ? C.accent : C.faint, flexShrink: 0 }} />
+        <span>{hasDur ? dur : '时长未填'}</span>
+      </span>
+      {extra ? (
+        <span
+          className="inline-flex items-center border px-1.5 py-1 text-[10px] font-semibold leading-none"
+          style={{ borderColor: C.line, background: C.accentSoft, color: C.accent, borderRadius: 3 }}
+        >
+          {extra}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+const CAL_STATUS_OPTS: { id: ScheduleCalendarEventStatus; label: string }[] = [
+  { id: 'upcoming', label: '未到' },
+  { id: 'past', label: '已过期' },
+  { id: 'done', label: '已完成' },
+  { id: 'skipped', label: '已跳过' },
+]
+
+type EditorMode = 'weekly' | 'calendar'
+
+export type ScheduleEditorSavePayload = {
+  table: ScheduleTable
+  entries: ScheduleEntry[]
+  calendarEvents: ScheduleCalendarEvent[]
+  calendarAutoUpdateEnabled: boolean
+}
+
+function uid(prefix: string) {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function emptyEntry(day: ScheduleDayOfWeek): ScheduleEntry {
+  return {
+    id: uid('sch'),
+    dayOfWeek: day,
+    startTime: '15:00',
+    endTime: '16:00',
+    activity: '',
+    tag: '工作',
+    location: '',
+    durationAmount: null,
+    durationUnit: null,
+  }
+}
+
+function emptyCalEvent(storyDay: string): ScheduleCalendarEvent {
+  const now = Date.now()
+  return {
+    id: uid('sce'),
+    storyDay,
+    startTime: '19:00',
+    endTime: '20:00',
+    activity: '',
+    tag: '社交',
+    location: '',
+    durationAmount: null,
+    durationUnit: null,
+    status: 'upcoming',
+    source: 'manual',
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function resolveInitialEntries(
+  initial: ScheduleTable | null | undefined,
+  initialEntries: ScheduleEntry[] | null | undefined,
+): ScheduleEntry[] {
+  const fromEntries = normalizeScheduleEntries(initialEntries)
+  if (fromEntries.length) return fromEntries
+  return parseScheduleTableToEntries(initial ?? null, null)
 }
 
 export function ScheduleEditorScreen({
   open,
-  title = '日程表',
+  title = '日程专栏',
   apiConfig,
   initial,
+  initialEntries,
+  initialCalendarEvents,
+  initialCalendarAutoUpdateEnabled,
+  initialMode,
+  focusCalendarDay,
+  storyNowLabel,
+  personaContext,
+  characterId,
   onClose,
   onSave,
 }: {
@@ -195,464 +231,281 @@ export function ScheduleEditorScreen({
   title?: string
   apiConfig: ApiConfig | null
   initial?: ScheduleTable | null
+  initialEntries?: ScheduleEntry[] | null
+  initialCalendarEvents?: ScheduleCalendarEvent[] | null
+  initialCalendarAutoUpdateEnabled?: boolean
+  /** 打开时默认模式；点月历某日进入时应为 calendar */
+  initialMode?: EditorMode
+  /** 打开时定位到该公历日（日历模式） */
+  focusCalendarDay?: string | null
+  /** 剧情「现在」标签；有则日历锚点优先剧情日 */
+  storyNowLabel?: string | null
+  personaContext?: string | null
+  /** 角色/玩家身份 id：AI 生成时注入世界书、可变人生、记忆与近聊 */
+  characterId?: string | null
   onClose: () => void
-  onSave: (next: ScheduleTable) => Promise<void> | void
+  onSave: (payload: ScheduleEditorSavePayload) => Promise<void> | void
 }) {
   const titleId = useId()
-  const [table, setTable] = useState<ScheduleTable>(sanitizeTable(initial ?? defaultEmptySchedule()))
+  const [mode, setMode] = useState<EditorMode>(initialMode ?? 'weekly')
+  const [entries, setEntries] = useState<ScheduleEntry[]>(() =>
+    resolveInitialEntries(initial, initialEntries),
+  )
+  const [tableMeta, setTableMeta] = useState<ScheduleTable | null>(initial ?? null)
+  const [day, setDay] = useState<ScheduleDayOfWeek>(0)
+  const [calEvents, setCalEvents] = useState<ScheduleCalendarEvent[]>(() =>
+    normalizeScheduleCalendarEvents(initialCalendarEvents),
+  )
+  const [autoUpdate, setAutoUpdate] = useState(initialCalendarAutoUpdateEnabled === true)
+  const [calDay, setCalDay] = useState(() => {
+    const focus = focusCalendarDay?.trim()
+    if (focus) return focus
+    const a = resolveCalendarAnchor({ storyNowLabel: storyNowLabel ?? null })
+    return a.storyDay
+  })
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
+  const [draft, setDraft] = useState<ScheduleEntry | null>(null)
+  const [calDraft, setCalDraft] = useState<ScheduleCalendarEvent | null>(null)
+  const [customTagInput, setCustomTagInput] = useState('')
+
   const [aiOpen, setAiOpen] = useState(false)
   const [aiDraft, setAiDraft] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
+  const [aiPreview, setAiPreview] = useState<ScheduleEntry[] | null>(null)
+  const [aiCalPreview, setAiCalPreview] = useState<ScheduleCalendarEvent[] | null>(null)
+  const [aiSpanDays, setAiSpanDays] = useState(7)
+  const [aiEventCount, setAiEventCount] = useState(5)
 
-  const focusCellKeyRef = useRef<string | null>(null)
-  const [focused, setFocused] = useState<{ r: number; c: number } | null>(null)
-  const [editing, setEditing] = useState<{ r: number; c: number } | null>(null)
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
-  const selectingRef = useRef(false)
-  const longPressTimerRef = useRef<number | null>(null)
-  const selectAnchorRef = useRef<{ r: number; c: number } | null>(null)
-  const lastOverRef = useRef<{ r: number; c: number } | null>(null)
-  const cellRefs = useRef(new Map<string, HTMLDivElement>())
-  const gridRef = useRef<HTMLDivElement | null>(null)
-  /** 区分滑动与点击：超过 slop 则取消单击与长按定时器 */
-  const gestureIsScrollRef = useRef(false)
-  const pendingCellDownRef = useRef<{ r: number; c: number; x: number; y: number; pointerId: number } | null>(null)
-  const pendingPointerCleanupRef = useRef<(() => void) | null>(null)
+  const anchor = useMemo(
+    () => resolveCalendarAnchor({ storyNowLabel: storyNowLabel ?? null }),
+    [storyNowLabel],
+  )
 
-  // ---- Undo / Redo（最多 20 步）----
-  const undoPastRef = useRef<ScheduleTable[]>([])
-  const undoFutureRef = useRef<ScheduleTable[]>([])
-  const [, setUndoTick] = useState(0)
-  const MAX_UNDO = 20
+  const dayEntries = useMemo(
+    () =>
+      entries
+        .filter((e) => e.dayOfWeek === day)
+        .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    [entries, day],
+  )
 
-  const canUndo = undoPastRef.current.length > 0
-  const canRedo = undoFutureRef.current.length > 0
+  const closedCalEvents = useMemo(
+    () => closePastScheduleCalendarEvents(calEvents, anchor),
+    [calEvents, anchor],
+  )
 
-  const pushUndo = (prev: ScheduleTable) => {
-    // 入栈时丢弃 redo 分支
-    undoFutureRef.current = []
-    undoPastRef.current = [...undoPastRef.current, prev].slice(-MAX_UNDO)
-    setUndoTick((x) => x + 1)
-  }
+  const dayCalEvents = useMemo(
+    () => eventsForCalendarDay(closedCalEvents, calDay),
+    [closedCalEvents, calDay],
+  )
 
-  const setTableWithUndo = (updater: (prev: ScheduleTable) => ScheduleTable) => {
-    setTable((prev) => {
-      const next = updater(prev)
-      // 仅当数据确实变化时入栈（浅比较 updatedAt 足够防抖：我们每次变更都会改 updatedAt）
-      if (next !== prev) pushUndo(prev)
-      return next
-    })
-    setDirty(true)
-  }
+  const calEventDays = useMemo(
+    () => new Set(closedCalEvents.map((e) => e.storyDay.trim())),
+    [closedCalEvents],
+  )
 
-  const undo = () => {
-    const past = undoPastRef.current
-    if (!past.length) return
-    const prev = past[past.length - 1]!
-    undoPastRef.current = past.slice(0, -1)
-    undoFutureRef.current = [table, ...undoFutureRef.current].slice(0, MAX_UNDO)
-    setEditing(null)
-    focusCellKeyRef.current = null
-    setTable(prev)
-    setDirty(true)
-    setUndoTick((x) => x + 1)
-  }
-
-  const redo = () => {
-    const fut = undoFutureRef.current
-    if (!fut.length) return
-    const next = fut[0]!
-    undoFutureRef.current = fut.slice(1)
-    undoPastRef.current = [...undoPastRef.current, table].slice(-MAX_UNDO)
-    setEditing(null)
-    focusCellKeyRef.current = null
-    setTable(next)
-    setDirty(true)
-    setUndoTick((x) => x + 1)
-  }
+  const knownTags = useMemo(() => {
+    const set = new Set<string>([...SCHEDULE_TAG_PRESETS])
+    for (const e of entries) {
+      const t = e.tag?.trim()
+      if (t) set.add(t)
+    }
+    for (const e of calEvents) {
+      const t = e.tag?.trim()
+      if (t) set.add(t)
+    }
+    if (draft?.tag?.trim()) set.add(draft.tag.trim())
+    if (calDraft?.tag?.trim()) set.add(calDraft.tag.trim())
+    return [...set]
+  }, [entries, calEvents, draft?.tag, calDraft?.tag])
 
   useEffect(() => {
-    if (open) {
-      setTable(sanitizeTable(initial ?? defaultEmptySchedule()))
-      setDirty(false)
-      setSaving(false)
-      setToast(null)
-      setAiOpen(false)
-      setAiDraft('')
-      setAiLoading(false)
-      undoPastRef.current = []
-      undoFutureRef.current = []
-      setUndoTick((x) => x + 1)
-    }
-  }, [open, initial])
+    if (!open) return
+    const nextMode = initialMode ?? 'weekly'
+    setMode(nextMode)
+    setEntries(resolveInitialEntries(initial, initialEntries))
+    setTableMeta(initial ?? null)
+    const a = resolveCalendarAnchor({ storyNowLabel: storyNowLabel ?? null })
+    // 周循环也按剧情/系统锚点对齐到当天星期
+    setDay(a.dayOfWeek)
+    const closed = closePastScheduleCalendarEvents(
+      normalizeScheduleCalendarEvents(initialCalendarEvents),
+      a,
+    )
+    setCalEvents(closed)
+    setCalDay(focusCalendarDay?.trim() || a.storyDay)
+    setAutoUpdate(initialCalendarAutoUpdateEnabled === true)
+    setDirty(false)
+    setSaving(false)
+    setToast(null)
+    setDraft(null)
+    setCalDraft(null)
+    setCustomTagInput('')
+    setAiOpen(false)
+    setAiDraft('')
+    setAiPreview(null)
+    setAiCalPreview(null)
+    setAiSpanDays(7)
+    setAiEventCount(5)
+    setAiLoading(false)
+  }, [
+    open,
+    initial,
+    initialEntries,
+    initialCalendarEvents,
+    initialCalendarAutoUpdateEnabled,
+    initialMode,
+    focusCalendarDay,
+    storyNowLabel,
+  ])
 
   useEffect(() => {
     if (!toast) return
-    const id = window.setTimeout(() => setToast(null), 1800)
-    return () => window.clearTimeout(id)
+    const t = window.setTimeout(() => setToast(null), 2200)
+    return () => window.clearTimeout(t)
   }, [toast])
 
-  useEffect(() => {
-    if (open) return
-    if (longPressTimerRef.current) {
-      window.clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-    const fn = pendingPointerCleanupRef.current
-    if (fn) {
-      pendingPointerCleanupRef.current = null
-      fn()
-    }
-    selectingRef.current = false
-    selectAnchorRef.current = null
-    lastOverRef.current = null
-    pendingCellDownRef.current = null
-  }, [open])
-
-  const cols = table.headers.length
-  const headerVisual = headerBg(table.style.headerStyle)
-  const border = borderCss(table.style.borderStyle)
-  const cellH = rowHeightPx(table.style.rowHeight)
-
-  const canClose = !saving && !aiLoading
-
   const askClose = () => {
-    if (!canClose) return
-    if (dirty) {
-      const ok = window.confirm('日程表还没保存，确定要离开吗？')
-      if (!ok) return
-    }
+    if (dirty && !window.confirm('有未保存修改，确定关闭？')) return
     onClose()
   }
 
-  const saveNow = async () => {
-    if (saving) return
-    setSaving(true)
-    try {
-      const next = { ...sanitizeTable(table), updatedAt: Date.now() }
-      await onSave(next)
-      setDirty(false)
-      setToast('已保存')
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : '保存失败'
-      setToast(msg.slice(0, 80))
-    } finally {
-      setSaving(false)
+  const openNew = () => {
+    if (mode === 'calendar') {
+      setCalDraft(emptyCalEvent(calDay || anchor.storyDay))
+    } else {
+      setDraft(emptyEntry(day))
     }
+    setCustomTagInput('')
   }
 
-  const applyTemplate = (t: ScheduleTable) => {
-    setTableWithUndo(() => sanitizeTable(cloneScheduleTemplate(t)))
-    setToast('已加载模板')
+  const openEdit = (e: ScheduleEntry) => {
+    setDraft({ ...e })
+    setCustomTagInput('')
   }
 
-  const insertRowBelow = (rowIndex: number) => {
-    setTableWithUndo((prev) => {
-      const emptyCell = (content = ''): TableCell => ({
-        content,
-        style: { bold: false, italic: false, underline: false, strikethrough: false, highlight: false, align: 'left' },
-        colspan: 1,
-        rowspan: 1,
-      })
-      const rows = prev.rows.map((rr) => rr.map((c) => ({ ...c, style: { ...c.style } })))
-      rows.splice(rowIndex + 1, 0, new Array(prev.headers.length).fill(0).map(() => emptyCell('')))
-      const rowHeights = [...prev.rowHeights]
-      rowHeights.splice(rowIndex + 1, 0, 44)
-      return { ...prev, rows, rowHeights, updatedAt: Date.now() }
-    })
+  const openCalEdit = (e: ScheduleCalendarEvent) => {
+    setCalDraft({ ...e })
+    setCustomTagInput('')
   }
 
-  const deleteRow = (rowIndex: number) => {
-    setTableWithUndo((prev) => {
-      if (prev.rows.length <= 1) return prev
-      const rows = prev.rows.filter((_, i) => i !== rowIndex).map((rr) => rr.map((c) => ({ ...c, style: { ...c.style } })))
-      const rowHeights = prev.rowHeights.filter((_, i) => i !== rowIndex)
-      return { ...prev, rows, rowHeights, updatedAt: Date.now() }
-    })
-  }
-
-  const insertColRight = (colIndex: number) => {
-    setTableWithUndo((prev) => {
-      const headers = [...prev.headers]
-      headers.splice(colIndex + 1, 0, `列${headers.length + 1}`)
-      const emptyCell: TableCell = {
-        content: '',
-        style: { bold: false, italic: false, underline: false, strikethrough: false, highlight: false, align: 'left' },
-        colspan: 1,
-        rowspan: 1,
-      }
-      const rows = prev.rows.map((r) => {
-        const next = r.map((c) => ({ ...c, style: { ...c.style } }))
-        next.splice(colIndex + 1, 0, { ...emptyCell, style: { ...emptyCell.style } })
-        return next
-      })
-      const columnWidths = [...prev.columnWidths]
-      columnWidths.splice(colIndex + 1, 0, 96)
-      return { ...prev, headers, rows, columnWidths, updatedAt: Date.now() }
-    })
-  }
-
-  const deleteCol = (colIndex: number) => {
-    setTableWithUndo((prev) => {
-      if (prev.headers.length <= 1) return prev
-      const headers = prev.headers.filter((_, i) => i !== colIndex)
-      const rows = prev.rows.map((r) => r.filter((_, i) => i !== colIndex).map((c) => ({ ...c, colspan: 1, rowspan: 1, style: { ...c.style } })))
-      const columnWidths = prev.columnWidths.filter((_, i) => i !== colIndex)
-      return { ...prev, headers, rows, columnWidths, updatedAt: Date.now() }
-    })
-  }
-
-  const setHeaderText = (colIndex: number, text: string) => {
-    setTableWithUndo((prev) => {
-      const headers = [...prev.headers]
-      headers[colIndex] = text
-      return { ...prev, headers, updatedAt: Date.now() }
-    })
-  }
-
-  const setCellContent = (rowIndex: number, colIndex: number, content: string) => {
-    setTableWithUndo((prev) => {
-      const rows = prev.rows.map((r) => r.map((c) => ({ ...c, style: { ...c.style } })))
-      const cell = rows[rowIndex]?.[colIndex]
-      if (!cell) return prev
-      cell.content = content
-      return { ...prev, rows, updatedAt: Date.now() }
-    })
-  }
-
-  const setStyle = (patch: Partial<ScheduleTable['style']>) => {
-    setTableWithUndo((prev) => ({ ...prev, style: { ...prev.style, ...patch }, updatedAt: Date.now() }))
-  }
-
-  const canFormat = selectedKeys.size > 0
-
-  const onToolbar = (action: 'bold' | 'italic' | 'underline' | 'strike' | 'highlight' | 'clear') => {
-    const keys = [...selectedKeys]
-    if (!keys.length) return
-    setTableWithUndo((prev) => {
-      const rows = prev.rows.map((r) => r.map((c) => ({ ...c, style: { ...c.style } })))
-      for (const k of keys) {
-        const rc = parseCellKey(k)
-        if (!rc) continue
-        const cell = rows[rc.r]?.[rc.c]
-        if (!cell) continue
-        if (action === 'bold') cell.style.bold = !cell.style.bold
-        if (action === 'italic') cell.style.italic = !cell.style.italic
-        if (action === 'underline') cell.style.underline = !cell.style.underline
-        if (action === 'strike') cell.style.strikethrough = !cell.style.strikethrough
-        if (action === 'highlight') cell.style.highlight = !cell.style.highlight
-        if (action === 'clear') {
-          cell.style.bold = false
-          cell.style.italic = false
-          cell.style.underline = false
-          cell.style.strikethrough = false
-          cell.style.highlight = false
-          cell.style.align = 'left'
-        }
-      }
-      return { ...prev, rows, updatedAt: Date.now() }
-    })
-  }
-
-  const normalizeRowsForAi = useMemo(() => {
-    // 给 AI 的表格：纯文本
-    return {
-      headers: table.headers.map((h) => String(h ?? '').trim()),
-      rows: table.rows.map((r) => r.map((c) => String(c?.content ?? '').trim())),
+  const saveDraft = () => {
+    if (!draft) return
+    const activity = draft.activity.trim()
+    if (!activity) {
+      setToast('请填写活动')
+      return
     }
-  }, [table.headers, table.rows])
-
-  const selectionRect = useMemo(() => {
-    const keys = [...selectedKeys]
-    if (!keys.length) return null
-    const parsed = keys.map(parseCellKey).filter(Boolean) as Array<{ r: number; c: number }>
-    if (!parsed.length) return null
-    let r0 = parsed[0]!.r
-    let r1 = parsed[0]!.r
-    let c0 = parsed[0]!.c
-    let c1 = parsed[0]!.c
-    for (const p of parsed) {
-      r0 = Math.min(r0, p.r)
-      r1 = Math.max(r1, p.r)
-      c0 = Math.min(c0, p.c)
-      c1 = Math.max(c1, p.c)
+    if (!/^\d{2}:\d{2}$/.test(draft.startTime) || !/^\d{2}:\d{2}$/.test(draft.endTime)) {
+      setToast('时间格式应为 HH:mm')
+      return
     }
-    return { r0, r1, c0, c1 }
-  }, [selectedKeys])
-
-  const canMerge = !!selectionRect && (selectionRect.r0 !== selectionRect.r1 || selectionRect.c0 !== selectionRect.c1)
-  const canSplit =
-    !!focused &&
-    (() => {
-      const cell = table.rows[focused.r]?.[focused.c]
-      return !!cell && (cell.colspan > 1 || cell.rowspan > 1)
-    })()
-
-  const mergeSelection = () => {
-    if (!selectionRect) return
-    const { r0, r1, c0, c1 } = selectionRect
-    const rowSpan = r1 - r0 + 1
-    const colSpan = c1 - c0 + 1
-    if (rowSpan <= 1 && colSpan <= 1) return
-    setTable((prev) => {
-      const rows = prev.rows.map((rr) => rr.map((c) => ({ ...c, style: { ...c.style } })))
-      // 先清理选择区域内所有现有 span（避免交叉）
-      for (let rr = r0; rr <= r1; rr += 1) {
-        for (let cc = c0; cc <= c1; cc += 1) {
-          const cell = rows[rr]?.[cc]
-          if (!cell) continue
-          cell.colspan = 1
-          cell.rowspan = 1
-        }
-      }
-      const anchor = rows[r0]?.[c0]
-      if (anchor) {
-        anchor.colspan = colSpan
-        anchor.rowspan = rowSpan
-      }
-      return { ...prev, rows, updatedAt: Date.now() }
+    const next: ScheduleEntry = {
+      ...draft,
+      activity: activity.slice(0, 120),
+      tag: draft.tag.trim().slice(0, 24),
+      location: draft.location.trim().slice(0, 80),
+      durationAmount:
+        draft.durationAmount != null && Number.isFinite(draft.durationAmount) && draft.durationAmount > 0
+          ? draft.durationAmount
+          : null,
+      durationUnit:
+        draft.durationAmount != null && Number.isFinite(draft.durationAmount) && draft.durationAmount > 0
+          ? draft.durationUnit ?? 'minute'
+          : null,
+    }
+    setEntries((prev) => {
+      const i = prev.findIndex((x) => x.id === next.id)
+      if (i < 0) return [...prev, next]
+      const copy = prev.slice()
+      copy[i] = next
+      return copy
     })
+    setDraft(null)
     setDirty(true)
-    setToast('已合并')
+    setToast('已更新条目')
   }
 
-  const splitFocused = () => {
-    if (!focused) return
-    setTable((prev) => {
-      const rows = prev.rows.map((rr) => rr.map((c) => ({ ...c, style: { ...c.style } })))
-      const cell = rows[focused.r]?.[focused.c]
-      if (!cell) return prev
-      const rs = Math.max(1, cell.rowspan)
-      const cs = Math.max(1, cell.colspan)
-      if (rs <= 1 && cs <= 1) return prev
-      cell.rowspan = 1
-      cell.colspan = 1
-      return { ...prev, rows, updatedAt: Date.now() }
+  const saveCalDraft = () => {
+    if (!calDraft) return
+    const activity = calDraft.activity.trim()
+    if (!activity) {
+      setToast('请填写活动')
+      return
+    }
+    if (!calDraft.storyDay.trim()) {
+      setToast('请填写日期')
+      return
+    }
+    if (!/^\d{2}:\d{2}$/.test(calDraft.startTime)) {
+      setToast('开始时间应为 HH:mm')
+      return
+    }
+    if (calDraft.endTime && !/^\d{2}:\d{2}$/.test(calDraft.endTime)) {
+      setToast('结束时间应为 HH:mm')
+      return
+    }
+    const now = Date.now()
+    const next: ScheduleCalendarEvent = {
+      ...calDraft,
+      storyDay: calDraft.storyDay.trim().slice(0, 64),
+      activity: activity.slice(0, 120),
+      tag: calDraft.tag.trim().slice(0, 24) || '社交',
+      location: calDraft.location.trim().slice(0, 80),
+      endTime: calDraft.endTime?.trim() || null,
+      durationAmount:
+        calDraft.durationAmount != null &&
+        Number.isFinite(calDraft.durationAmount) &&
+        calDraft.durationAmount > 0
+          ? calDraft.durationAmount
+          : null,
+      durationUnit:
+        calDraft.durationAmount != null &&
+        Number.isFinite(calDraft.durationAmount) &&
+        calDraft.durationAmount > 0
+          ? calDraft.durationUnit ?? 'minute'
+          : null,
+      source: calDraft.source ?? 'manual',
+      updatedAt: now,
+      createdAt: calDraft.createdAt || now,
+    }
+    setCalEvents((prev) => {
+      const i = prev.findIndex((x) => x.id === next.id)
+      if (i < 0) return normalizeScheduleCalendarEvents([...prev, next])
+      const copy = prev.slice()
+      copy[i] = next
+      return normalizeScheduleCalendarEvents(copy)
     })
+    setCalDay(next.storyDay)
+    setCalDraft(null)
     setDirty(true)
-    setToast('已拆分')
+    setToast('已更新日历事项')
   }
 
-  const selectSingle = (r: number, c: number) => {
-    const k = buildCellKey(r, c)
-    setFocused({ r, c })
-    setSelectedKeys(new Set([k]))
+  const deleteDraft = () => {
+    if (!draft) return
+    if (!window.confirm('删除这条日程？')) return
+    setEntries((prev) => prev.filter((x) => x.id !== draft.id))
+    setDraft(null)
+    setDirty(true)
   }
 
-  const endLongPress = () => {
-    selectingRef.current = false
-    selectAnchorRef.current = null
-    lastOverRef.current = null
-  }
-
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current) {
-      window.clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-  }
-
-  const detachPendingPointerWindowListeners = () => {
-    const fn = pendingPointerCleanupRef.current
-    if (fn) {
-      pendingPointerCleanupRef.current = null
-      fn()
-    }
-  }
-
-  const attachPendingPointerWindowListeners = (pointerId: number, r: number, c: number, x: number, y: number) => {
-    detachPendingPointerWindowListeners()
-    gestureIsScrollRef.current = false
-    pendingCellDownRef.current = { r, c, x, y, pointerId }
-    const slop2 = SCHEDULE_TAP_SLOP_PX * SCHEDULE_TAP_SLOP_PX
-
-    const onMove = (e: PointerEvent) => {
-      if (e.pointerId !== pointerId) return
-      if (selectingRef.current) return
-      const dx = e.clientX - x
-      const dy = e.clientY - y
-      if (dx * dx + dy * dy > slop2) {
-        gestureIsScrollRef.current = true
-        clearLongPressTimer()
-      }
-    }
-
-    const onUpOrCancel = (e: PointerEvent) => {
-      if (e.pointerId !== pointerId) return
-      clearLongPressTimer()
-      if (selectingRef.current) {
-        endLongPress()
-      } else if (!gestureIsScrollRef.current && pendingCellDownRef.current) {
-        const p = pendingCellDownRef.current
-        selectSingle(p.r, p.c)
-      }
-      pendingCellDownRef.current = null
-      detachPendingPointerWindowListeners()
-    }
-
-    window.addEventListener('pointermove', onMove, { passive: true })
-    window.addEventListener('pointerup', onUpOrCancel)
-    window.addEventListener('pointercancel', onUpOrCancel)
-    pendingPointerCleanupRef.current = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUpOrCancel)
-      window.removeEventListener('pointercancel', onUpOrCancel)
-    }
-  }
-
-  const beginLongPress = (r: number, c: number, pointerId: number) => {
-    if (gestureIsScrollRef.current) return
-    detachPendingPointerWindowListeners()
-    selectingRef.current = true
-    selectAnchorRef.current = { r, c }
-    lastOverRef.current = { r, c }
-    const rect = rangeRect({ r, c }, { r, c })
-    const next = new Set<string>()
-    for (let rr = rect.r0; rr <= rect.r1; rr += 1) {
-      for (let cc = rect.c0; cc <= rect.c1; cc += 1) next.add(buildCellKey(rr, cc))
-    }
-    setSelectedKeys(next)
-    setFocused({ r, c })
-    setEditing(null)
-    focusCellKeyRef.current = null
-    try {
-      gridRef.current?.setPointerCapture?.(pointerId)
-    } catch {
-      // ignore
-    }
-  }
-
-  const updateLongPressRect = (r: number, c: number) => {
-    if (!selectingRef.current) return
-    const anchor = selectAnchorRef.current
-    if (!anchor) return
-    const rect = rangeRect(anchor, { r, c })
-    const next = new Set<string>()
-    for (let rr = rect.r0; rr <= rect.r1; rr += 1) {
-      for (let cc = rect.c0; cc <= rect.c1; cc += 1) next.add(buildCellKey(rr, cc))
-    }
-    setSelectedKeys(next)
-    lastOverRef.current = { r, c }
-  }
-
-  const pickCellFromPoint = (clientX: number, clientY: number): { r: number; c: number } | null => {
-    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null
-    const cellEl = el?.closest?.('[data-schedule-cell="1"]') as HTMLElement | null
-    if (!cellEl) return null
-    const r = Number(cellEl.dataset.r)
-    const c = Number(cellEl.dataset.c)
-    if (!Number.isFinite(r) || !Number.isFinite(c)) return null
-    return { r: Math.max(0, Math.floor(r)), c: Math.max(0, Math.floor(c)) }
+  const deleteCalDraft = () => {
+    if (!calDraft) return
+    if (!window.confirm('删除这条日历事项？')) return
+    setCalEvents((prev) => prev.filter((x) => x.id !== calDraft.id))
+    setCalDraft(null)
+    setDirty(true)
   }
 
   const runAiGenerate = async () => {
     const prompt = aiDraft.trim()
-    if (!prompt) {
-      setToast('请先描述需求')
+    const persona = String(personaContext ?? '').trim()
+    if (!prompt && !persona) {
+      setToast('无人设内容可读取，请先填写生成要求')
       return
     }
     if (!apiConfig?.apiUrl?.trim() || !apiConfig.apiKey?.trim() || !apiConfig.modelId?.trim()) {
@@ -661,45 +514,85 @@ export function ScheduleEditorScreen({
     }
     setAiLoading(true)
     try {
-      const next = await requestScheduleTableFromAi({
-        apiConfig,
-        userRequirement: prompt,
-      })
-      setTableWithUndo((prev) => {
-        const cloned = sanitizeTable({
-          ...prev,
-          headers: next.headers,
-          // 将 AI 结果写入 TableCell.content，保留现有样式/宽高
-          rows: next.rows.map((r) =>
-            r.slice(0, next.headers.length).map((txt) => ({
-              content: String(txt ?? ''),
-              style: { bold: false, italic: false, underline: false, strikethrough: false, highlight: false, align: 'left' as const },
-              colspan: 1,
-              rowspan: 1,
-            })),
-          ),
-          updatedAt: Date.now(),
-        } as any)
-        // 对齐列宽/行高长度
-        const cols = cloned.headers.length
-        const rowsN = cloned.rows.length
-        const columnWidths = [...(cloned.columnWidths ?? [])].slice(0, cols)
-        while (columnWidths.length < cols) columnWidths.push(96)
-        const rowHeights = [...(cloned.rowHeights ?? [])].slice(0, rowsN)
-        while (rowHeights.length < rowsN) rowHeights.push(44)
-        return { ...cloned, columnWidths, rowHeights, updatedAt: Date.now() }
-      })
-      setAiOpen(false)
-      setToast('已生成')
+      if (mode === 'calendar') {
+        const next = await requestScheduleCalendarEventsFromAi({
+          apiConfig,
+          userRequirement: prompt || null,
+          personaContext: persona || null,
+          characterId: characterId?.trim() || null,
+          anchorLabel: anchor.label,
+          anchorStoryDay: anchor.storyDay,
+          spanDays: aiSpanDays,
+          eventCount: aiEventCount,
+        })
+        setAiCalPreview(normalizeScheduleCalendarEvents(next))
+        setAiPreview(null)
+        setToast(`已生成 ${next.length} 条重要事件（跨度 ${aiSpanDays} 天）`)
+      } else {
+        const next = await requestScheduleWeekEntriesFromAi({
+          apiConfig,
+          userRequirement: prompt || null,
+          personaContext: persona || null,
+          characterId: characterId?.trim() || null,
+        })
+        setAiPreview(normalizeScheduleEntries(next))
+        setAiCalPreview(null)
+        setToast(prompt ? `已按要求+人设生成 ${next.length} 条` : `已按人设生成 ${next.length} 条`)
+      }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : '生成失败'
-      setToast(msg.slice(0, 80))
+      setToast((e instanceof Error ? e.message : '生成失败').slice(0, 80))
     } finally {
       setAiLoading(false)
     }
   }
 
+  const confirmAiPreview = () => {
+    if (mode === 'calendar') {
+      if (!aiCalPreview?.length) return
+      const normalized = normalizeScheduleCalendarEvents(aiCalPreview)
+      setCalEvents(normalized)
+      if (normalized[0]?.storyDay) setCalDay(normalized[0].storyDay)
+      setAiCalPreview(null)
+      setAiOpen(false)
+      setDirty(true)
+      setToast('已替换为新日历行程')
+      return
+    }
+    if (!aiPreview?.length) return
+    setEntries(normalizeScheduleEntries(aiPreview))
+    setAiPreview(null)
+    setAiOpen(false)
+    setDirty(true)
+    setToast('已替换为整周新日程')
+  }
+
+  const handleSave = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      const table = scheduleEntriesToDailyTable(entries, tableMeta)
+      setTableMeta(table)
+      const closed = closePastScheduleCalendarEvents(calEvents, anchor)
+      await onSave({
+        table,
+        entries,
+        calendarEvents: closed,
+        calendarAutoUpdateEnabled: autoUpdate,
+      })
+      setDirty(false)
+      setToast('已保存')
+      onClose()
+    } catch (e) {
+      setToast((e instanceof Error ? e.message : '保存失败').slice(0, 80))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (!open) return null
+
+  const statusLabel = (s: ScheduleCalendarEventStatus) =>
+    CAL_STATUS_OPTS.find((x) => x.id === s)?.label ?? s
 
   return (
     <div className="fixed inset-0 z-[1300] flex" role="presentation">
@@ -714,670 +607,1061 @@ export function ScheduleEditorScreen({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative z-10 ml-auto flex h-full w-full max-w-[520px] flex-col border-l bg-white"
-        style={{ borderColor: COLORS.border, background: COLORS.bg }}
+        className="relative z-10 ml-auto flex h-full w-full max-w-[520px] flex-col border-l-[2px]"
+        style={{ borderColor: C.ink, background: C.page, color: C.ink }}
         initial={{ x: 520 }}
         animate={{ x: 0 }}
         exit={{ x: 520 }}
         transition={{ type: 'spring', stiffness: 320, damping: 34 }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* 顶部栏 */}
         <div
-          className="flex items-center gap-2 border-b bg-white px-4"
+          className="flex items-center justify-between gap-2 border-b-[1.5px] px-4 pb-3"
           style={{
-            borderColor: COLORS.border,
-            paddingTop: 'max(10px, env(safe-area-inset-top,0px))',
-            paddingBottom: 10,
+            borderColor: C.line,
+            background: C.panel,
+            paddingTop: 'max(12px, env(safe-area-inset-top, 0px))',
           }}
         >
-          <button
-            type="button"
-            onClick={askClose}
-            className="rounded-[10px] px-3 py-2 text-[13px] transition-colors hover:bg-[#f5f5f5]"
-            style={{ color: COLORS.text }}
-            disabled={!canClose}
-          >
-            返回
-          </button>
-          <p id={titleId} className="min-w-0 flex-1 truncate text-center text-[15px] font-semibold" style={{ color: COLORS.text }}>
-            {title}
-          </p>
-          <button
-            type="button"
-            onClick={() => void saveNow()}
-            className="rounded-[10px] bg-black px-3 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#111]"
-            disabled={saving}
-          >
-            {saving ? '保存中' : '保存'}
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          {/* 模板选择 */}
-          <div className="rounded-[12px] border bg-white p-4" style={{ borderColor: COLORS.border }}>
-            <p className="text-[14px] font-semibold" style={{ color: COLORS.text }}>
-              模板
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={askClose}
+              className="mb-0.5 text-[13px]"
+              style={{ color: C.muted }}
+            >
+              ← 返回
+            </button>
+            <h2 id={titleId} className="truncate text-[15px] font-bold leading-tight">
+              {title}
+            </h2>
+            <p className="mt-0.5 text-[10px] tracking-[0.12em]" style={{ color: C.faint }}>
+              {mode === 'weekly' ? 'MAGAZINE · 周刊时间轴' : 'CALENDAR · 剧情锚点日'}
             </p>
-            <p className="mt-1 text-[12px] leading-relaxed" style={{ color: COLORS.sub }}>
-              选择模板会覆盖下方表格内容，加载后可随意修改，不影响原模板。
-            </p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => applyTemplate(SCHEDULE_TEMPLATE_STUDENT)}
-                className="rounded-[12px] border bg-white px-3 py-3 text-left transition-colors hover:bg-[#fafafa]"
-                style={{ borderColor: COLORS.border }}
-              >
-                <p className="text-[13px] font-semibold" style={{ color: COLORS.text }}>
-                  学生课程表
-                </p>
-                <p className="mt-1 text-[11px]" style={{ color: COLORS.faint }}>
-                  周一到周日 · 多节次
-                </p>
-              </button>
-              <button
-                type="button"
-                onClick={() => applyTemplate(SCHEDULE_TEMPLATE_DAILY)}
-                className="rounded-[12px] border bg-white px-3 py-3 text-left transition-colors hover:bg-[#fafafa]"
-                style={{ borderColor: COLORS.border }}
-              >
-                <p className="text-[13px] font-semibold" style={{ color: COLORS.text }}>
-                  日常日程表
-                </p>
-                <p className="mt-1 text-[11px]" style={{ color: COLORS.faint }}>
-                  时间段 · 一周安排
-                </p>
-              </button>
-            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => {
-                setTable(defaultEmptySchedule())
-                setDirty(true)
-                setToast('已创建空白表格')
+                setAiPreview(null)
+                setAiCalPreview(null)
+                setAiOpen(true)
               }}
-              className="mt-3 w-full rounded-[12px] border bg-white py-3 text-[13px] font-semibold transition-colors hover:bg-[#fafafa]"
-              style={{ borderColor: COLORS.border, color: COLORS.text }}
+              className="border-[1.5px] px-2.5 py-1.5 text-[12px] font-semibold"
+              style={{ borderColor: C.ink, background: C.accentSoft, color: C.ink, borderRadius: 2 }}
             >
-              自定义空白表格
+              {mode === 'weekly' ? 'AI 整周' : 'AI 行程'}
             </button>
-          </div>
-
-          {/* 外观 */}
-          <div className="mt-3 rounded-[12px] border bg-white p-4" style={{ borderColor: COLORS.border }}>
-            <p className="text-[14px] font-semibold" style={{ color: COLORS.text }}>
-              外观
-            </p>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {(
-                [
-                  { key: 'dark', label: '表头深灰' },
-                  { key: 'light', label: '表头浅灰' },
-                  { key: 'none', label: '表头无底' },
-                ] as const
-              ).map((x) => {
-                const on = table.style.headerStyle === x.key
-                return (
-                  <button
-                    key={x.key}
-                    type="button"
-                    onClick={() => setStyle({ headerStyle: x.key })}
-                    className="rounded-[12px] border px-3 py-2 text-[12px] transition-colors"
-                    style={{
-                      borderColor: COLORS.border,
-                      background: on ? '#111111' : '#ffffff',
-                      color: on ? '#ffffff' : COLORS.text,
-                    }}
-                  >
-                    {x.label}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="mt-2 grid grid-cols-3 gap-2">
-              {(
-                [
-                  { key: 'solid', label: '实线边框' },
-                  { key: 'dashed', label: '虚线边框' },
-                  { key: 'none', label: '无边框' },
-                ] as const
-              ).map((x) => {
-                const on = table.style.borderStyle === x.key
-                return (
-                  <button
-                    key={x.key}
-                    type="button"
-                    onClick={() => setStyle({ borderStyle: x.key })}
-                    className="rounded-[12px] border px-3 py-2 text-[12px] transition-colors"
-                    style={{
-                      borderColor: COLORS.border,
-                      background: on ? '#111111' : '#ffffff',
-                      color: on ? '#ffffff' : COLORS.text,
-                    }}
-                  >
-                    {x.label}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="mt-2 grid grid-cols-3 gap-2">
-              {(
-                [
-                  { key: 'compact', label: '行高紧凑' },
-                  { key: 'normal', label: '行高正常' },
-                  { key: 'loose', label: '行高宽松' },
-                ] as const
-              ).map((x) => {
-                const on = table.style.rowHeight === x.key
-                return (
-                  <button
-                    key={x.key}
-                    type="button"
-                    onClick={() => setStyle({ rowHeight: x.key })}
-                    className="rounded-[12px] border px-3 py-2 text-[12px] transition-colors"
-                    style={{
-                      borderColor: COLORS.border,
-                      background: on ? '#111111' : '#ffffff',
-                      color: on ? '#ffffff' : COLORS.text,
-                    }}
-                  >
-                    {x.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* 工具栏 */}
-          <div
-            className="mt-3 rounded-[12px] border bg-white p-3"
-            style={{ borderColor: COLORS.border }}
-            onMouseDownCapture={(e) => {
-              // 编辑态时点击工具栏不要让 textarea 失焦
-              if (editing) e.preventDefault()
-            }}
-            onPointerDownCapture={(e) => {
-              if (editing) e.preventDefault()
-            }}
-          >
-            <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              <button
-                type="button"
-                disabled={!canUndo}
-                onClick={undo}
-                onMouseDown={(e) => e.preventDefault()}
-                onPointerDown={(e) => e.preventDefault()}
-                className="flex shrink-0 items-center gap-1 rounded-[10px] border px-3 py-2 text-[12px] transition-colors disabled:opacity-50"
-                style={{ borderColor: COLORS.border, color: COLORS.text }}
-                aria-label="撤销"
-              >
-                <Undo2 className="size-4" />
-                撤销
-              </button>
-              <button
-                type="button"
-                disabled={!canRedo}
-                onClick={redo}
-                onMouseDown={(e) => e.preventDefault()}
-                onPointerDown={(e) => e.preventDefault()}
-                className="flex shrink-0 items-center gap-1 rounded-[10px] border px-3 py-2 text-[12px] transition-colors disabled:opacity-50"
-                style={{ borderColor: COLORS.border, color: COLORS.text }}
-                aria-label="重做"
-              >
-                <Redo2 className="size-4" />
-                重做
-              </button>
-
-              {(
-                [
-                  { id: 'bold', icon: <Bold className="size-4" />, label: '粗体' },
-                  { id: 'italic', icon: <Italic className="size-4" />, label: '斜体' },
-                  { id: 'underline', icon: <Underline className="size-4" />, label: '下划线' },
-                  { id: 'strike', icon: <Strikethrough className="size-4" />, label: '删除线' },
-                  { id: 'highlight', icon: <Highlighter className="size-4" />, label: '高亮' },
-                  { id: 'clear', icon: <Eraser className="size-4" />, label: '清除格式' },
-                ] as const
-              ).map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  disabled={!canFormat}
-                  onClick={() => onToolbar(b.id)}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onPointerDown={(e) => e.preventDefault()}
-                  className="flex shrink-0 items-center gap-1 rounded-[10px] border px-3 py-2 text-[12px] transition-colors disabled:opacity-50"
-                  style={{ borderColor: COLORS.border, color: COLORS.text }}
-                >
-                  {b.icon}
-                  {b.label}
-                </button>
-              ))}
-              <div className="h-6 w-px bg-[#e5e5e5]" />
-              <button
-                type="button"
-                disabled={!canMerge}
-                onClick={mergeSelection}
-                onMouseDown={(e) => e.preventDefault()}
-                onPointerDown={(e) => e.preventDefault()}
-                className="flex shrink-0 items-center gap-1 rounded-[10px] border px-3 py-2 text-[12px] transition-colors disabled:opacity-50"
-                style={{ borderColor: COLORS.border, color: COLORS.text }}
-              >
-                合并
-              </button>
-              <button
-                type="button"
-                disabled={!canSplit}
-                onClick={splitFocused}
-                onMouseDown={(e) => e.preventDefault()}
-                onPointerDown={(e) => e.preventDefault()}
-                className="flex shrink-0 items-center gap-1 rounded-[10px] border px-3 py-2 text-[12px] transition-colors disabled:opacity-50"
-                style={{ borderColor: COLORS.border, color: COLORS.text }}
-              >
-                拆分
-              </button>
-            </div>
-            <p className="mt-2 text-[11px]" style={{ color: COLORS.faint }}>
-              轻点松手选中（略滑动视为滚动）；双击编辑；长按约半秒后拖动可框选多格（用于合并）。
-            </p>
-          </div>
-
-          {/* 表格编辑 */}
-          <div className="mt-3 rounded-[12px] border bg-white p-3" style={{ borderColor: COLORS.border }}>
-            {/* 行列操作（移到表格上方，不占用表格格子） */}
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <div className="mr-auto text-[12px]" style={{ color: COLORS.sub }}>
-                {focused ? `当前：第 ${focused.r + 1} 行 · 第 ${focused.c + 1} 列` : '当前：未选中单元格'}
-              </div>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded-[10px] border bg-white px-3 py-2 text-[12px] transition-colors hover:bg-[#fafafa] disabled:opacity-50"
-                style={{ borderColor: COLORS.border, color: COLORS.text }}
-                onClick={() => insertRowBelow(focused?.r ?? table.rows.length - 1)}
-              >
-                <Plus className="size-3.5" /> 在下方插入行
-              </button>
-              <button
-                type="button"
-                disabled={table.rows.length <= 1 || !focused}
-                className="inline-flex items-center gap-1 rounded-[10px] border bg-white px-3 py-2 text-[12px] transition-colors hover:bg-[#fafafa] disabled:opacity-50"
-                style={{ borderColor: COLORS.border, color: COLORS.text }}
-                onClick={() => {
-                  if (!focused) return
-                  deleteRow(focused.r)
-                  setFocused(null)
-                  focusCellKeyRef.current = null
-                }}
-              >
-                <Minus className="size-3.5" /> 删除当前行
-              </button>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded-[10px] border bg-white px-3 py-2 text-[12px] transition-colors hover:bg-[#fafafa] disabled:opacity-50"
-                style={{ borderColor: COLORS.border, color: COLORS.text }}
-                onClick={() => insertColRight(focused?.c ?? table.headers.length - 1)}
-              >
-                <Plus className="size-3.5" /> 在右侧插入列
-              </button>
-              <button
-                type="button"
-                disabled={table.headers.length <= 1 || !focused}
-                className="inline-flex items-center gap-1 rounded-[10px] border bg-white px-3 py-2 text-[12px] transition-colors hover:bg-[#fafafa] disabled:opacity-50"
-                style={{ borderColor: COLORS.border, color: COLORS.text }}
-                onClick={() => {
-                  if (!focused) return
-                  deleteCol(focused.c)
-                  setFocused(null)
-                  focusCellKeyRef.current = null
-                }}
-              >
-                <Minus className="size-3.5" /> 删除当前列
-              </button>
-            </div>
-
-            <div className="overflow-x-auto pb-1">
-              <div style={{ minWidth: cols * 120 }}>
-                {/* 表头 */}
-                <div className="flex">
-                  {table.headers.map((h, c) => (
-                    <div
-                      key={`h-${c}`}
-                      className="relative shrink-0"
-                      style={{
-                        width: 120,
-                        height: cellH,
-                        borderRight: c === cols - 1 ? 'none' : border,
-                        borderBottom: border,
-                        background: headerVisual.bg,
-                        color: headerVisual.color,
-                      }}
-                    >
-                      <input
-                        value={h}
-                        onChange={(e) => setHeaderText(c, e.target.value)}
-                        onFocus={() => {
-                          focusCellKeyRef.current = null
-                          setFocused(null)
-                        }}
-                        className="h-full w-full bg-transparent px-2 py-2 text-center text-[12px] outline-none"
-                        style={{ color: headerVisual.color }}
-                        inputMode="text"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {/* 行 */}
-                <div
-                  className="relative select-none"
-                  ref={gridRef}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: `repeat(${cols}, 120px)`,
-                    gridAutoRows: `${cellH}px`,
-                    WebkitUserSelect: 'none',
-                    userSelect: 'none',
-                    // 允许纵向/横向交给外层 overflow 滚动；长按框选开始后再在 move 里 preventDefault
-                    touchAction: 'pan-x pan-y',
-                  }}
-                  onPointerMove={(e) => {
-                    if (!selectingRef.current) return
-                    const got = pickCellFromPoint(e.clientX, e.clientY)
-                    if (!got) return
-                    const last = lastOverRef.current
-                    if (last && last.r === got.r && last.c === got.c) return
-                    updateLongPressRect(got.r, got.c)
-                    e.preventDefault()
-                  }}
-                  onPointerUp={() => {
-                    clearLongPressTimer()
-                    if (selectingRef.current) endLongPress()
-                  }}
-                  onPointerCancel={() => {
-                    clearLongPressTimer()
-                    if (selectingRef.current) endLongPress()
-                  }}
-                  onPointerLeave={() => {
-                    if (selectingRef.current) endLongPress()
-                  }}
-                >
-                  {table.rows.map((row, r) =>
-                    row.map((cell, c) => {
-                      // 被 rowspan/colspan 覆盖的格子跳过（非锚点）
-                      const coveredByOther = (() => {
-                        for (let rr = 0; rr < table.rows.length; rr += 1) {
-                          for (let cc = 0; cc < table.headers.length; cc += 1) {
-                            const cell = table.rows[rr]?.[cc]
-                            if (!cell) continue
-                            if (rr === r && cc === c) continue
-                            if ((cell.rowspan > 1 || cell.colspan > 1) && spanCoversCell({ r: rr, c: cc, rowspan: cell.rowspan, colspan: cell.colspan }, { r, c })) {
-                              return { r: rr, c: cc }
-                            }
-                          }
-                        }
-                        return null
-                      })()
-                      if (coveredByOther) return null
-                      const spanCell = table.rows[r]?.[c]
-                      const span =
-                        spanCell && (spanCell.rowspan > 1 || spanCell.colspan > 1)
-                          ? { rowSpan: spanCell.rowspan, colSpan: spanCell.colspan }
-                          : null
-                      const k = buildCellKey(r, c)
-                      const isSelected = selectedKeys.has(k)
-                      const isEditing = !!editing && editing.r === r && editing.c === c
-                      const borderColor = isSelected ? '#111111' : COLORS.border
-                      const outline = isSelected ? '2px solid #111111' : '1px solid transparent'
-                      const z = isSelected ? 5 : 1
-                      return (
-                        <div
-                          key={`g-${r}-${c}`}
-                          className="bg-white"
-                          data-schedule-cell="1"
-                          data-r={r}
-                          data-c={c}
-                          style={{
-                            gridColumn: `${c + 1} / span ${span?.colSpan ?? 1}`,
-                            gridRow: `${r + 1} / span ${span?.rowSpan ?? 1}`,
-                            borderRight: border,
-                            borderBottom: border,
-                            borderLeft: border,
-                            borderTop: border,
-                            borderColor,
-                            position: 'relative',
-                            zIndex: z,
-                          }}
-                          onPointerDown={(e) => {
-                            if (e.button !== 0) return
-                            if (isEditing) return
-                            clearLongPressTimer()
-                            setEditing(null)
-                            focusCellKeyRef.current = null
-                            // 滑动超过 SCHEDULE_TAP_SLOP_PX 视为滚动，松手不选中；长按进入框选后再 capture
-                            attachPendingPointerWindowListeners(e.pointerId, r, c, e.clientX, e.clientY)
-                            longPressTimerRef.current = window.setTimeout(() => {
-                              longPressTimerRef.current = null
-                              if (gestureIsScrollRef.current) return
-                              beginLongPress(r, c, e.pointerId)
-                            }, SCHEDULE_LONG_PRESS_MS)
-                          }}
-                          onDoubleClick={() => {
-                            // 双击进入编辑（呼出键盘）
-                            setEditing({ r, c })
-                            setFocused({ r, c })
-                            setSelectedKeys(new Set([k]))
-                            // 关键：移动端必须在用户手势链路内 focus，异步 focus 常被系统拦截导致不弹键盘
-                            const el = cellRefs.current.get(k) as any
-                            // React setState 是异步的：此刻 DOM 仍可能是 readOnly=true。
-                            // 若 readOnly 未解除，移动端常出现“有光标但键盘不弹”。
-                            try {
-                              if (el) {
-                                el.readOnly = false
-                                el.removeAttribute?.('readonly')
-                                el.style.pointerEvents = 'auto'
-                              }
-                            } catch {
-                              // ignore
-                            }
-                            el?.focus?.()
-                          }}
-                        >
-                          {/* 始终渲染 textarea：非编辑态只读 + 不接收指针；双击时可在同一手势内直接 focus 弹键盘 */}
-                          <textarea
-                            ref={(el) => {
-                              if (!el) cellRefs.current.delete(k)
-                              else cellRefs.current.set(k, el as any)
-                            }}
-                            readOnly={!isEditing}
-                            value={String(cell?.content ?? '')}
-                            onChange={(e) => setCellContent(r, c, e.target.value)}
-                            className="h-full w-full resize-none bg-transparent px-2 py-2 text-[14px] leading-snug outline-none"
-                            style={{
-                              fontWeight: cell?.style?.bold ? 700 : 400,
-                              fontStyle: cell?.style?.italic ? 'italic' : 'normal',
-                              textDecoration: `${cell?.style?.underline ? 'underline' : ''} ${cell?.style?.strikethrough ? 'line-through' : ''}`.trim() || 'none',
-                              background: cell?.style?.highlight ? '#e5e5e5' : 'transparent',
-                              textAlign: cell?.style?.align ?? 'left',
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word',
-                              color: '#000000',
-                              pointerEvents: isEditing ? 'auto' : 'none',
-                            }}
-                            rows={1}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Tab') {
-                                e.preventDefault()
-                                const dir = e.shiftKey ? -1 : 1
-                                const nextC0 = c + dir
-                                const nextC = nextC0 < 0 ? cols - 1 : nextC0 >= cols ? 0 : nextC0
-                                const nextR =
-                                  nextC0 < 0 ? Math.max(0, r - 1) : nextC0 >= cols ? Math.min(table.rows.length - 1, r + 1) : r
-                                const nk = buildCellKey(nextR, nextC)
-                                setEditing({ r: nextR, c: nextC })
-                                setFocused({ r: nextR, c: nextC })
-                                setSelectedKeys(new Set([nk]))
-                                const el = cellRefs.current.get(nk) as any
-                                el?.focus?.()
-                              }
-                            }}
-                            onBlur={() => {
-                              setEditing(null)
-                              focusCellKeyRef.current = null
-                            }}
-                          />
-                          {isSelected ? (
-                            <div
-                              aria-hidden
-                              style={{
-                                position: 'absolute',
-                                inset: -1,
-                                border: outline,
-                                borderRadius: 6,
-                                pointerEvents: 'none',
-                              }}
-                            />
-                          ) : null}
-                        </div>
-                      )
-                    }),
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* AI 生成 */}
-          <button
-            type="button"
-            onClick={() => setAiOpen(true)}
-            className="mt-3 w-full rounded-[12px] bg-black py-3 text-[14px] font-semibold text-white transition-colors hover:bg-[#111] disabled:opacity-60"
-            disabled={aiLoading}
-          >
-            {aiLoading ? '生成中…' : 'AI生成表格'}
-          </button>
-
-          {/* 隐藏：给开发者/调试的最小上下文 */}
-          <div className="mt-2 text-[11px]" style={{ color: COLORS.faint }}>
-            当前列数 {cols} · 行数 {table.rows.length}
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving}
+              className="border-[1.5px] px-3 py-1.5 text-[12px] font-semibold disabled:opacity-50"
+              style={{ borderColor: C.ink, background: C.ink, color: C.page, borderRadius: 2 }}
+            >
+              {saving ? '保存中…' : '保存'}
+            </button>
           </div>
         </div>
 
-        {/* toast（需要盖过底部 AI 面板等浮层） */}
-        {toast ? (
-          <div className="pointer-events-none absolute bottom-6 left-1/2 z-[90] -translate-x-1/2 rounded-[12px] bg-black/80 px-3 py-2 text-[12px] text-white">
-            {toast}
+        <div
+          className="flex gap-1 border-b px-3 py-2"
+          style={{ borderColor: C.line, background: C.page }}
+        >
+          {(
+            [
+              { id: 'weekly' as const, label: '周循环' },
+              { id: 'calendar' as const, label: '日历' },
+            ] as const
+          ).map((m) => {
+            const on = mode === m.id
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => {
+                  setMode(m.id)
+                  setDraft(null)
+                  setCalDraft(null)
+                }}
+                className="flex-1 border-[1.5px] py-1.5 text-[12px] font-semibold"
+                style={{
+                  borderColor: on ? C.ink : C.line,
+                  background: on ? C.ink : C.panel,
+                  color: on ? C.page : C.muted,
+                  borderRadius: 2,
+                }}
+              >
+                {m.label}
+              </button>
+            )
+          })}
+        </div>
+
+        <p
+          className="border-b px-4 py-2 text-[11px] leading-relaxed"
+          style={{ borderColor: C.line, background: C.panel, color: C.muted }}
+        >
+          <span className="font-semibold" style={{ color: C.ink }}>
+            {mode === 'weekly' ? '周循环 · 适用：' : '日历 · 适用：'}
+          </span>
+          {MODE_SCENE_HINT[mode]}
+        </p>
+
+        {mode === 'calendar' ? (
+          <div
+            className="flex items-center justify-between gap-2 border-b px-4 py-2"
+            style={{ borderColor: C.line, background: C.panel }}
+          >
+            <div className="min-w-0">
+              <p className="truncate text-[11px]" style={{ color: C.muted }}>
+                锚点 · {anchor.source === 'story' ? '剧情' : '系统'} · {anchor.label}
+              </p>
+            </div>
+            <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[11px] font-semibold">
+              <input
+                type="checkbox"
+                checked={autoUpdate}
+                onChange={(e) => {
+                  setAutoUpdate(e.target.checked)
+                  setDirty(true)
+                }}
+              />
+              自动更新
+            </label>
           </div>
         ) : null}
 
-        {/* AI generating modal */}
+        {mode === 'calendar' && autoUpdate ? (
+          <p className="px-4 pt-2 text-[10px] leading-relaxed" style={{ color: C.faint }}>
+            开：私聊/线下约会中，角色明确决定或提到的安排会写入日历；玩笑与模糊「改天」不写。
+          </p>
+        ) : null}
+
+        {mode === 'weekly' ? (
+          <div
+            className="flex gap-1.5 overflow-x-auto border-b px-3 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            style={{ borderColor: C.line, background: C.page }}
+          >
+            {DAYS.map((d) => {
+              const on = d === day
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setDay(d)}
+                  className="min-w-[44px] shrink-0 border px-2 py-1.5 text-left"
+                  style={{
+                    borderWidth: on ? 1.5 : 1,
+                    borderColor: on ? C.ink : C.line,
+                    background: on ? C.accentSoft : C.panel,
+                    borderRadius: 2,
+                  }}
+                >
+                  <div className="text-[10px]" style={{ color: C.faint }}>
+                    D{d + 1}
+                  </div>
+                  <div className={`text-[12px] ${on ? 'font-bold' : 'font-medium'}`}>
+                    {scheduleDayLabel(d)}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="border-b px-2 pb-2 pt-1" style={{ borderColor: C.line, background: '#fff' }}>
+            <ScheduleMonthCalendar
+              anchorStoryDay={anchor.storyDay}
+              selectedStoryDay={calDay}
+              eventDays={calEventDays}
+              showTodayButton={false}
+              compact
+              onSelectDay={(d) => setCalDay(d)}
+            />
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-2 px-4 pt-3">
+          <p className="text-[11px]" style={{ color: C.muted }}>
+            {mode === 'weekly'
+              ? `${scheduleDayLabel(day)} · ${dayEntries.length} 条 · 点卡片编辑`
+              : `${calDay} · ${dayCalEvents.length} 条 · 点卡片编辑`}
+          </p>
+          <button
+            type="button"
+            onClick={openNew}
+            className="border-[1.5px] px-2.5 py-1 text-[12px] font-semibold"
+            style={{ borderColor: C.ink, background: C.ink, color: C.page, borderRadius: 2 }}
+          >
+            + 新日程
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 pt-3">
+          {mode === 'weekly' ? (
+            dayEntries.length === 0 ? (
+              <div
+                className="border border-dashed px-4 py-10 text-center text-[13px]"
+                style={{ borderColor: C.line, background: C.panel, color: C.faint, borderRadius: 4 }}
+              >
+                这一天还没有日程
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {dayEntries.map((e) => {
+                  const accent = scheduleTagAccent(e.tag)
+                  const dur = formatScheduleDuration(e.durationAmount, e.durationUnit)
+                  return (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => openEdit(e)}
+                      className="flex w-full gap-2.5 text-left"
+                    >
+                      <ScheduleTimeRail startTime={e.startTime} endTime={e.endTime ?? null} />
+                      <div
+                        className="min-w-0 flex-1 border-[1.5px] px-3 py-2.5"
+                        style={{ borderColor: C.ink, background: C.panel, borderRadius: 4 }}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-[13.5px] font-bold leading-snug">{e.activity}</p>
+                          <span
+                            className="shrink-0 border px-1.5 py-0.5 text-[10px]"
+                            style={{ borderColor: C.line, color: accent.dot }}
+                          >
+                            {accent.label}
+                          </span>
+                        </div>
+                        <ScheduleMetaChips location={e.location} durationLabel={dur} />
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          ) : dayCalEvents.length === 0 ? (
+            <div
+              className="border border-dashed px-4 py-10 text-center text-[13px]"
+              style={{ borderColor: C.line, background: C.panel, color: C.faint, borderRadius: 4 }}
+            >
+              这一天还没有日历事项
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {dayCalEvents.map((e) => {
+                const accent = scheduleTagAccent(e.tag)
+                const dur = formatScheduleDuration(e.durationAmount, e.durationUnit)
+                const faded = e.status === 'past' || e.status === 'done' || e.status === 'skipped'
+                return (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => openCalEdit(e)}
+                    className="flex w-full gap-2.5 text-left"
+                    style={{ opacity: faded ? 0.55 : 1 }}
+                  >
+                    <ScheduleTimeRail startTime={e.startTime} endTime={e.endTime ?? null} />
+                    <div
+                      className="min-w-0 flex-1 border-[1.5px] px-3 py-2.5"
+                      style={{ borderColor: C.ink, background: C.panel, borderRadius: 4 }}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="min-w-0 text-[13.5px] font-bold leading-snug">{e.activity}</p>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <span
+                            className="border px-1.5 py-0.5 text-[10px]"
+                            style={{ borderColor: C.line, color: accent.dot }}
+                          >
+                            {statusLabel(e.status)}
+                          </span>
+                          <span className="text-[10px]" style={{ color: C.faint }}>
+                            {accent.label}
+                          </span>
+                        </div>
+                      </div>
+                      <ScheduleMetaChips
+                        location={e.location}
+                        durationLabel={dur}
+                        extra={e.source === 'ai_auto' ? 'AI' : null}
+                      />
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
         <AnimatePresence>
-          {aiLoading ? (
+          {draft ? (
             <motion.div
-              className="absolute inset-0 z-[60] flex items-center justify-center"
+              className="absolute inset-0 z-20 flex items-end"
+              style={{ background: 'rgba(20,16,12,0.35)' }}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <div className="absolute inset-0 bg-black/40" />
               <motion.div
-                className="relative w-[88%] max-w-[360px] rounded-[16px] border bg-white p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
-                style={{ borderColor: COLORS.border }}
-                initial={{ scale: 0.96, y: 8 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.98, y: 8 }}
-                transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-                role="alertdialog"
-                aria-modal="true"
+                className="max-h-[88%] w-full overflow-y-auto border-t-2 px-4 pt-4"
+                style={{
+                  borderColor: C.ink,
+                  background: C.panel,
+                  paddingBottom: 'max(20px, env(safe-area-inset-bottom, 0px))',
+                }}
+                initial={{ y: 40 }}
+                animate={{ y: 0 }}
+                exit={{ y: 40 }}
               >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="h-10 w-10 shrink-0 animate-spin rounded-full border-[3px] border-[#e5e5e5] border-t-[#111111]"
-                    aria-hidden
-                  />
-                  <div className="min-w-0">
-                    <p className="text-[14px] font-semibold" style={{ color: COLORS.text }}>
-                      正在生成表格…
-                    </p>
-                    <p className="mt-1 text-[12px]" style={{ color: COLORS.sub }}>
-                      请稍等，生成完成会自动替换当前表格
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[15px] font-bold">编辑日程</p>
+                    <p className="mt-0.5 text-[11px]" style={{ color: C.muted }}>
+                      {scheduleDayLabel(draft.dayOfWeek)} · {draft.startTime}-{draft.endTime}
                     </p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setDraft(null)}
+                    className="border px-2.5 py-1 text-[12px]"
+                    style={{ borderColor: C.line, background: C.page, borderRadius: 2 }}
+                  >
+                    关闭
+                  </button>
+                </div>
+
+                <div className="grid gap-2.5">
+                  <label className="block">
+                    <span className="mb-1 block text-[11px]" style={{ color: C.muted }}>
+                      活动
+                    </span>
+                    <input
+                      value={draft.activity}
+                      onChange={(e) => setDraft({ ...draft, activity: e.target.value })}
+                      className="w-full border-[1.5px] px-2.5 py-2 text-[13px] outline-none"
+                      style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                    />
+                  </label>
+                  <div
+                    className="grid grid-cols-2 gap-2 border px-2.5 py-2.5"
+                    style={{ borderColor: C.line, background: '#F7F1EA', borderRadius: 4 }}
+                  >
+                    <label className="block">
+                      <span
+                        className="mb-1 flex items-center gap-1 text-[11px]"
+                        style={{ color: C.muted }}
+                      >
+                        <Clock3 size={11} strokeWidth={2.2} style={{ color: C.accent }} />
+                        开始
+                      </span>
+                      <input
+                        value={draft.startTime}
+                        onChange={(e) => setDraft({ ...draft, startTime: e.target.value })}
+                        placeholder="HH:mm"
+                        className="w-full border-[1.5px] px-2.5 py-2 font-mono text-[13px] outline-none"
+                        style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                      />
+                    </label>
+                    <label className="block">
+                      <span
+                        className="mb-1 flex items-center gap-1 text-[11px]"
+                        style={{ color: C.muted }}
+                      >
+                        <Clock3 size={11} strokeWidth={2.2} style={{ color: C.faint }} />
+                        结束
+                      </span>
+                      <input
+                        value={draft.endTime}
+                        onChange={(e) => setDraft({ ...draft, endTime: e.target.value })}
+                        placeholder="HH:mm"
+                        className="w-full border-[1.5px] px-2.5 py-2 font-mono text-[13px] outline-none"
+                        style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                      />
+                    </label>
+                  </div>
+                  <label className="block">
+                    <span
+                      className="mb-1 flex items-center gap-1 text-[11px]"
+                      style={{ color: C.muted }}
+                    >
+                      <MapPin size={11} strokeWidth={2.2} style={{ color: C.accent }} />
+                      地点
+                    </span>
+                    <input
+                      value={draft.location}
+                      onChange={(e) => setDraft({ ...draft, location: e.target.value })}
+                      placeholder="发生在哪里"
+                      className="w-full border-[1.5px] px-2.5 py-2 text-[13px] outline-none"
+                      style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                    />
+                  </label>
+                  <div
+                    className="border px-2.5 py-2.5"
+                    style={{ borderColor: C.line, background: '#F7F1EA', borderRadius: 4 }}
+                  >
+                    <div
+                      className="mb-1.5 flex items-center justify-between text-[11px]"
+                      style={{ color: C.muted }}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <Hourglass size={11} strokeWidth={2.2} style={{ color: C.accent }} />
+                        预计时长
+                      </span>
+                      <span style={{ color: C.faint }}>可选</span>
+                    </div>
+                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={draft.durationAmount ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value.trim()
+                          if (!v) {
+                            setDraft({ ...draft, durationAmount: null, durationUnit: null })
+                            return
+                          }
+                          const n = Number(v)
+                          setDraft({
+                            ...draft,
+                            durationAmount: Number.isFinite(n) ? n : null,
+                            durationUnit: draft.durationUnit ?? 'minute',
+                          })
+                        }}
+                        placeholder="数字"
+                        className="w-full border-[1.5px] px-2.5 py-2 text-[13px] outline-none"
+                        style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                      />
+                      <div className="flex gap-1">
+                        {DURATION_UNITS.map((u) => {
+                          const on = (draft.durationUnit ?? 'minute') === u.id
+                          return (
+                            <button
+                              key={u.id}
+                              type="button"
+                              disabled={draft.durationAmount == null}
+                              onClick={() => setDraft({ ...draft, durationUnit: u.id })}
+                              className="border px-2 py-2 text-[11px] font-semibold disabled:opacity-40"
+                              style={{
+                                borderColor: on ? C.ink : C.line,
+                                background: on ? C.accentSoft : C.page,
+                                borderRadius: 2,
+                              }}
+                            >
+                              {u.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1.5 text-[11px]" style={{ color: C.muted }}>
+                      分类标签
+                    </div>
+                    <div className="mb-2 flex flex-wrap gap-1.5">
+                      {knownTags.map((tag) => {
+                        const on = draft.tag.trim() === tag
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => setDraft({ ...draft, tag })}
+                            className="border px-2.5 py-1 text-[11px] font-semibold"
+                            style={{
+                              borderWidth: on ? 1.5 : 1,
+                              borderColor: on ? C.ink : C.line,
+                              background: on ? C.accentSoft : C.page,
+                              borderRadius: 2,
+                            }}
+                          >
+                            {tag}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        value={customTagInput}
+                        onChange={(e) => setCustomTagInput(e.target.value)}
+                        placeholder="自定义标签"
+                        className="min-w-0 flex-1 border-[1.5px] px-2.5 py-2 text-[13px] outline-none"
+                        style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = customTagInput.trim().slice(0, 24)
+                          if (!t) return
+                          setDraft({ ...draft, tag: t })
+                          setCustomTagInput('')
+                        }}
+                        className="shrink-0 border-[1.5px] px-3 py-2 text-[12px] font-semibold"
+                        style={{ borderColor: C.ink, background: C.page, borderRadius: 2 }}
+                      >
+                        使用
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="mb-1 block text-[11px]" style={{ color: C.muted }}>
+                      星期
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {DAYS.map((d) => {
+                        const on = draft.dayOfWeek === d
+                        return (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setDraft({ ...draft, dayOfWeek: d })}
+                            className="border px-2 py-1 text-[11px]"
+                            style={{
+                              borderColor: on ? C.ink : C.line,
+                              background: on ? C.accentSoft : C.page,
+                              borderRadius: 2,
+                            }}
+                          >
+                            {scheduleDayLabel(d)}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-[1fr_2fr] gap-2">
+                  <button
+                    type="button"
+                    onClick={deleteDraft}
+                    className="border-[1.5px] py-2.5 text-[13px] font-semibold"
+                    style={{ borderColor: C.accent, color: C.accent, background: C.panel, borderRadius: 2 }}
+                  >
+                    删除
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveDraft}
+                    className="border-[1.5px] py-2.5 text-[13px] font-bold"
+                    style={{ borderColor: C.ink, background: C.ink, color: C.page, borderRadius: 2 }}
+                  >
+                    保存这条
+                  </button>
                 </div>
               </motion.div>
             </motion.div>
           ) : null}
         </AnimatePresence>
 
-        {/* AI bottom sheet */}
         <AnimatePresence>
-          {aiOpen ? (
+          {calDraft ? (
             <motion.div
-              className="absolute inset-0 z-[40] flex items-end"
+              className="absolute inset-0 z-20 flex items-end"
+              style={{ background: 'rgba(20,16,12,0.35)' }}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <div
-                className="absolute inset-0 bg-black/30"
-                onMouseDown={(e) => {
-                  if (e.target === e.currentTarget && !aiLoading) setAiOpen(false)
-                }}
-              />
               <motion.div
-                className="relative w-full rounded-t-[16px] border-t bg-white p-4"
-                style={{ borderColor: COLORS.border }}
-                initial={{ y: 320 }}
+                className="max-h-[88%] w-full overflow-y-auto border-t-2 px-4 pt-4"
+                style={{
+                  borderColor: C.ink,
+                  background: C.panel,
+                  paddingBottom: 'max(20px, env(safe-area-inset-bottom, 0px))',
+                }}
+                initial={{ y: 40 }}
                 animate={{ y: 0 }}
-                exit={{ y: 320 }}
-                transition={{ type: 'spring', stiffness: 320, damping: 34 }}
-                onMouseDown={(e) => e.stopPropagation()}
+                exit={{ y: 40 }}
               >
-                <p className="text-[14px] font-semibold" style={{ color: COLORS.text }}>
-                  AI生成表格
-                </p>
-                <p className="mt-1 text-[12px] leading-relaxed" style={{ color: COLORS.sub }}>
-                  描述你想要的日程表，例如：帮我生成一个大学生课程表，周一到周五上午有课，下午没课。
-                </p>
-                <textarea
-                  value={aiDraft}
-                  onChange={(e) => setAiDraft(e.target.value)}
-                  className="mt-3 h-24 w-full resize-none rounded-[12px] border px-3 py-2 text-[13px] outline-none"
-                  style={{ borderColor: COLORS.border, color: COLORS.text }}
-                  placeholder="请输入你的需求…"
-                />
-                <div className="mt-3 flex gap-2">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[15px] font-bold">编辑日历事项</p>
+                    <p className="mt-0.5 text-[11px]" style={{ color: C.muted }}>
+                      {calDraft.storyDay} · {calDraft.startTime}
+                      {calDraft.endTime ? `-${calDraft.endTime}` : ''}
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setAiOpen(false)}
-                    className="flex-1 rounded-[12px] border bg-white py-3 text-[13px] font-semibold transition-colors hover:bg-[#fafafa]"
-                    style={{ borderColor: COLORS.border, color: COLORS.text }}
-                    disabled={aiLoading}
+                    onClick={() => setCalDraft(null)}
+                    className="border px-2.5 py-1 text-[12px]"
+                    style={{ borderColor: C.line, background: C.page, borderRadius: 2 }}
                   >
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void runAiGenerate()}
-                    className="flex-1 rounded-[12px] bg-black py-3 text-[13px] font-semibold text-white transition-colors hover:bg-[#111] disabled:opacity-60"
-                    disabled={aiLoading}
-                  >
-                    {aiLoading ? '生成中…' : '生成'}
+                    关闭
                   </button>
                 </div>
-                <div className="mt-3 rounded-[12px] border bg-[#fafafa] p-3" style={{ borderColor: COLORS.border }}>
-                  <p className="text-[11px]" style={{ color: COLORS.faint }}>
-                    生成会替换当前表格内容；外观设置会保留。
-                  </p>
-                  <p className="mt-1 text-[11px]" style={{ color: COLORS.faint }}>
-                    当前表格（供参考）：{JSON.stringify(normalizeRowsForAi).slice(0, 120)}…
-                  </p>
+
+                <div className="grid gap-2.5">
+                  <label className="block">
+                    <span className="mb-1 block text-[11px]" style={{ color: C.muted }}>
+                      日期（如 2026年10月22日）
+                    </span>
+                    <input
+                      value={calDraft.storyDay}
+                      onChange={(e) => setCalDraft({ ...calDraft, storyDay: e.target.value })}
+                      className="w-full border-[1.5px] px-2.5 py-2 text-[13px] outline-none"
+                      style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[11px]" style={{ color: C.muted }}>
+                      活动
+                    </span>
+                    <input
+                      value={calDraft.activity}
+                      onChange={(e) => setCalDraft({ ...calDraft, activity: e.target.value })}
+                      className="w-full border-[1.5px] px-2.5 py-2 text-[13px] outline-none"
+                      style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                    />
+                  </label>
+                  <div
+                    className="grid grid-cols-2 gap-2 border px-2.5 py-2.5"
+                    style={{ borderColor: C.line, background: '#F7F1EA', borderRadius: 4 }}
+                  >
+                    <label className="block">
+                      <span
+                        className="mb-1 flex items-center gap-1 text-[11px]"
+                        style={{ color: C.muted }}
+                      >
+                        <Clock3 size={11} strokeWidth={2.2} style={{ color: C.accent }} />
+                        开始
+                      </span>
+                      <input
+                        value={calDraft.startTime}
+                        onChange={(e) => setCalDraft({ ...calDraft, startTime: e.target.value })}
+                        placeholder="HH:mm"
+                        className="w-full border-[1.5px] px-2.5 py-2 font-mono text-[13px] outline-none"
+                        style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                      />
+                    </label>
+                    <label className="block">
+                      <span
+                        className="mb-1 flex items-center gap-1 text-[11px]"
+                        style={{ color: C.muted }}
+                      >
+                        <Clock3 size={11} strokeWidth={2.2} style={{ color: C.faint }} />
+                        结束
+                      </span>
+                      <input
+                        value={calDraft.endTime ?? ''}
+                        onChange={(e) => setCalDraft({ ...calDraft, endTime: e.target.value || null })}
+                        placeholder="可选"
+                        className="w-full border-[1.5px] px-2.5 py-2 font-mono text-[13px] outline-none"
+                        style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                      />
+                    </label>
+                  </div>
+                  <label className="block">
+                    <span
+                      className="mb-1 flex items-center gap-1 text-[11px]"
+                      style={{ color: C.muted }}
+                    >
+                      <MapPin size={11} strokeWidth={2.2} style={{ color: C.accent }} />
+                      地点
+                    </span>
+                    <input
+                      value={calDraft.location}
+                      onChange={(e) => setCalDraft({ ...calDraft, location: e.target.value })}
+                      className="w-full border-[1.5px] px-2.5 py-2 text-[13px] outline-none"
+                      style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                    />
+                  </label>
+                  <div
+                    className="border px-2.5 py-2.5"
+                    style={{ borderColor: C.line, background: '#F7F1EA', borderRadius: 4 }}
+                  >
+                    <div
+                      className="mb-1.5 flex items-center justify-between text-[11px]"
+                      style={{ color: C.muted }}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <Hourglass size={11} strokeWidth={2.2} style={{ color: C.accent }} />
+                        预计时长
+                      </span>
+                      <span style={{ color: C.faint }}>可选</span>
+                    </div>
+                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={calDraft.durationAmount ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value.trim()
+                          if (!v) {
+                            setCalDraft({ ...calDraft, durationAmount: null, durationUnit: null })
+                            return
+                          }
+                          const n = Number(v)
+                          setCalDraft({
+                            ...calDraft,
+                            durationAmount: Number.isFinite(n) ? n : null,
+                            durationUnit: calDraft.durationUnit ?? 'minute',
+                          })
+                        }}
+                        placeholder="数字"
+                        className="w-full border-[1.5px] px-2.5 py-2 text-[13px] outline-none"
+                        style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                      />
+                      <div className="flex gap-1">
+                        {DURATION_UNITS.map((u) => {
+                          const on = (calDraft.durationUnit ?? 'minute') === u.id
+                          return (
+                            <button
+                              key={u.id}
+                              type="button"
+                              disabled={calDraft.durationAmount == null}
+                              onClick={() => setCalDraft({ ...calDraft, durationUnit: u.id })}
+                              className="border px-2 py-2 text-[11px] font-semibold disabled:opacity-40"
+                              style={{
+                                borderColor: on ? C.ink : C.line,
+                                background: on ? C.accentSoft : C.page,
+                                borderRadius: 2,
+                              }}
+                            >
+                              {u.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1.5 text-[11px]" style={{ color: C.muted }}>
+                      分类标签
+                    </div>
+                    <div className="mb-2 flex flex-wrap gap-1.5">
+                      {knownTags.map((tag) => {
+                        const on = calDraft.tag.trim() === tag
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => setCalDraft({ ...calDraft, tag })}
+                            className="border px-2.5 py-1 text-[11px] font-semibold"
+                            style={{
+                              borderWidth: on ? 1.5 : 1,
+                              borderColor: on ? C.ink : C.line,
+                              background: on ? C.accentSoft : C.page,
+                              borderRadius: 2,
+                            }}
+                          >
+                            {tag}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        value={customTagInput}
+                        onChange={(e) => setCustomTagInput(e.target.value)}
+                        placeholder="自定义标签"
+                        className="min-w-0 flex-1 border-[1.5px] px-2.5 py-2 text-[13px] outline-none"
+                        style={{ borderColor: C.line, background: C.panel, borderRadius: 2 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = customTagInput.trim().slice(0, 24)
+                          if (!t) return
+                          setCalDraft({ ...calDraft, tag: t })
+                          setCustomTagInput('')
+                        }}
+                        className="shrink-0 border-[1.5px] px-3 py-2 text-[12px] font-semibold"
+                        style={{ borderColor: C.ink, background: C.page, borderRadius: 2 }}
+                      >
+                        使用
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="mb-1 block text-[11px]" style={{ color: C.muted }}>
+                      状态
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {CAL_STATUS_OPTS.map((s) => {
+                        const on = calDraft.status === s.id
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => setCalDraft({ ...calDraft, status: s.id })}
+                            className="border px-2 py-1 text-[11px]"
+                            style={{
+                              borderColor: on ? C.ink : C.line,
+                              background: on ? C.accentSoft : C.page,
+                              borderRadius: 2,
+                            }}
+                          >
+                            {s.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-[1fr_2fr] gap-2">
+                  <button
+                    type="button"
+                    onClick={deleteCalDraft}
+                    className="border-[1.5px] py-2.5 text-[13px] font-semibold"
+                    style={{ borderColor: C.accent, color: C.accent, background: C.panel, borderRadius: 2 }}
+                  >
+                    删除
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveCalDraft}
+                    className="border-[1.5px] py-2.5 text-[13px] font-bold"
+                    style={{ borderColor: C.ink, background: C.ink, color: C.page, borderRadius: 2 }}
+                  >
+                    保存这条
+                  </button>
                 </div>
               </motion.div>
             </motion.div>
           ) : null}
         </AnimatePresence>
+
+        <AnimatePresence>
+          {aiOpen ? (
+            <motion.div
+              className="absolute inset-0 z-30 flex items-end"
+              style={{ background: 'rgba(20,16,12,0.4)' }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <motion.div
+                className="max-h-[90%] w-full overflow-y-auto border-t-2 px-4 pt-4"
+                style={{
+                  borderColor: C.ink,
+                  background: C.panel,
+                  paddingBottom: 'max(20px, env(safe-area-inset-bottom, 0px))',
+                }}
+                initial={{ y: 48 }}
+                animate={{ y: 0 }}
+                exit={{ y: 48 }}
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-[15px] font-bold">
+                      {mode === 'calendar' ? 'AI 生成重要事件行程' : 'AI 生成整周日程'}
+                    </p>
+                    <p className="mt-0.5 text-[11px]" style={{ color: C.muted }}>
+                      要求可留白：空白则按人设生成；有内容则读人设并优先符合输入
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (aiLoading) return
+                      setAiOpen(false)
+                      setAiPreview(null)
+                      setAiCalPreview(null)
+                    }}
+                    className="border px-2.5 py-1 text-[12px]"
+                    style={{ borderColor: C.line, borderRadius: 2 }}
+                  >
+                    关闭
+                  </button>
+                </div>
+
+                <div
+                  className="mb-3 border-[1.5px] px-3 py-2.5 text-[11px] leading-relaxed"
+                  style={{ borderColor: C.line, background: C.page, borderRadius: 2, color: C.muted }}
+                >
+                  <p className="font-semibold" style={{ color: C.ink }}>
+                    两种日程怎么选
+                  </p>
+                  <p className="mt-1.5">
+                    <span className="font-semibold" style={{ color: C.ink }}>
+                      周循环：
+                    </span>
+                    {MODE_SCENE_HINT.weekly}
+                  </p>
+                  <p className="mt-1">
+                    <span className="font-semibold" style={{ color: C.ink }}>
+                      日历：
+                    </span>
+                    {MODE_SCENE_HINT.calendar}
+                  </p>
+                </div>
+
+                {mode === 'calendar' ? (
+                  <div className="mb-3 grid gap-2.5">
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-semibold" style={{ color: C.muted }}>
+                        生成时间跨度
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {CAL_AI_SPAN_OPTS.map((opt) => {
+                          const on = aiSpanDays === opt.days
+                          return (
+                            <button
+                              key={opt.days}
+                              type="button"
+                              onClick={() => setAiSpanDays(opt.days)}
+                              className="border px-2.5 py-1.5 text-[12px] font-semibold"
+                              style={{
+                                borderWidth: on ? 1.5 : 1,
+                                borderColor: on ? C.ink : C.line,
+                                background: on ? C.accentSoft : C.page,
+                                borderRadius: 2,
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <p className="mt-1 text-[10px]" style={{ color: C.faint }}>
+                        从当前锚点（{anchor.label}）起算
+                      </p>
+                    </div>
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-semibold" style={{ color: C.muted }}>
+                        重要事件行程数量
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={40}
+                          value={aiEventCount}
+                          onChange={(e) => {
+                            const n = Number(e.target.value)
+                            if (!Number.isFinite(n)) return
+                            setAiEventCount(Math.max(1, Math.min(40, Math.round(n))))
+                          }}
+                          className="w-20 border-[1.5px] px-2.5 py-2 text-[13px] outline-none"
+                          style={{ borderColor: C.line, background: C.page, borderRadius: 2 }}
+                        />
+                        <span className="text-[12px]" style={{ color: C.muted }}>
+                          条（实际生成条数）
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {[3, 5, 8, 12].map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setAiEventCount(n)}
+                            className="border px-2 py-1 text-[11px]"
+                            style={{
+                              borderColor: aiEventCount === n ? C.ink : C.line,
+                              background: aiEventCount === n ? C.accentSoft : C.page,
+                              borderRadius: 2,
+                            }}
+                          >
+                            {n} 条
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                <textarea
+                  value={aiDraft}
+                  onChange={(e) => setAiDraft(e.target.value)}
+                  rows={4}
+                  placeholder={
+                    mode === 'calendar'
+                      ? '可留白。填写则优先：如近期有演唱会、出差、朋友聚会…（勿默认考试周）'
+                      : '可留白。填写则优先：如工作日排班、周末排练…（按职业作息，勿默认上课）'
+                  }
+                  className="w-full resize-none border-[1.5px] px-3 py-2.5 text-[13px] outline-none"
+                  style={{ borderColor: C.line, background: C.page, borderRadius: 2 }}
+                />
+                <button
+                  type="button"
+                  disabled={aiLoading}
+                  onClick={() => void runAiGenerate()}
+                  className="mt-3 w-full border-[1.5px] py-2.5 text-[13px] font-bold disabled:opacity-50"
+                  style={{ borderColor: C.ink, background: C.ink, color: C.page, borderRadius: 2 }}
+                >
+                  {aiLoading
+                    ? '生成中…'
+                    : mode === 'calendar'
+                      ? aiDraft.trim()
+                        ? `按要求生成 ${aiEventCount} 条·${aiSpanDays}天`
+                        : `按人设生成 ${aiEventCount} 条·${aiSpanDays}天`
+                      : aiDraft.trim()
+                        ? '按要求+人设生成'
+                        : '按人设生成整周'}
+                </button>
+
+                {mode === 'weekly' && aiPreview?.length ? (
+                  <div className="mt-4 border-[1.5px] p-3" style={{ borderColor: C.ink, borderRadius: 4 }}>
+                    <p className="text-[12px] font-semibold">
+                      预览 · 共 {aiPreview.length} 条（确认后替换当前周循环）
+                    </p>
+                    <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto text-[11.5px]" style={{ color: C.muted }}>
+                      {aiPreview.slice(0, 40).map((e) => (
+                        <li key={e.id}>
+                          {scheduleDayLabel(e.dayOfWeek)} {e.startTime}-{e.endTime} {e.activity}
+                          {e.location ? ` @${e.location}` : ''}
+                          {e.tag ? ` 〔${e.tag}〕` : ''}
+                        </li>
+                      ))}
+                      {aiPreview.length > 40 ? <li>…其余 {aiPreview.length - 40} 条</li> : null}
+                    </ul>
+                    <button
+                      type="button"
+                      onClick={confirmAiPreview}
+                      className="mt-3 w-full border-[1.5px] py-2.5 text-[13px] font-bold"
+                      style={{ borderColor: C.accent, background: C.accentSoft, color: C.ink, borderRadius: 2 }}
+                    >
+                      确认写入（整周替换）
+                    </button>
+                  </div>
+                ) : null}
+
+                {mode === 'calendar' && aiCalPreview?.length ? (
+                  <div className="mt-4 border-[1.5px] p-3" style={{ borderColor: C.ink, borderRadius: 4 }}>
+                    <p className="text-[12px] font-semibold">
+                      预览 · 共 {aiCalPreview.length} 条重要事件（确认后替换当前日历行程）
+                    </p>
+                    <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto text-[11.5px]" style={{ color: C.muted }}>
+                      {aiCalPreview.slice(0, 40).map((e) => (
+                        <li key={e.id}>
+                          {e.storyDay} {e.startTime}
+                          {e.endTime ? `-${e.endTime}` : ''} {e.activity}
+                          {e.location ? ` @${e.location}` : ''}
+                          {e.tag ? ` 〔${e.tag}〕` : ''}
+                        </li>
+                      ))}
+                      {aiCalPreview.length > 40 ? (
+                        <li>…其余 {aiCalPreview.length - 40} 条</li>
+                      ) : null}
+                    </ul>
+                    <button
+                      type="button"
+                      onClick={confirmAiPreview}
+                      className="mt-3 w-full border-[1.5px] py-2.5 text-[13px] font-bold"
+                      style={{ borderColor: C.accent, background: C.accentSoft, color: C.ink, borderRadius: 2 }}
+                    >
+                      确认写入（日历替换）
+                    </button>
+                  </div>
+                ) : null}
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        {toast ? (
+          <div
+            className="pointer-events-none absolute bottom-6 left-1/2 z-40 -translate-x-1/2 border-[1.5px] px-3 py-1.5 text-[12px] font-semibold"
+            style={{ borderColor: C.ink, background: C.ink, color: C.page, borderRadius: 2 }}
+          >
+            {toast}
+          </div>
+        ) : null}
       </motion.div>
     </div>
   )
 }
 
+export default ScheduleEditorScreen

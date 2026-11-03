@@ -18,17 +18,21 @@ export function boundMainCharId(ch: Pick<Character, 'generatedForCharacterId'>):
   return ch.generatedForCharacterId?.trim() ?? ''
 }
 
-export function isNpcCharacter(ch: Pick<Character, 'generatedForCharacterId'>): boolean {
-  return !!boundMainCharId(ch)
+export function isNpcCharacter(
+  ch: Pick<Character, 'generatedForCharacterId' | 'packSeat'>,
+): boolean {
+  return ch.packSeat === 'npc' || !!boundMainCharId(ch)
 }
 
-export function isMainCharacter(ch: Pick<Character, 'generatedForCharacterId'>): boolean {
+export function isMainCharacter(
+  ch: Pick<Character, 'generatedForCharacterId' | 'packSeat'>,
+): boolean {
   return !isNpcCharacter(ch)
 }
 
 /** 名册「主要角色」Tab：排除玩家身份行、人脉 NPC */
 export function isPersonaRosterMainCharacter(
-  ch: Pick<Character, 'generatedForCharacterId' | 'isPlayerIdentity'>,
+  ch: Pick<Character, 'generatedForCharacterId' | 'isPlayerIdentity' | 'packSeat'>,
 ): boolean {
   return isMainCharacter(ch) && !ch.isPlayerIdentity
 }

@@ -212,7 +212,7 @@ export function AnimeCharacterPicker({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="模糊搜索，如：平野、初恋、Haikyuu"
+          placeholder="模糊搜索，如：排球少年、咒术、Haikyuu"
           className="mt-1 w-full px-3 py-2.5 text-[14px] outline-none"
           style={{
             borderRadius: FORUM.radiusCard,
@@ -285,8 +285,7 @@ export function AnimeCharacterPicker({
             没有搜到相关作品
           </p>
           <p className="mt-1.5 leading-relaxed" style={{ fontSize: 12, color: FORUM.textMuted }}>
-            请改用原作的日文原名，或英文 / 罗马音再搜一次。例如「平野と鍵浦」「Hirano to
-            Kagiura」，通常比中文译名更容易命中。
+            请改用原作的日文原名，或英文 / 罗马音再搜一次。例如「ハイキュー!!」「Haikyuu!!」，通常比中文译名更容易命中。
           </p>
         </div>
       ) : null}

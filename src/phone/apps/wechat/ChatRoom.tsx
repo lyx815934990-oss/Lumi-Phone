@@ -240,7 +240,9 @@ import {
   hasChatAfterWorldBookItems,
   mergeWorldBookAfterRevertByCharacterFromMessages,
   revertWorldBookAfterUsingContentPrevious,
+  summarizeWorldBookAfterPatchChanges,
   WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT,
+  type WorldBookAfterChangedEntry,
   type WorldBookAfterPatch,
 } from './newFriendsPersona/worldBookAfterPatch'
 import { finalizeWorldBookAfterPerAiRound } from './newFriendsPersona/worldBookAfterSync'
@@ -253,6 +255,12 @@ import {
   applyLifeLedgerInlinePatches,
   LIFE_LEDGER_PATCH_UPDATED_EVENT,
 } from './lifeMutable/lifeLedgerPatch'
+import {
+  applyScheduleCalendarInlinePatches,
+  buildCalendarAnchorFromStoryLabel,
+  SCHEDULE_CAL_PATCH_UPDATED_EVENT,
+  summarizeScheduleCalOps,
+} from './schedule/scheduleCalendarPatch'
 import { finalizePeerPresenceThoughtPerAiRound } from './chatRoom/peerPresenceThoughtSync'
 import { loadPeerPresenceThoughtPromptBlock } from './chatRoom/peerPresenceThoughtStorage'
 import type {
@@ -342,6 +350,16 @@ import {
   type WeChatGroupMultiSpeakerMemberPrompt,
 } from './wechatChatAi'
 import {
+  formatOnlineActionNarrationStoreContent,
+  isOnlineActionNarrationBubbleText,
+  limitOnlineActionNarrationSegments,
+  parseOnlineActionNarrationLine,
+  parseStoredOnlineActionNarrationCountRange,
+  repairClumpedOnlineActionNarrationTimestamps,
+  stripOnlineActionNarrationPrefix,
+} from './onlineActionNarration'
+import {
+  normalizeWeChatComposerSendAsSingleBubble,
   requestWeChatUserReplyDraftBubbles,
   splitWeChatComposerIntoBubbles,
 } from './wechatUserReplyDraftAi'
@@ -539,6 +557,7 @@ import {
   WeChatChatPhotoPickerSheet,
   type WeChatChatImagePayload,
 } from './WeChatChatPhotoPickerSheet'
+import { WeChatChatAiImageSendSheet } from './WeChatChatAiImageSendSheet'
 import { useWeChatConsole } from './WeChatConsoleContext'
 import { GroupPsycheModal } from './GroupPsycheModal'
 import { formatHeartWhisperGenerateError, HeartWhisperModal } from './HeartWhisperModal'
@@ -624,7 +643,11 @@ import { useMusicStore } from '../../../stores/useMusicStore'
 import { RedPacketModal } from './redPacket/RedPacketModal'
 import type { TransferBubblePerspective } from './transfer/TransferBubble'
 import { TransferChatRow } from './transfer/TransferChatRow'
-import type { WeChatTakeoutOrderPayload, WeChatPulseSharePayload } from './newFriendsPersona/types'
+import type {
+  WeChatTakeoutOrderPayload,
+  WeChatPulseSharePayload,
+  WeChatForumSharePayload,
+} from './newFriendsPersona/types'
 import { LocationChatRow } from './location/LocationChatRow'
 import { LocationSpoofModal } from './location/LocationSpoofModal'
 import { sendLocationToContact } from './location/sendLocationToContact'
@@ -642,6 +665,9 @@ import { openTasteAppTracking } from '../takeout/tasteNavigation'
 import { TakeoutOrderChatRow } from './takeout/TakeoutOrderChatRow'
 import { openLumiPulseApp } from '../lumiPulse/lumiPulseNavigation'
 import { PulseShareChatRow } from './pulse/PulseShareChatRow'
+import { ForumShareChatRow } from '../fanficForum/components/ForumShareChatRow'
+import { ForumShareReaderSheet } from '../fanficForum/components/ForumShareReaderSheet'
+import { formatForumShareAiTranscriptLine } from '../fanficForum/forumWechatShare'
 import {
   buildCharacterTakeoutOrderBundle,
   isTakeoutOrderDirectiveArtifactLine,
@@ -719,6 +745,11 @@ import {
   stickerTranscriptTextFromFields,
 } from './stickers/stickerAntiRepeat'
 import { stickerUrlToImagePayload, arrayBufferToBase64ForMedia } from './wechatStickerImagePayload'
+import {
+  isWechatBlockSendFailAwareNote,
+  WECHAT_BLOCK_SYSTEM_NOTE_EVENT,
+  type WeChatBlockSystemNoteDetail,
+} from './wechatBlock'
 import { ChatInputBar } from './voiceInput/ChatInputBar'
 import {
   clearWeChatComposerDraft,
@@ -731,9 +762,15 @@ import { MessageTranslationUnderBubble } from './MessageTranslationUnderBubble'
 import {
   batchTranslateWeChatBubbleTexts,
   createWeChatSyncTranslationLookup,
+  looksLikeChineseTranslationLeakText,
+  looksLikeJapaneseBubbleText,
+  looksLikeKoreanBubbleText,
   normalizeLeakedWeChatTranslationBubbles,
+  normalizeWeChatChatLanguageCode,
   parseWeChatSyncTranslationLine,
   peelWeChatSyncTranslationLines,
+  sanitizeTranslatorAssistantLeakBubble,
+  sanitizeWeChatSyncTranslationText,
   weChatSyncTranslationKeyFromBubbleLine,
 } from './wechatChatLanguage'
 import {
@@ -883,7 +920,35 @@ function makeStablePersonaOpeningId(conversationKey: string, index: number): str
   return `wxm-${key}-persona-open-${index}`
 }
 
-function itemsToTranscript(items: ChatItem[], opts?: { groupSpeakerLabel?: (m: ChatMsg) => string | undefined }): ChatTranscriptTurn[] {
+/** 同步翻译开着、尚无合法译文时：该气泡是否值得拉一次翻译 API */
+function chatMsgNeedsSyncTranslationFetch(
+  msg: ChatMsg,
+  replyLanguage: string | undefined,
+): boolean {
+  if (msg.isActionNarration || msg.isSystemCenterStrip || msg.isGroupEventStrip || msg.isRecalled)
+    return false
+  if (msg.voice || msg.callStatus || msg.redPacket || msg.transfer) return false
+  if (msg.images?.length || msg.stickerRef || msg.musicSync || msg.miniGameInvite) return false
+  const text = (msg.text || '').trim()
+  if (!text || isOnlineActionNarrationBubbleText(text)) return false
+  if (sanitizeWeChatSyncTranslationText(msg.translatedText ?? '')) return false
+  const replyCode = normalizeWeChatChatLanguageCode(replyLanguage)
+  if (replyCode === 'zh-CN' || replyCode === 'zh-TW') return false
+  if (replyCode === 'ja') return looksLikeJapaneseBubbleText(text)
+  if (replyCode === 'ko') return looksLikeKoreanBubbleText(text)
+  // 其它外语：主体不像纯中文漏行即可译
+  return !looksLikeChineseTranslationLeakText(text)
+}
+
+function itemsToTranscript(
+  items: ChatItem[],
+  opts?: {
+    groupSpeakerLabel?: (m: ChatMsg) => string | undefined
+    /** 关动描时不把旁白注入上下文，避免模型照抄标签进气泡 */
+    includeActionNarration?: boolean
+  },
+): ChatTranscriptTurn[] {
+  const includeActionNarration = opts?.includeActionNarration === true
   const miniGameMsgs = items
     .filter((x): x is ChatMsg => x.kind === 'msg' && !!x.miniGameInvite)
     .map((m) => ({ id: m.id, from: m.from, miniGameInvite: m.miniGameInvite }))
@@ -897,6 +962,28 @@ function itemsToTranscript(items: ChatItem[], opts?: { groupSpeakerLabel?: (m: C
           id: m.id,
           from: m.from,
           text: `（${who}在禁言期间发言；气泡侧已隐藏，仅系统灰条提示）`,
+          speakerLabel,
+        }
+      }
+      if (m.undeliveredDueToBlock) {
+        if (m.from === 'self') {
+          return {
+            id: m.id,
+            from: m.from,
+            text: '（用户发出的消息因拉黑未送达；你从未收到正文，禁止引用或回应其内容）',
+            speakerLabel,
+          }
+        }
+        /** 角色自己发出的失败气泡：正文仍可见，仅标注发送失败 */
+        const body =
+          m.voice?.transcriptText?.trim() ||
+          m.text?.trim() ||
+          (m.images?.length ? '[图片]' : '') ||
+          '[消息]'
+        return {
+          id: m.id,
+          from: m.from,
+          text: `${body}\n（本条发送失败：因拉黑未送达对方；对方手机上看不见正文）`,
           speakerLabel,
         }
       }
@@ -916,11 +1003,24 @@ function itemsToTranscript(items: ChatItem[], opts?: { groupSpeakerLabel?: (m: C
       if (m.isGroupEventStrip && m.text?.trim()) {
         return { id: m.id, from: m.from, text: `（系统）${m.text.trim()}`, speakerLabel }
       }
+      if (m.isActionNarration) {
+        if (!includeActionNarration) return null
+        const body = stripOnlineActionNarrationPrefix(m.text || '').trim() || m.text?.trim() || ''
+        // 只用协议前缀【动描】，勿用「私聊・旁白」等上下文标签（模型会照抄进气泡/[译]）
+        return {
+          id: m.id,
+          from: m.from,
+          text: body ? `【动描】${body}` : '【动描】',
+          speakerLabel,
+        }
+      }
       if (m.voice) {
-        const txt = m.voice.transcriptText?.trim() || m.text?.trim() || '（语音）'
+        // 用协议前缀【语音】，勿写「（对方语音）」——模型会把通道标签仿写进 [译]
+        const body = m.voice.transcriptText?.trim() || m.text?.trim() || '…'
         const emo = m.voice.emotionLabel?.trim()
-        const who = m.from === 'self' ? '用户语音' : `${speakerLabel || '对方'}语音`
-        const voiceText = emo ? `（${who}，情绪：${emo}）${txt}` : `（${who}）${txt}`
+        const voiceText = emo
+          ? `【语音】${body}\n（系统注·勿写入气泡或译文：语音情绪倾向 ${emo}）`
+          : `【语音】${body}`
         return { id: m.id, from: m.from, text: voiceText, replyTo: m.replyTo, speakerLabel }
       }
       if (m.musicSync) {
@@ -1052,6 +1152,15 @@ function itemsToTranscript(items: ChatItem[], opts?: { groupSpeakerLabel?: (m: C
           speakerLabel,
         }
       }
+      if (m.forumShare) {
+        return {
+          id: m.id,
+          from: m.from,
+          text: formatForumShareAiTranscriptLine(m.forumShare, m.from === 'self' ? 'self' : 'other'),
+          replyTo: m.replyTo,
+          speakerLabel,
+        }
+      }
       if (m.sharedRecord) {
         const sr = m.sharedRecord
         const typeLabel =
@@ -1081,12 +1190,24 @@ function itemsToTranscript(items: ChatItem[], opts?: { groupSpeakerLabel?: (m: C
         return { id: m.id, from: m.from, text: stickerLine, replyTo: m.replyTo, speakerLabel }
       }
       const text = m.text?.trim()
+      // 泄漏进普通气泡的旁白/编剧拆解：勿再喂给模型（否则越抄越凶）
+      if (text && isOnlineActionNarrationBubbleText(text)) {
+        if (!includeActionNarration) return null
+        const body = stripOnlineActionNarrationPrefix(text).trim()
+        return {
+          id: m.id,
+          from: m.from,
+          text: body ? `【动描】${body}` : '【动描】',
+          replyTo: m.replyTo,
+          speakerLabel,
+        }
+      }
       if (text) return { id: m.id, from: m.from, text, replyTo: m.replyTo, speakerLabel }
       if (m.images?.length)
         return { id: m.id, from: m.from, text: '（发送了一张图片）', replyTo: m.replyTo, speakerLabel }
       return { id: m.id, from: m.from, text: '', replyTo: m.replyTo, speakerLabel }
     })
-    .filter((t) => t.text.trim())
+    .filter((t): t is NonNullable<typeof t> => t != null && !!String(t.text ?? '').trim())
 }
 
 function bubbleForRole(theme: WeChatTheme, roleKey: string): WeChatBubbleTheme {
@@ -1179,6 +1300,7 @@ function mapWeChatMessagesToChatItems(msgs: WeChatChatMessage[]): ChatMsg[] {
         locationShare: m.locationShare,
         takeoutOrder: m.takeoutOrder,
         pulseShare: m.pulseShare,
+        forumShare: m.forumShare,
         sharedRecord: m.sharedRecord,
         originalText: m.originalContent,
         isRecalled: m.isRecalled,
@@ -1271,6 +1393,17 @@ function mapWeChatMessagesToChatItems(msgs: WeChatChatMessage[]): ChatMsg[] {
     ) {
       bodyText = normalizeGroupSmartBotBubblePlaintext(m.content, null)
     }
+    // 历史气泡若已混入翻译讲义/编剧拆解：截掉或整条不展示
+    if (
+      m.type === 'character' &&
+      ext?.actionNarration !== true &&
+      typeof bodyText === 'string' &&
+      bodyText.trim()
+    ) {
+      const cleanedLeak = sanitizeTranslatorAssistantLeakBubble(bodyText)
+      if (cleanedLeak == null) continue
+      bodyText = cleanedLeak
+    }
     const resolvedChatHistory = m.chatHistory ?? resolveChatHistoryFromStoredMessage(m) ?? undefined
     mapped.push({
       id: m.id,
@@ -1291,7 +1424,7 @@ function mapWeChatMessagesToChatItems(msgs: WeChatChatMessage[]): ChatMsg[] {
       transfer: m.transfer,
       callStatus: m.callStatus,
       voice: m.voice,
-      translatedText: m.translatedText,
+      translatedText: sanitizeWeChatSyncTranslationText(m.translatedText ?? '') ?? undefined,
       translationLang: m.translationLang,
       translationExpanded: m.translationExpanded,
       translationAudioUrl: m.translationAudioUrl,
@@ -1305,6 +1438,7 @@ function mapWeChatMessagesToChatItems(msgs: WeChatChatMessage[]): ChatMsg[] {
       locationShare: m.locationShare,
       takeoutOrder: m.takeoutOrder,
       pulseShare: m.pulseShare,
+      forumShare: m.forumShare,
       sharedRecord: m.sharedRecord,
       chatHistory: resolvedChatHistory,
       stickerRef: m.stickerRef,
@@ -1315,14 +1449,53 @@ function mapWeChatMessagesToChatItems(msgs: WeChatChatMessage[]): ChatMsg[] {
       status: 'sent',
       senderCharacterId: m.type === 'character' ? m.characterId : undefined,
       isSystemCenterStrip: ext?.centerSystemStrip === true,
+      isActionNarration: ext?.actionNarration === true,
       groupBotDarkBubble: ext?.groupBotDarkBubble === true,
       shieldedMessageContent:
         typeof ext?.shieldedMessageContent === 'string' ? ext.shieldedMessageContent : undefined,
       muteSuppressStrip: ext?.muteSuppressStrip === true,
       mutedMessageVisibleToModeratorsOnly: ext?.mutedMessageVisibleToModeratorsOnly === true,
+      undeliveredDueToBlock: ext?.undeliveredDueToBlock === true,
+      blockRejectIcon: ext?.blockRejectIcon === true,
     })
   }
   return mapped
+}
+
+/** 拉黑期间：按时间戳给被拒收方气泡补上红叹号（兼容旧消息未写 ext） */
+function applyBlockRejectMarksToChatMsgs(
+  items: ChatItem[],
+  opts: {
+    userBlocked: boolean
+    blockedAt: number
+    peerBlocked: boolean
+    blockedByPeerAt: number
+  },
+): ChatItem[] {
+  if (!opts.userBlocked && !opts.peerBlocked) return items
+  return items.map((m) => {
+    if (m.kind !== 'msg') return m
+    const raw = typeof m.text === 'string' ? m.text.trim() : ''
+    if (
+      m.isSystemCenterStrip ||
+      m.isGroupEventStrip ||
+      raw.startsWith('【系统】') ||
+      isWechatBlockSendFailAwareNote(raw)
+    ) {
+      return m
+    }
+    if (opts.userBlocked && m.from === 'other') {
+      if (opts.blockedAt > 0 && (m.timestamp || 0) < opts.blockedAt) return m
+      if (m.blockRejectIcon === true && m.undeliveredDueToBlock === true) return m
+      return { ...m, undeliveredDueToBlock: true, blockRejectIcon: true }
+    }
+    if (opts.peerBlocked && m.from === 'self') {
+      if (opts.blockedByPeerAt > 0 && (m.timestamp || 0) < opts.blockedByPeerAt) return m
+      if (m.blockRejectIcon === true && m.undeliveredDueToBlock === true) return m
+      return { ...m, undeliveredDueToBlock: true, blockRejectIcon: true }
+    }
+    return m
+  })
 }
 
 /** 己方消息但实为「收到对方转账后的确认/退还」ack：须用 incoming 文案（已收款 / 已退还），不能用 outgoing */
@@ -1366,7 +1539,7 @@ function rebuildChatItemsWithTimestamps(msgs: ChatMsg[], formatWxTimeLabel: (ts:
 function messagePlainPreview(
   msg: Pick<
     ChatMsg,
-    'text' | 'images' | 'imageGenPending' | 'imageGenAwaitingConfirm' | 'imageGenFailed' | 'redPacket' | 'transfer' | 'callStatus' | 'voice' | 'musicSync' | 'miniGameInvite' | 'coupleSpaceInvite' | 'listenCommentShare' | 'listenProfileShare' | 'listenTrackShare' | 'locationShare' | 'takeoutOrder' | 'pulseShare' | 'sharedRecord' | 'chatHistory' | 'isRecalled' | 'isGroupEventStrip'
+    'text' | 'images' | 'imageGenPending' | 'imageGenAwaitingConfirm' | 'imageGenFailed' | 'redPacket' | 'transfer' | 'callStatus' | 'voice' | 'musicSync' | 'miniGameInvite' | 'coupleSpaceInvite' | 'listenCommentShare' | 'listenProfileShare' | 'listenTrackShare' | 'locationShare' | 'takeoutOrder' | 'pulseShare' | 'forumShare' | 'sharedRecord' | 'chatHistory' | 'isRecalled' | 'isGroupEventStrip'
   >,
 ): string {
   if (msg.isGroupEventStrip && msg.text?.trim()) return msg.text.trim()
@@ -1417,6 +1590,7 @@ function messagePlainPreview(
   if (msg.locationShare) return '[位置]'
   if (msg.takeoutOrder) return `[外卖] ${msg.takeoutOrder.storeName}`
   if (msg.pulseShare) return `[微博] ${msg.pulseShare.authorName}`
+  if (msg.forumShare) return `[同人] ${msg.forumShare.title}`
   if (msg.sharedRecord) return '[收藏]'
   if (msg.chatHistory) return '[聊天记录]'
   const rp = msg.redPacket
@@ -2099,6 +2273,8 @@ type ChatMsg = {
   senderCharacterId?: string
   /** 居中系统浅灰条（违禁屏蔽等，与「【系统】」样式一致） */
   isSystemCenterStrip?: boolean
+  /** 线上动描：居中旁白（非系统灰条） */
+  isActionNarration?: boolean
   /** 群助手黑底白字程序化回复 */
   groupBotDarkBubble?: boolean
   text: string
@@ -2148,6 +2324,7 @@ type ChatMsg = {
   locationShare?: WeChatLocationPayload
   takeoutOrder?: WeChatTakeoutOrderPayload
   pulseShare?: WeChatPulseSharePayload
+  forumShare?: WeChatForumSharePayload
   sharedRecord?: WeChatSharedRecordPayload
   chatHistory?: WeChatChatHistoryPayload
   /** 表情包引用名（落库后供 AI 历史与防重复） */
@@ -2169,6 +2346,10 @@ type ChatMsg = {
   muteSuppressStrip?: boolean
   /** 禁言期间仍生成的发言：原文已落库；聊天气泡侧全员不展示，仅配套系统灰条供群主/管理员点「查看」 */
   mutedMessageVisibleToModeratorsOnly?: boolean
+  /** 因拉黑未送达：AI 上下文视为对方未收到 */
+  undeliveredDueToBlock?: boolean
+  /** 对方拒收：气泡旁红色感叹号 */
+  blockRejectIcon?: boolean
 }
 
 type ChatTime = { id: string; kind: 'time'; text: string }
@@ -2215,8 +2396,12 @@ type OpponentRevealJob = {
   revealCallbackDelayMs?: number
 }
 
-/** AI 对方消息逐条露出前的动态间隔（毫秒）：短句偏快，长句偏慢；语音按时长。 */
+/** AI 对方消息逐条露出前的动态间隔（毫秒）：短句偏快，长句偏慢；语音按时长；动描略快于对白。 */
 function computeOpponentStaggerDelayMs(msg: ChatMsg): number {
+  if (msg.isActionNarration) {
+    const n = [...stripOnlineActionNarrationPrefix(msg.text || '')].length
+    return Math.max(180, Math.min(900, Math.round((n / 8) * 1000)))
+  }
   return computeRevealDelayMs(msg)
 }
 
@@ -2324,13 +2509,21 @@ function messageBlockSpacing(
 function consecutiveSameSpeaker(items: ChatItem[], index: number, groupMode?: boolean): boolean {
   if (index <= 0) return false
   const cur = items[index]
-  if (cur.kind !== 'msg' || cur.isRecalled || cur.isGroupEventStrip || cur.isSystemCenterStrip) return false
+  if (
+    cur.kind !== 'msg' ||
+    cur.isRecalled ||
+    cur.isGroupEventStrip ||
+    cur.isSystemCenterStrip ||
+    cur.isActionNarration
+  )
+    return false
   for (let i = index - 1; i >= 0; i -= 1) {
     const prev = items[i]
     if (prev.kind === 'time' || prev.kind === 'fr-verify-banner') return false
     if (prev.kind !== 'msg') continue
     // 已撤回消息只显示撤回提示，不应参与头像“连续同侧”合并判断。
-    if (prev.isRecalled || prev.isGroupEventStrip || prev.isSystemCenterStrip) continue
+    if (prev.isRecalled || prev.isGroupEventStrip || prev.isSystemCenterStrip || prev.isActionNarration)
+      continue
     if (cur.from !== prev.from) return false
     if (groupMode && cur.from === 'other' && prev.kind === 'msg') {
       const cId = (cur as ChatMsg).senderCharacterId?.trim() ?? ''
@@ -2393,6 +2586,7 @@ function findLastRealSelfMessageIndex(msgs: ChatMsg[]): number {
 /**
  * AI 请求上下文：只保留至「本轮最后一条用户消息」为止。
  * 重新回复时即使 UI/DB 尚未完全同步，也不会把本轮旧对方稿注入模型。
+ * 「继续回复」须跳过本裁切，否则模型看不见已露出的角色气泡、会整轮重答并叠出重复内容。
  */
 function trimChatItemsToAiTurnAnchor(items: ChatItem[]): ChatItem[] {
   const msgs = items.filter((it): it is ChatMsg => it.kind === 'msg')
@@ -2413,6 +2607,7 @@ function effectiveGroupOtherSenderCharacterId(items: ChatItem[], index: number):
     cur.isRecalled ||
     cur.isGroupEventStrip ||
     (cur as ChatMsg).isSystemCenterStrip ||
+    (cur as ChatMsg).isActionNarration ||
     cur.from !== 'other'
   )
     return undefined
@@ -2421,7 +2616,7 @@ function effectiveGroupOtherSenderCharacterId(items: ChatItem[], index: number):
     const it = items[j]
     if (it.kind !== 'msg' || it.isRecalled || (it as ChatMsg).isGroupEventStrip) return undefined
     // 系统灰条（违禁屏蔽/禁言未展示）属于「对方」但不应参与发言者继承，勿把群管家 id 误并入上下文人设气泡
-    if ((it as ChatMsg).isSystemCenterStrip) {
+    if ((it as ChatMsg).isSystemCenterStrip || (it as ChatMsg).isActionNarration) {
       if (j === 0) return undefined
       j -= 1
       continue
@@ -2478,6 +2673,35 @@ function FailRetryIcon({ onClick }: { onClick: () => void }) {
     >
       ⚠️
     </Pressable>
+  )
+}
+
+/** 拉黑未送达：红色圆底感叹号（不可点重发） */
+function BlockUndeliveredIcon() {
+  return (
+    <span
+      className="mb-1 flex h-[18px] w-[18px] shrink-0 items-center justify-center self-end rounded-full text-[12px] font-bold leading-none"
+      style={{ background: '#FA5151', color: '#fff' }}
+      title="消息已发出，但被对方拒收"
+      aria-label="消息已发出，但被对方拒收"
+    >
+      !
+    </span>
+  )
+}
+
+/** 每条被拒收消息下方的居中系统灰条（微信同款） */
+function BlockRejectUnderMessageStrip() {
+  return (
+    <div className="mt-1.5 flex w-full justify-center px-3">
+      <span
+        className="max-w-[92%] rounded-[4px] px-3 py-1.5 text-center text-[12px] leading-[1.35]"
+        style={{ color: '#888888', background: 'rgba(255,255,255,0.72)' }}
+        aria-label="消息已发出，但被对方拒收"
+      >
+        消息已发出，但被对方拒收。
+      </span>
+    </div>
   )
 }
 
@@ -2615,6 +2839,19 @@ function preferResolvedImageGenChatMsg(dbMsg: ChatMsg, liveMsg: ChatMsg): ChatMs
       imageDescription: liveMsg.imageDescription ?? dbMsg.imageDescription,
     })
   }
+  // 大图重新生成：仍保留旧图 + pending；勿被 DB 旧行把 pending 清掉（否则关大图后像中断）
+  if (liveMsg.imageGenPending && liveImg) {
+    return mergeRedPacketOpened({
+      ...dbMsg,
+      ...liveMsg,
+      images: liveMsg.images,
+      imageGenPending: true,
+      imageGenAwaitingConfirm: false,
+      imageGenFailed: false,
+      imageGenPrompt: liveMsg.imageGenPrompt ?? dbMsg.imageGenPrompt,
+      imageDescription: liveMsg.imageDescription ?? dbMsg.imageDescription,
+    })
+  }
   if (liveImg && !dbImg) {
     return mergeRedPacketOpened({
       ...dbMsg,
@@ -2719,7 +2956,23 @@ function mergeHydratedMsgsWithLivePrev(
   const mergedMapped = mappedMsgs.map((dbMsg) => {
     const live = prevById.get(dbMsg.id)
     const base = live ? preferResolvedImageGenChatMsg(dbMsg, live) : applyLocallyOpenedRedPacketToMsg(dbMsg)
-    return applyPending(base)
+    /** 拉黑拒收标记以「任一侧有」为准，避免 hydrate 合并时被无 ext 的 live 盖掉 */
+    const withBlock = {
+      ...base,
+      undeliveredDueToBlock:
+        base.undeliveredDueToBlock === true ||
+        dbMsg.undeliveredDueToBlock === true ||
+        live?.undeliveredDueToBlock === true
+          ? true
+          : undefined,
+      blockRejectIcon:
+        base.blockRejectIcon === true ||
+        dbMsg.blockRejectIcon === true ||
+        live?.blockRejectIcon === true
+          ? true
+          : undefined,
+    }
+    return applyPending(withBlock)
   })
   const pendingOnly = prevMsgs.filter((m) => !mappedIds.has(m.id)).map((m) => applyPending(applyLocallyOpenedRedPacketToMsg(m)))
   return dedupeChatMsgsById([...mergedMapped, ...pendingOnly].sort(compareChatMsgByRevealOrder))
@@ -2746,7 +2999,8 @@ function chatItemsMessageSnapshotEqual(prev: ChatItem[], next: ChatItem[]): bool
         const rpKey = rp
           ? `${rp.packetId ?? ''}\0${rp.opened ? '1' : '0'}\0${rp.expired ? '1' : '0'}\0${rp.amountYuan ?? ''}`
           : ''
-        return `${m.id}\0${m.from}\0${m.timestamp}\0${m.text ?? ''}\0${mgKey}\0${mediaKey}\0${rpKey}`
+        const blockKey = `${m.undeliveredDueToBlock ? '1' : '0'}${m.blockRejectIcon ? '1' : '0'}`
+        return `${m.id}\0${m.from}\0${m.timestamp}\0${m.text ?? ''}\0${mgKey}\0${mediaKey}\0${rpKey}\0${blockKey}`
       })
       .join('\n')
   return pick(prev) === pick(next)
@@ -3248,6 +3502,17 @@ export function ChatRoomInner({
   const voiceSynthesisPromiseRef = useRef(new Map<string, Promise<string>>())
 
   const [peerAvatarResolved, setPeerAvatarResolved] = useState<string | undefined>(undefined)
+  /** 私聊拉黑：用户拉黑角色 / 角色拉黑用户（剧情） */
+  const [peerUserBlocked, setPeerUserBlocked] = useState(false)
+  const [peerBlockedByPeer, setPeerBlockedByPeer] = useState(false)
+  const peerUserBlockedRef = useRef(false)
+  const peerBlockedByPeerRef = useRef(false)
+  const peerBlockedAtRef = useRef(0)
+  const peerBlockedByPeerAtRef = useRef(0)
+  /** 本段拉黑期内已催过「知情接写」，避免重复踢 AI */
+  const blockAwareKickDoneRef = useRef(false)
+  peerUserBlockedRef.current = peerUserBlocked
+  peerBlockedByPeerRef.current = peerBlockedByPeer
   useEffect(() => {
     let cancelled = false
     const direct = peerAvatarUrl?.trim()
@@ -3273,6 +3538,60 @@ export function ChatRoomInner({
       cancelled = true
     }
   }, [peerAvatarUrl, useLumiProjectAssistantPrompt, personaCharacterId, conversationCharacterId])
+
+  useEffect(() => {
+    if (roomType === 'group' || useLumiProjectAssistantPrompt || isSelfMemoChat) {
+      setPeerUserBlocked(false)
+      setPeerBlockedByPeer(false)
+      peerBlockedAtRef.current = 0
+      peerBlockedByPeerAtRef.current = 0
+      blockAwareKickDoneRef.current = false
+      return
+    }
+    const cid = (personaCharacterId?.trim() || conversationCharacterId.trim()) || ''
+    if (!cid || cid === WECHAT_LUMI_PEER_CHARACTER_ID) {
+      setPeerUserBlocked(false)
+      setPeerBlockedByPeer(false)
+      peerBlockedAtRef.current = 0
+      peerBlockedByPeerAtRef.current = 0
+      blockAwareKickDoneRef.current = false
+      return
+    }
+    let cancelled = false
+    const load = () => {
+      void personaDb.getCharacter(cid).then((c) => {
+        if (cancelled) return
+        const nextUserBlocked = c?.isBlocked === true
+        const nextBlockedAt =
+          nextUserBlocked && typeof c?.blockedAt === 'number' && c.blockedAt > 0 ? c.blockedAt : 0
+        if (!nextUserBlocked || nextBlockedAt !== peerBlockedAtRef.current) {
+          blockAwareKickDoneRef.current = false
+        }
+        setPeerUserBlocked(nextUserBlocked)
+        setPeerBlockedByPeer(c?.blockedByPeer === true)
+        peerBlockedAtRef.current = nextBlockedAt
+        peerBlockedByPeerAtRef.current =
+          c?.blockedByPeer === true && typeof c.blockedByPeerAt === 'number' && c.blockedByPeerAt > 0
+            ? c.blockedByPeerAt
+            : 0
+      })
+    }
+    load()
+    const on = () => {
+      if (!cancelled) load()
+    }
+    window.addEventListener('wechat-storage-changed', on)
+    return () => {
+      cancelled = true
+      window.removeEventListener('wechat-storage-changed', on)
+    }
+  }, [
+    roomType,
+    useLumiProjectAssistantPrompt,
+    isSelfMemoChat,
+    personaCharacterId,
+    conversationCharacterId,
+  ])
 
   /** 会话表里的本聊天头像（与 props 双通道，避免切换会话时 props 短暂丢失/竞态被冲掉） */
   const [localPlayerChatAvatarUrl, setLocalPlayerChatAvatarUrl] = useState('')
@@ -3717,6 +4036,12 @@ export function ChatRoomInner({
     translationAutoExpand?: boolean
     heartWhisperSyncEnabled?: boolean
     innerOsSyncEnabled?: boolean
+    onlineActionNarrationEnabled?: boolean
+    onlineActionNarrationCountMin?: number
+    onlineActionNarrationCountMax?: number
+    replyBubbleCountEnabled?: boolean
+    replyBubbleCountMin?: number
+    replyBubbleCountMax?: number
     voiceSynthToneTokensEnabled?: boolean
     voiceSynthEmotionEnabled?: boolean
   }>({})
@@ -3776,28 +4101,35 @@ export function ChatRoomInner({
     [formatWxTimeLabel, getCurrentTimeMs],
   )
   const extractMessages = useCallback((list: ChatItem[]) => list.filter((it): it is ChatMsg => it.kind === 'msg'), [])
-  const buildChatItemsForAiTranscript = useCallback((): ChatItem[] => {
-    const rows = aiContextDbMessagesRef.current
-    const dbItems = rebuildWithCurrentTime(mapWeChatMessagesToChatItems(rows))
-    const dbIds = new Set(rows.map((r) => r.id))
-    const pending = extractMessages(itemsRef.current).filter((m) => !dbIds.has(m.id))
-    const mergedMsgs = enrichMusicSyncInviteCharResponded(
-      [...extractMessages(dbItems), ...pending].sort(compareChatMsgByRevealOrder),
-    )
-    let items = rebuildWithCurrentTime(mergedMsgs)
-    if (roomType === 'group' && groupId?.trim()) {
-      items = filterGroupChatItemsHideModeratorOnlyBubbles(items, roomType, groupDocRef.current)
-    }
-    const trimmed = trimChatItemsToAiTurnAnchor(items)
-    const msgRows = trimmed.filter((it): it is ChatMsg => it.kind === 'msg')
-    const enrichedMsgs = enrichChatRowsMiniGameForAiTranscript(msgRows)
-    const enrichedById = new Map(enrichedMsgs.map((m) => [m.id, m]))
-    return trimmed.map((it) => (it.kind === 'msg' && enrichedById.has(it.id) ? enrichedById.get(it.id)! : it))
-  }, [extractMessages, groupId, rebuildWithCurrentTime, roomType])
+  const buildChatItemsForAiTranscript = useCallback(
+    (opts?: { keepPostUserAssistant?: boolean }): ChatItem[] => {
+      const rows = aiContextDbMessagesRef.current
+      const dbItems = rebuildWithCurrentTime(mapWeChatMessagesToChatItems(rows))
+      const dbIds = new Set(rows.map((r) => r.id))
+      const pending = extractMessages(itemsRef.current).filter((m) => !dbIds.has(m.id))
+      const mergedMsgs = enrichMusicSyncInviteCharResponded(
+        [...extractMessages(dbItems), ...pending].sort(compareChatMsgByRevealOrder),
+      )
+      let items = rebuildWithCurrentTime(mergedMsgs)
+      if (roomType === 'group' && groupId?.trim()) {
+        items = filterGroupChatItemsHideModeratorOnlyBubbles(items, roomType, groupDocRef.current)
+      }
+      const trimmed = opts?.keepPostUserAssistant === true ? items : trimChatItemsToAiTurnAnchor(items)
+      const msgRows = trimmed.filter((it): it is ChatMsg => it.kind === 'msg')
+      const enrichedMsgs = enrichChatRowsMiniGameForAiTranscript(msgRows)
+      const enrichedById = new Map(enrichedMsgs.map((m) => [m.id, m]))
+      return trimmed.map((it) => (it.kind === 'msg' && enrichedById.has(it.id) ? enrichedById.get(it.id)! : it))
+    },
+    [extractMessages, groupId, rebuildWithCurrentTime, roomType],
+  )
 
   /** 后台 flush（用户已切到其他会话）时从 DB 构建 transcript，避免 itemsRef 被清空导致串会话/空上下文 */
   const buildChatItemsForAiTranscriptForKey = useCallback(
-    async (forKey: string, ctx: ReturnType<typeof getConversationFlushContext>): Promise<ChatItem[]> => {
+    async (
+      forKey: string,
+      ctx: ReturnType<typeof getConversationFlushContext>,
+      opts?: { keepPostUserAssistant?: boolean },
+    ): Promise<ChatItem[]> => {
       const key = forKey.trim()
       if (!key) return []
       const bound = resolveBoundConversationFlushContext(
@@ -3835,7 +4167,8 @@ export function ChatRoomInner({
         const gDoc = await personaDb.getGroupChat(fxGroupId)
         items = filterGroupChatItemsHideModeratorOnlyBubbles(items, fxRoomType, gDoc)
       }
-      const trimmed = trimChatItemsToAiTurnAnchor(items)
+      const trimmed =
+        opts?.keepPostUserAssistant === true ? items : trimChatItemsToAiTurnAnchor(items)
       const msgRows = trimmed.filter((it): it is ChatMsg => it.kind === 'msg')
       const enrichedMsgs = enrichChatRowsMiniGameForAiTranscript(msgRows)
       const enrichedById = new Map(enrichedMsgs.map((m) => [m.id, m]))
@@ -4029,11 +4362,11 @@ export function ChatRoomInner({
           itemsRef.current = next
           pendingImageGenUiPatchesRef.current.delete(mid)
           const patchedMsg = nextMsgs[idx]
+          // 重新生成中（pending + 旧图仍在）勿清全局 patch，否则关大图后状态易丢
           if (
             patchedMsg &&
-            (patchedMsg.images?.[0]?.base64?.trim() ||
-              patchedMsg.imageGenFailed ||
-              !patchedMsg.imageGenPending)
+            !patchedMsg.imageGenPending &&
+            (patchedMsg.images?.[0]?.base64?.trim() || patchedMsg.imageGenFailed)
           ) {
             clearWeChatImageGenUiPatch(mid)
           }
@@ -5317,13 +5650,30 @@ export function ChatRoomInner({
         translationAutoExpand: convSt?.translationAutoExpand === true,
         heartWhisperSyncEnabled: convSt?.heartWhisperSyncEnabled === true,
         innerOsSyncEnabled: convSt?.innerOsSyncEnabled === true,
+        onlineActionNarrationEnabled: convSt?.onlineActionNarrationEnabled === true,
+        onlineActionNarrationCountMin: convSt?.onlineActionNarrationCountMin,
+        onlineActionNarrationCountMax: convSt?.onlineActionNarrationCountMax,
+        replyBubbleCountEnabled: convSt?.replyBubbleCountEnabled === true,
+        replyBubbleCountMin: convSt?.replyBubbleCountMin,
+        replyBubbleCountMax: convSt?.replyBubbleCountMax,
         voiceSynthToneTokensEnabled: convSt?.voiceSynthToneTokensEnabled === true,
         voiceSynthEmotionEnabled: convSt?.voiceSynthEmotionEnabled === true,
       }
       setHeartWhisperSyncEnabled(convSt?.heartWhisperSyncEnabled === true)
       setInnerOsSyncEnabled(convSt?.innerOsSyncEnabled === true)
       const peerCid = (personaCharacterId?.trim() || conversationCharacterId.trim()) || undefined
-      const msgsForWeChat = stripLegacyMeetImportedWeChatMessages(msgs, peerCid)
+      let msgsForWeChat = stripLegacyMeetImportedWeChatMessages(msgs, peerCid)
+      {
+        const repaired = repairClumpedOnlineActionNarrationTimestamps(msgsForWeChat)
+        msgsForWeChat = repaired.rows
+        if (repaired.changed.length > 0) {
+          void Promise.all(
+            repaired.changed.map(({ id, timestamp }) =>
+              personaDb.patchWeChatChatMessageById(id, { timestamp }).catch(() => {}),
+            ),
+          )
+        }
+      }
       let effectiveUiCut = uiCut
       if (
         effectiveUiCut != null &&
@@ -5366,6 +5716,53 @@ export function ChatRoomInner({
 
       // 先进房上屏：贴纸/语音修复改后台，避免串行 await 把聊天室卡成白屏
       let mapped = rebuildWithCurrentTime(mapWeChatMessagesToChatItems(msgsForWeChat))
+      if (roomType === 'private' && !useLumiProjectAssistantPrompt && !isSelfMemoChat) {
+        const cid = (personaCharacterId?.trim() || conversationCharacterId.trim()) || ''
+        if (cid && cid !== WECHAT_LUMI_PEER_CHARACTER_ID) {
+          try {
+            const ch = await personaDb.getCharacter(cid)
+            if (!stillThisRun()) return
+            mapped = applyBlockRejectMarksToChatMsgs(mapped, {
+              userBlocked: ch?.isBlocked === true,
+              blockedAt:
+                ch?.isBlocked === true && typeof ch.blockedAt === 'number' && ch.blockedAt > 0
+                  ? ch.blockedAt
+                  : 0,
+              peerBlocked: ch?.blockedByPeer === true,
+              blockedByPeerAt:
+                ch?.blockedByPeer === true &&
+                typeof ch.blockedByPeerAt === 'number' &&
+                ch.blockedByPeerAt > 0
+                  ? ch.blockedByPeerAt
+                  : 0,
+            })
+            /** 回填缺 ext 的拒收标记，避免下次仍靠临时补丁 */
+            const needBackfill = mapped.filter(
+              (m) =>
+                m.kind === 'msg' &&
+                m.blockRejectIcon === true &&
+                msgsForWeChat.some(
+                  (row) =>
+                    row.id === m.id &&
+                    row.ext?.blockRejectIcon !== true,
+                ),
+            )
+            if (needBackfill.length) {
+              void Promise.all(
+                needBackfill.map((m) =>
+                  personaDb
+                    .patchWeChatChatMessageById(m.id, {
+                      ext: { undeliveredDueToBlock: true, blockRejectIcon: true },
+                    })
+                    .catch(() => {}),
+                ),
+              )
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
       if (roomType === 'group' && groupId?.trim()) {
         let gSnap = groupDocRef.current
         if (!gSnap) {
@@ -5461,6 +5858,31 @@ export function ChatRoomInner({
         itemsRef.current = finalItems
         return finalItems
       })
+
+      // 清掉库里剧本分析假译文；同步翻译开着时给近端缺译气泡补真译文
+      void (async () => {
+        const replyLang = convReplyLangRef.current.replyOutputLanguage
+        const syncOn = convReplyLangRef.current.translationSyncEnabled === true
+        for (const row of msgsForWeChat) {
+          if (!stillThisRun()) return
+          const rawTr = typeof row.translatedText === 'string' ? row.translatedText.trim() : ''
+          if (rawTr && !sanitizeWeChatSyncTranslationText(rawTr)) {
+            void personaDb
+              .patchWeChatChatMessageById(row.id, { translatedText: '', translationExpanded: false })
+              .catch(() => {})
+          }
+        }
+        if (!syncOn || !stillThisRun()) return
+        const needFetch = extractMessages(itemsRef.current)
+          .filter((m) => m.from === 'other' && chatMsgNeedsSyncTranslationFetch(m, replyLang))
+          .slice(-16)
+        for (const m of needFetch) {
+          if (!stillThisRun()) return
+          const src = (m.text || '').trim()
+          if (!src) continue
+          await fetchAndApplyMessageTranslationRef.current(m.id, src, { expand: false })
+        }
+      })()
 
       void (async () => {
         try {
@@ -5559,6 +5981,7 @@ export function ChatRoomInner({
       rebuildWithCurrentTime,
       extractMessages,
       useLumiProjectAssistantPrompt,
+      isSelfMemoChat,
       personaCharacterId,
       conversationCharacterId,
       playerIdentityId,
@@ -5618,6 +6041,17 @@ export function ChatRoomInner({
     }
 
     if (isStorageKeyMigration) {
+      const peerIdMig = (personaCharacterId?.trim() || conversationCharacterId.trim()) || ''
+      const pidMig = playerIdentityId.trim()
+      if (nextKey && peerIdMig && pidMig) {
+        void personaDb
+          .unhideConversationFromMessageList({
+            conversationKey: nextKey,
+            peerCharacterId: peerIdMig,
+            playerIdentityId: pidMig,
+          })
+          .catch(() => {})
+      }
       void hydrateMessagesRef.current(false)
       syncAiReplyPipelineActiveRef.current(nextKey)
       return
@@ -5644,8 +6078,27 @@ export function ChatRoomInner({
     setItems([])
     itemsRef.current = []
     timeRebuildDayKeyRef.current = ''
+    // 左滑「不显示」后再次进入会话：立刻回到信息 Tab（不必等新消息）
+    const peerId = (personaCharacterId?.trim() || conversationCharacterId.trim()) || ''
+    const pid = playerIdentityId.trim()
+    if (nextKey && peerId && pid) {
+      void personaDb
+        .unhideConversationFromMessageList({
+          conversationKey: nextKey,
+          peerCharacterId: peerId,
+          playerIdentityId: pid,
+        })
+        .catch(() => {})
+    }
     void hydrateMessagesRef.current(true)
-  }, [conversationKey, cancelOpponentRevealTimer, setTypingVisible])
+  }, [
+    conversationKey,
+    cancelOpponentRevealTimer,
+    setTypingVisible,
+    personaCharacterId,
+    conversationCharacterId,
+    playerIdentityId,
+  ])
 
   useEffect(() => {
     if (!historyRefreshSignal) return
@@ -5961,6 +6414,7 @@ export function ChatRoomInner({
   const [generateReplyPreviewBubbles, setGenerateReplyPreviewBubbles] = useState<string[] | null>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [photoPickerOpen, setPhotoPickerOpen] = useState(false)
+  const [aiImageSendOpen, setAiImageSendOpen] = useState(false)
   const [favoritesPickerOpen, setFavoritesPickerOpen] = useState(false)
   const [favoriteShareSending, setFavoriteShareSending] = useState(false)
   const [heartWhisperOpen, setHeartWhisperOpen] = useState(false)
@@ -5980,6 +6434,7 @@ export function ChatRoomInner({
   const callBubbleDedupRef = useRef<{ key: string; ts: number } | null>(null)
   /** 拆红包全屏层：仅「领取对方发来的未拆红包」时打开；自己发出的红包不可自领 */
   const [redPacketModalMessageId, setRedPacketModalMessageId] = useState<string | null>(null)
+  const [forumShareReader, setForumShareReader] = useState<WeChatForumSharePayload | null>(null)
   const [heartWhisperLoading, setHeartWhisperLoading] = useState(false)
   const [heartWhisperData, setHeartWhisperData] = useState<HeartWhisper | null>(null)
   const [heartWhisperGenerateError, setHeartWhisperGenerateError] = useState<string | null>(null)
@@ -5994,6 +6449,11 @@ export function ChatRoomInner({
   const [psycheRadarGenerating, setPsycheRadarGenerating] = useState(false)
   const [psycheRadarGenerateError, setPsycheRadarGenerateError] = useState<string | null>(null)
   const retryReplyBiasRef = useRef('')
+  /**
+   * 「继续回复」：本轮 AI 上下文须保留用户消息之后已露出的角色气泡（接写，非整轮重答）。
+   * 在 flush 单轮开始时读出并清掉。
+   */
+  const continueReplyKeepAssistantRef = useRef(false)
   /** 「重新回复」重生当轮对方稿：不额外 +1 自动总结计轮 */
   const skipMemoryRoundBumpRef = useRef(false)
   /** 本轮 AI 落库前采集的尾声补丁回滚快照（按 characterId） */
@@ -6056,6 +6516,78 @@ export function ChatRoomInner({
       centerToastTimerRef.current = null
     }, 1500)
   }, [])
+
+  /** 假译文被滤掉 / 旧消息缺译：按需调翻译 API 补真译文 */
+  const translationFetchBusyRef = useRef(new Set<string>())
+  const fetchAndApplyMessageTranslation = useCallback(
+    async (msgId: string, sourceText: string, opts?: { expand?: boolean; toastOnFail?: boolean }) => {
+      const id = msgId.trim()
+      const src = sourceText.trim()
+      if (!id || !src) return null
+      if (translationFetchBusyRef.current.has(id)) return null
+      translationFetchBusyRef.current.add(id)
+      try {
+        const syncLang =
+          convReplyLangRef.current.translationLanguage?.trim() || 'zh-CN'
+        const dedicatedOn = translationDedicatedApiRef.current === true
+        const trRuntime = dedicatedOn ? translationRuntimeRef.current : null
+        const openaiCfg =
+          trRuntime?.provider === 'openai'
+            ? trRuntime.openaiConfig
+            : dedicatedOn
+              ? null
+              : apiConfig
+        const canCallNative = !!trRuntime && trRuntime.provider !== 'openai'
+        const canCallOpenai =
+          !!openaiCfg?.apiUrl?.trim() &&
+          !!openaiCfg?.apiKey?.trim() &&
+          !!openaiCfg?.modelId?.trim()
+        if (!canCallNative && !canCallOpenai) {
+          if (opts?.toastOnFail) showCenterToast('未配置翻译或聊天 API')
+          return null
+        }
+        const filled = await batchTranslateWeChatBubbleTexts({
+          apiConfig: openaiCfg ?? undefined,
+          translationRuntime: trRuntime,
+          texts: [src],
+          targetLanguage: syncLang,
+        })
+        const got = sanitizeWeChatSyncTranslationText(filled[0] ?? '') || ''
+        if (!got) {
+          if (opts?.toastOnFail) showCenterToast('翻译失败，请稍后重试')
+          return null
+        }
+        await personaDb.patchWeChatChatMessageById(id, {
+          translatedText: got,
+          translationLang: syncLang,
+          ...(opts?.expand ? { translationExpanded: true } : {}),
+        })
+        setItems((prev) =>
+          rebuildWithCurrentTime(
+            extractMessages(prev).map((m) =>
+              m.id === id
+                ? {
+                    ...m,
+                    translatedText: got,
+                    translationLang: syncLang,
+                    ...(opts?.expand ? { translationExpanded: true } : {}),
+                  }
+                : m,
+            ),
+          ),
+        )
+        return got
+      } catch {
+        if (opts?.toastOnFail) showCenterToast('翻译失败，请稍后重试')
+        return null
+      } finally {
+        translationFetchBusyRef.current.delete(id)
+      }
+    },
+    [apiConfig, extractMessages, rebuildWithCurrentTime, showCenterToast],
+  )
+  const fetchAndApplyMessageTranslationRef = useRef(fetchAndApplyMessageTranslation)
+  fetchAndApplyMessageTranslationRef.current = fetchAndApplyMessageTranslation
 
   /** 同步防重复点击（不驱动 UI；大图 loading 由 MomentImageViewer localBusy + await 控制） */
   const retryCharacterImageGenInFlightRef = useRef(new Set<string>())
@@ -6831,6 +7363,41 @@ export function ChatRoomInner({
     })
   }, [])
 
+  /** 聊天设置里拉黑/解除：即时插入系统灰条（不依赖 storage hydrate） */
+  useEffect(() => {
+    const onBlockNote = (ev: Event) => {
+      const detail = (ev as CustomEvent<WeChatBlockSystemNoteDetail>).detail
+      const ck = detail?.conversationKey?.trim()
+      const id = detail?.id?.trim()
+      const text = String(detail?.text || '').trim()
+      if (!ck || !id || !text) return
+      if (ck !== conversationKeyLiveRef.current.trim()) return
+      if (extractMessages(itemsRef.current).some((m) => m.id === id)) return
+      const ts =
+        typeof detail.timestamp === 'number' && Number.isFinite(detail.timestamp)
+          ? detail.timestamp
+          : Date.now()
+      const incoming: ChatMsg = {
+        id,
+        kind: 'msg',
+        from: 'self',
+        text,
+        timestamp: ts,
+        status: 'sent',
+        selfAnimated: true,
+      }
+      setItems((prev) => {
+        if (extractMessages(prev).some((m) => m.id === id)) return prev
+        const next = rebuildWithCurrentTime([...extractMessages(prev), incoming])
+        itemsRef.current = next
+        return next
+      })
+      scrollToBottomSmooth({ force: true })
+    }
+    window.addEventListener(WECHAT_BLOCK_SYSTEM_NOTE_EVENT, onBlockNote)
+    return () => window.removeEventListener(WECHAT_BLOCK_SYSTEM_NOTE_EVENT, onBlockNote)
+  }, [extractMessages, rebuildWithCurrentTime, scrollToBottomSmooth])
+
   const stickChatScrollToBottom = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
@@ -7102,6 +7669,8 @@ export function ChatRoomInner({
     [],
   )
 
+  const kickBlockAwareCharacterReplyRef = useRef<(ck: string) => void>(() => {})
+
   const processOpponentRevealJob = useCallback(
     (job: OpponentRevealJob) => {
       const live = conversationKeyLiveRef.current.trim()
@@ -7123,6 +7692,38 @@ export function ChatRoomInner({
       if (pendingPatch) {
         incoming = applyImageGenUiPatchToMsg(incoming, pendingPatch)
         job.msg = incoming
+      }
+      /** 用户拉黑角色：角色气泡视为被拉黑方发送失败 */
+      const charBlockedOutgoing = peerUserBlockedRef.current === true
+      if (charBlockedOutgoing && incoming.from === 'other') {
+        incoming = {
+          ...incoming,
+          undeliveredDueToBlock: true,
+          blockRejectIcon: true,
+        }
+        job.msg = incoming
+        /** 包一层 persist：等落库完成再写 ext，避免刷新后感叹号丢失 */
+        const prevPersist = job.persist
+        job.persist = () => {
+          void (async () => {
+            try {
+              const ret = prevPersist() as unknown
+              if (ret && typeof (ret as Promise<unknown>).then === 'function') {
+                await (ret as Promise<unknown>)
+              } else {
+                for (let i = 0; i < 24; i += 1) {
+                  if (await personaDb.getWeChatChatMessageById(incoming.id)) break
+                  await new Promise((r) => setTimeout(r, 30))
+                }
+              }
+              await personaDb.patchWeChatChatMessageById(incoming.id, {
+                ext: { undeliveredDueToBlock: true, blockRejectIcon: true },
+              })
+            } catch {
+              /* ignore */
+            }
+          })()
+        }
       }
       if (job.msg.musicSync?.kind === 'music_invite') {
         logConsole(
@@ -7166,11 +7767,35 @@ export function ChatRoomInner({
       } catch {
         /* ignore */
       }
+      if (charBlockedOutgoing && incoming.from === 'other' && !blockAwareKickDoneRef.current) {
+        blockAwareKickDoneRef.current = true
+        /** 丢掉本轮尚未露出的「不知情」后续气泡，再催一发已知晓拉黑的接写（不再写重复系统条） */
+        const ck = (job.forConversationKey || conversationKeyLiveRef.current).trim()
+        cancelOpponentRevealTimer()
+        opponentRevealJobsRef.current = opponentRevealJobsRef.current.filter(
+          (j) => j.forConversationKey.trim() !== ck,
+        )
+        deferredBubbleRevealJobsRef.current = deferredBubbleRevealJobsRef.current.filter(
+          (j) => j.forConversationKey.trim() !== ck,
+        )
+        if (opponentRevealJobsRef.current.length === 0) {
+          onOpponentRevealQueueActive?.(false)
+          setTypingVisible(false)
+        }
+        kickBlockAwareCharacterReplyRef.current(ck)
+      }
       job.afterReveal?.()
       if (shouldStickToBottom) scrollToBottomSmooth()
       else setPendingNewCount((c) => c + 1)
     },
-    [mergeOtherIncomingForRoom, persistOpponentRevealJobOnly, scrollToBottomSmooth],
+    [
+      cancelOpponentRevealTimer,
+      mergeOtherIncomingForRoom,
+      onOpponentRevealQueueActive,
+      persistOpponentRevealJobOnly,
+      scrollToBottomSmooth,
+      setTypingVisible,
+    ],
   )
 
   const handleOpponentQueueActive = useCallback(
@@ -7637,7 +8262,7 @@ export function ChatRoomInner({
             showCenterToast('该消息无法翻译')
             return
           }
-          const cached = row.translatedText?.trim() || ''
+          const cached = sanitizeWeChatSyncTranslationText(row.translatedText ?? '') || ''
           if (cached) {
             const next = !(row.translationExpanded === true)
             await personaDb.patchWeChatChatMessageById(mid, { translationExpanded: next })
@@ -7650,7 +8275,27 @@ export function ChatRoomInner({
             )
             return
           }
-          showCenterToast('本条尚无同步译文（开启后新回复会随气泡一并生成）')
+          // 假译文被滤掉或旧消息从未落译：当场补拉真译文
+          const source =
+            (typeof row.content === 'string' ? row.content : '').trim() ||
+            actionMessageText?.trim() ||
+            ''
+          if (!source || isOnlineActionNarrationBubbleText(source)) {
+            showCenterToast('该消息无法翻译')
+            return
+          }
+          // 清掉库里残留的剧本分析假译文，避免下次又读到脏缓存
+          if (row.translatedText?.trim()) {
+            void personaDb
+              .patchWeChatChatMessageById(mid, { translatedText: '', translationExpanded: false })
+              .catch(() => {})
+          }
+          showCenterToast('正在翻译…')
+          const got = await fetchAndApplyMessageTranslationRef.current(mid, source, {
+            expand: true,
+            toastOnFail: true,
+          })
+          if (got) showCenterToast('已翻译')
           return
         }
         case 'viewInnerOs': {
@@ -8596,6 +9241,7 @@ export function ChatRoomInner({
       const peerName = playerDisplayName.trim() || state.profile.displayName.trim() || '朋友'
       const groupRef = await loadPrivateGroupChatsRecentReference()
       const tx = itemsToTranscript(buildChatItemsForAiTranscript(), {
+        includeActionNarration: convReplyLangRef.current.onlineActionNarrationEnabled === true,
         groupSpeakerLabel: (msg) => {
           if (msg.from === 'self') return undefined
           const sid = msg.senderCharacterId?.trim()
@@ -8795,7 +9441,9 @@ export function ChatRoomInner({
         }
       }
       const groupRef = await loadPrivateGroupChatsRecentReference()
-      const tx = itemsToTranscript(buildChatItemsForAiTranscript())
+      const tx = itemsToTranscript(buildChatItemsForAiTranscript(), {
+        includeActionNarration: convReplyLangRef.current.onlineActionNarrationEnabled === true,
+      })
       const memPack = await buildPrivateMemoryInjectionForAi(tx, '')
       const wbHeartIds: string[] = [
         ...new Set([pcid?.trim()].filter((x): x is string => !!x && x !== '__none__')),
@@ -8940,7 +9588,9 @@ export function ChatRoomInner({
         }
       }
       const groupRef = await loadPrivateGroupChatsRecentReference()
-      const tx = itemsToTranscript(buildChatItemsForAiTranscript())
+      const tx = itemsToTranscript(buildChatItemsForAiTranscript(), {
+        includeActionNarration: convReplyLangRef.current.onlineActionNarrationEnabled === true,
+      })
       const memPack = await buildPrivateMemoryInjectionForAi(tx, '')
       const wbHeartIds: string[] = [
         ...new Set([pcid?.trim()].filter((x): x is string => !!x && x !== '__none__')),
@@ -9170,6 +9820,12 @@ export function ChatRoomInner({
         setFlushPending(getFlushPending() - 1)
         clearFlushQueueStop()
         pendingWorldBookRevertByCharRef.current = new Map()
+        /** 继续回复：保留已显示的角色气泡进 transcript，避免整轮重答叠重复 */
+        const keepPostUserAssistantForAi = continueReplyKeepAssistantRef.current
+        if (keepPostUserAssistantForAi) continueReplyKeepAssistantRef.current = false
+        const aiTranscriptOpts = keepPostUserAssistantForAi
+          ? ({ keepPostUserAssistant: true } as const)
+          : undefined
 
         let danmakuConfigForRound: RoundDanmakuInlineConfig | undefined
         let danmakuApiForRound: ApiConfig | null = null
@@ -9217,8 +9873,9 @@ export function ChatRoomInner({
           recentGroupChatsReference = ''
         }
 
-        const transcriptSpeakerOpts =
-          fxRoomType === 'group'
+        const transcriptSpeakerOpts = {
+          includeActionNarration: convReplyLangRef.current.onlineActionNarrationEnabled === true,
+          ...(fxRoomType === 'group'
             ? {
                 groupSpeakerLabel: (msg: ChatMsg) => {
                   if (msg.from === 'self') return undefined
@@ -9229,10 +9886,11 @@ export function ChatRoomInner({
                   return gr ? findGroupMember(gr, sid)?.groupNickname : undefined
                 },
               }
-            : undefined
+            : {}),
+        }
         const transcriptItems = flushIsLive()
-          ? buildChatItemsForAiTranscript()
-          : await buildChatItemsForAiTranscriptForKey(flushConversationKey, flushCtx)
+          ? buildChatItemsForAiTranscript(aiTranscriptOpts)
+          : await buildChatItemsForAiTranscriptForKey(flushConversationKey, flushCtx, aiTranscriptOpts)
         let transcript = itemsToTranscript(transcriptItems, transcriptSpeakerOpts)
         const roundReplyBias = retryReplyBiasRef.current.trim()
         retryReplyBiasRef.current = ''
@@ -9259,6 +9917,11 @@ export function ChatRoomInner({
             character = null
           }
         }
+
+        /**
+         * 拉黑时：发送后不自动 bump pending；手动触发 / 主动消息仍可生成。
+         * 被拉黑方气泡带失败感叹号；知情灰条出现前角色通常不知已被拉黑。
+         */
 
         let playerIdentity: PlayerIdentity | null = null
         /** 注入 AI 提示词的「用户称呼」：遇见转微信私聊用微信主页资料，其余私聊/群聊按绑定身份卡。 */
@@ -9422,6 +10085,7 @@ export function ChatRoomInner({
         ]
         let loreSceneMemberIds: string[] = privateWorldbookMemberIds
         let offlineDatingPlotsContext = ''
+        let storyNowForOfflineEarly: string | undefined
         if (pm === 'persona' && cid) {
           const liveForOffline = getCurrentTimeMs()
           const syncedForOffline = await syncStoryTimelineNowFromOnlineClock({
@@ -9429,7 +10093,7 @@ export function ChatRoomInner({
             liveTimeMs: liveForOffline,
           })
           const tlForOffline = await personaDb.getStoryTimelineState(cid)
-          const storyNowForOfflineEarly =
+          storyNowForOfflineEarly =
             syncedForOffline.storyLabel.trim() ||
             composeStoryTimelineCalendarAnchorLabel({
               story_day: tlForOffline?.currentStoryDay,
@@ -9850,8 +10514,11 @@ export function ChatRoomInner({
                 mime: img.type ?? 'image/jpeg',
               }
             }
-            // 发请求前再拼一次 transcript，避免重新回复/删稿与异步 flush 交错时仍带入本轮旧对方稿
-            transcript = itemsToTranscript(buildChatItemsForAiTranscript(), transcriptSpeakerOpts)
+            // 发请求前再拼一次 transcript；继续回复须保留已露出对方稿，重新回复则仍裁到用户锚点
+            transcript = itemsToTranscript(
+              buildChatItemsForAiTranscript(aiTranscriptOpts),
+              transcriptSpeakerOpts,
+            )
             const busyCfg =
               busyGs.busyMode === 'character'
                 ? {
@@ -9947,6 +10614,12 @@ export function ChatRoomInner({
                   translationAutoExpand: freshConv?.translationAutoExpand === true,
                   heartWhisperSyncEnabled: freshConv?.heartWhisperSyncEnabled === true,
                   innerOsSyncEnabled: freshConv?.innerOsSyncEnabled === true,
+                  onlineActionNarrationEnabled: freshConv?.onlineActionNarrationEnabled === true,
+                  onlineActionNarrationCountMin: freshConv?.onlineActionNarrationCountMin,
+                  onlineActionNarrationCountMax: freshConv?.onlineActionNarrationCountMax,
+                  replyBubbleCountEnabled: freshConv?.replyBubbleCountEnabled === true,
+                  replyBubbleCountMin: freshConv?.replyBubbleCountMin,
+                  replyBubbleCountMax: freshConv?.replyBubbleCountMax,
                   voiceSynthToneTokensEnabled: freshConv?.voiceSynthToneTokensEnabled === true,
                   voiceSynthEmotionEnabled: freshConv?.voiceSynthEmotionEnabled === true,
                 }
@@ -10295,6 +10968,7 @@ export function ChatRoomInner({
                   privateChatDigest: privateDigest || undefined,
                   unsummarizedPrivateNotes: unsPrivMember || undefined,
                   schedule: (ch?.schedule as ScheduleTable | undefined) ?? null,
+                  scheduleEntries: ch?.scheduleEntries ?? null,
                 })
                 if (offlinePlotForMember) {
                   const gn = (m.groupNickname || '').trim() || ch?.name?.trim() || m.charId
@@ -10404,6 +11078,8 @@ export function ChatRoomInner({
                 members: memberPromptRows,
                 playerSection: piBlock,
                 playerSchedule: (identityForGroupPrompt?.schedule as ScheduleTable | undefined) ?? null,
+                playerScheduleEntries: identityForGroupPrompt?.scheduleEntries ?? null,
+                storyNowLabel: storyNowForOfflineEarly || null,
                 replyBias: traceReplyBias || undefined,
                 offlinePlotsCombined: offlineCombined.trim() || undefined,
                 groupUnsummarizedNotes: groupUnsummarizedBlock || undefined,
@@ -10577,6 +11253,13 @@ export function ChatRoomInner({
                 translationDedicatedApi: translationDedicatedApiRef.current === true,
                 innerOsSyncEnabled: convReplyLangRef.current.innerOsSyncEnabled === true,
                 heartWhisperSyncEnabled: convReplyLangRef.current.heartWhisperSyncEnabled === true,
+                onlineActionNarrationEnabled:
+                  convReplyLangRef.current.onlineActionNarrationEnabled === true,
+                onlineActionNarrationCountMin: convReplyLangRef.current.onlineActionNarrationCountMin,
+                onlineActionNarrationCountMax: convReplyLangRef.current.onlineActionNarrationCountMax,
+                replyBubbleCountEnabled: convReplyLangRef.current.replyBubbleCountEnabled === true,
+                replyBubbleCountMin: convReplyLangRef.current.replyBubbleCountMin,
+                replyBubbleCountMax: convReplyLangRef.current.replyBubbleCountMax,
                 voiceSynthToneTokensEnabled: convReplyLangRef.current.voiceSynthToneTokensEnabled === true,
                 voiceSynthEmotionEnabled: convReplyLangRef.current.voiceSynthEmotionEnabled === true,
                 includeForwardHistoryCard,
@@ -10585,6 +11268,8 @@ export function ChatRoomInner({
                 includeInternetMemeLexicon,
                 includeMimicUserSpeakingStyle,
                 currentTimeMs: getCurrentTimeMs(),
+                storyNowLabel: storyNowForOfflineEarly || null,
+                currentTimeIsStory: !!storyNowForOfflineEarly,
                 timePerceptionEnabled: roomType === 'private' ? timePerceptionEnabled : true,
                 danmakuConfig: shouldSplitDanmakuCall ? undefined : danmakuConfig,
                 groupChatTranscript: false,
@@ -10601,55 +11286,10 @@ export function ChatRoomInner({
                 aiReply = await requestWeChatPeerReplyBubbles(privatePeerReplyRetryParams)
               } else {
                 aiReply = await requestWeChatPeerReplyBubblesWithImage({
-                  apiConfig,
-                  character,
-                  playerIdentity: aiPlayerIdentityForPrompt,
-                  playerDisplayName: aiPlayerDisplayName,
-                  transcript,
-                  promptMode: pm,
+                  ...privatePeerReplyRetryParams,
                   imageBase64: img.base64.trim(),
                   imageMime: img.type ?? 'image/jpeg',
                   userImageIsSticker,
-                  ...mutualFriendExtras,
-                  ...(playerAvatarResolved ? { playerWechatAvatarUrl: playerAvatarResolved } : {}),
-                  ...meetWechatAiExtras,
-                  ...altExtras,
-                  ...linkPreviewExtras,
-                  ...peerMediaFreqExtras,
-                  ...characterImageGenExtras,
-                  ...characterPersonaSelfServiceExtras,
-                  longTermMemoryNotes: memoryRound.trim() || undefined,
-                  longTermMemoryMomentImages:
-                    memoryMomentImagesRound.length ? memoryMomentImagesRound : undefined,
-                  storyTimelineNotes: storyTimelineRound.trim() || undefined,
-                  crossChannelTimelineNotes: crossChannelTimelineRound.trim() || undefined,
-                  worldBackgroundPrompt,
-                  offlineDatingPlotsContext: offlineDatingPlotsContext || undefined,
-                  recentGroupChatsReference: recentGroupChatsReference || undefined,
-                  unsummarizedPrivateNotes: unsPrivateRound.trim() || undefined,
-                  unsummarizedGroupNotes: unsGroupRound.trim() || undefined,
-                  unsummarizedMeetNotes: unsMeetRound.trim() || undefined,
-                  recentPrivateAiRoundsNotes: recentPrivateAiRoundsRound.trim() || undefined,
-                  recentOfflineAiRoundsNotes: recentOfflineAiRoundsRound.trim() || undefined,
-                  recentMeetAiRoundsNotes: recentMeetAiRoundsRound.trim() || undefined,
-                  replyBias: traceReplyBias || undefined,
-                  busyContext,
-                  includeThinkingChain,
-                  includeForwardHistoryCard,
-                  includePulseDmScreenshot,
-                  includeProfileImageChange,
-                  includeInternetMemeLexicon,
-                  includeMimicUserSpeakingStyle,
-                  currentTimeMs: getCurrentTimeMs(),
-                  timePerceptionEnabled: roomType === 'private' ? timePerceptionEnabled : true,
-                  danmakuConfig: shouldSplitDanmakuCall ? undefined : danmakuConfig,
-                  groupChatTranscript: false,
-                  chatMemberIds: loreSceneMemberIds,
-                  globalWechatPlate: traceGlobalPlate,
-                  worldBookPlaceholderIdMap,
-                  nonPrimarySpeakerLine,
-                  worldBookPlayerIdentity: worldBookPlayerIdentityForAi,
-                  worldBookUserLineLabel: worldBookUserLineLabelForAi,
                 })
               }
             } else {
@@ -10702,6 +11342,13 @@ export function ChatRoomInner({
                 translationDedicatedApi: translationDedicatedApiRef.current === true,
                 innerOsSyncEnabled: convReplyLangRef.current.innerOsSyncEnabled === true,
                 heartWhisperSyncEnabled: convReplyLangRef.current.heartWhisperSyncEnabled === true,
+                onlineActionNarrationEnabled:
+                  convReplyLangRef.current.onlineActionNarrationEnabled === true,
+                onlineActionNarrationCountMin: convReplyLangRef.current.onlineActionNarrationCountMin,
+                onlineActionNarrationCountMax: convReplyLangRef.current.onlineActionNarrationCountMax,
+                replyBubbleCountEnabled: convReplyLangRef.current.replyBubbleCountEnabled === true,
+                replyBubbleCountMin: convReplyLangRef.current.replyBubbleCountMin,
+                replyBubbleCountMax: convReplyLangRef.current.replyBubbleCountMax,
                 voiceSynthToneTokensEnabled: convReplyLangRef.current.voiceSynthToneTokensEnabled === true,
                 voiceSynthEmotionEnabled: convReplyLangRef.current.voiceSynthEmotionEnabled === true,
                 includeForwardHistoryCard,
@@ -10710,6 +11357,8 @@ export function ChatRoomInner({
                 includeInternetMemeLexicon,
                 includeMimicUserSpeakingStyle,
                 currentTimeMs: getCurrentTimeMs(),
+                storyNowLabel: storyNowForOfflineEarly || null,
+                currentTimeIsStory: !!storyNowForOfflineEarly,
                 timePerceptionEnabled: roomType === 'private' ? timePerceptionEnabled : true,
                 danmakuConfig: shouldSplitDanmakuCall ? undefined : danmakuConfig,
                 groupChatTranscript: false,
@@ -10793,6 +11442,7 @@ export function ChatRoomInner({
 
         let worldBookAfterUpdated = false
         let worldBookAfterAppliedPatchCount = 0
+        const worldBookChangedEntries: WorldBookAfterChangedEntry[] = []
         const inlineWorldBookPatchAppliedByCharacterId = new Map<string, boolean>()
         const worldBookEpilogueJudgedInline = aiReply.worldBookEpilogueJudged === true
         try {
@@ -10810,22 +11460,29 @@ export function ChatRoomInner({
                 const row = await personaDb.getCharacter(targetId)
                 if (!row) continue
                 const snap = collectWorldBookAfterRevertSnapshot(row, plist)
+                const entrySummaries = summarizeWorldBookAfterPatchChanges(row, plist)
                 const next = applyWorldBookAfterPatchesToCharacter(row, plist)
                 if (next) {
                   await personaDb.upsertCharacter(next)
                   worldBookAfterUpdated = true
                   worldBookAfterAppliedPatchCount += plist.length
+                  worldBookChangedEntries.push(...entrySummaries)
                   inlineWorldBookPatchAppliedByCharacterId.set(targetId, true)
                   if (snap.length) pendingWorldBookRevertByCharRef.current.set(targetId.trim(), snap)
                 }
               }
             } else if (roomType !== 'group' && aiReply.worldBookPatches?.length && character?.id) {
               const snap = collectWorldBookAfterRevertSnapshot(character, aiReply.worldBookPatches)
+              const entrySummaries = summarizeWorldBookAfterPatchChanges(
+                character,
+                aiReply.worldBookPatches,
+              )
               const next = applyWorldBookAfterPatchesToCharacter(character, aiReply.worldBookPatches)
               if (next) {
                 await personaDb.upsertCharacter(next)
                 worldBookAfterUpdated = true
                 worldBookAfterAppliedPatchCount = aiReply.worldBookPatches.length
+                worldBookChangedEntries.push(...entrySummaries)
                 if (snap.length) {
                   pendingWorldBookRevertByCharRef.current.set(character.id.trim(), snap)
                 }
@@ -10838,7 +11495,11 @@ export function ChatRoomInner({
         if (worldBookAfterUpdated) {
           window.dispatchEvent(
             new CustomEvent(WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT, {
-              detail: { appliedPatchCount: Math.max(1, worldBookAfterAppliedPatchCount), source: 'model_inline' },
+              detail: {
+                appliedPatchCount: Math.max(1, worldBookAfterAppliedPatchCount),
+                changedEntries: worldBookChangedEntries,
+                source: 'model_inline',
+              },
             }),
           )
         }
@@ -10894,6 +11555,7 @@ export function ChatRoomInner({
                     detail: {
                       appliedPatchCount: Math.max(1, lifeResult.appliedCount),
                       changedLabels: lifeResult.changedLabels,
+                      changedItems: lifeResult.changedItems,
                       source: 'model_inline',
                     },
                   }),
@@ -10903,6 +11565,60 @@ export function ChatRoomInner({
           }
         } catch {
           /* 人生账本写库失败不阻断气泡展示 */
+        }
+
+        try {
+          if (
+            !useLumiProjectAssistantPrompt &&
+            pm === 'persona' &&
+            roomType !== 'group' &&
+            character?.id &&
+            aiReply.scheduleCalendarOps?.length
+          ) {
+            // 重读人设：开关与日历以库内为准（线上/线下聊天共用此路径）
+            const calCharRow =
+              (await personaDb.getCharacter(character.id).catch(() => null)) ?? character
+            if (calCharRow.scheduleCalendarAutoUpdateEnabled === true) {
+              const calAnchor = buildCalendarAnchorFromStoryLabel({
+                storyNowLabel: storyNowForOfflineEarly || null,
+                currentTimeMs: getCurrentTimeMs(),
+                currentTimeIsStory: !!storyNowForOfflineEarly,
+              })
+              const calResult = await applyScheduleCalendarInlinePatches({
+                character: calCharRow,
+                playerIdentity: playerIdentity ?? null,
+                ops: aiReply.scheduleCalendarOps,
+                anchor: calAnchor,
+              })
+              if (calResult.applied) {
+                // 同步内存人设，便于同轮后续逻辑读到最新日历
+                const refreshedCal = await personaDb.getCharacter(calCharRow.id).catch(() => null)
+                if (refreshedCal) character = refreshedCal
+                const sum = summarizeScheduleCalOps(
+                  calResult.appliedOps,
+                  calResult.existingBefore,
+                )
+                // 仅当有完成/新增/修订标题时弹成就窗（避免空分区）
+                if (
+                  sum.addedTitles.length ||
+                  sum.completedTitles.length ||
+                  sum.revisedTitles.length
+                ) {
+                  window.dispatchEvent(
+                    new CustomEvent(SCHEDULE_CAL_PATCH_UPDATED_EVENT, {
+                      detail: {
+                        appliedCount: Math.max(1, calResult.appliedCount),
+                        source: 'model_inline',
+                        ...sum,
+                      },
+                    }),
+                  )
+                }
+              }
+            }
+          }
+        } catch {
+          /* 日历日程写库失败不阻断气泡展示 */
         }
 
         inlineHeartWhisperAppliedRef.current = false
@@ -11172,6 +11888,29 @@ export function ChatRoomInner({
               seg.kind === 'bubble' ? { kind: 'bubble' as const, text: filtered[i++] ?? '' } : seg,
             )
             .filter((seg) => seg.kind !== 'bubble' || seg.text.trim())
+        }
+        if (convReplyLangRef.current.onlineActionNarrationEnabled !== true) {
+          // 关动描：丢弃旁白段；并再挡一层「泄漏标签被当成气泡」的情况
+          orderedSegments = orderedSegments.filter((seg) => {
+            if (seg.kind === 'action') return false
+            if (seg.kind === 'bubble' && isOnlineActionNarrationBubbleText(seg.text)) return false
+            return true
+          })
+          bubbles = bubbles.filter((b) => !isOnlineActionNarrationBubbleText(b))
+        } else {
+          const actionCountRange = parseStoredOnlineActionNarrationCountRange(
+            convReplyLangRef.current.onlineActionNarrationCountMin,
+            convReplyLangRef.current.onlineActionNarrationCountMax,
+          )
+          const beforeActionCount = orderedSegments.filter((s) => s.kind === 'action').length
+          orderedSegments = limitOnlineActionNarrationSegments(orderedSegments, actionCountRange.max)
+          const afterActionCount = orderedSegments.filter((s) => s.kind === 'action').length
+          if (beforeActionCount > afterActionCount) {
+            logConsole(
+              'ai',
+              `线上动描：本轮 ${beforeActionCount} 条超出上限 ${actionCountRange.max}，已裁至 ${afterActionCount} 条`,
+            )
+          }
         }
         if (roomType !== 'group' && !lumiAssistantChat) {
           const mfStripped = stripMutualFriendChainFromBubbles(bubbles)
@@ -11690,6 +12429,12 @@ export function ChatRoomInner({
           | { kind: 'meta'; action: WeChatGroupMetaAction }
           | { kind: 'messages'; characterId: string; notifyTitle: string; bubbles: string[] }
           | {
+              kind: 'action_narration'
+              characterId: string
+              notifyTitle: string
+              text: string
+            }
+          | {
               kind: 'forward_history'
               characterId: string
               notifyTitle: string
@@ -11774,7 +12519,17 @@ export function ChatRoomInner({
                 notifyTitle: notifyPeerRound,
                 payload: seg.forwardHistory,
               })
-            } else if (seg.text.trim()) {
+            } else if (seg.kind === 'action') {
+              const actionText = seg.text.trim()
+              if (!actionText) continue
+              flushBatch()
+              bubbleRuns.push({
+                kind: 'action_narration',
+                characterId: persistCharacterId,
+                notifyTitle: notifyPeerRound,
+                text: actionText,
+              })
+            } else if (seg.kind === 'bubble' && seg.text.trim()) {
               pendingBatch.push(seg.text.trim())
             }
           }
@@ -11796,7 +12551,9 @@ export function ChatRoomInner({
         const takeSyncInnerOs = (sourceKey: string): string | undefined =>
           syncInnerOsLookup.take(sourceKey)
         const syncTranslationPatch = (sourceKey: string) => {
-          const tr = takeSyncTranslation(sourceKey)?.trim()
+          const tr = sanitizeWeChatSyncTranslationText(takeSyncTranslation(sourceKey) ?? '', {
+            targetLanguage: syncTranslationLang,
+          })
           if (!tr) return {} as {
             translatedText?: string
             translationLang?: string
@@ -11855,20 +12612,25 @@ export function ChatRoomInner({
           const isTranslatableLine = (line: string) => {
             const t = String(line ?? '').trim()
             if (!t) return false
+            if (isOnlineActionNarrationBubbleText(t)) return false
             if (/^(?:\[语音\]|【语音】)\s*\S/.test(t)) return true
             if (bubbleLineNeedsSpecialBubbleHandler(t)) return false
             return true
           }
           for (const run of bubbleRuns) {
             if (run.kind !== 'messages') continue
-            const peeled = peelWeChatSyncTranslationLines(run.bubbles)
+            const peeled = peelWeChatSyncTranslationLines(run.bubbles, {
+              targetLanguage: syncTranslationLang,
+            })
             run.bubbles = peeled.lines
             for (let li = 0; li < peeled.lines.length; li += 1) {
               const line = peeled.lines[li]!
               if (!isTranslatableLine(line)) continue
               const key = weChatSyncTranslationKeyFromBubbleLine(line)
               if (!key) continue
-              const tr = peeled.translations[li]?.trim()
+              const tr = sanitizeWeChatSyncTranslationText(peeled.translations[li] ?? '', {
+                targetLanguage: syncTranslationLang,
+              })
               if (translationDedicatedOn) {
                 // 副接口：一律走翻译 API；模型偶发 [译] 仅作失败兜底
                 if (tr) modelTrFallback.set(key, tr)
@@ -11943,19 +12705,40 @@ export function ChatRoomInner({
               })
               for (let fi = 0; fi < needBackfill.length; fi += 1) {
                 const key = needBackfill[fi]!
-                const got = filled[fi]?.trim() || modelTrFallback.get(key) || ''
+                const got =
+                  sanitizeWeChatSyncTranslationText(filled[fi] ?? '', {
+                    targetLanguage: syncTranslationLang,
+                  }) ||
+                  sanitizeWeChatSyncTranslationText(modelTrFallback.get(key) ?? '', {
+                    targetLanguage: syncTranslationLang,
+                  }) ||
+                  ''
                 if (got) syncTranslationLookup.offer(key, got)
               }
             } catch (err) {
               for (const [key, tr] of modelTrFallback) {
-                syncTranslationLookup.offer(key, tr)
+                const safe = sanitizeWeChatSyncTranslationText(tr, {
+                  targetLanguage: syncTranslationLang,
+                })
+                if (safe) syncTranslationLookup.offer(key, safe)
               }
               logConsole('ai', `同步翻译同轮补全失败：${String(err)}`)
             }
           } else {
             for (const [key, tr] of modelTrFallback) {
-              syncTranslationLookup.offer(key, tr)
+              const safe = sanitizeWeChatSyncTranslationText(tr, {
+                targetLanguage: syncTranslationLang,
+              })
+              if (safe) syncTranslationLookup.offer(key, safe)
             }
+          }
+        } else {
+          // 本轮同步关：剥掉历史仿写残留的 [译]/讲义，绝不挂载成译文气泡
+          for (const run of bubbleRuns) {
+            if (run.kind !== 'messages') continue
+            run.bubbles = peelWeChatSyncTranslationLines(run.bubbles, {
+              discardTranslations: true,
+            }).lines
           }
         }
 
@@ -12016,19 +12799,72 @@ export function ChatRoomInner({
               }
               const mappedHistory = mapWeChatMessagesToChatItems([historyRow])[0]
               if (mappedHistory) {
+                const historyMsg: ChatMsg = { ...mappedHistory, otherAnimated: true }
                 setTypingVisible(false)
                 enqueueOpponentMessagesSequential([
                   {
                     forConversationKey: revealConvKey,
-                    msg: { ...mappedHistory, otherAnimated: true },
+                    msg: historyMsg,
                     persist: () => {
-                      void personaDb.appendWeChatChatMessage(historyRow).catch(() => {})
+                      // 须用 reveal 队列改写后的 timestamp，否则刷新后顺序错乱
+                      void personaDb
+                        .appendWeChatChatMessage({
+                          ...historyRow,
+                          timestamp: historyMsg.timestamp,
+                        })
+                        .catch(() => {})
                     },
                   },
                 ])
               } else {
                 void personaDb.appendWeChatChatMessage(historyRow).catch(() => {})
               }
+            }
+            continue
+          }
+          if (br.kind === 'action_narration') {
+            if (isFlushQueueStopped()) break bubbleRunLoop
+            persistCharacterId = br.characterId
+            notifyPeerRound = br.notifyTitle
+            const actionBody = stripOnlineActionNarrationPrefix(br.text).trim()
+            if (!actionBody) continue
+            const storeContent = formatOnlineActionNarrationStoreContent(actionBody)
+            const tsAct = getCurrentTimeMs()
+            const oidAct = `wxm-${tsAct}-act-${Math.random().toString(36).slice(2, 8)}`
+            const actionRow: WeChatChatMessage = {
+              id: oidAct,
+              characterId: persistCharacterId,
+              playerIdentityId: fxPlayerIdentityId,
+              type: 'character',
+              content: storeContent,
+              timestamp: tsAct,
+              isRead: true,
+              conversationKey: revealConvKey,
+              quiet: true,
+              ext: { actionNarration: true },
+            }
+            const mappedAct = mapWeChatMessagesToChatItems([actionRow])[0]
+            if (mappedAct) {
+              // 与气泡一致：persist 捕获同一 ChatMsg，写入 assignSequential 后的 timestamp
+              const actMsg: ChatMsg = { ...mappedAct, otherAnimated: true }
+              setTypingVisible(false)
+              enqueueOpponentMessagesSequential([
+                {
+                  forConversationKey: revealConvKey,
+                  msg: actMsg,
+                  persist: () => {
+                    void personaDb
+                      .appendWeChatChatMessage({
+                        ...actionRow,
+                        timestamp: actMsg.timestamp,
+                        notifyPeerTitle: notifyPeerRound.trim() || undefined,
+                      })
+                      .catch(() => {})
+                  },
+                },
+              ])
+            } else {
+              void personaDb.appendWeChatChatMessage(actionRow).catch(() => {})
             }
             continue
           }
@@ -14525,7 +15361,29 @@ export function ChatRoomInner({
     isConversationAiPipelineBusy,
   ])
 
-  /** 加号面板「继续回复」：可选填写本轮偏向后催角色再发一轮（不撤销旧气泡）。 */
+  /** 首条因拉黑发送失败并写入知情灰条后：丢掉不知情后续气泡，催已知晓拉黑的接写 */
+  kickBlockAwareCharacterReplyRef.current = (ckRaw: string) => {
+    const ck = ckRaw.trim() || conversationKey.trim()
+    if (!ck) return
+    continueReplyKeepAssistantRef.current = true
+    retryReplyBiasRef.current = [
+      '[系统提示] 你刚发出的消息旁出现红色感叹号，且下方灰条「消息已发出，但被对方拒收」。',
+      '你**此刻已知晓**自己被用户拉黑。请立刻以角色口吻接写对「被拉黑」的反应（质问/震惊/嘲讽/冷战/破罐破摔等均可）。',
+      '【硬性】禁止继续假装畅通聊天；禁止复述拉黑前话题当没事；禁止深情独白收尾而不提拉黑；只输出尚未出现过的新气泡。',
+    ].join('\n')
+    if (isConversationAiPipelineBusy(ck)) {
+      /** 等当前 flush 收尾后再踢；pending 至少保留 1 */
+      pendingAiRepliesKeyRef.current = ck
+      if (pendingAiRepliesRef.current < 1) pendingAiRepliesRef.current = 1
+      return
+    }
+    manualAiPauseRef.current = false
+    bumpPendingAiRepliesForReply()
+    syncAiReplyPipelineActive(ck)
+    void flushAiReplies(ck)
+  }
+
+  /** 加号面板「继续回复」：在已显示内容之后接写新气泡（不撤销、不整轮重答）。 */
   const runContinueReply = useCallback(
     (biasRaw: string) => {
       const ck = conversationKey.trim()
@@ -14536,9 +15394,11 @@ export function ChatRoomInner({
       if (ck) setConversationOpponentQueueStop(ck, false)
       setScreenSharePaused(false)
       const bias = biasRaw.trim()
+      continueReplyKeepAssistantRef.current = true
       retryReplyBiasRef.current = [
-        '[系统提示] 用户点了「继续回复」：本回合用户没有新发消息，请以**角色本人**身份再发一轮微信气泡。',
-        '须承接上文语境自然推进；禁止替用户发言、禁止模拟用户发消息；禁止复读上一轮同义句。',
+        '[系统提示] 用户点了「继续回复」：本回合用户没有新发消息。',
+        '上下文**已包含**你刚才发出、现已显示在聊天里的气泡。请以**角色本人**身份，在这些已发内容**之后**继续写**新的**微信气泡（接写 / 续说）。',
+        '【硬性】禁止把上一轮用户消息当成未回复而整轮重答；禁止复述、同义改写或重说已显示过的气泡；禁止替用户发言、禁止模拟用户发消息。只输出尚未出现过的新内容。',
         bias ? `【继续回复偏向】${bias}` : '',
       ]
         .filter((x) => x.trim())
@@ -14575,6 +15435,7 @@ export function ChatRoomInner({
       setGenerateReplyGenerating(true)
       try {
         const transcript = itemsToTranscript(buildChatItemsForAiTranscript(), {
+          includeActionNarration: convReplyLangRef.current.onlineActionNarrationEnabled === true,
           groupSpeakerLabel:
             roomType === 'group'
               ? (m) => {
@@ -15181,6 +16042,16 @@ export function ChatRoomInner({
             }
           }
           if (!groupViolationHandled) {
+            const blockUndelivered =
+              roomType !== 'group' &&
+              !isSelfMemoChat &&
+              (peerUserBlockedRef.current || peerBlockedByPeerRef.current)
+            const blockExt = blockUndelivered
+              ? {
+                  undeliveredDueToBlock: true as const,
+                  ...(peerBlockedByPeerRef.current ? { blockRejectIcon: true as const } : {}),
+                }
+              : undefined
             try {
               await personaDb.appendWeChatChatMessage({
                 id,
@@ -15192,6 +16063,7 @@ export function ChatRoomInner({
                 timestamp: ts,
                 isRead: true,
                 conversationKey,
+                ...(blockExt ? { ext: blockExt } : {}),
               })
             } catch {
               /* ignore */
@@ -15219,6 +16091,7 @@ export function ChatRoomInner({
                       timestamp: ts,
                       isRead: true,
                       conversationKey,
+                      ...(blockExt ? { ext: blockExt } : {}),
                     },
                   ],
                 })
@@ -15230,7 +16103,18 @@ export function ChatRoomInner({
               const base = extractMessages(prev).filter((m) => m.id !== id)
               const next = rebuildWithCurrentTime([
                 ...base,
-                { id, kind: 'msg', from: 'self', text, timestamp: ts, replyTo, status: 'sent', selfAnimated: true },
+                {
+                  id,
+                  kind: 'msg',
+                  from: 'self',
+                  text,
+                  timestamp: ts,
+                  replyTo,
+                  status: 'sent',
+                  selfAnimated: true,
+                  undeliveredDueToBlock: blockExt?.undeliveredDueToBlock,
+                  blockRejectIcon: blockExt?.blockRejectIcon,
+                },
               ])
               itemsRef.current = next
               return next
@@ -15264,7 +16148,13 @@ export function ChatRoomInner({
             }
           }, 260)
         }
-        if (triggerAi && !userMutedNoSend && !isSelfMemoChat) {
+        if (
+          triggerAi &&
+          !userMutedNoSend &&
+          !isSelfMemoChat &&
+          !peerUserBlockedRef.current &&
+          !peerBlockedByPeerRef.current
+        ) {
           aiPipelineOwnerKeyRef.current = sendCk
           aiCallingRef.current = true
           lastUserAiTriggerTsRef.current = ts
@@ -15370,18 +16260,12 @@ export function ChatRoomInner({
 
   commitSendRef.current = commitSend
 
-  /** 输入框多行：每行一条气泡发送；仅最后一条可触发对方回复 */
+  /** 输入框发送：整段一条气泡。粘贴/换行保留在气泡内，不按行拆条。 */
   const commitSendSplitBubbles = useCallback(
     (raw: string, triggerAiOnLast: boolean) => {
-      const bubbles = splitWeChatComposerIntoBubbles(raw)
-      if (!bubbles.length) return
-      if (bubbles.length === 1) {
-        commitSend(bubbles[0]!, triggerAiOnLast)
-        return
-      }
-      for (let i = 0; i < bubbles.length; i += 1) {
-        commitSend(bubbles[i]!, triggerAiOnLast && i === bubbles.length - 1)
-      }
+      const text = normalizeWeChatComposerSendAsSingleBubble(raw)
+      if (!text) return
+      commitSend(text, triggerAiOnLast)
     },
     [commitSend],
   )
@@ -15488,6 +16372,8 @@ export function ChatRoomInner({
         itemsRef.current = next
         return next
       })
+      // 会话列表末条预览等跨页缓存
+      window.dispatchEvent(new Event('wechat-storage-changed'))
       showCenterToast('已更新')
       setMessageEditModal(null)
       setMessageEditDraft('')
@@ -15719,6 +16605,16 @@ export function ChatRoomInner({
       void (async () => {
         try {
           logger.log('indexeddb', `appendWeChatChatMessage(image): id=${id} len=${clipped.length}`)
+          const blockUndelivered =
+            roomType !== 'group' &&
+            !isSelfMemoChat &&
+            (peerUserBlockedRef.current || peerBlockedByPeerRef.current)
+          const blockExt = blockUndelivered
+            ? {
+                undeliveredDueToBlock: true as const,
+                ...(peerBlockedByPeerRef.current ? { blockRejectIcon: true as const } : {}),
+              }
+            : undefined
           await personaDb.appendWeChatChatMessage({
             id,
             characterId: conversationCharacterId,
@@ -15730,6 +16626,7 @@ export function ChatRoomInner({
             timestamp: ts,
             isRead: true,
             conversationKey,
+            ...(blockExt ? { ext: blockExt } : {}),
           })
           logger.log('indexeddb', `appendWeChatChatMessage(image): ok id=${id}`)
 
@@ -15744,6 +16641,8 @@ export function ChatRoomInner({
                   ...it,
                   text: stored.content ?? '',
                   images: stored.images,
+                  undeliveredDueToBlock: blockExt?.undeliveredDueToBlock,
+                  blockRejectIcon: blockExt?.blockRejectIcon,
                 }
               }))
               itemsRef.current = next
@@ -15757,6 +16656,11 @@ export function ChatRoomInner({
           /* ignore */
         }
       })()
+      const blockUndeliveredUi =
+        roomType !== 'group' &&
+        !isSelfMemoChat &&
+        (peerUserBlockedRef.current || peerBlockedByPeerRef.current)
+      const blockRejectUi = blockUndeliveredUi && peerBlockedByPeerRef.current
       setItems((prev) => {
         logger.log('frontend', `state insert(image): id=${id} len=${clipped.length}`)
         const next = rebuildWithCurrentTime([
@@ -15771,6 +16675,8 @@ export function ChatRoomInner({
             images: [{ base64: clipped, type: mime }],
             status: 'sent',
             selfAnimated: true,
+            undeliveredDueToBlock: blockUndeliveredUi || undefined,
+            blockRejectIcon: blockRejectUi || undefined,
           },
         ])
         itemsRef.current = next
@@ -15782,7 +16688,12 @@ export function ChatRoomInner({
         processingSendRef.current = false
               if (conversationKey.trim()) setConversationOpponentQueueStop(conversationKey.trim(), false)
       }, 260)
-      if (triggerAi && !isSelfMemoChat) {
+      if (
+        triggerAi &&
+        !isSelfMemoChat &&
+        !peerUserBlockedRef.current &&
+        !peerBlockedByPeerRef.current
+      ) {
         aiPipelineOwnerKeyRef.current = conversationKey.trim()
         aiCallingRef.current = true
         lastUserAiTriggerTsRef.current = ts
@@ -16366,6 +17277,7 @@ export function ChatRoomInner({
         }
       }
 
+      continueReplyKeepAssistantRef.current = false
       retryReplyBiasRef.current = [
         '[系统提示] 用户请求「重新回复」：须视为对该轮用户消息的**首次生成**。上下文已移除你方本轮旧稿，**禁止**引用、延续或复读旧内容；仅依据该条用户消息及更早历史重新作答。',
         '【重新回复】须写出与旧稿**可区分**的新对白/新信息/新节奏；禁止同义洗稿。若 system 中「尾声延展」已恢复为补丁前基准，勿再按旧稿关系态复读。',
@@ -16934,6 +17846,7 @@ export function ChatRoomInner({
         actionPanelTargetMsg?.locationShare ||
         actionPanelTargetMsg?.takeoutOrder ||
         actionPanelTargetMsg?.pulseShare ||
+        actionPanelTargetMsg?.forumShare ||
         actionPanelTargetMsg?.sharedRecord ||
         actionPanelTargetMsg?.chatHistory,
     )
@@ -16958,6 +17871,7 @@ export function ChatRoomInner({
     actionPanelTargetMsg?.locationShare,
     actionPanelTargetMsg?.takeoutOrder,
     actionPanelTargetMsg?.pulseShare,
+    actionPanelTargetMsg?.forumShare,
     actionPanelTargetMsg?.sharedRecord,
     actionPanelTargetMsg?.chatHistory,
   ])
@@ -17208,7 +18122,13 @@ export function ChatRoomInner({
           lastKnownSid = undefined
           continue
         }
-        if (it.kind !== 'msg' || it.isRecalled || (it as ChatMsg).isGroupEventStrip || (it as ChatMsg).isSystemCenterStrip)
+        if (
+          it.kind !== 'msg' ||
+          it.isRecalled ||
+          (it as ChatMsg).isGroupEventStrip ||
+          (it as ChatMsg).isSystemCenterStrip ||
+          (it as ChatMsg).isActionNarration
+        )
           continue
         const msg = it as ChatMsg
         if (msg.from !== 'other') {
@@ -17563,6 +18483,34 @@ export function ChatRoomInner({
           </div>
         )
       }
+      // 线上动描：居中旁白 + 半透明底条（暗色聊天背景也能辨认）
+      // 亦兜底：模型把上下文标签照抄进普通气泡时，按旁白展示或在关动描时隐藏
+      if (m.kind === 'msg' && (m.isActionNarration || isOnlineActionNarrationBubbleText(m.text || ''))) {
+        if (convReplyLangRef.current.onlineActionNarrationEnabled !== true) {
+          return null
+        }
+        const body =
+          stripOnlineActionNarrationPrefix(typeof m.text === 'string' ? m.text : '').trim() ||
+          parseOnlineActionNarrationLine(m.text || '') ||
+          ''
+        if (!body) return null
+        return (
+          <div key={m.id} className={gap} data-wx-msg-id={m.id}>
+            <div className="flex justify-center px-4">
+              <p
+                className="max-w-[92%] rounded-[10px] px-3.5 py-1.5 text-center text-[13px] leading-[1.75] tracking-[0.02em]"
+                style={{
+                  color: '#5c5c5c',
+                  backgroundColor: 'rgba(255, 255, 255, 0.82)',
+                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
+                }}
+              >
+                {body}
+              </p>
+            </div>
+          </div>
+        )
+      }
       // 违禁/禁言系统灰条：必须优先于下方通用「【系统】」分支，且勿依赖 text 非空（避免误落入普通气泡或错误分支）
       if (m.kind === 'msg' && m.isSystemCenterStrip) {
         const raw = (typeof m.text === 'string' ? m.text : '').trim()
@@ -17626,6 +18574,8 @@ export function ChatRoomInner({
         m.text.trim().startsWith('【系统】')
       ) {
         const raw = m.text.trim()
+        /** 旧版「已被拉黑，消息暂未发送成功」知情条：改由每条消息下拒收灰条表达，不再展示 */
+        if (isWechatBlockSendFailAwareNote(raw)) return null
         const text = raw.replace(/^【系统】\s*/, '')
         return (
           <div key={m.id} className={gap}>
@@ -17664,22 +18614,38 @@ export function ChatRoomInner({
           : undefined
       const chatOtherAvatarRankBadge = otherSpeakerRankBadge
       const chatSelfAvatarRankBadge = selfSpeakerRankBadge
+      const syncTranslationOn = convReplyLangRef.current.translationSyncEnabled === true
       const toggleMsgTranslation = (msg: ChatMsg) => {
-        const next = !(msg.translationExpanded === true)
-        void personaDb.patchWeChatChatMessageById(msg.id, { translationExpanded: next })
-        setItems((prev) =>
-          rebuildWithCurrentTime(
-            extractMessages(prev).map((x) =>
-              x.id === msg.id ? { ...x, translationExpanded: next } : x,
+        const cached = sanitizeWeChatSyncTranslationText(msg.translatedText ?? '')
+        if (cached) {
+          const next = !(msg.translationExpanded === true)
+          void personaDb.patchWeChatChatMessageById(msg.id, { translationExpanded: next })
+          setItems((prev) =>
+            rebuildWithCurrentTime(
+              extractMessages(prev).map((x) =>
+                x.id === msg.id ? { ...x, translationExpanded: next } : x,
+              ),
             ),
-          ),
-        )
+          )
+          return
+        }
+        const src = (msg.text || '').trim()
+        if (!src) return
+        void fetchAndApplyMessageTranslationRef.current(msg.id, src, {
+          expand: true,
+          toastOnFail: true,
+        })
       }
       const translationPropsFor = (msg: ChatMsg) => {
-        const text = msg.translatedText?.trim()
-        if (!text) return {}
+        const text = sanitizeWeChatSyncTranslationText(msg.translatedText ?? '')
+        const fetchable =
+          !text &&
+          syncTranslationOn &&
+          chatMsgNeedsSyncTranslationFetch(msg, convReplyLangRef.current.replyOutputLanguage)
+        if (!text && !fetchable) return {}
         return {
-          translationText: text,
+          translationText: text || undefined,
+          translationFetchable: fetchable || undefined,
           translationExpanded: msg.translationExpanded === true,
           onTranslationToggle: () => toggleMsgTranslation(msg),
         }
@@ -17963,14 +18929,18 @@ export function ChatRoomInner({
               })
             }}
           />
-          {m.translatedText?.trim() ? (
-            <MessageTranslationUnderBubble
-              open={m.translationExpanded === true}
-              text={m.translatedText}
-              isSelf={isSelf}
-              onToggle={() => toggleMsgTranslation(m)}
-            />
-          ) : null}
+          {(() => {
+            const safeTr = sanitizeWeChatSyncTranslationText(m.translatedText ?? '')
+            if (!safeTr) return null
+            return (
+              <MessageTranslationUnderBubble
+                open={m.translationExpanded === true}
+                text={safeTr}
+                isSelf={isSelf}
+                onToggle={() => toggleMsgTranslation(m)}
+              />
+            )
+          })()}
           </div>
         )
         const voiceRow = (
@@ -18430,6 +19400,39 @@ export function ChatRoomInner({
         return wrap(rowWrapped, renderDetachedReply(m, isSelf))
       }
 
+      if (m.forumShare) {
+        const forumData = m.forumShare
+        const rowInner = (
+          <ForumShareChatRow
+            id={m.id}
+            isSelf={isSelf}
+            data={forumData}
+            bubble={bubble}
+            showAvatar={effectiveShowAvatar}
+            showAvatarColumn={isSelf ? showAvatarColumnSelf : showAvatarColumnOther}
+            chatSelfAvatarUrl={sharedMsgProps.chatSelfAvatarUrl}
+            chatOtherAvatarUrl={sharedRowProps.chatOtherAvatarUrl}
+            chatOtherSenderNickname={chatOtherSenderNickname}
+            chatOtherAvatarRankBadge={chatOtherAvatarRankBadge}
+            chatSelfAvatarRankBadge={chatSelfAvatarRankBadge}
+            groupRankShowBesideNickname={sharedMsgProps.groupRankShowBesideNickname}
+            multiSelectAvatar={msAvatar}
+            selected={specialCardSelected}
+            onLongPress={specialCardLongPress}
+            onOpen={() => setForumShareReader(forumData)}
+          />
+        )
+        const rowWrapped =
+          !isSelf && m.otherAnimated ? (
+            <ChatMessageEnter isSelf={false}>{rowInner}</ChatMessageEnter>
+          ) : isSelf && m.selfAnimated ? (
+            <ChatMessageEnter isSelf>{rowInner}</ChatMessageEnter>
+          ) : (
+            rowInner
+          )
+        return wrap(rowWrapped, renderDetachedReply(m, isSelf))
+      }
+
       if (m.redPacket) {
         const rp = m.redPacket
         const rowInner = (
@@ -18639,45 +19642,49 @@ export function ChatRoomInner({
         const canRegen =
           !isSticker && !isSelf && Boolean(resolveCharacterImageGenPromptForApi(m))
         return wrap(
-          <WeChatChatImageBubbleRow
-            id={m.id}
-            isSelf={isSelf}
-            src={src}
-            isSticker={isSticker}
-            bubble={bubble}
-            showAvatar={effectiveShowAvatar}
-            showAvatarColumn={isSelf ? showAvatarColumnSelf : showAvatarColumnOther}
-            chatSelfAvatarUrl={sharedMsgProps.chatSelfAvatarUrl}
-            chatOtherAvatarUrl={sharedRowProps.chatOtherAvatarUrl}
-            chatOtherSenderNickname={chatOtherSenderNickname}
-            chatOtherAvatarRankBadge={chatOtherAvatarRankBadge}
-            chatSelfAvatarRankBadge={chatSelfAvatarRankBadge}
-            groupRankShowBesideNickname={sharedMsgProps.groupRankShowBesideNickname}
-            onOtherAvatarClick={sharedRowProps.onOtherAvatarClick}
-            multiSelectAvatar={msAvatar}
-            selected={actionPanelOpen && actionMessageId === m.id}
-            disableImagePreview={isMultiSelectMode}
-            canRegenerate={canRegen}
-            regenPrompt={canRegen ? resolveCharacterImageGenPromptForApi(m) : undefined}
-            onRegenerate={
-              canRegen ? (prompt) => handleRetryCharacterImageGen(m, prompt) : undefined
-            }
-            onSaveRegenPrompt={
-              canRegen ? (prompt) => handleSaveCharacterImageGenPrompt(m, prompt) : undefined
-            }
-            onLongPress={
-              isMultiSelectMode
-                ? undefined
-                : (rect) =>
-                    openActionPanelFor({
-                      id: m.id,
-                      isSelf,
-                      text: messagePlainPreview(m),
-                      ts: m.timestamp,
-                      anchorRect: rect,
-                    })
-            }
-          />,
+          <>
+            <WeChatChatImageBubbleRow
+              id={m.id}
+              isSelf={isSelf}
+              src={src}
+              isSticker={isSticker}
+              bubble={bubble}
+              showAvatar={effectiveShowAvatar}
+              showAvatarColumn={isSelf ? showAvatarColumnSelf : showAvatarColumnOther}
+              chatSelfAvatarUrl={sharedMsgProps.chatSelfAvatarUrl}
+              chatOtherAvatarUrl={sharedRowProps.chatOtherAvatarUrl}
+              chatOtherSenderNickname={chatOtherSenderNickname}
+              chatOtherAvatarRankBadge={chatOtherAvatarRankBadge}
+              chatSelfAvatarRankBadge={chatSelfAvatarRankBadge}
+              groupRankShowBesideNickname={sharedMsgProps.groupRankShowBesideNickname}
+              onOtherAvatarClick={sharedRowProps.onOtherAvatarClick}
+              multiSelectAvatar={msAvatar}
+              selected={actionPanelOpen && actionMessageId === m.id}
+              disableImagePreview={isMultiSelectMode}
+              canRegenerate={canRegen}
+              regenPrompt={canRegen ? resolveCharacterImageGenPromptForApi(m) : undefined}
+              regenerating={canRegen && !!m.imageGenPending}
+              onRegenerate={
+                canRegen ? (prompt) => handleRetryCharacterImageGen(m, prompt) : undefined
+              }
+              onSaveRegenPrompt={
+                canRegen ? (prompt) => handleSaveCharacterImageGenPrompt(m, prompt) : undefined
+              }
+              onLongPress={
+                isMultiSelectMode
+                  ? undefined
+                  : (rect) =>
+                      openActionPanelFor({
+                        id: m.id,
+                        isSelf,
+                        text: messagePlainPreview(m),
+                        ts: m.timestamp,
+                        anchorRect: rect,
+                      })
+              }
+            />
+            {m.blockRejectIcon ? <BlockRejectUnderMessageStrip /> : null}
+          </>,
           renderDetachedReply(m, isSelf),
         )
       }
@@ -18768,9 +19775,11 @@ export function ChatRoomInner({
                   ? undefined
                   : (rect) => openActionPanelFor({ id: m.id, isSelf: false, text: messagePlainPreview(m), ts: m.timestamp, anchorRect: rect })
               }
+              chatAccessory={m.blockRejectIcon ? <BlockUndeliveredIcon /> : undefined}
               multiSelectAvatar={msAvatar}
               {...translationPropsFor(m)}
             />
+            {m.blockRejectIcon ? <BlockRejectUnderMessageStrip /> : null}
           </>,
           renderDetachedReply(m, false),
         )
@@ -18791,7 +19800,13 @@ export function ChatRoomInner({
             messageTimestampMs={usesMessengerBubbleTime ? m.timestamp : undefined}
             replyPreview={buildInlineReplyPreview(m)}
             telegramShowReadChecks={st !== 'sending' && st !== 'failed'}
-            chatAccessory={st === 'failed' ? <FailRetryIcon onClick={() => retrySend(m.id, m.text)} /> : undefined}
+            chatAccessory={
+              st === 'failed' ? (
+                <FailRetryIcon onClick={() => retrySend(m.id, m.text)} />
+              ) : m.blockRejectIcon ? (
+                <BlockUndeliveredIcon />
+              ) : undefined
+            }
             chatBubbleOverlay={st === 'sending' ? <span className="wx-chat-sending-dot" aria-hidden /> : undefined}
             chatSelfAvatarUrl={sharedMsgProps.chatSelfAvatarUrl}
             chatSelfAvatarRankBadge={chatSelfAvatarRankBadge}
@@ -18809,6 +19824,7 @@ export function ChatRoomInner({
             multiSelectAvatar={msAvatar}
             {...translationPropsFor(m)}
           />
+          {m.blockRejectIcon ? <BlockRejectUnderMessageStrip /> : null}
         </>,
         renderDetachedReply(m, true),
       )
@@ -19507,9 +20523,21 @@ export function ChatRoomInner({
         open={photoPickerOpen}
         onClose={() => setPhotoPickerOpen(false)}
         onToast={showComposerToast}
+        onOpenAiImage={() => setAiImageSendOpen(true)}
         onSend={(payloads) => {
           setPhotoPickerOpen(false)
           commitSendImages(payloads, false)
+        }}
+      />
+
+      <WeChatChatAiImageSendSheet
+        open={aiImageSendOpen}
+        onClose={() => setAiImageSendOpen(false)}
+        onToast={showComposerToast}
+        onSend={({ base64, mime }) => {
+          setAiImageSendOpen(false)
+          // 与相册/拍摄一致：只发出去，不自动催对方回复
+          commitSendImage(base64, false, mime)
         }}
       />
 
@@ -19691,7 +20719,9 @@ export function ChatRoomInner({
             promptMode === 'persona' && pcid
               ? await loadOfflineDatingPlotsPromptBlock(pcid, character?.name ?? null)
               : ''
-          const transcript = itemsToTranscript(buildChatItemsForAiTranscript())
+          const transcript = itemsToTranscript(buildChatItemsForAiTranscript(), {
+            includeActionNarration: convReplyLangRef.current.onlineActionNarrationEnabled === true,
+          })
           const groupRef = await loadPrivateGroupChatsRecentReference()
           const vMem = await buildPrivateMemoryInjectionForAi(transcript, '')
           const res = await requestWeChatVoiceCallDecision({
@@ -19895,7 +20925,9 @@ export function ChatRoomInner({
 
             const callTurns = voiceCallMessagesToChatTurns(opts?.callMessages ?? [])
             const transcript: ChatTranscriptTurn[] = [
-              ...itemsToTranscript(buildChatItemsForAiTranscript()),
+              ...itemsToTranscript(buildChatItemsForAiTranscript(), {
+                includeActionNarration: convReplyLangRef.current.onlineActionNarrationEnabled === true,
+              }),
               ...(isConnectedOpening
                 ? [{ from: 'self' as const, text: connectedOpeningPrompt }]
                 : callTurns.length
@@ -20097,6 +21129,12 @@ export function ChatRoomInner({
           setInnerOsFavorited(false)
           setInnerOsFavoriteBusy(false)
         }}
+      />
+
+      <ForumShareReaderSheet
+        open={!!forumShareReader}
+        data={forumShareReader}
+        onClose={() => setForumShareReader(null)}
       />
 
       {redPacketModalSender ? (

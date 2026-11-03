@@ -19,6 +19,8 @@ export type DatingPlayerControlTagId =
   | 'danmaku'
   | 'cot'
   | 'direct-out'
+  | 'sse'
+  | 'no-sse'
 
 export type DatingPlayerControlTag = {
   id: DatingPlayerControlTagId
@@ -39,7 +41,11 @@ export type DatingPlayerControlTagSource = {
   plotArtifactVisualEnabled?: boolean
   /** 缺省视为开启 */
   thinkingChainEnabled?: boolean
+  /** 缺省视为开启 */
+  plotSseEnabled?: boolean
   offlineDanmakuEnabled?: boolean
+  /** 缺省开。关时人称/字数/抢话/评论/小剧场/直出/思维链/导演/上帝/侧幕不注入，顶行不再标这些 */
+  consolePromptsEnabled?: boolean
 }
 
 const PERSPECTIVE_LABEL: Record<NarrativePerspective, string> = {
@@ -62,6 +68,8 @@ const LABEL: Record<DatingPlayerControlTagId, string> = {
   danmaku: '弹幕',
   cot: '思维链',
   'direct-out': '直出',
+  sse: 'SSE流式',
+  'no-sse': '整包返回',
 }
 
 export function buildDatingPlayerControlTags(
@@ -72,27 +80,32 @@ export function buildDatingPlayerControlTags(
     tags.push({ id, label: label ?? LABEL[id] })
   }
 
+  const consolePromptsOn = src.consolePromptsEnabled !== false
   const perspective = src.perspective ?? 'second'
-  push('perspective', PERSPECTIVE_LABEL[perspective] ?? '第二人称')
+  if (consolePromptsOn) push('perspective', PERSPECTIVE_LABEL[perspective] ?? '第二人称')
 
   const length =
     typeof src.lengthTargetChars === 'number' && Number.isFinite(src.lengthTargetChars)
       ? Math.max(1, Math.round(src.lengthTargetChars))
       : 0
-  if (length > 0) push('length', `约${length}字`)
+  if (consolePromptsOn && length > 0) push('length', `约${length}字`)
 
-  if (src.godPerspective) push('god')
-  if (src.mainCharacterOffstage) push('side')
-  if (src.directorMode) push('director')
+  if (consolePromptsOn && src.godPerspective) push('god')
+  if (consolePromptsOn && src.mainCharacterOffstage) push('side')
+  if (consolePromptsOn && src.directorMode) push('director')
   // 上帝视角下抢话不注入
-  if (!src.godPerspective && src.autoUserReaction) push('interrupt')
+  if (consolePromptsOn && !src.godPerspective && src.autoUserReaction) push('interrupt')
   if (src.generateParallelOnSend) push('parallel')
   if (src.generateIfLineOnSend) push('if-line')
-  if (src.commentModeEnabled === true) push('comment')
-  if (src.plotArtifactVisualEnabled === true) push('theater')
+  if (consolePromptsOn && src.commentModeEnabled === true) push('comment')
+  if (consolePromptsOn && src.plotArtifactVisualEnabled === true) push('theater')
   if (src.offlineDanmakuEnabled) push('danmaku')
-  if (src.thinkingChainEnabled === false) push('direct-out')
-  else push('cot')
+  if (consolePromptsOn) {
+    if (src.thinkingChainEnabled === false) push('direct-out')
+    else push('cot')
+  }
+  if (src.plotSseEnabled === false) push('no-sse')
+  else push('sse')
 
   return tags
 }

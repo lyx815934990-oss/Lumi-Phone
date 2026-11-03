@@ -1,6 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { personaDb } from '../wechat/newFriendsPersona/idb'
+import {
+  extractTextFromPersonaDoc,
+  personaDocBaseName,
+} from '../wechat/newFriendsPersona/importWorldBookDoc'
 import { useCustomization } from '../../CustomizationContext'
 import { Pressable } from '../../components/Pressable'
 import type { LoreEntry } from '../../worldbook/loreArchiveTypes'
@@ -51,6 +55,9 @@ export function LoreArchiveApp({ onBack }: Props) {
   const [tagManagerOpen, setTagManagerOpen] = useState(false)
   const [systemDetail, setSystemDetail] = useState<LoreArchiveBuiltinPresetMeta | null>(null)
   const [highlightEntryId, setHighlightEntryId] = useState<string | null>(null)
+  const docImportInputRef = useRef<HTMLInputElement | null>(null)
+  const [docImportConsentOpen, setDocImportConsentOpen] = useState(false)
+  const [docImportBusy, setDocImportBusy] = useState(false)
 
   useEffect(() => {
     if (segment === 'all' || segment === 'system' || segment === 'mine' || segment === 'untagged') return
@@ -128,6 +135,11 @@ export function LoreArchiveApp({ onBack }: Props) {
     setDraftIsNew(true)
     setScreen('edit')
   }, [])
+
+  const openImportDocConsent = useCallback(() => {
+    if (docImportBusy) return
+    setDocImportConsentOpen(true)
+  }, [docImportBusy])
 
   const openEdit = useCallback(
     (id: string) => {
@@ -253,6 +265,8 @@ export function LoreArchiveApp({ onBack }: Props) {
               onOpenEntry={openEdit}
               onOpenSystem={setSystemDetail}
               onCreate={openCreate}
+              onImportDoc={openImportDocConsent}
+              docImportBusy={docImportBusy}
               onSetEntryEnabled={setEntryEnabled}
               onSetBuiltinPresetEnabled={setBuiltinPresetEnabled}
               onOpenTagManager={() => setTagManagerOpen(true)}
@@ -312,6 +326,91 @@ export function LoreArchiveApp({ onBack }: Props) {
           setBuiltinPresetPriorityTier(systemDetail.id, tier)
         }}
       />
+
+      <input
+        ref={docImportInputRef}
+        type="file"
+        accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        className="hidden"
+        onChange={(e) => {
+          const input = e.currentTarget
+          void (async () => {
+            const f = input.files?.[0]
+            input.value = ''
+            if (!f) return
+            setDocImportBusy(true)
+            try {
+              const text = await extractTextFromPersonaDoc(f)
+              if (!text) {
+                window.alert('文件没有可读文字内容')
+                return
+              }
+              const entryName = personaDocBaseName(f.name)
+              setDraft({
+                ...newEmptyEntry(),
+                title: entryName.slice(0, 48),
+                content: text,
+                enabled: true,
+                updatedAt: Date.now(),
+              })
+              setDraftIsNew(true)
+              setScreen('edit')
+              setSegment('mine')
+            } catch (err) {
+              window.alert(err instanceof Error && err.message.trim() ? err.message : '导入失败')
+            } finally {
+              setDocImportBusy(false)
+            }
+          })()
+        }}
+      />
+
+      {docImportConsentOpen ? (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/45 px-4 backdrop-blur-[2px]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lore-doc-import-consent-title"
+            className="w-full max-w-[400px] rounded-[22px] border border-white/70 bg-white/95 p-6 shadow-2xl backdrop-blur-xl"
+          >
+            <p
+              id="lore-doc-import-consent-title"
+              className="text-center text-[17px] font-semibold text-stone-900"
+            >
+              导入前请确认
+            </p>
+            <div className="mt-3 space-y-2.5 text-[13px] leading-relaxed text-stone-600">
+              <p>
+                导入文件前，请确认你已征得
+                <strong className="font-semibold text-stone-800">原创作者同意</strong>
+                ，有权将内容用于本机档案室世界书。
+              </p>
+              <p>
+                请勿导入通过非正规途径获取的文件资源；违规内容引发的版权与合规风险由用户自行承担。
+              </p>
+            </div>
+            <div className="mt-8 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setDocImportConsentOpen(false)}
+                className="flex-1 rounded-full border border-stone-200 py-3 text-[14px] text-stone-700 transition-colors hover:bg-stone-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDocImportConsentOpen(false)
+                  window.setTimeout(() => docImportInputRef.current?.click(), 80)
+                }}
+                className="flex-1 rounded-full bg-stone-900 py-3 text-[14px] font-medium text-white"
+              >
+                我已了解，继续
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

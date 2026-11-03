@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react'
+import { Sparkles, X } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import type { ApiConfig } from '../../api/types'
 import type { WorldBookUserInsertContext } from '../charUserPlaceholders'
@@ -24,13 +24,13 @@ export function WorldBookOptimizePanel({
   userInsertContext?: WorldBookUserInsertContext | null
   onApplyWorldBooks: (next: WorldBook[], summary: string) => void
 }) {
+  const [open, setOpen] = useState(false)
   const [requirement, setRequirement] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastSummary, setLastSummary] = useState<string | null>(null)
 
   const canUseAi = !!apiConfig?.apiUrl && !!apiConfig?.apiKey && !!apiConfig?.modelId
-  const charName = character.name?.trim() || '角色'
   const userName =
     userInsertContext?.displayName?.trim() || identityContext?.name?.trim() || '玩家'
 
@@ -79,67 +79,81 @@ export function WorldBookOptimizePanel({
   ])
 
   return (
-    <div className="mx-4 mb-4 rounded-[22px] border border-stone-200/90 bg-white/95 p-4 shadow-[0_2px_16px_rgba(0,0,0,0.04)] backdrop-blur-sm">
-      <div className="flex items-start gap-2">
-        <span
-          className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-white"
-          style={{ background: '#6B6862' }}
-        >
-          <Sparkles className="size-3.5" strokeWidth={2} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-stone-400">AI Optimize</p>
-          <h3 className="mt-0.5 text-[15px] font-semibold tracking-tight text-stone-900">AI 优化世界书</h3>
-          <p className="leading-relaxed" style={{ marginTop: 6, fontSize: 12, color: '#9A9A95' }}>
-            {forPlayerIdentity
-              ? '写下你的要求，模型会对照当前世界书智能修饰、补充或调整条目。未明确要求删除时不会乱删；正文用第一人称「我」。'
-              : `写下你的要求（空白世界书也可直接粘贴设定）。正文会用「${charName}」与「${userName}」指代双方（存盘为占位符，预览显示姓名），不会写成「对方」「你」。未明确要求删除时不会乱删。`}
-          </p>
-        </div>
-      </div>
-
-      <textarea
-        value={requirement}
-        onChange={(e) => setRequirement(e.target.value)}
-        disabled={busy}
-        rows={4}
-        placeholder={
-          forPlayerIdentity
-            ? '例：把「兴趣爱好」写得更生活化；补一条关于作息的设定；语气再松一点……'
-            : `例：把性格写得更冷一点；补一条与「${userName}」的相处边界；润色「口语习惯」但不要改关系定位……`
-        }
-        className="w-full resize-y rounded-2xl border border-stone-200/90 bg-stone-50/80 px-3.5 py-3 text-[13px] leading-relaxed text-stone-800 outline-none placeholder:text-stone-400 focus:border-stone-300 focus:bg-white disabled:opacity-60"
-        style={{ marginTop: 10 }}
-      />
-
-      <div className="flex flex-wrap items-center gap-2" style={{ marginTop: 10 }}>
+    <div className="mx-4 mb-3 flex flex-col items-end gap-2">
+      {!open ? (
         <button
           type="button"
-          disabled={busy || !requirement.trim() || !canUseAi}
-          onClick={runOptimize}
-          className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium text-white shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-          style={{ background: '#6B6862' }}
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1 rounded-full border border-stone-200/90 bg-white/95 px-2.5 py-1 text-[11px] font-medium text-stone-600 shadow-sm transition active:scale-[0.98] hover:bg-stone-50 hover:text-stone-800"
+          title="AI 优化世界书"
         >
-          <Sparkles className="size-3.5 shrink-0" strokeWidth={2} />
-          {busy ? '优化中…' : '开始优化'}
+          <Sparkles className="size-3 shrink-0" strokeWidth={2} />
+          AI 优化
         </button>
-        {!canUseAi ? (
-          <span className="text-[11px] text-amber-700/90">需先配置聊天 API</span>
-        ) : (
-          <span className="text-[11px] text-stone-400">结果写入当前编辑稿，记得点保存落库</span>
-        )}
-      </div>
+      ) : (
+        <div className="w-full rounded-2xl border border-stone-200/90 bg-white/95 p-3 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-[12px] font-semibold text-stone-800">
+              <Sparkles className="size-3.5 shrink-0 text-stone-500" strokeWidth={2} />
+              AI 优化世界书
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (busy) return
+                setOpen(false)
+              }}
+              className="rounded-full p-1 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+              aria-label="收起"
+              disabled={busy}
+            >
+              <X className="size-3.5" strokeWidth={2} />
+            </button>
+          </div>
 
-      {error ? (
-        <p className="mt-3 rounded-xl border border-rose-200/80 bg-rose-50/90 px-3 py-2 text-[12px] leading-relaxed text-rose-800">
-          {error}
-        </p>
-      ) : null}
-      {lastSummary ? (
-        <p className="mt-3 rounded-xl border border-emerald-200/80 bg-emerald-50/80 px-3 py-2 text-[12px] leading-relaxed text-emerald-900">
-          {lastSummary}
-        </p>
-      ) : null}
+          <textarea
+            value={requirement}
+            onChange={(e) => setRequirement(e.target.value)}
+            disabled={busy}
+            rows={3}
+            placeholder={
+              forPlayerIdentity
+                ? '写下你的要求，例如：润色兴趣爱好、补一条作息……'
+                : `写下你的要求，例如：性格更冷一点；补与「${userName}」的相处边界……`
+            }
+            className="mt-2 w-full resize-y rounded-xl border border-stone-200/90 bg-stone-50/80 px-3 py-2 text-[12px] leading-relaxed text-stone-800 outline-none placeholder:text-stone-400 focus:border-stone-300 focus:bg-white disabled:opacity-60"
+          />
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={busy || !requirement.trim() || !canUseAi}
+              onClick={runOptimize}
+              className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-medium text-white shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ background: '#6B6862' }}
+            >
+              <Sparkles className="size-3 shrink-0" strokeWidth={2} />
+              {busy ? '优化中…' : '开始优化'}
+            </button>
+            {!canUseAi ? (
+              <span className="text-[10px] text-amber-700/90">需先配置聊天 API</span>
+            ) : (
+              <span className="text-[10px] text-stone-400">写入当前稿，记得保存</span>
+            )}
+          </div>
+
+          {error ? (
+            <p className="mt-2 rounded-lg border border-rose-200/80 bg-rose-50/90 px-2.5 py-1.5 text-[11px] leading-relaxed text-rose-800">
+              {error}
+            </p>
+          ) : null}
+          {lastSummary ? (
+            <p className="mt-2 rounded-lg border border-emerald-200/80 bg-emerald-50/80 px-2.5 py-1.5 text-[11px] leading-relaxed text-emerald-900">
+              {lastSummary}
+            </p>
+          ) : null}
+        </div>
+      )}
     </div>
   )
 }

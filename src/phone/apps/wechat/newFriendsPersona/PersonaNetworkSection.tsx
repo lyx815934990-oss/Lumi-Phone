@@ -270,7 +270,7 @@ function newBlankNpcForMain(main: Character): Character {
     age: null,
     birthdayMD: '',
     zodiac: '',
-    identity: '学生',
+    identity: '',
     mbti: '',
     bio: '',
     avatarUrl: '',

@@ -71,6 +71,7 @@ import { resolveMessengerBubbleStyle } from '../../wechatMessengerSpecialBubbles
 import {
   generateSpyWechatData,
   summarizeMirrorChatForAppend,
+  type SpyChatLanguageMode,
   type SpyChatTimeSpanUnit,
   type SpyExistingChatTranscript,
 } from '../spyWechatAi'
@@ -285,6 +286,11 @@ function Main({
   const [generateLanguage, setGenerateLanguage] = useState<WeChatChatLanguageCode>(
     WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE,
   )
+  const [chatLanguageMode, setChatLanguageMode] = useState<SpyChatLanguageMode>('unified')
+  const [characterSideLanguage, setCharacterSideLanguage] = useState<WeChatChatLanguageCode>(
+    WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE,
+  )
+  const [peerSideLanguage, setPeerSideLanguage] = useState<WeChatChatLanguageCode>('ja')
   const [syncTranslation, setSyncTranslation] = useState(false)
   const [translationLanguage, setTranslationLanguage] = useState<WeChatChatLanguageCode>(
     WECHAT_CHAT_DEFAULT_TRANSLATION_LANGUAGE,
@@ -673,6 +679,9 @@ function Main({
               relatedGroupsCount: scope === 'chats' ? relatedGroupsCount : undefined,
               groupChatCustomBias: scope === 'chats' ? groupChatCustomBias : undefined,
               generateLanguage,
+              chatLanguageMode: scope === 'chats' ? chatLanguageMode : 'unified',
+              characterSideLanguage,
+              peerSideLanguage,
               syncTranslation,
               translationLanguage,
               includeSpecialMessages: scope === 'chats' ? includeSpecialMessages : false,
@@ -2016,10 +2025,26 @@ function Main({
         onIngestChatToMemoryChange={setIngestChatToMemory}
         generateLanguage={generateLanguage}
         onGenerateLanguageChange={setGenerateLanguage}
+        chatLanguageMode={chatLanguageMode}
+        onChatLanguageModeChange={setChatLanguageMode}
+        characterSideLanguage={characterSideLanguage}
+        onCharacterSideLanguageChange={setCharacterSideLanguage}
+        peerSideLanguage={peerSideLanguage}
+        onPeerSideLanguageChange={setPeerSideLanguage}
         syncTranslation={syncTranslation}
         onSyncTranslationChange={(on) => {
           setSyncTranslation(on)
-          if (on && translationLanguage === generateLanguage) {
+          if (!on) return
+          if (chatLanguageMode === 'split') {
+            if (
+              translationLanguage === peerSideLanguage &&
+              translationLanguage === characterSideLanguage
+            ) {
+              setTranslationLanguage(
+                characterSideLanguage === 'zh-CN' ? 'en' : 'zh-CN',
+              )
+            }
+          } else if (chatLanguageMode === 'unified' && translationLanguage === generateLanguage) {
             setTranslationLanguage(generateLanguage === 'zh-CN' ? 'en' : 'zh-CN')
           }
         }}

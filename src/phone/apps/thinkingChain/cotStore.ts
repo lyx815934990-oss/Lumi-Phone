@@ -1,10 +1,13 @@
 import {
+  COT_REGEX_GROUP_OTHER,
   COT_SYSTEM_PRESET_ID,
+  inferCotRegexGroup,
   type CoTEntry,
   type CotExportPayload,
   type CoTPreset,
   type CotPresetKind,
   type CotPresetScope,
+  type CotRegexRule,
   type CotStoreState,
 } from './cotTypes'
 import {
@@ -21,6 +24,11 @@ const MAX_TITLE = 64
 const MAX_CONTENT = 100_000
 const MAX_TAG = 16
 const MAX_TAGS = 12
+const MAX_REGEX_RULES = 64
+const MAX_REGEX_NAME = 40
+const MAX_REGEX_FIND = 4_000
+/** 状态栏等完整 HTML 美化模板往往很长 */
+const MAX_REGEX_REPLACE = 120_000
 
 type Listener = () => void
 
@@ -30,6 +38,10 @@ const listeners = new Set<Listener>()
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function cloneRegexRules(rules: CotRegexRule[] | undefined): CotRegexRule[] {
+  return (rules ?? []).map((r) => ({ ...r }))
 }
 
 function cloneState(s: CotStoreState): CotStoreState {
@@ -45,6 +57,7 @@ function cloneState(s: CotStoreState): CotStoreState {
         ...e,
         tags: [...(e.tags ?? [])],
       })),
+      regexRules: cloneRegexRules(p.regexRules),
     })),
   }
 }
@@ -92,6 +105,62 @@ function normalizeEntry(raw: unknown, index: number): CoTEntry | null {
   return { id, order, title, content, enabled, tags }
 }
 
+function normalizeRegexRule(raw: unknown, index: number): CotRegexRule | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  // 兼容 ST regex_scripts / 诺基基 regexRules 字段名
+  let find = String(o.find ?? o.findRegex ?? o.pattern ?? '').slice(0, MAX_REGEX_FIND)
+  const flags = String(o.flags ?? '')
+    .replace(/[^gimsuy]/gi, '')
+    .trim()
+  if (find && !find.startsWith('/') && flags) {
+    const body = find.replace(/\//g, '\\/')
+    const fl = flags.includes('g') ? flags : `g${flags}`
+    find = `/${body}/${fl}`.slice(0, MAX_REGEX_FIND)
+  }
+  const replace = String(o.replace ?? o.replaceString ?? o.replacement ?? '').slice(
+    0,
+    MAX_REGEX_REPLACE,
+  )
+  const name =
+    String(o.name ?? o.scriptName ?? '').trim().slice(0, MAX_REGEX_NAME) || `规则 ${index + 1}`
+  const id = String(o.id ?? '').trim() || uid('ctr')
+  const enabled = o.enabled !== false && o.disabled !== true
+  const order =
+    typeof o.order === 'number' && Number.isFinite(o.order) ? Math.floor(o.order) : index + 1
+  const rule: CotRegexRule = { id, order, name, find, replace, enabled }
+  const groupRaw = String(o.group ?? o.pack ?? o.suite ?? '').trim().slice(0, 24)
+  if (groupRaw) {
+    rule.group = groupRaw
+  } else {
+    const inferred = inferCotRegexGroup({ name, group: undefined })
+    if (inferred && inferred !== COT_REGEX_GROUP_OTHER) rule.group = inferred
+  }
+  if (typeof o.promptOnly === 'boolean') {
+    rule.promptOnly = o.promptOnly
+  } else if (o.applyOnPrompt === true && o.applyOnDisplay === false) {
+    rule.promptOnly = true
+  }
+  if (typeof o.markdownOnly === 'boolean') {
+    rule.markdownOnly = o.markdownOnly
+  } else if (o.applyOnDisplay === true && o.applyOnPrompt === false) {
+    rule.markdownOnly = true
+  }
+  return rule
+}
+
+function normalizeRegexRules(raw: unknown): CotRegexRule[] {
+  const list = Array.isArray(raw) ? raw : []
+  const out: CotRegexRule[] = []
+  for (let i = 0; i < list.length; i++) {
+    const r = normalizeRegexRule(list[i], i)
+    if (r) out.push(r)
+    if (out.length >= MAX_REGEX_RULES) break
+  }
+  out.sort((a, b) => a.order - b.order)
+  return out
+}
+
 function normalizePreset(raw: unknown): CoTPreset | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
@@ -105,12 +174,21 @@ function normalizePreset(raw: unknown): CoTPreset | null {
     if (e) entries.push(e)
   }
   entries.sort((a, b) => a.order - b.order)
+  const regexRules = normalizeRegexRules(
+    Array.isArray(o.regexRules)
+      ? o.regexRules
+      : Array.isArray(o.regex_scripts)
+        ? o.regex_scripts
+        : Array.isArray(o.regexScripts)
+          ? o.regexScripts
+          : [],
+  )
   const updatedAt =
     typeof o.updatedAt === 'number' && Number.isFinite(o.updatedAt) ? o.updatedAt : Date.now()
   const scope = normalizePresetScope(o.scope ?? o.defaultScope)
   const kind = normalizePresetKind(o.kind)
   const tags = normalizeTags(o.tags)
-  return { id, name, entries, updatedAt, scope, kind, tags }
+  return { id, name, entries, regexRules, updatedAt, scope, kind, tags }
 }
 
 function resolveActiveId(
@@ -420,6 +498,7 @@ export function createEmptyCotPreset(
     id: uid('ctp'),
     name: defaultName.slice(0, MAX_NAME),
     entries: [],
+    regexRules: [],
     scope,
     kind,
     tags: [],
@@ -435,6 +514,22 @@ export function createEmptyCotEntry(order: number): CoTEntry {
     content: '',
     enabled: true,
     tags: [],
+  }
+}
+
+export function createEmptyCotRegexRule(
+  order: number,
+  opts?: { group?: string },
+): CotRegexRule {
+  const group = String(opts?.group ?? '').trim().slice(0, 24)
+  return {
+    id: uid('ctr'),
+    order,
+    name: group ? `【${group}】规则 ${order}` : `规则 ${order}`,
+    find: '',
+    replace: '',
+    enabled: true,
+    ...(group ? { group } : {}),
   }
 }
 
@@ -479,6 +574,10 @@ export function duplicateCotPreset(id: string): CoTPreset | null {
       id: uid('cte'),
       tags: [...(e.tags ?? [])],
     })),
+    regexRules: cloneRegexRules(src.regexRules).map((r) => ({
+      ...r,
+      id: uid('ctr'),
+    })),
     updatedAt: Date.now(),
   }
   persist({ ...s, presets: [...s.presets, copy] })
@@ -507,6 +606,7 @@ export function convertCotPresetKind(
             kind: to,
             tags: [...p.tags],
             entries: p.entries.map((e) => ({ ...e, tags: [...(e.tags ?? [])] })),
+            regexRules: cloneRegexRules(p.regexRules),
             updatedAt: Date.now(),
           }
         : p,
@@ -753,6 +853,7 @@ export function downloadSingleCotPreset(presetId: string): boolean {
           enabled: e.enabled,
           tags: [...(e.tags ?? [])],
         })),
+        regexRules: cloneRegexRules(preset.regexRules),
       },
     ],
   }

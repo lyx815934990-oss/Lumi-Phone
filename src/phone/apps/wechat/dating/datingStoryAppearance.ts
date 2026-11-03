@@ -109,6 +109,8 @@ export type DatingStoryAppearanceCssVars = {
   '--ds-os': string
   '--ds-comment': string
   '--ds-danger': string
+  '--plot-dialogue-fg': string
+  '--plot-inner-os-fg': string
 }
 
 const PALETTE_IDS: DatingStoryPaletteId[] = [
@@ -760,10 +762,54 @@ export function resolveDatingStoryTokens(appearance: DatingStoryAppearance): Dat
   return table[a.paletteId] ?? table.soft_mist
 }
 
+function parseCssHexRgb(raw: string): [number, number, number] | null {
+  const s = String(raw || '').trim()
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(s)
+  if (!m) return null
+  const h = m[1]!
+  if (h.length === 3) {
+    return [
+      parseInt(h[0]! + h[0]!, 16),
+      parseInt(h[1]! + h[1]!, 16),
+      parseInt(h[2]! + h[2]!, 16),
+    ]
+  }
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
+}
+
+function mixCssHex(a: string, b: string, amountTowardB: number): string {
+  const pa = parseCssHexRgb(a)
+  const pb = parseCssHexRgb(b)
+  if (!pa || !pb) return a
+  const t = Math.max(0, Math.min(1, amountTowardB))
+  const ch = (x: number, y: number) => Math.round(x + (y - x) * t)
+  const to = (n: number) => n.toString(16).padStart(2, '0')
+  return `#${to(ch(pa[0], pb[0]))}${to(ch(pa[1], pb[1]))}${to(ch(pa[2], pb[2]))}`
+}
+
+/**
+ * 对白 / 内心字色：随当前色卡 ink·accent 与日夜推导，避免全局固定蓝粉。
+ * 对白略偏冷，内心略偏暖，并掺一点主题 accent 保持色卡气质。
+ */
+export function deriveDatingPlotVoiceForegrounds(
+  tokens: DatingStoryTokenSet,
+  dayNight: DatingStoryDayNight,
+): { dialogueFg: string; osFg: string } {
+  const night = dayNight === 'night'
+  const coolAnchor = night ? '#B7D0E6' : '#2F5574'
+  const warmAnchor = night ? '#EBB4BC' : '#9A4A5A'
+  // 更靠冷/暖锚点，避免和旁白 ink 糊成一团
+  const dialogueFg = mixCssHex(mixCssHex(tokens.ink, coolAnchor, night ? 0.72 : 0.62), tokens.accent, 0.14)
+  const osFg = mixCssHex(mixCssHex(tokens.ink, warmAnchor, night ? 0.7 : 0.58), tokens.accent, 0.22)
+  return { dialogueFg, osFg }
+}
+
 export function buildDatingStoryAppearanceCssVars(
   appearance?: DatingStoryAppearance | unknown,
 ): DatingStoryAppearanceCssVars & CSSProperties {
-  const t = resolveDatingStoryTokens(normalizeDatingStoryAppearance(appearance))
+  const a = normalizeDatingStoryAppearance(appearance)
+  const t = resolveDatingStoryTokens(a)
+  const voice = deriveDatingPlotVoiceForegrounds(t, a.dayNight)
   return {
     '--ds-bg': t.bg,
     '--ds-bg-grad': t.bgGrad,
@@ -780,5 +826,7 @@ export function buildDatingStoryAppearanceCssVars(
     '--ds-os': t.os,
     '--ds-comment': t.comment,
     '--ds-danger': t.danger,
+    '--plot-dialogue-fg': voice.dialogueFg,
+    '--plot-inner-os-fg': voice.osFg,
   }
 }

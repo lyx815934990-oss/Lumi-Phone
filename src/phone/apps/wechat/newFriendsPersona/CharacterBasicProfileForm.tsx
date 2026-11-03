@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Dices, ImagePlus, Link2, Plus, Sparkles, User, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ApiConfig } from '../../api/types'
 import { PlaceholderAwareTextarea } from './characterFieldPlaceholderPreview'
 import type { Character, Gender } from './types'
@@ -22,18 +22,219 @@ import { AnimalArchetypePickerGrid } from './AnimalArchetypePickerGrid'
 import { getAnimalArchetypeOption } from './animalArchetype'
 import { DEFAULT_WORLD_BACKGROUND_ID } from './worldBackgroundConstants'
 import { formatWorldBackgroundForPrompt } from './worldBackgroundFormat'
-import { IDENTITY_POOL, daysInMonth, formatMD, randomChineseName } from './utils'
+import { PersonaNameLanguagePicker } from './PersonaNameLanguagePicker'
+import {
+  IDENTITY_POOL,
+  daysInMonth,
+  formatMD,
+  loadPersonaNameLanguage,
+  randomPersonaName,
+  savePersonaNameLanguage,
+  type PersonaNameLanguage,
+} from './utils'
 
-const SHEET_LINES = '#e5e5e5'
-const FG = '#0a0a0a'
-const MUTED = '#737373'
+const SHEET_LINES = '#D2D0CB'
+const FG = '#1E2024'
+const MUTED = '#6A6E76'
+const PAGE = '#EDEBE7'
+const CARD = '#F8F7F4'
+const FOIL = '#5A6574'
+const FAINT = '#9AA0A8'
+const FOIL_SOFT = '#E2E5EA'
 
 const inputUnderline =
-  'w-full border-0 border-b border-neutral-200 bg-transparent py-2.5 text-[15px] text-neutral-950 outline-none ring-0 transition-colors duration-200 placeholder:text-neutral-300 focus:border-neutral-950 focus:ring-0'
+  'w-full border-0 border-b border-[#D2D0CB] bg-transparent py-1.5 text-[13px] text-[#1E2024] outline-none ring-0 transition-colors duration-200 placeholder:text-[#9AA0A8] focus:border-[#5A6574] focus:ring-0'
 
 const numStyle = { fontFamily: PHONE_NUM_FONT_FAMILY } as const
 
-const gridLabel = 'text-[10px] font-medium uppercase tracking-[0.16em] text-neutral-400'
+function DualLabel({ zh, en }: { zh: string; en: string }) {
+  return (
+    <span className="flex shrink-0 flex-col leading-tight">
+      <span className="text-[11px] font-semibold" style={{ color: FG }}>
+        {zh}
+      </span>
+      <span className="font-mono text-[9px] font-bold tracking-[0.08em]" style={{ color: MUTED }}>
+        {en}
+      </span>
+    </span>
+  )
+}
+
+function CardField({
+  zh,
+  en,
+  children,
+}: {
+  zh: string
+  en: string
+  children: ReactNode
+}) {
+  return (
+    <div className="mb-2.5 flex items-center gap-2">
+      <span className="w-[46px] shrink-0">
+        <DualLabel zh={zh} en={en} />
+      </span>
+      <div className="min-w-0 flex-1 border-b pb-0.5" style={{ borderColor: SHEET_LINES }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** 圆形印章 / LOGO 压印 */
+function SealStamp({ text, size = 52 }: { text: string; size?: number }) {
+  return (
+    <div
+      className="pointer-events-none flex items-center justify-center rounded-full border-[1.5px]"
+      style={{
+        width: size,
+        height: size,
+        borderColor: FG,
+        color: FG,
+        opacity: 0.16,
+        transform: 'rotate(-14deg)',
+      }}
+      aria-hidden
+    >
+      <div
+        className="flex size-[82%] items-center justify-center rounded-full border"
+        style={{ borderColor: FG }}
+      >
+        <span
+          className="whitespace-pre-line text-center font-serif leading-tight tracking-wide"
+          style={{ fontSize: size * 0.16 }}
+        >
+          {text}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/** 右上角折页 */
+function CornerFold() {
+  return (
+    <span className="pointer-events-none absolute right-0 top-0 z-[2] flex" aria-hidden>
+      <span
+        style={{
+          width: 0,
+          height: 0,
+          borderStyle: 'solid',
+          borderWidth: '0 15px 15px 0',
+          borderColor: `transparent ${FOIL_SOFT} transparent transparent`,
+        }}
+      />
+      <span
+        className="absolute right-0 top-0"
+        style={{
+          width: 0,
+          height: 0,
+          borderStyle: 'solid',
+          borderWidth: '0 15px 15px 0',
+          borderColor: `transparent transparent ${SHEET_LINES} transparent`,
+          opacity: 0.55,
+          transform: 'translate(-0.5px, 0.5px)',
+        }}
+      />
+    </span>
+  )
+}
+
+/** 顶栏小徽记 */
+function HeaderGlyph({ kind }: { kind: 'stats' | 'brief' | 'more' }) {
+  if (kind === 'stats') {
+    return (
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden className="opacity-70">
+        <rect x="1.5" y="8" width="2.5" height="4.5" stroke="currentColor" strokeWidth="1.2" />
+        <rect x="5.75" y="4.5" width="2.5" height="8" stroke="currentColor" strokeWidth="1.2" />
+        <rect x="10" y="2" width="2.5" height="10.5" stroke="currentColor" strokeWidth="1.2" />
+      </svg>
+    )
+  }
+  if (kind === 'brief') {
+    return (
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden className="opacity-70">
+        <path d="M3 2.5h8v9H3z" stroke="currentColor" strokeWidth="1.2" />
+        <path d="M5 5h4M5 7.5h4M5 10h2.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden className="opacity-70">
+      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M7 4.2v5.6M4.2 7h5.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function InkSubCard({
+  zh,
+  en,
+  right,
+  children,
+  decor = 'none',
+  seal,
+  glyph,
+}: {
+  zh: string
+  en: string
+  right?: ReactNode
+  children: ReactNode
+  /** fold=折角 · seal=印章 */
+  decor?: 'fold' | 'seal' | 'none'
+  seal?: string
+  glyph?: 'stats' | 'brief' | 'more'
+}) {
+  return (
+    <div
+      className="relative mt-3 overflow-visible rounded-[18px] border-[1.5px]"
+      style={{ borderColor: FG, background: CARD }}
+    >
+      {decor === 'fold' ? <CornerFold /> : null}
+      <div className="overflow-hidden rounded-[16.5px]">
+        <div
+          className="relative flex items-center justify-between gap-2 px-3 py-2"
+          style={{ background: FG, color: CARD }}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            {glyph ? <HeaderGlyph kind={glyph} /> : null}
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold leading-none">{zh}</p>
+              <p className="mt-1 font-serif text-[9px] tracking-[0.22em] opacity-80">{en}</p>
+            </div>
+          </div>
+          {right}
+        </div>
+        <div className="relative px-3 py-3">
+          {decor === 'seal' && seal ? (
+            <div className="pointer-events-none absolute -right-1 bottom-1 z-[1]">
+              <SealStamp text={seal} size={58} />
+            </div>
+          ) : null}
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function VerticalBarcode() {
+  return (
+    <div className="flex h-[148px] w-[18px] flex-col items-center justify-center gap-[2px]" aria-hidden>
+      {Array.from({ length: 22 }, (_, i) => (
+        <span
+          key={i}
+          className="w-full"
+          style={{
+            height: i % 5 === 0 ? 2.5 : 1.2,
+            background: FG,
+            opacity: i % 3 === 0 ? 0.9 : 0.35,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
 
 export type CharacterBasicProfileFormProps = {
   editorId: string
@@ -136,6 +337,7 @@ export function CharacterBasicProfileForm({
   const [mbtiSheet, setMbtiSheet] = useState(false)
   const [animalSheet, setAnimalSheet] = useState(false)
   const [identityFocused, setIdentityFocused] = useState(false)
+  const [nameLanguage, setNameLanguage] = useState<PersonaNameLanguage>(() => loadPersonaNameLanguage())
 
   /** 打字机：临时正文，结束时写回表单与 Character */
   const [bioTyping, setBioTyping] = useState<string | null>(null)
@@ -291,314 +493,385 @@ export function CharacterBasicProfileForm({
   }
 
   const displayBio = bioTyping != null ? bioTyping : form.bio
+  const avatarSrc = resolveCharacterAvatarUrl({ avatarUrl: form.avatarUrl })
+  const cardNo = character.id.replace(/\D/g, '').slice(-8) || '00000000'
+  const latinHint = form.name.trim() || '—'
 
   return (
-    <div className="pb-10">
-      <hr className="mb-10 border-neutral-200" />
+    <div className="pb-8">
+      {/* PERSONA CARD */}
+      <div
+        className="overflow-hidden rounded-[18px] border-[1.5px]"
+        style={{ borderColor: FG, background: CARD }}
+      >
+        <div
+          className="flex items-center justify-between px-3 py-2"
+          style={{ background: FG, color: CARD }}
+        >
+          <div className="flex items-center gap-2">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden className="opacity-70">
+              <rect x="2" y="2.5" width="10" height="9" rx="1.2" stroke="currentColor" strokeWidth="1.2" />
+              <path d="M4.5 5.5h5M4.5 8h3.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+            </svg>
+            <div>
+              <p className="text-[11px] font-semibold leading-none">人设名片</p>
+              <p className="mt-1 font-serif text-[9px] tracking-[0.22em] opacity-80">PERSONA CARD</p>
+            </div>
+          </div>
+        </div>
 
-      <section aria-labelledby="blk-visual">
-        <p id="blk-visual" className="mb-6">
-          <span className="block text-[10px] font-medium uppercase tracking-[0.22em] text-neutral-400">Visual · Identity</span>
-          <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-neutral-500">视觉与代号</span>
-        </p>
-
-        <div className="flex flex-col items-center">
-          <button
-            type="button"
-            onClick={() => setAvatarSheet(true)}
-            className="relative flex size-24 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white shadow-sm transition-colors active:bg-neutral-50"
-          >
-            {resolveCharacterAvatarUrl({ avatarUrl: form.avatarUrl }) ? (
-              <img
-                src={resolveCharacterAvatarUrl({ avatarUrl: form.avatarUrl })}
-                alt=""
-                className="size-full rounded-full object-cover"
-              />
-            ) : (
-              <User className="size-10 text-neutral-300" strokeWidth={1.25} />
-            )}
-            <span className="absolute -bottom-0.5 -right-0.5 flex size-7 items-center justify-center rounded-full border border-neutral-200 bg-white shadow-sm">
-              <Plus className="size-4 text-neutral-600" strokeWidth={1.5} />
-            </span>
-          </button>
-
-          <div className="relative mx-auto mt-8 w-full max-w-[min(100%,18rem)]">
-            <input
-              value={form.name}
-              placeholder="姓名"
-              className={`${inputUnderline} px-1 text-center text-xl font-semibold tracking-tight`}
-              onChange={(e) => pushField({ name: e.target.value })}
-            />
+        <div className="flex gap-3 px-3 pb-2.5 pt-3.5">
+          <div className="w-[104px] shrink-0">
             <button
               type="button"
-              title="随机姓名"
-              onClick={() => pushField({ name: randomChineseName(form.gender) })}
-              className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full border border-transparent p-2 text-neutral-600 transition-colors hover:border-neutral-200 hover:bg-neutral-50"
+              onClick={() => setAvatarSheet(true)}
+              className="relative h-[132px] w-[104px] overflow-hidden rounded-xl border-[1.5px]"
+              style={{ borderColor: FG, background: FOIL_SOFT }}
             >
-              <Dices className="size-[18px]" strokeWidth={1.5} />
+              {avatarSrc ? (
+                <img src={avatarSrc} alt="" className="size-full object-cover" />
+              ) : (
+                <span className="flex size-full items-center justify-center">
+                  <User className="size-12" style={{ color: FAINT }} strokeWidth={1.2} />
+                </span>
+              )}
+              <span
+                className="absolute bottom-1.5 right-1.5 flex size-[22px] items-center justify-center rounded-full border-[1.5px] text-[12px]"
+                style={{ background: FG, color: CARD, borderColor: CARD }}
+              >
+                <Plus className="size-3.5" strokeWidth={2} />
+              </span>
             </button>
+            <p
+              className="mt-2 truncate text-center font-serif text-[14px] font-bold tracking-[0.1em]"
+              style={{ color: FG }}
+            >
+              {form.name.trim() || '未命名'}
+            </p>
           </div>
 
+          <div className="min-w-0 flex-1">
+            <CardField zh="姓名" en="NAME">
+              <div className="flex items-center gap-1">
+                <input
+                  value={form.name}
+                  placeholder="姓名"
+                  className="min-w-0 flex-1 border-0 bg-transparent py-0.5 font-serif text-[13px] outline-none"
+                  style={{ color: FG }}
+                  onChange={(e) => pushField({ name: e.target.value })}
+                />
+                <PersonaNameLanguagePicker
+                  tone="card"
+                  value={nameLanguage}
+                  onChange={(next) => {
+                    setNameLanguage(next)
+                    savePersonaNameLanguage(next)
+                  }}
+                />
+                <button
+                  type="button"
+                  title="随机姓名"
+                  onClick={() => pushField({ name: randomPersonaName(form.gender, nameLanguage) })}
+                  className="shrink-0 rounded-full p-1 opacity-70 transition-opacity hover:opacity-100"
+                  style={{ color: FG }}
+                  aria-label="随机姓名"
+                >
+                  <Dices className="size-3.5" strokeWidth={1.75} />
+                </button>
+              </div>
+            </CardField>
+            <CardField zh="年龄" en="AGE">
+              <input
+                value={form.age}
+                inputMode="numeric"
+                placeholder="—"
+                className="w-full border-0 bg-transparent py-0.5 text-[13px] outline-none"
+                style={{ ...numStyle, color: FG }}
+                onChange={(e) => pushField({ age: e.target.value })}
+              />
+            </CardField>
+            <CardField zh="身高" en="HEIGHT">
+              <div className="flex items-center gap-1">
+                <input
+                  value={form.height}
+                  inputMode="decimal"
+                  placeholder="—"
+                  className="min-w-0 flex-1 border-0 bg-transparent py-0.5 font-mono text-[13px] outline-none"
+                  style={{ color: FG }}
+                  onChange={(e) => pushField({ height: e.target.value })}
+                />
+                <span className="shrink-0 text-[11px]" style={{ color: FAINT }}>
+                  cm
+                </span>
+              </div>
+            </CardField>
+            <div className="mb-2.5">
+              <div className="mb-1.5">
+                <DualLabel zh="性别" en="GENDER" />
+              </div>
+              <div className="flex gap-1.5">
+                {(['male', 'female', 'other'] as Gender[]).map((g) => {
+                  const on = form.gender === g
+                  return (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => pushField({ gender: g })}
+                      className="h-[30px] min-w-[42px] rounded-full border-[1.5px] px-2.5 text-[12px] font-semibold"
+                      style={{
+                        borderColor: on ? FG : SHEET_LINES,
+                        background: on ? FG : 'transparent',
+                        color: on ? CARD : MUTED,
+                      }}
+                    >
+                      {genderLabelZh(g)}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <CardField zh="人格" en="MBTI">
+              <button
+                type="button"
+                onClick={() => setMbtiSheet(true)}
+                className="w-full border-0 bg-transparent py-0.5 text-left text-[13px] outline-none"
+                style={{ color: form.mbti?.trim() ? FG : FAINT }}
+              >
+                {form.mbti?.trim() || '选择'}
+              </button>
+            </CardField>
+            <CardField zh="星座" en="SIGN">
+              <button
+                type="button"
+                className="w-full border-0 bg-transparent py-0.5 text-left font-serif text-[13px] outline-none"
+                style={{ color: zodiacMemo ? FG : FAINT }}
+                onClick={() => {
+                  const el = document.getElementById('persona-card-birthday')
+                  el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                }}
+              >
+                {zodiacMemo ? zodiacMemo.zh : '选生日'}
+              </button>
+            </CardField>
+          </div>
+
+          <div className="flex items-center self-stretch py-1">
+            <VerticalBarcode />
+          </div>
+        </div>
+
+        <div
+          className="relative mx-3 mb-3 rounded-[12px] border px-3 py-2.5"
+          style={{ background: FOIL_SOFT, borderColor: SHEET_LINES }}
+        >
+          <div className="pointer-events-none absolute -right-1 top-1 z-[1]">
+            <SealStamp text={'档案\n认证'} size={50} />
+          </div>
+          <div className="mb-1">
+            <DualLabel zh="信条" en="MOTTO" />
+          </div>
           <textarea
             value={form.motto}
             rows={2}
-            placeholder="输入角色的信条…"
-            maxLength={15}
-            className={`${inputUnderline} mt-6 min-h-[2.75rem] resize-none px-1 text-center text-xs italic text-neutral-400 font-serif`}
-            style={{ fontFamily: 'Georgia, ui-serif, serif' }}
+            maxLength={24}
+            placeholder="「一句信条…」"
+            className="relative z-[1] w-full resize-none border-0 bg-transparent font-serif text-[13px] italic leading-snug outline-none placeholder:not-italic"
+            style={{ color: FG, fontFamily: 'Georgia, "Noto Serif SC", serif' }}
             onChange={(e) => pushField({ motto: e.target.value })}
           />
+          <div className="relative z-[1] mt-1.5 flex items-end justify-between font-mono text-[9px]" style={{ color: FAINT }}>
+            <span className="font-serif text-[14px] not-italic" style={{ color: FG, opacity: 0.75, fontFamily: 'Georgia, cursive' }}>
+              {latinHint}
+            </span>
+            <span>NO.{cardNo}</span>
+          </div>
         </div>
-      </section>
+      </div>
 
-      <hr className="my-10 border-neutral-100" />
-
-      <section aria-labelledby="blk-physical">
-        <p id="blk-physical" className="mb-5">
-          <span className="block text-[10px] font-medium uppercase tracking-[0.22em] text-neutral-400">Physical</span>
-          <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-neutral-500">身体侧写</span>
-        </p>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-7">
-          <div>
-            <p className={gridLabel}>AGE · 年龄</p>
-            <input
-              value={form.age}
-              inputMode="numeric"
-              placeholder="—"
-              className={`${inputUnderline} mt-1`}
-              style={numStyle}
-              onChange={(e) => pushField({ age: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <p className={gridLabel}>GENDER · 性别</p>
-            <div className="mt-3 flex gap-3">
-              {(['male', 'female', 'other'] as Gender[]).map((g) => (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => pushField({ gender: g })}
-                  className={`rounded-full border px-4 py-1.5 text-[12px] font-medium transition-colors ${
-                    form.gender === g ? 'border-neutral-950 bg-neutral-950 text-white' : 'border-neutral-200 text-neutral-600'
-                  }`}
-                >
-                  {genderLabelZh(g)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className={gridLabel}>HEIGHT · 身高（厘米）</p>
-            <input
-              value={form.height}
-              inputMode="decimal"
-              placeholder="如 170"
-              className={`${inputUnderline} mt-1 font-mono text-[13px]`}
-              onChange={(e) => pushField({ height: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <p className={gridLabel}>WEIGHT · 体重（千克）</p>
+      <InkSubCard zh="档案速览" en="QUICK STATS" decor="none" glyph="stats">
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-[12px] border px-2.5 py-2.5" style={{ borderColor: SHEET_LINES, background: PAGE }}>
+            <DualLabel zh="体重" en="WEIGHT" />
             <input
               value={form.weight}
               inputMode="decimal"
-              placeholder="如 56"
-              className={`${inputUnderline} mt-1 font-mono text-[13px]`}
+              placeholder="—"
+              className="mt-1.5 w-full border-0 bg-transparent text-[15px] font-bold outline-none"
+              style={{ color: FG }}
               onChange={(e) => pushField({ weight: e.target.value })}
             />
           </div>
-        </div>
-
-        <div className="mt-8 border border-neutral-200 bg-neutral-50/80 px-4 py-4">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: MUTED }}>
-            BMI · 体质指数
-          </p>
-          {bmiMemo ? (
-            <p className="mt-2 font-mono text-[15px] text-neutral-950" style={{ letterSpacing: '-0.02em' }}>
-              {bmiMemo.value.toFixed(2)}
-              <span className="ml-3 text-[12px] font-normal text-neutral-600">
-                [<span style={{ color: FG }}>{bmiMemo.tier}</span>]
-              </span>
+          <div className="rounded-[12px] border px-2.5 py-2.5" style={{ borderColor: SHEET_LINES, background: PAGE }}>
+            <DualLabel zh="体质" en="BMI" />
+            <p className="mt-1.5 text-[15px] font-bold" style={{ color: FG }}>
+              {bmiMemo ? bmiMemo.value.toFixed(1) : '—'}
             </p>
-          ) : (
-            <p className="mt-2 text-[13px] font-light" style={{ color: MUTED }}>
-              填写身高体重后自动生成
-            </p>
-          )}
-        </div>
-      </section>
-
-      <hr className="my-10 border-neutral-100" />
-
-      <section aria-labelledby="blk-bonds">
-        <p id="blk-bonds" className="mb-5">
-          <span className="block text-[10px] font-medium uppercase tracking-[0.22em] text-neutral-400">Destiny · Bonds</span>
-          <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-neutral-500">命理与羁绊</span>
-        </p>
-
-        <div>
-          <p className={gridLabel}>BIRTHDAY · 生日（仅月日）</p>
-          <div className="mt-3 flex flex-wrap items-end gap-4">
-            <label className="min-w-[7rem] flex-1">
-              <span className="text-[10px] text-neutral-400">MONTH · 月</span>
-              <select
-                value={birthdayParts.month}
-                className={`${inputUnderline} mt-1 block w-full bg-transparent`}
-                style={numStyle}
-                onChange={(e) => {
-                  const month = Number(e.target.value)
-                  const maxD = daysInMonth(month)
-                  const day = Math.min(birthdayParts.day, maxD)
-                  pushField({ birthdayMD: formatMD(month, day) })
-                }}
-              >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((mo) => (
-                  <option key={mo} value={mo}>
-                    {mo} 月
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="min-w-[7rem] flex-1">
-              <span className="text-[10px] text-neutral-400">DAY · 日</span>
-              <select
-                value={birthdayParts.day}
-                className={`${inputUnderline} mt-1 block w-full bg-transparent`}
-                style={numStyle}
-                onChange={(e) => {
-                  const day = Number(e.target.value)
-                  pushField({ birthdayMD: formatMD(birthdayParts.month, day) })
-                }}
-              >
-                {Array.from({ length: daysInMonth(birthdayParts.month) }, (_, i) => i + 1).map((dy) => (
-                  <option key={dy} value={dy}>
-                    {dy} 日
-                  </option>
-                ))}
-              </select>
-            </label>
+            {bmiMemo ? (
+              <p className="mt-0.5 text-[10px]" style={{ color: MUTED }}>
+                {bmiMemo.tier}
+              </p>
+            ) : null}
           </div>
-          {zodiacMemo ? (
-            <p className="mt-3 px-1 font-serif text-sm italic tracking-wide text-neutral-700">
-              {zodiacMemo.zh}
-              <span className="ml-1.5 text-[12px] not-italic text-neutral-500">（{zodiacMemo.en}）</span>
-            </p>
-          ) : (
-            <p className="mt-3 px-1 text-[12px] text-neutral-400">选择月、日后自动推演星座（纯文字）</p>
-          )}
-        </div>
-
-        <label className="mt-10 block">
-          <p className={gridLabel}>ALIAS · 对你的称呼</p>
-          <p className="mt-2 text-[11px] leading-relaxed font-light text-neutral-400">
-            {isNpcPerspective
-              ? '与当前主角人脉里「你↔主角」连线一致，在此修改会写回人脉。'
-              : '主角如何称呼绑定身份的你；与同档案 NPC 共用一条人脉数据。'}
-          </p>
-          <input
-            value={protagonistCallsUser}
-            onChange={(e) => {
-              onProtagonistCallsInteraction()
-              onProtagonistCallsChange(e.target.value)
-            }}
-            placeholder="如：学姐、债主、小鬼…"
-            className={`${inputUnderline} mt-2`}
-          />
-        </label>
-
-        <div className="mt-10">
-          <p className={gridLabel}>MBTI · 人格（十六型）</p>
-          <button
-            type="button"
-            onClick={() => setMbtiSheet(true)}
-            className={`${inputUnderline} mt-1 flex w-full items-center justify-between text-left`}
-          >
-            <span className={form.mbti?.trim() ? 'text-neutral-950' : 'text-neutral-300'}>{form.mbti?.trim() || '未选择'}</span>
-          </button>
-        </div>
-
-        <div className="mt-10">
-          <p className={gridLabel}>动物塑 · 气质倾向</p>
-          <p className="mt-2 text-[11px] leading-relaxed font-light text-neutral-400">
-            选一种动物系气质作参考（猫系慢热、狗系黏人等）；AI 会内化到言行，不会在聊天里直说「猫塑」。
-          </p>
-          <button
-            type="button"
-            onClick={() => setAnimalSheet(true)}
-            className={`${inputUnderline} mt-1 flex w-full items-center justify-between text-left`}
-          >
-            <span className={form.animalArchetype?.trim() ? 'text-neutral-950' : 'text-neutral-300'}>
-              {getAnimalArchetypeOption(form.animalArchetype)?.label || '未选择'}
-            </span>
-          </button>
-        </div>
-
-        <div className="mt-10">
-          <p className={gridLabel}>ROLE · 身份（职业 / 定位）</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {IDENTITY_POOL.map((x) => (
-              <button
-                key={x}
-                type="button"
-                onClick={() => pushField({ identity: x })}
-                className={`rounded-full border px-4 py-1.5 text-[11px] font-medium tracking-wide transition-colors ${
-                  form.identity === x && !identityFocused
-                    ? 'border-neutral-950 bg-neutral-950 text-white'
-                    : 'border-neutral-200 text-neutral-600'
-                }`}
-              >
-                {x}
-              </button>
-            ))}
+          <div className="rounded-[12px] border px-2.5 py-2.5" style={{ borderColor: SHEET_LINES, background: PAGE }}>
+            <DualLabel zh="称呼" en="CALLS" />
+            <input
+              value={protagonistCallsUser}
+              placeholder="—"
+              className="mt-1.5 w-full border-0 bg-transparent text-[15px] font-bold outline-none"
+              style={{ color: FG }}
+              onChange={(e) => {
+                onProtagonistCallsInteraction()
+                onProtagonistCallsChange(e.target.value)
+              }}
+            />
           </div>
-          <input
-            value={form.identity}
-            onFocus={() => setIdentityFocused(true)}
-            onBlur={() => setIdentityFocused(false)}
-            placeholder="自定义职业或身份…"
-            className={`${inputUnderline} mt-6`}
-            onChange={(e) => pushField({ identity: e.target.value })}
-          />
         </div>
-      </section>
-
-      <hr className="my-10 border-neutral-100" />
-
-      <section aria-labelledby="blk-brief" className="relative">
-        <p id="blk-brief" className="mb-5">
-          <span className="block text-[10px] font-medium uppercase tracking-[0.22em] text-neutral-400">The Brief</span>
-          <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-neutral-500">角色简述</span>
+        <p className="mt-2.5 text-[10px] leading-relaxed" style={{ color: FAINT }}>
+          {isNpcPerspective
+            ? '称呼与人脉「你↔主角」同步。'
+            : '称呼为主角如何叫你；与同档 NPC 共用。'}
         </p>
-        <div className="relative">
+      </InkSubCard>
+
+      <InkSubCard
+        zh="角色简述"
+        en="THE BRIEF"
+        decor="seal"
+        seal={'LUMI\nFILE'}
+        glyph="brief"
+        right={
           <button
             type="button"
             disabled={bioGenerating}
             onClick={() => void onAiExpandBrief()}
-            title="AI 扩写"
-            className="absolute right-1 top-1 z-[1] inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2 text-[11px] font-medium text-neutral-800 shadow-[0_2px_8px_rgba(0,0,0,.04)] transition-colors hover:bg-neutral-50 disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium disabled:opacity-50"
+            style={{ borderColor: 'rgba(248,247,244,0.35)', color: CARD, background: 'transparent' }}
           >
-            <Sparkles className="size-3.5" strokeWidth={1.75} aria-hidden />
-            AI 扩写
+            <Sparkles className="size-3" strokeWidth={1.75} />
+            {bioGenerating ? '扩写中' : 'AI 扩写'}
           </button>
-          <PlaceholderAwareTextarea
-            value={displayBio}
-            onChange={(v) => {
-              setBioTyping(null)
-              pushField({ bio: v })
-            }}
-            characterId={editorId}
-            className={`${inputUnderline} min-h-[7.5rem] rounded-none border-neutral-100 pt-12 text-[13px] leading-relaxed`}
-            rows={7}
-            placeholder="简述ta的性格与背景（详尽设定请移步世界书）…"
-          />
-          <p className="mt-2 px-1 text-[10px] font-light tracking-wide text-neutral-400">
-            失焦时为模型预览句式；占位符会按通讯录规则替换。打字机渲染仅在 AI 扩写完成后演示。
-          </p>
-        </div>
-      </section>
+        }
+      >
+        <PlaceholderAwareTextarea
+          value={displayBio}
+          onChange={(v) => {
+            setBioTyping(null)
+            pushField({ bio: v })
+          }}
+          characterId={editorId}
+          className="min-h-[5.5rem] w-full resize-none border-0 bg-transparent text-[12px] leading-relaxed outline-none placeholder:text-[#9AA0A8]"
+          style={{ color: MUTED }}
+          rows={5}
+          placeholder="电竞选手，话少、胜负欲强。亲近时会露出别扭的温柔。"
+        />
+      </InkSubCard>
+
+      <div id="persona-card-birthday">
+        <InkSubCard zh="命理与定位" en="MORE" decor="fold" glyph="more">
+          <div className="space-y-3">
+            <div>
+              <DualLabel zh="生日" en="BIRTHDAY" />
+              <div className="mt-2 flex flex-wrap items-end gap-3">
+                <label className="min-w-[6rem] flex-1">
+                  <DualLabel zh="月" en="MONTH" />
+                  <select
+                    value={birthdayParts.month}
+                    className={`${inputUnderline} mt-1 block w-full bg-transparent`}
+                    style={numStyle}
+                    onChange={(e) => {
+                      const month = Number(e.target.value)
+                      const maxD = daysInMonth(month)
+                      const day = Math.min(birthdayParts.day, maxD)
+                      pushField({ birthdayMD: formatMD(month, day) })
+                    }}
+                  >
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((mo) => (
+                      <option key={mo} value={mo}>
+                        {mo} 月
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="min-w-[6rem] flex-1">
+                  <DualLabel zh="日" en="DAY" />
+                  <select
+                    value={birthdayParts.day}
+                    className={`${inputUnderline} mt-1 block w-full bg-transparent`}
+                    style={numStyle}
+                    onChange={(e) => {
+                      const day = Number(e.target.value)
+                      pushField({ birthdayMD: formatMD(birthdayParts.month, day) })
+                    }}
+                  >
+                    {Array.from({ length: daysInMonth(birthdayParts.month) }, (_, i) => i + 1).map((dy) => (
+                      <option key={dy} value={dy}>
+                        {dy} 日
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <DualLabel zh="动物塑" en="ANIMAL" />
+              <button
+                type="button"
+                onClick={() => setAnimalSheet(true)}
+                className={`${inputUnderline} mt-1 flex w-full items-center justify-between text-left`}
+              >
+                <span style={{ color: form.animalArchetype?.trim() ? FG : FAINT }}>
+                  {getAnimalArchetypeOption(form.animalArchetype)?.label || '未选择'}
+                </span>
+              </button>
+            </div>
+
+            <div>
+              <DualLabel zh="身份" en="ROLE" />
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {IDENTITY_POOL.map((x) => {
+                  const selected = form.identity === x && !identityFocused
+                  return (
+                    <button
+                      key={x}
+                      type="button"
+                      onClick={() => pushField({ identity: selected ? '' : x })}
+                      className="rounded-full border px-3 py-1 text-[11px] font-medium"
+                      style={{
+                        borderColor: selected ? FG : SHEET_LINES,
+                        background: selected ? FG : 'transparent',
+                        color: selected ? CARD : MUTED,
+                      }}
+                    >
+                      {x}
+                    </button>
+                  )
+                })}
+              </div>
+              <input
+                value={form.identity}
+                onFocus={() => setIdentityFocused(true)}
+                onBlur={() => setIdentityFocused(false)}
+                placeholder="自定义职业或身份…"
+                className={`${inputUnderline} mt-3`}
+                onChange={(e) => pushField({ identity: e.target.value })}
+              />
+            </div>
+          </div>
+        </InkSubCard>
+      </div>
+
+      <div
+        className="mt-4 flex items-center justify-center gap-2.5 rounded-[10px] py-2.5"
+        style={{ background: FG, color: CARD }}
+      >
+        <span className="h-px w-5 opacity-55" style={{ background: FOIL }} />
+        <span className="text-center">
+          <span className="block text-[10px] font-semibold leading-none">爱无止境</span>
+          <span className="mt-1 block font-serif text-[9px] tracking-[0.26em] opacity-80">LOVE ENDLESS</span>
+        </span>
+        <span className="h-px w-5 opacity-55" style={{ background: FOIL }} />
+      </div>
 
       <AnimatePresence>
         {avatarSheet && (

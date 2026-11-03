@@ -1,7 +1,7 @@
 import type { LumiSessionStatus, UnbanStatusState, UserLoginStatus, UserProfile, UserReportType } from './types'
 import { isUserActivated, needsUserInfoCorrection } from './types'
 import { getDeviceFingerprint } from './deviceFingerprint'
-import { isLocalDevBypassAuth, LOCAL_DEV_MOCK_STATUS } from './localDevMode'
+import { shouldBypassUserAuth, LOCAL_DEV_MOCK_STATUS } from './localDevMode'
 
 const TOKEN_KEY = 'us_auth_token'
 const USERNAME_KEY = 'us_username'
@@ -255,7 +255,7 @@ function markAuthVerifiedIfActivated(status: UserLoginStatus): void {
 
 /** 是否须在主页显示「正在检测账号状态」（页面刷新后开屏结束且已登录） */
 export function shouldShowAccountStatusCheck(): boolean {
-  if (isLocalDevBypassAuth()) return false
+  if (shouldBypassUserAuth()) return false
   if (getAuthToken()) return true
   return !!readBannedNotice()
 }
@@ -293,7 +293,7 @@ export function isLocallyAccountGated(): boolean {
 
 /** 无网时是否允许凭本地缓存直接进入 Lumi（仅正常已验证账号） */
 export function canEnterHomeOffline(): boolean {
-  if (isLocalDevBypassAuth()) return true
+  if (shouldBypassUserAuth()) return true
   if (!getAuthToken()) return false
   if (!readAuthVerified()) return false
   if (isLocallyAccountGated()) return false
@@ -311,7 +311,7 @@ export function resolveOfflineAuthVerifyError(local: UserLoginStatus | null): st
 
 /** 是否必须联网核查（封禁 / 挤下线 / 待更正） */
 export function needsRemoteAuthCheck(): boolean {
-  if (isLocalDevBypassAuth()) return false
+  if (shouldBypassUserAuth()) return false
   try {
     if (localStorage.getItem(PENDING_BAN_CHECK_KEY) === '1') return true
     if (localStorage.getItem(PENDING_SESSION_CHECK_KEY) === '1') return true
@@ -339,7 +339,7 @@ export function readLocalUserLoginStatus(): UserLoginStatus | null {
 
 /** 打开时是否联网校验会话（有 token 即查，仅入场验证弹窗触发） */
 export function shouldCheckLumiSessionOnOpen(): boolean {
-  if (isLocalDevBypassAuth()) return false
+  if (shouldBypassUserAuth()) return false
   return !!getAuthToken()
 }
 
@@ -413,7 +413,7 @@ export async function logoutUser(): Promise<void> {
 export async function sendLumiHeartbeat(): Promise<
   'ok' | 'session_conflict' | 'banned' | 'community_required' | 'ignored'
 > {
-  if (isLocalDevBypassAuth()) return 'ignored'
+  if (shouldBypassUserAuth()) return 'ignored'
   if (!getAuthToken()) return 'ignored'
   const fp = await getDeviceFingerprint()
   const r = await request<Record<string, never>>('POST', '/api/auth/lumi-heartbeat', { deviceId: fp.deviceId }, true)
@@ -451,7 +451,7 @@ export async function watchLumiSession(): Promise<'ok' | 'displaced' | 'ignored'
 export async function runLumiSessionGuard(): Promise<
   'ok' | 'displaced' | 'banned' | 'community_required' | 'ignored'
 > {
-  if (isLocalDevBypassAuth()) return 'ignored'
+  if (shouldBypassUserAuth()) return 'ignored'
   if (!shouldCheckLumiSessionOnOpen()) return 'ignored'
   const sessionResult = await watchLumiSession()
   if (sessionResult === 'displaced') return 'displaced'
@@ -777,7 +777,7 @@ export async function fetchUserStatus(options?: {
   force?: boolean
   timeoutMs?: number
 }): Promise<UserLoginStatus | null> {
-  if (isLocalDevBypassAuth()) return LOCAL_DEV_MOCK_STATUS
+  if (shouldBypassUserAuth()) return LOCAL_DEV_MOCK_STATUS
   if (!getAuthToken()) return null
 
   if (!shouldFetchUserStatus(options)) {

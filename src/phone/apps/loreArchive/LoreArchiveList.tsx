@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   ChevronDown,
+  FileUp,
   FolderClosed,
   Lock,
   Plus,
@@ -48,6 +49,9 @@ type Props = {
   onOpenEntry: (id: string) => void
   onOpenSystem: (preset: LoreArchiveBuiltinPresetMeta) => void
   onCreate: () => void
+  /** 导入 txt / docx（先弹版权声明） */
+  onImportDoc: () => void
+  docImportBusy?: boolean
   onSetEntryEnabled: (id: string, enabled: boolean) => void
   onSetBuiltinPresetEnabled: (id: LoreArchiveBuiltinPresetId, enabled: boolean) => void
   onOpenTagManager: () => void
@@ -181,6 +185,8 @@ export function LoreArchiveList({
   onOpenEntry,
   onOpenSystem,
   onCreate,
+  onImportDoc,
+  docImportBusy = false,
   onSetEntryEnabled,
   onSetBuiltinPresetEnabled,
   onOpenTagManager,
@@ -545,14 +551,28 @@ export function LoreArchiveList({
                 <p className="mt-2.5 text-[14px]" style={{ color: LA.mist }}>
                   还没有自定义世界书
                 </p>
-                <button
-                  type="button"
-                  onClick={onCreate}
-                  className="mt-3 rounded-full border px-5 py-2 text-[13px] font-medium"
-                  style={{ borderColor: LA.amber, color: LA.amber }}
-                >
-                  新建第一篇
-                </button>
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onCreate}
+                    className="rounded-full border px-5 py-2 text-[13px] font-medium"
+                    style={{ borderColor: LA.amber, color: LA.amber }}
+                  >
+                    新建第一篇
+                  </button>
+                  <button
+                    type="button"
+                    disabled={docImportBusy}
+                    onClick={onImportDoc}
+                    className="rounded-full border px-5 py-2 text-[13px] font-medium disabled:opacity-50"
+                    style={{ borderColor: LA.hairline, color: LA.ink }}
+                  >
+                    {docImportBusy ? '导入中…' : '导入文档'}
+                  </button>
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed" style={{ color: LA.mist }}>
+                  支持 .txt / .docx，导入前需确认版权声明
+                </p>
               </div>
             ) : filteredMine.length === 0 ? (
               <div className="mx-auto mt-4 max-w-[280px] text-center">
@@ -596,20 +616,36 @@ export function LoreArchiveList({
         ) : null}
       </div>
 
-      <motion.button
-        type="button"
-        aria-label="新建世界书"
-        onClick={onCreate}
-        className="fixed z-20 flex h-14 w-14 items-center justify-center rounded-full text-white"
+      <div
+        className="pointer-events-none fixed z-20 flex flex-col items-center gap-2.5"
         style={{
-          background: LA.amber,
           right: 'max(1.25rem, env(safe-area-inset-right, 0px))',
           bottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))',
         }}
-        whileTap={{ scale: 0.94 }}
       >
-        <Plus className="h-7 w-7" strokeWidth={1.5} />
-      </motion.button>
+        <motion.button
+          type="button"
+          aria-label="导入文档"
+          disabled={docImportBusy}
+          onClick={onImportDoc}
+          className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full border bg-white disabled:opacity-50"
+          style={{ borderColor: LA.hairline, color: LA.amber }}
+          whileTap={{ scale: 0.94 }}
+          title="导入 txt / docx"
+        >
+          <FileUp className="h-5 w-5" strokeWidth={1.75} />
+        </motion.button>
+        <motion.button
+          type="button"
+          aria-label="新建世界书"
+          onClick={onCreate}
+          className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full text-white"
+          style={{ background: LA.amber }}
+          whileTap={{ scale: 0.94 }}
+        >
+          <Plus className="h-7 w-7" strokeWidth={1.5} />
+        </motion.button>
+      </div>
     </div>
   )
 }

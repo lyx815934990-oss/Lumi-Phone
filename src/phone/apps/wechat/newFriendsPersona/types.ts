@@ -82,6 +82,63 @@ export type ScheduleTable = {
   updatedAt: number
 }
 
+/** 0=周一 … 6=周日 */
+export type ScheduleDayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6
+
+/** 预计时长单位（可选） */
+export type ScheduleDurationUnit = 'minute' | 'hour' | 'day'
+
+/**
+ * @deprecated 旧枚举；新数据以 `tag` 自定义标签为准。
+ * 读库时仍可能出现，会映射为中文 tag。
+ */
+export type ScheduleCategory = 'work' | 'study' | 'social' | 'rest' | 'storyExclusive'
+
+/** 结构化日程条目（周刊时间轴编辑 / 时段匹配 / AI 整周生成） */
+export type ScheduleEntry = {
+  id: string
+  dayOfWeek: ScheduleDayOfWeek
+  startTime: string
+  endTime: string
+  activity: string
+  /** 自定义分类标签（如「工作」「排练」）；可空 */
+  tag: string
+  /** 发生地点 */
+  location: string
+  /** 可选预计时长数值 */
+  durationAmount?: number | null
+  /** 可选预计时长单位 */
+  durationUnit?: ScheduleDurationUnit | null
+  /** @deprecated 旧分类；读入时映射到 tag */
+  category?: ScheduleCategory
+  /** @deprecated 旧「剧情专属」；新 UI 已移除 */
+  isStoryExclusive?: boolean
+}
+
+/** 日历日程事项状态 */
+export type ScheduleCalendarEventStatus = 'upcoming' | 'past' | 'done' | 'skipped'
+
+/** 日历形式日程（一次性 / 推剧情安排；非周循环） */
+export type ScheduleCalendarEvent = {
+  id: string
+  /** 公历锚点，如 2026年10月21日；优先剧情日 */
+  storyDay: string
+  startTime: string
+  endTime?: string | null
+  activity: string
+  tag: string
+  location: string
+  durationAmount?: number | null
+  durationUnit?: ScheduleDurationUnit | null
+  status: ScheduleCalendarEventStatus
+  /** 来源：手动 / AI 自动写入 */
+  source?: 'manual' | 'ai_auto'
+  /** 可选：模型备注「是否做过」的判断依据摘要 */
+  note?: string
+  createdAt: number
+  updatedAt: number
+}
+
 /** 角色关联的玩家扮演身份及其归属微信账号（多号分线） */
 export type PlayerIdentityLinkMeta = {
   playerIdentityId: string
@@ -102,6 +159,33 @@ export type CharacterAppearanceRefImage = {
   url: string
   kind: CharacterAppearanceRefKind
   addedAt: number
+}
+
+/** 演出卡：单人卡 / 多人卡（恋综、综艺、大逃杀等） */
+export type PersonaPackKind = 'solo' | 'ensemble'
+export type PersonaPackSeat = 'romance' | 'npc'
+export type PersonaPackPremiseKind = 'dating_show' | 'variety' | 'battle_royale' | 'custom'
+
+export type PersonaPack = {
+  id: string
+  createdAt: number
+  updatedAt: number
+  kind: PersonaPackKind
+  title: string
+  premiseKind: PersonaPackPremiseKind
+  /** 背景一句话或短述 */
+  premise: string
+  /** 共用规则（淘汰、禁联系、岛规等），写入各成员世界书 */
+  sharedRules: string
+  /** 可攻略席 character id */
+  memberIds: string[]
+  /** 节目组 / 具名 NPC character id */
+  npcIds: string[]
+  /** 人脉根：NPC 的 generatedForCharacterId 指向此人 */
+  anchorMemberId: string
+  wechatAccountId?: string
+  playerIdentityId?: string
+  worldBackgroundId?: string
 }
 
 export type Character = {
@@ -167,6 +251,15 @@ export type Character = {
   playerIdentityLinkMeta?: PlayerIdentityLinkMeta[]
   /** 若存在：该角色为「人脉生成」的 NPC，归属此主角 id */
   generatedForCharacterId?: string
+  /** 归属的演出卡（单人卡可不写；多人卡成员与节目组 NPC 必写） */
+  packId?: string
+  /** romance = 可攻略席；npc = 节目组/路人档。缺省：有 generatedForCharacterId 视为 npc */
+  packSeat?: PersonaPackSeat
+  /**
+   * 是否已加入微信通讯录。
+   * 可攻略席生成后默认 true；NPC 默认 false。仅作人设侧意图，通讯录仍以账号 personaContacts 为准。
+   */
+  wechatEnlisted?: boolean
   /** NPC 展示：兴趣（约 3 个） */
   interests?: string[]
   /** NPC 展示：雷点（约 2 个） */
@@ -187,8 +280,17 @@ export type Character = {
   remark?: string
   /** 资料设置：星标朋友 */
   isStarred?: boolean
-  /** 资料设置：是否加入黑名单 */
+  /** 聊天设置：是否加入黑名单（用户拉黑该角色） */
   isBlocked?: boolean
+  /** 用户拉黑该角色的时间戳（毫秒）；用于标记拉黑后消息未送达 */
+  blockedAt?: number
+  /**
+   * 剧情：对方（角色）是否已将用户拉黑。
+   * 为 true 时用户发出的消息带未送达感叹号；角色虚构上收不到。
+   */
+  blockedByPeer?: boolean
+  /** 对方拉黑用户的时间戳（毫秒） */
+  blockedByPeerAt?: number
   /** 资料设置：朋友圈权限 */
   momentsPermission?: {
     /** true = 不让他看我朋友圈 */
@@ -196,6 +298,12 @@ export type Character = {
   }
   /** 身份/角色日程表：供 AI 生成回复参考（优先级与长期记忆一致） */
   schedule?: ScheduleTable
+  /** 结构化日程条目（与 schedule 表格同步；含剧情专属标记） */
+  scheduleEntries?: ScheduleEntry[]
+  /** 日历形式日程事件（按公历/剧情日） */
+  scheduleCalendarEvents?: ScheduleCalendarEvent[]
+  /** 是否在私聊/线下自动根据明确安排写入日历日程（默认关） */
+  scheduleCalendarAutoUpdateEnabled?: boolean
 }
 
 /** 单会话聊天偏好（IndexedDB `chatConversationSettings`，主键 conversationKey） */
@@ -296,6 +404,24 @@ export type ChatConversationSettingsRow = {
   heartWhisperSyncEnabled?: boolean
   /** 心语面板：每条角色文字/语音气泡同轮生成一句内心 OS */
   innerOsSyncEnabled?: boolean
+  /**
+   * 线上动描模式：回复时可输出 `【动描】` 旁白行，与气泡穿插；
+   * 聊天气泡间居中展示，并走同一揭示队列。默认关。
+   */
+  onlineActionNarrationEnabled?: boolean
+  /** 每轮动描条数下限 1–8；缺省 2（仅 onlineActionNarrationEnabled 时生效） */
+  onlineActionNarrationCountMin?: number
+  /** 每轮动描条数上限 1–8；缺省 4 */
+  onlineActionNarrationCountMax?: number
+  /**
+   * 是否限制每轮可见回复气泡条数。缺省 / false = 关闭（由模型自行判断条数）。
+   * 开启后配合 replyBubbleCountMin/Max。
+   */
+  replyBubbleCountEnabled?: boolean
+  /** 每轮可见回复气泡条数下限（≥1）；仅 replyBubbleCountEnabled 时生效 */
+  replyBubbleCountMin?: number
+  /** 每轮可见回复气泡条数上限（≥最少）；仅 replyBubbleCountEnabled 时生效；不设产品封顶 */
+  replyBubbleCountMax?: number
   /** 角色每次发图张数下限 1–9；缺省 1。发图本身按语境适量（须「支持发图」开启） */
   imageRoundCountMin?: number
   /** 角色每次发图张数上限 1–9；缺省 1 */
@@ -324,7 +450,7 @@ export type ChatConversationSettingsRow = {
   /**
    * 线上近端注入主模式（与线下约会「上下文原文 / 近端摘要」对齐，互斥）：
    * - `full_text`：按最大 Token 自最新往历史装填原文
-   * - `near_rounds`：只带最近 N 轮（默认）
+   * - `near_rounds`：只带最近 N 轮原文全文（默认；不设 token/字数上限）
    */
   recentPrivateInjectMode?: 'full_text' | 'near_rounds'
   /**
@@ -1049,6 +1175,55 @@ export type WeChatPulseSharePayload = {
   trendingTitle?: string
 }
 
+/** 同人通讯社分享卡 · 楼中楼回复 */
+export type WeChatForumShareReply = {
+  authorName: string
+  content: string
+  likeCount?: number
+  /** 用户是否点过赞 */
+  likedByViewer?: boolean
+  isPostAuthor?: boolean
+  /** 回复对象展示名（可选） */
+  replyToName?: string
+}
+
+/** 同人通讯社分享卡 · 一级评论（可带楼中楼） */
+export type WeChatForumShareComment = {
+  authorName: string
+  content: string
+  likeCount?: number
+  likedByViewer?: boolean
+  isPostAuthor?: boolean
+  replies?: WeChatForumShareReply[]
+}
+
+/** 同人通讯社帖子分享卡片（持久化于 chatMessages.forumShare；正文自包含便于讨论） */
+export type WeChatForumSharePayload = {
+  kind: 'forum_share'
+  shareId: string
+  postId: string
+  /** 论坛切片所属角色 id（广场板为 __plaza__） */
+  boardCharacterId: string
+  title: string
+  authorName: string
+  /** 如「本命同人」 */
+  kindLabel: string
+  /** 作者的话 */
+  authorNote?: string
+  /** 全文正文（含对白标记） */
+  body: string
+  /** 帖子点赞数（含用户点赞） */
+  likeCount?: number
+  /** 用户是否点过这篇帖 */
+  likedByViewer?: boolean
+  /** 一级评论数 */
+  topCommentCount?: number
+  /** 含楼中楼的总评论数 */
+  totalCommentCount?: number
+  /** 评论全文（含楼中楼与点赞），供阅读与 AI 讨论 */
+  commentsPreview?: WeChatForumShareComment[]
+}
+
 /** @deprecated 旧版字段，加载时由 idb 迁移；新消息勿写 */
 export type WeChatLocationPayloadLegacy = WeChatLocationPayload & {
   label?: string
@@ -1247,6 +1422,8 @@ export type WeChatChatMessage = {
   takeoutOrder?: WeChatTakeoutOrderPayload
   /** Lumi Pulse 微博分享卡片 */
   pulseShare?: WeChatPulseSharePayload
+  /** 同人通讯社帖子分享卡片 */
+  forumShare?: WeChatForumSharePayload
   /** 表情包引用名（与 `[表情包]引用名` 一致，供 AI 历史与防重复） */
   stickerRef?: string
   /** 合并转发聊天记录卡片 */
@@ -1311,6 +1488,18 @@ export type WeChatChatMessage = {
      * 禁言期间仍生成的角色发言：原文落库；聊天气泡侧全员不展示，配套系统灰条供群主/管理员点「查看」。
      */
     mutedMessageVisibleToModeratorsOnly?: boolean
+    /** 线上动描：居中旁白条（非系统灰条） */
+    actionNarration?: boolean
+    /**
+     * 因拉黑未送达：界面仍显示气泡；
+     * AI 上下文视为对方未收到。
+     */
+    undeliveredDueToBlock?: boolean
+    /**
+     * 被拉黑方发出的消息：红色感叹号 +「消息发送失败」提示条。
+     * （用户拉黑角色时标在角色气泡上；角色拉黑用户时标在用户气泡上。）
+     */
+    blockRejectIcon?: boolean
   }
 }
 

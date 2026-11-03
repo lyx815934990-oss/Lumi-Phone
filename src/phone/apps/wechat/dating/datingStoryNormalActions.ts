@@ -60,6 +60,8 @@ export type DatingStoryNormalActions = {
 
   toggleThinkingChain: () => void
   thinkingChainEnabled: boolean
+  setPlotSseEnabled: (v: boolean) => void
+  plotSseEnabled: boolean
   godLocksNoInterrupt: boolean
   autoUserReaction: boolean
 
@@ -96,6 +98,7 @@ export type DatingStoryNormalActions = {
   setMainCharacterOffstage: (v: boolean) => void
   setGenerateParallelOnSend: (v: boolean) => void
   setGenerateIfLineOnSend: (v: boolean) => void
+  setConsolePromptsEnabled: (v: boolean) => void
   setCommentModeEnabled: (v: boolean) => void
   setPlotArtifactVisualEnabled: (v: boolean) => void
   setPlotArtifactVisualPresetId: (id: string) => void
@@ -141,6 +144,7 @@ export type DatingStoryNormalActions = {
     lengthTargetChars: number,
     perspective?: NarrativePerspective,
   ) => Promise<void>
+  persistPlotDimensionLengthTarget: (kind: PlotDimensionKind, chars: number) => void
   setPlotVersionIndex: (plotId: string, index: number) => void
   deletePlotItem: (plotId: string) => void
   saveEditedPlotBody: (

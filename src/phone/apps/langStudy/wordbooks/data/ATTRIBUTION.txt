@@ -1,0 +1,12 @@
+Vocabulary levels, headwords, readings, English glosses & examples: OpenJLPT (CC BY-SA 4.0)
+https://github.com/evanclan/OpenJLPT
+Chinese glosses matched from Japanese-Chinese-thesaurus
+https://github.com/lxl66566/Japanese-Chinese-thesaurus
+
+Minna no Nihongo lesson vocab structure: MinnaNoDS (community dataset)
+https://github.com/vitto4/MinnaNoDS
+Chinese glosses for Minna matched from Japanese-Chinese-thesaurus when available; else English from MinnaNoDS.
+
+新标准日本语（初级）课序词表：Rabbit-Hu/vocab-helper 公开词表
+https://github.com/Rabbit-Hu/vocab-helper
+For personal study with the official textbooks; not a substitute for the books.

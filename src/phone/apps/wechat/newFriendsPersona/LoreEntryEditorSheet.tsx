@@ -29,10 +29,32 @@ import type { Character, WorldBook, WorldBookItem } from './types'
 
 const WB_ITEM_GENERATING_TEXT = '生成中…'
 
+/** 与人设名片 / 世界书架一致的硬边水墨色 */
+const INK = '#1E2024'
+const PAGE = '#EDEBE7'
+const CARD = '#F8F7F4'
+const LINE = '#D2D0CB'
+const FOIL = '#5A6574'
+const MUTED = '#6A6E76'
+const FAINT = '#9AA0A8'
+
 const BODY_TEXTAREA_CLASS =
-  'block min-h-[160px] w-full resize-none border-0 bg-transparent text-[15px] leading-relaxed text-stone-800 outline-none placeholder:text-stone-300 read-only:cursor-wait [-webkit-overflow-scrolling:touch]'
+  'block min-h-[160px] w-full resize-none border-0 bg-transparent text-[15px] leading-relaxed outline-none read-only:cursor-wait [-webkit-overflow-scrolling:touch]'
 
 type PeerRow = { id: string; label: string; role: 'archive_root' | 'network_npc' }
+
+function InkLabel({ zh, en }: { zh: string; en: string }) {
+  return (
+    <div className="mb-2">
+      <p className="text-[11px] font-semibold leading-none" style={{ color: INK }}>
+        {zh}
+      </p>
+      <p className="mt-1 font-serif text-[9px] tracking-[0.2em]" style={{ color: FOIL }}>
+        {en}
+      </p>
+    </div>
+  )
+}
 
 function measureIosKeyboardPadPx(): number {
   const vv = window.visualViewport
@@ -341,7 +363,8 @@ export function LoreEntryEditorSheet({
             key="lore-sheet-backdrop"
             type="button"
             aria-label="关闭蒙版"
-            className="fixed inset-0 z-[1150] bg-stone-900/25 backdrop-blur-sm"
+            className="fixed inset-0 z-[1150]"
+            style={{ background: 'rgba(30,32,36,0.42)' }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -354,7 +377,7 @@ export function LoreEntryEditorSheet({
             role="dialog"
             aria-modal="true"
             aria-labelledby="lore-entry-editor-title"
-            className="fixed inset-x-0 z-[1160] flex flex-col overflow-hidden rounded-t-[26px] border border-white/70 bg-white/80 shadow-[0_-12px_48px_rgba(0,0,0,0.12)] backdrop-blur-2xl"
+            className="fixed inset-x-0 z-[1160] flex flex-col overflow-hidden border-t-[1.5px]"
             initial={{ y: '105%' }}
             animate={{ y: 0 }}
             exit={{ y: '105%' }}
@@ -363,6 +386,9 @@ export function LoreEntryEditorSheet({
               bottom: keyboardPadPx > 0 ? keyboardPadPx : 0,
               height: sheetMaxHeight,
               maxHeight: sheetMaxHeight,
+              background: CARD,
+              borderColor: INK,
+              borderRadius: '14px 14px 0 0',
               paddingBottom:
                 keyboardPadPx > 0
                   ? '0.75rem'
@@ -370,199 +396,265 @@ export function LoreEntryEditorSheet({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex shrink-0 flex-col px-4 pt-2">
-              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-stone-300/80" aria-hidden />
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  className="rounded-full p-2 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800"
-                  aria-label="删除本条"
-                  onClick={() => {
-                    onDeleteItem(wbId, itemId)
-                    onClose()
-                  }}
-                >
-                  <Trash2 className="size-5 stroke-[1.5]" />
-                </button>
-                <p id="lore-entry-editor-title" className="flex-1 text-center text-[11px] font-medium uppercase tracking-[0.2em] text-stone-400">
-                  Lore Entry
+            <div
+              className="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5"
+              style={{ background: INK, color: CARD }}
+            >
+              <button
+                type="button"
+                className="border border-white/25 p-1.5 opacity-85 transition hover:opacity-100"
+                style={{ borderRadius: 8 }}
+                aria-label="删除本条"
+                onClick={() => {
+                  onDeleteItem(wbId, itemId)
+                  onClose()
+                }}
+              >
+                <Trash2 className="size-4 stroke-[1.5]" />
+              </button>
+              <div className="min-w-0 flex-1 text-center">
+                <p id="lore-entry-editor-title" className="text-[12px] font-semibold leading-none">
+                  {item.priority === 'after' ? '尾声条目' : '固定条目'}
                 </p>
-                <button
-                  type="button"
-                  className="rounded-full p-2 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800"
-                  aria-label="关闭"
-                  onClick={onClose}
-                >
-                  <X className="size-5" strokeWidth={2} />
-                </button>
+                <p className="mt-1 font-serif text-[9px] tracking-[0.22em] opacity-80">
+                  {item.priority === 'after' ? 'EPILOGUE ENTRY' : 'FIXED ENTRY'}
+                </p>
               </div>
+              <button
+                type="button"
+                className="border border-white/25 p-1.5 opacity-85 transition hover:opacity-100"
+                style={{ borderRadius: 8 }}
+                aria-label="关闭"
+                onClick={onClose}
+              >
+                <X className="size-4" strokeWidth={2} />
+              </button>
             </div>
 
             <div
               ref={scrollRef}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 pb-3 [-webkit-overflow-scrolling:touch]"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-3 pb-3 pt-3 [-webkit-overflow-scrolling:touch]"
+              style={{ background: PAGE }}
             >
-              <input
-                value={item.name}
-                onChange={(e) => onPatchItem(wbId, itemId, { name: e.target.value })}
-                className="w-full border-0 bg-transparent py-1 text-[22px] font-semibold tracking-tight text-stone-900 outline-none placeholder:text-stone-300"
-                placeholder="法则标题"
-              />
-
-              <div className="mt-4">
-                <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-stone-400">生效时机</p>
-                <div className="flex rounded-2xl bg-stone-100/90 p-1">
-                  {(
-                    [
-                      { v: 'before' as const, zh: '序言介入', en: 'Before Chat' },
-                      { v: 'after' as const, zh: '尾声延展', en: 'After Chat' },
-                    ] as const
-                  ).map(({ v, zh, en }) => {
-                    const active = item.priority === v
-                    return (
-                      <button
-                        key={v}
-                        type="button"
-                        className={`flex-1 rounded-xl py-2.5 text-center transition-all duration-200 ${
-                          active ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'
-                        }`}
-                        onClick={() => onPatchItem(wbId, itemId, { priority: v })}
-                      >
-                        <span className="block text-[13px] font-medium">{zh}</span>
-                        <span className="mt-0.5 block text-[9px] font-normal opacity-70">{en}</span>
-                      </button>
-                    )
-                  })}
+              <div
+                className="overflow-hidden border-[1.5px]"
+                style={{ borderColor: INK, background: CARD, borderRadius: 12 }}
+              >
+                <div className="px-3 pb-3 pt-3">
+                  <InkLabel zh="法则标题" en="TITLE" />
+                  <input
+                    value={item.name}
+                    onChange={(e) => onPatchItem(wbId, itemId, { name: e.target.value })}
+                    className="w-full border-0 border-b bg-transparent py-1 font-serif text-[18px] font-semibold tracking-tight outline-none"
+                    style={{ color: INK, borderColor: LINE }}
+                    placeholder="未命名法则"
+                  />
                 </div>
-              </div>
 
-              {item.priority === 'after' && (onResetToInitial || onMarkAsInitial) ? (
-                <div className="mt-3 space-y-2">
-                  <button
-                    type="button"
-                    disabled={!initialBody}
-                    onClick={() => setShowInitialPreview((v) => !v)}
-                    className={`flex w-full items-center justify-center gap-1.5 rounded-2xl border px-3 py-2.5 text-[12px] font-medium transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 ${
-                      showInitialPreview
-                        ? 'border-violet-300/90 bg-violet-50 text-violet-950'
-                        : 'border-stone-200/90 bg-stone-50/90 text-stone-600 hover:bg-white'
-                    }`}
+                <div className="border-t px-3 py-3" style={{ borderColor: LINE }}>
+                  <InkLabel zh="生效时机" en="TIMING" />
+                  <div className="flex gap-0 overflow-hidden border-[1.5px]" style={{ borderColor: INK, borderRadius: 10 }}>
+                    {(
+                      [
+                        { v: 'before' as const, zh: '固定', en: 'FIXED' },
+                        { v: 'after' as const, zh: '尾声', en: 'EPILOGUE' },
+                      ] as const
+                    ).map(({ v, zh, en }, idx) => {
+                      const active = item.priority === v
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          className="flex-1 py-2.5 text-center transition-colors"
+                          style={{
+                            background: active ? INK : CARD,
+                            color: active ? CARD : MUTED,
+                            borderLeft: idx > 0 ? `1.5px solid ${INK}` : undefined,
+                          }}
+                          onClick={() => onPatchItem(wbId, itemId, { priority: v })}
+                        >
+                          <span className="block text-[13px] font-semibold">{zh}</span>
+                          <span className="mt-0.5 block font-serif text-[9px] tracking-[0.14em] opacity-75">
+                            {en}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {item.priority === 'after' && (onResetToInitial || onMarkAsInitial) ? (
+                  <div className="border-t px-3 py-2.5" style={{ borderColor: LINE }}>
+                    <div className="flex items-center gap-2">
+                      <div className="min-w-0 shrink-0">
+                        <p className="text-[11px] font-semibold leading-none" style={{ color: INK }}>
+                          定点尾声
+                        </p>
+                        <p className="mt-1 font-serif text-[9px] tracking-[0.18em]" style={{ color: FOIL }}>
+                          ANCHOR
+                        </p>
+                      </div>
+                      <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          disabled={!initialBody}
+                          title={
+                            showInitialPreview
+                              ? '收起定点预览'
+                              : initialBody
+                                ? '预览最初尾声'
+                                : '尚无定点可预览'
+                          }
+                          onClick={() => setShowInitialPreview((v) => !v)}
+                          className="inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-medium disabled:opacity-40"
+                          style={{
+                            borderColor: showInitialPreview ? INK : LINE,
+                            background: showInitialPreview ? INK : CARD,
+                            color: showInitialPreview ? CARD : MUTED,
+                            borderRadius: 8,
+                          }}
+                        >
+                          {showInitialPreview ? (
+                            <EyeOff className="size-3 shrink-0" strokeWidth={2} />
+                          ) : (
+                            <Eye className="size-3 shrink-0" strokeWidth={2} />
+                          )}
+                          预览
+                        </button>
+                        {onMarkAsInitial ? (
+                          <button
+                            type="button"
+                            disabled={!canMarkAsInitial && !confirmMarkInitial}
+                            title={
+                              confirmMarkInitial
+                                ? initialBody
+                                  ? '再点确认：用当前正文覆盖定点'
+                                  : '再点确认：保存为最初版本'
+                                : canMarkAsInitial
+                                  ? initialBody
+                                    ? '将当前正文标为最初版本'
+                                    : '保存当前为最初版本'
+                                  : rawBody.trim()
+                                    ? '当前已是定点稿'
+                                    : '正文为空，无法定点'
+                            }
+                            onClick={() => {
+                              if (!canMarkAsInitial) return
+                              if (!confirmMarkInitial) {
+                                setConfirmMarkInitial(true)
+                                window.setTimeout(() => setConfirmMarkInitial(false), 3600)
+                                return
+                              }
+                              setConfirmMarkInitial(false)
+                              onMarkAsInitial()
+                            }}
+                            className="inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-medium disabled:opacity-40"
+                            style={{
+                              borderColor: confirmMarkInitial ? INK : LINE,
+                              background: confirmMarkInitial ? PAGE : CARD,
+                              color: confirmMarkInitial ? INK : MUTED,
+                              borderRadius: 8,
+                            }}
+                          >
+                            <BookmarkPlus className="size-3 shrink-0" strokeWidth={2} />
+                            {confirmMarkInitial ? '确认定点' : '定点'}
+                          </button>
+                        ) : null}
+                        {onResetToInitial ? (
+                          <button
+                            type="button"
+                            disabled={!canResetToInitial && !confirmResetInitial}
+                            title={
+                              confirmResetInitial
+                                ? '再点确认：恢复本条最初内容'
+                                : canResetToInitial
+                                  ? '恢复本条最初尾声'
+                                  : initialBody
+                                    ? '已是最初尾声'
+                                    : '尚无定点可恢复'
+                            }
+                            onClick={() => {
+                              if (!canResetToInitial) return
+                              if (!confirmResetInitial) {
+                                setConfirmResetInitial(true)
+                                window.setTimeout(() => setConfirmResetInitial(false), 3600)
+                                return
+                              }
+                              setConfirmResetInitial(false)
+                              onResetToInitial()
+                            }}
+                            className="inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-medium disabled:opacity-40"
+                            style={{
+                              borderColor: confirmResetInitial ? '#B45309' : LINE,
+                              background: confirmResetInitial ? '#FEF3C7' : CARD,
+                              color: confirmResetInitial ? '#92400E' : MUTED,
+                              borderRadius: 8,
+                            }}
+                          >
+                            <RotateCcw className="size-3 shrink-0" strokeWidth={2} />
+                            {confirmResetInitial ? '确认恢复' : '恢复'}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <AnimatePresence initial={false}>
+                      {showInitialPreview && initialBody ? (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div
+                            className="mt-2 border-[1.5px] px-3 py-2.5"
+                            style={{ borderColor: INK, background: PAGE, borderRadius: 10 }}
+                          >
+                            <p
+                              className="mb-1.5 font-serif text-[9px] tracking-[0.16em]"
+                              style={{ color: FOIL }}
+                            >
+                              定点稿预览
+                              {initialBody === rawBody.trim() ? ' · 与当前相同' : ' · 与当前不同'}
+                            </p>
+                            <p
+                              className="whitespace-pre-wrap text-[13px] leading-relaxed"
+                              style={{ color: INK }}
+                            >
+                              {initialPreviewLoading ? '展开占位符中…' : viewInitialText}
+                            </p>
+                          </div>
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
+                  </div>
+                ) : null}
+
+                <div className="border-t px-3 py-3" style={{ borderColor: LINE }}>
+                  <InkLabel zh="AI 灵感" en="KEYWORDS" />
+                  <div
+                    className="flex items-center gap-2 border-[1.5px] px-2.5 py-2"
+                    style={{ borderColor: INK, background: PAGE, borderRadius: 10 }}
                   >
-                    {showInitialPreview ? (
-                      <EyeOff className="size-3.5 shrink-0" strokeWidth={2} />
-                    ) : (
-                      <Eye className="size-3.5 shrink-0" strokeWidth={2} />
-                    )}
-                    {showInitialPreview
-                      ? '收起定点预览'
-                      : initialBody
-                        ? '预览最初尾声'
-                        : '尚无定点可预览'}
-                  </button>
-                  <AnimatePresence initial={false}>
-                    {showInitialPreview && initialBody ? (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="rounded-2xl border border-violet-200/80 bg-violet-50/60 px-3.5 py-3">
-                          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-violet-500/90">
-                            定点稿预览
-                            {initialBody === rawBody.trim() ? ' · 与当前正文相同' : ' · 与当前正文不同'}
-                          </p>
-                          <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-stone-700">
-                            {initialPreviewLoading ? '展开占位符中…' : viewInitialText}
-                          </p>
-                        </div>
-                      </motion.div>
-                    ) : null}
-                  </AnimatePresence>
-                  {onMarkAsInitial ? (
-                    <button
-                      type="button"
-                      disabled={!canMarkAsInitial && !confirmMarkInitial}
-                      onClick={() => {
-                        if (!canMarkAsInitial) return
-                        if (!confirmMarkInitial) {
-                          setConfirmMarkInitial(true)
-                          window.setTimeout(() => setConfirmMarkInitial(false), 3600)
-                          return
-                        }
-                        setConfirmMarkInitial(false)
-                        onMarkAsInitial()
-                      }}
-                      className={`flex w-full items-center justify-center gap-1.5 rounded-2xl border px-3 py-2.5 text-[12px] font-medium transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 ${
-                        confirmMarkInitial
-                          ? 'border-sky-400/80 bg-sky-50 text-sky-950'
-                          : 'border-stone-200/90 bg-stone-50/90 text-stone-600 hover:bg-white'
-                      }`}
-                    >
-                      <BookmarkPlus className="size-3.5 shrink-0" strokeWidth={2} />
-                      {confirmMarkInitial
-                        ? initialBody
-                          ? '再点确认：用当前正文覆盖定点'
-                          : '再点确认：保存为最初版本'
-                        : canMarkAsInitial
-                          ? initialBody
-                            ? '将当前正文标为最初版本'
-                            : '保存当前为最初版本'
-                          : rawBody.trim()
-                            ? '当前已是定点稿'
-                            : '正文为空，无法定点'}
-                    </button>
-                  ) : null}
-                  {onResetToInitial ? (
-                    <button
-                      type="button"
-                      disabled={!canResetToInitial && !confirmResetInitial}
-                      onClick={() => {
-                        if (!canResetToInitial) return
-                        if (!confirmResetInitial) {
-                          setConfirmResetInitial(true)
-                          window.setTimeout(() => setConfirmResetInitial(false), 3600)
-                          return
-                        }
-                        setConfirmResetInitial(false)
-                        onResetToInitial()
-                      }}
-                      className={`flex w-full items-center justify-center gap-1.5 rounded-2xl border px-3 py-2.5 text-[12px] font-medium transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 ${
-                        confirmResetInitial
-                          ? 'border-amber-400/80 bg-amber-50 text-amber-900'
-                          : 'border-stone-200/90 bg-stone-50/90 text-stone-600 hover:bg-white'
-                      }`}
-                    >
-                      <RotateCcw className="size-3.5 shrink-0" strokeWidth={2} />
-                      {confirmResetInitial
-                        ? '再点确认：恢复本条最初内容'
-                        : canResetToInitial
-                          ? '恢复本条最初尾声'
-                          : initialBody
-                            ? '已是最初尾声'
-                            : '尚无定点可恢复'}
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <div className="mt-5">
-                <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-stone-400">AI 灵感</p>
-                <div className="rounded-2xl bg-gradient-to-r from-amber-100/70 via-stone-200/80 to-amber-50/70 p-[1px] shadow-sm">
-                  <div className="flex items-center gap-2 rounded-[15px] bg-white/95 px-3 py-2.5 backdrop-blur-md">
-                    <Sparkles className="size-4 shrink-0 text-amber-600/75" strokeWidth={1.8} />
+                    <Sparkles className="size-3.5 shrink-0" style={{ color: FOIL }} strokeWidth={1.8} />
                     <input
                       value={item.keywords ?? ''}
                       onChange={(e) => onPatchItem(wbId, itemId, { keywords: e.target.value })}
                       readOnly={generating}
-                      className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-stone-800 outline-none placeholder:text-stone-400"
-                      placeholder="输入关键词，AI 替你推演世界法则…"
+                      className="min-w-0 flex-1 border-0 bg-transparent text-[13px] outline-none"
+                      style={{ color: INK }}
+                      placeholder="关键词，由 AI 推演法则…"
                     />
                     <button
                       type="button"
                       disabled={!canUseAi || generating}
-                      className="shrink-0 rounded-full bg-stone-900 px-4 py-2 text-[12px] font-medium text-white shadow-sm transition-opacity disabled:opacity-40"
+                      className="shrink-0 border-[1.5px] px-3 py-1.5 text-[12px] font-semibold transition-opacity disabled:opacity-40"
+                      style={{
+                        borderColor: INK,
+                        background: INK,
+                        color: CARD,
+                        borderRadius: 8,
+                      }}
                       onClick={() => {
                         if (!canUseAi || generating) return
                         onOpenAiLengthModal()
@@ -572,166 +664,212 @@ export function LoreEntryEditorSheet({
                     </button>
                   </div>
                 </div>
-              </div>
 
-              {!forPlayerIdentity && bodyEditing ? (
-                <div className="mt-4">
-                  <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-stone-400">快捷插入</p>
-                  <div className="-mx-1 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    <button
-                      type="button"
-                      disabled={generating}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => insertToken(WORLD_BOOK_CHAR_PLACEHOLDER)}
-                      title={`插入原文：${WORLD_BOOK_CHAR_PLACEHOLDER}`}
-                      className="shrink-0 rounded-full bg-stone-100 px-3 py-1.5 text-[11px] text-stone-700 transition-colors hover:bg-stone-200 disabled:opacity-50"
-                    >
-                      当前角色
-                    </button>
-                    <button
-                      type="button"
-                      disabled={generating || !worldBookUserInsertContext}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => insertToken(WORLD_BOOK_USER_PLACEHOLDER)}
-                      title={
-                        worldBookUserInsertContext
-                          ? `插入 {{user}}，后台绑定 ${worldBookUserInsertContext.lineLabel}（${worldBookUserInsertContext.displayName}）`
-                          : '请先选择当前微信账号与扮演身份'
-                      }
-                      className="shrink-0 rounded-full bg-stone-100 px-3 py-1.5 text-[11px] text-stone-700 transition-colors hover:bg-stone-200 disabled:opacity-50"
-                    >
-                      {worldBookUserInsertContext
-                        ? `玩家·${worldBookUserInsertContext.displayName.length > 6 ? `${worldBookUserInsertContext.displayName.slice(0, 5)}…` : worldBookUserInsertContext.displayName}`
-                        : '绑定的玩家'}
-                    </button>
-                    {networkPeersForInsert.map((peer) => {
-                      const token = linkedCharacterPlaceholder(peer.id)
-                      const zhLabel =
-                        peer.role === 'archive_root'
-                          ? '档案主角'
-                          : `人脉·${peer.label.length > 8 ? `${peer.label.slice(0, 7)}…` : peer.label}`
-                      return (
+                {!forPlayerIdentity && bodyEditing ? (
+                  <div className="border-t px-3 py-3" style={{ borderColor: LINE }}>
+                    <InkLabel zh="快捷插入" en="INSERT" />
+                    <div className="-mx-0.5 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      {(
+                        [
+                          {
+                            key: 'char',
+                            label: '当前角色',
+                            disabled: generating,
+                            title: `插入原文：${WORLD_BOOK_CHAR_PLACEHOLDER}`,
+                            onClick: () => insertToken(WORLD_BOOK_CHAR_PLACEHOLDER),
+                          },
+                          {
+                            key: 'user',
+                            label: worldBookUserInsertContext
+                              ? `玩家·${worldBookUserInsertContext.displayName.length > 6 ? `${worldBookUserInsertContext.displayName.slice(0, 5)}…` : worldBookUserInsertContext.displayName}`
+                              : '绑定的玩家',
+                            disabled: generating || !worldBookUserInsertContext,
+                            title: worldBookUserInsertContext
+                              ? `插入 {{user}}，后台绑定 ${worldBookUserInsertContext.lineLabel}（${worldBookUserInsertContext.displayName}）`
+                              : '请先选择当前微信账号与扮演身份',
+                            onClick: () => insertToken(WORLD_BOOK_USER_PLACEHOLDER),
+                          },
+                        ] as const
+                      ).map((chip) => (
                         <button
-                          key={peer.id}
+                          key={chip.key}
                           type="button"
-                          disabled={generating}
+                          disabled={chip.disabled}
                           onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => insertToken(token)}
-                          title={`插入原文：${token}`}
-                          className="shrink-0 max-w-[148px] truncate rounded-full bg-stone-100 px-3 py-1.5 text-[11px] text-stone-700 transition-colors hover:bg-stone-200 disabled:opacity-50"
+                          onClick={chip.onClick}
+                          title={chip.title}
+                          className="shrink-0 border px-2.5 py-1 text-[11px] font-medium disabled:opacity-50"
+                          style={{
+                            borderColor: INK,
+                            background: CARD,
+                            color: INK,
+                            borderRadius: 8,
+                          }}
                         >
-                          {zhLabel}
+                          {chip.label}
+                        </button>
+                      ))}
+                      {networkPeersForInsert.map((peer) => {
+                        const token = linkedCharacterPlaceholder(peer.id)
+                        const zhLabel =
+                          peer.role === 'archive_root'
+                            ? '档案主角'
+                            : `人脉·${peer.label.length > 8 ? `${peer.label.slice(0, 7)}…` : peer.label}`
+                        return (
+                          <button
+                            key={peer.id}
+                            type="button"
+                            disabled={generating}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => insertToken(token)}
+                            title={`插入原文：${token}`}
+                            className="max-w-[148px] shrink-0 truncate border px-2.5 py-1 text-[11px] font-medium disabled:opacity-50"
+                            style={{
+                              borderColor: INK,
+                              background: CARD,
+                              color: INK,
+                              borderRadius: 8,
+                            }}
+                          >
+                            {zhLabel}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {bindingState.slotCount > 0 ? (
+                      <p className="mt-2 text-[10px] leading-relaxed" style={{ color: MUTED }}>
+                        正文 {bindingState.slotCount} 处{' '}
+                        <code style={{ color: INK }}>{`{{user}}`}</code>
+                        {bindingState.summary ? (
+                          <>
+                            ，已绑定 {bindingState.boundCount} 处：{bindingState.summary}
+                          </>
+                        ) : (
+                          <>（尚未写入绑定，保存或再点一次「玩家」插入可补齐）</>
+                        )}
+                        {bindingState.hasLegacyScoped ? (
+                          <span style={{ color: '#B45309' }}> · 检测到旧式长表达式，将自动改为裸占位符</span>
+                        ) : null}
+                        {bindingState.slotCount > bindingState.boundCount && !bindingState.hasLegacyScoped ? (
+                          <span style={{ color: '#B45309' }}> · 有槽位未绑定账号/身份</span>
+                        ) : null}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div
+                  ref={bodySectionRef}
+                  className="border-t px-3 py-3 pb-5"
+                  style={{ borderColor: LINE }}
+                >
+                  <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[11px] font-semibold leading-none" style={{ color: INK }}>
+                        正文
+                        {!generating && rawBody.trim() ? (
+                          <span className="ml-2 font-normal" style={{ color: FAINT }}>
+                            约 {String(rawBody).replace(/\s+/g, '').length} 字
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="mt-1 font-serif text-[9px] tracking-[0.2em]" style={{ color: FOIL }}>
+                        BODY
+                      </p>
+                    </div>
+                    {!generating ? (
+                      bodyEditing ? (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 border-[1.5px] px-3 py-1.5 text-[12px] font-semibold"
+                          style={{
+                            borderColor: INK,
+                            background: INK,
+                            color: CARD,
+                            borderRadius: 8,
+                          }}
+                          onClick={() => setBodyEditing(false)}
+                        >
+                          <Check className="size-3.5" strokeWidth={2.5} />
+                          完成
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 border-[1.5px] px-3 py-1.5 text-[12px] font-semibold"
+                          style={{
+                            borderColor: INK,
+                            background: CARD,
+                            color: INK,
+                            borderRadius: 8,
+                          }}
+                          onClick={() => setBodyEditing(true)}
+                        >
+                          <Pencil className="size-3.5" strokeWidth={2} />
+                          编辑
                         </button>
                       )
-                    })}
-                  </div>
-                  {bindingState.slotCount > 0 ? (
-                    <p className="mt-2 text-[10px] leading-relaxed text-stone-500">
-                      正文 {bindingState.slotCount} 处{' '}
-                      <code className="text-stone-600">{`{{user}}`}</code>
-                      {bindingState.summary ? (
-                        <>
-                          ，已绑定 {bindingState.boundCount} 处：{bindingState.summary}
-                        </>
-                      ) : (
-                        <>（尚未写入绑定，保存或再点一次「玩家」插入可补齐）</>
-                      )}
-                      {bindingState.hasLegacyScoped ? (
-                        <span className="text-amber-700"> · 检测到旧式长表达式，将自动改为裸占位符</span>
-                      ) : null}
-                      {bindingState.slotCount > bindingState.boundCount && !bindingState.hasLegacyScoped ? (
-                        <span className="text-amber-700"> · 有槽位未绑定账号/身份</span>
-                      ) : null}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <div ref={bodySectionRef} className="mt-5 flex flex-col pb-6">
-                <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-stone-400">
-                    正文
-                    {!generating && rawBody.trim() ? (
-                      <span className="ml-2 normal-case tracking-normal text-stone-400">
-                        约 {String(rawBody).replace(/\s+/g, '').length} 字
-                      </span>
                     ) : null}
-                  </p>
-                  {!generating ? (
-                    bodyEditing ? (
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 rounded-full bg-stone-900 px-3 py-1.5 text-[12px] font-medium text-white shadow-sm transition-opacity active:opacity-90"
-                        onClick={() => setBodyEditing(false)}
-                      >
-                        <Check className="size-3.5" strokeWidth={2.5} />
-                        完成
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-[12px] font-medium text-stone-700 shadow-sm transition-colors hover:bg-stone-50 active:bg-stone-100"
-                        onClick={() => setBodyEditing(true)}
-                      >
-                        <Pencil className="size-3.5" strokeWidth={2} />
-                        编辑
-                      </button>
-                    )
-                  ) : null}
-                </div>
-                <div className="rounded-2xl bg-stone-50/50 px-3 py-3">
-                  {bodyEditing ? (
-                    forPlayerIdentity ? (
-                      <textarea
-                        value={generating ? WB_ITEM_GENERATING_TEXT : rawBody}
-                        readOnly={generating}
-                        onChange={(e) => {
-                          if (!generating) patchContent(e.target.value)
-                        }}
-                        onFocus={scrollBodyAboveKeyboard}
-                        className={BODY_TEXTAREA_CLASS}
-                        placeholder="书写属于你的世界片段…"
-                      />
-                    ) : (
-                    <PlaceholderAwareTextarea
-                      ref={(h) => {
-                        taHandleRef.current = h
-                      }}
-                      onCaretInRawText={(start, end) => {
-                        caretRef.current = { start, end }
-                      }}
-                      readOnly={generating}
-                      value={generating ? WB_ITEM_GENERATING_TEXT : rawBody}
-                      onChange={(v) => {
-                        if (!generating) patchContent(v)
-                      }}
-                      onFocus={scrollBodyAboveKeyboard}
-                      characterId={character.id}
-                      worldBookUserPlaceholderBindings={item.userPlaceholderBindings}
-                      placeholderPreview
-                      previewEditRequiresDoubleClick
-                      previewShellWorldBook={false}
-                      rows={12}
-                      className={BODY_TEXTAREA_CLASS}
-                      placeholder="沉浸式书写… 占位符在预览中会展开为姓名"
-                    />
-                    )
-                  ) : (
-                    <div
-                      className="whitespace-pre-wrap text-[15px] leading-relaxed text-stone-800"
-                      style={{ wordBreak: 'break-word' }}
-                    >
-                      {generating ? (
-                        WB_ITEM_GENERATING_TEXT
-                      ) : bodyPreviewLoading && rawBody.includes('{{') ? (
-                        <span className="text-stone-400">展开占位符预览…</span>
-                      ) : viewBodyText.trim() ? (
-                        viewBodyText
+                  </div>
+                  <div
+                    className="border-[1.5px] px-3 py-3"
+                    style={{ borderColor: INK, background: '#FBF7F0', borderRadius: 10 }}
+                  >
+                    {bodyEditing ? (
+                      forPlayerIdentity ? (
+                        <textarea
+                          value={generating ? WB_ITEM_GENERATING_TEXT : rawBody}
+                          readOnly={generating}
+                          onChange={(e) => {
+                            if (!generating) patchContent(e.target.value)
+                          }}
+                          onFocus={scrollBodyAboveKeyboard}
+                          className={BODY_TEXTAREA_CLASS}
+                          style={{ color: INK }}
+                          placeholder="书写属于你的世界片段…"
+                        />
                       ) : (
-                        <span className="text-stone-300">暂无正文，点「编辑」开始书写</span>
-                      )}
-                    </div>
-                  )}
+                        <PlaceholderAwareTextarea
+                          ref={(h) => {
+                            taHandleRef.current = h
+                          }}
+                          onCaretInRawText={(start, end) => {
+                            caretRef.current = { start, end }
+                          }}
+                          readOnly={generating}
+                          value={generating ? WB_ITEM_GENERATING_TEXT : rawBody}
+                          onChange={(v) => {
+                            if (!generating) patchContent(v)
+                          }}
+                          onFocus={scrollBodyAboveKeyboard}
+                          characterId={character.id}
+                          worldBookUserPlaceholderBindings={item.userPlaceholderBindings}
+                          placeholderPreview
+                          previewEditRequiresDoubleClick
+                          previewShellWorldBook={false}
+                          rows={12}
+                          className={BODY_TEXTAREA_CLASS}
+                          style={{ color: INK }}
+                          placeholder="沉浸式书写… 占位符在预览中会展开为姓名"
+                        />
+                      )
+                    ) : (
+                      <div
+                        className="whitespace-pre-wrap text-[15px] leading-relaxed"
+                        style={{ wordBreak: 'break-word', color: INK }}
+                      >
+                        {generating ? (
+                          WB_ITEM_GENERATING_TEXT
+                        ) : bodyPreviewLoading && rawBody.includes('{{') ? (
+                          <span style={{ color: FAINT }}>展开占位符预览…</span>
+                        ) : viewBodyText.trim() ? (
+                          viewBodyText
+                        ) : (
+                          <span style={{ color: FAINT }}>暂无正文，点「编辑」开始书写</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

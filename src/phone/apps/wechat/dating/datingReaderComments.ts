@@ -1,18 +1,21 @@
 /**
  * 读者评论模式：优先与剧情同轮输出；若主回复漏块，则落库后另开短请求补齐（不计入正文字数）。
  *
- * 期望模型尾部格式（正文之后）：
- * 【读者评论】
+ * 期望模型尾部格式（正文之后），优先：
+ * <comments>
  * #1
  * ★|昵称|点赞|评论文案
  * ·|昵称|点赞|评论文案
- * #2
- * ★|昵称|点赞|评论文案
- * 【读者评论结束】
+ * </comments>
+ *
+ * 兼容旧格式：
+ * 【读者评论】…【读者评论结束】
  *
  * ★ = 高光向评论；· = 普通。
  * 正文中可多处插入「【读者讨论位】」（或【读者讨论位1】…），评论只点评该锚点之前刚发生的情节。
  */
+
+import { extractDatingTaggedBlocks, stripDatingTaggedKind } from './datingPlotTaggedBlocks'
 
 export type PlotReaderComment = {
   id: string
@@ -184,6 +187,11 @@ function parseCommentLine(line: string, index: number, slot: number): PlotReader
 
 function findReaderCommentBlock(text: string): { inner: string; start: number; end: number } | null {
   const src = String(text || '')
+  const tagged = extractDatingTaggedBlocks(src)
+  if (tagged.comments.trim()) {
+    // 用整段剥离换算：标记为「有块」；start/end 仅用于旧路径切片，此处走 strip 专用返回
+    return { inner: tagged.comments, start: 0, end: 0 }
+  }
   const xml = src.match(BLOCK_XML_RE)
   if (xml && xml.index !== undefined) {
     return { inner: xml[1] || '', start: xml.index, end: xml.index + xml[0].length }
@@ -329,9 +337,16 @@ export function extractAndStripReaderComments(raw: string): {
   comments: PlotReaderComment[]
 } {
   const text = String(raw || '')
+  const tagged = extractDatingTaggedBlocks(text)
+  if (tagged.comments.trim()) {
+    const comments = parseCommentBlockInner(tagged.comments)
+    return { content: stripDatingTaggedKind(text, 'comments'), comments }
+  }
   const block = findReaderCommentBlock(text)
   if (!block) return { content: text.trim(), comments: [] }
   const comments = parseCommentBlockInner(block.inner)
+  // start/end 均为 0 且非真实切片时不应再走 slice（已由 tagged 路径处理）
+  if (block.end <= block.start) return { content: text.trim(), comments }
   const content = (text.slice(0, block.start) + text.slice(block.end)).trim()
   return { content, comments }
 }
@@ -746,28 +761,24 @@ export function splitPlotBodyForReaderComments(
 export function buildDatingReaderCommentsAppendix(enabled: boolean): string {
   if (!enabled) return ''
   return (
-    `【读者评论模式·同轮输出｜强制】本轮开启「小说随笔式读者评论」。须在**同一则回复**内完成：正文多处插入锚点 + 文末按位分组的评论块；**禁止**另开请求、禁止只写评论不写剧情、禁止只写锚点不写评论块。` +
+    `【读者评论模式·同轮输出｜强制】本轮开启「小说随笔式读者评论」。须在**同一则回复**内完成：\`<content>\` 内多处插入锚点 + \`<comments>\` 按位分组评论；**禁止**另开请求、禁止只写评论不写剧情、禁止只写锚点不写评论块。` +
     `**与思维链开关无关**：即使界面已关闭思维链（直出模式），本块仍须输出，禁止省略。\n` +
-    `**格式硬禁**：读者评论**只能**用下方【读者评论】中文标记 + \`★|昵称|点赞|文案\` / \`·|昵称|点赞|文案\` 纯文本行；` +
-    `**禁止** JSON、JSON 数组、\`\`\`json 代码块、{ "nick": ... } 对象；**禁止**写进 <thinking> 或 <<<DATING_UNIFIED_MEMORY>>> 记忆 JSON。\n` +
-    `1）正文**必须**插入 **2～4 处**编号锚点：「【读者讨论位1】」「【读者讨论位2】」…（数字从 1 起，与文末 #1 #2 严格同号）。` +
-    `锚点须紧跟在**本拍已经写完**的高光对白/动作/情绪转折**之后**的空行（读者读完这拍再看见评论）；**禁止**插在半句对白中间，**禁止**插在「即将发生」的情节之前。锚点本身不展示给读者。\n` +
-    `2）**禁止剧透（最高优先·展示层也会后移，但你仍须写对）**：写 #N 组评论时，只回看「【读者讨论位N】之前、【读者讨论位N-1】之后」已出现的正文；评论里的对白原文、道具、动作**必须已经写在该窗口内**。\n` +
-    `   - **禁止**在锚点前评论锚点后才出现的对白（反例：锚点在「我没怂」后，却评论「没怂就上车」——后者还没出现 = 剧透）。\n` +
-    `   - **禁止**整章复盘、禁止「后面他会…」。\n` +
-    `   - 正确：先写完整拍（含要被评论的那句对白）→ 再插讨论位 → 再写只评这拍的评论。\n` +
-    `3）正文结束后**必须**输出（不要包在 thinking 里），用 #1 #2 … 与锚点编号一一对应（禁止打乱顺序、禁止合并成一大段无编号评论）：\n` +
-    `【读者评论】\n` +
+    `**格式硬禁**：优先 \`<comments>…</comments>\`；内文**只能**用 \`★|昵称|点赞|文案\` / \`·|昵称|点赞|文案\` 纯文本行；` +
+    `兼容旧壳 \`【读者评论】…【读者评论结束】\`。**禁止** JSON / \`\`\`json / 对象；**禁止**写进 thinking 或记忆 JSON。\n` +
+    `1）\`<content>\` 内**必须**插入 **2～4 处**编号锚点：「【读者讨论位1】」「【读者讨论位2】」…（数字从 1 起，与 #1 #2 严格同号）。` +
+    `锚点须紧跟在**本拍已经写完**的高光对白/动作/情绪转折**之后**的空行；**禁止**插在半句中间或「即将发生」之前。\n` +
+    `2）**禁止剧透**：写 #N 组评论时，只回看「讨论位N 之前、讨论位N-1 之后」已出现的 content；评论里的对白/动作须已在该窗口内。\n` +
+    `3）\`</content>\` 之后**必须**输出（不要包在 thinking 里）：\n` +
+    `<comments>\n` +
     `#1\n` +
     `★|昵称|点赞整数|只点评讨论位1之前刚发生的事\n` +
     `·|昵称|点赞整数|同上局部\n` +
     `#2\n` +
     `★|昵称|点赞整数|只点评讨论位2之前、讨论位1之后刚发生的事\n` +
-    `【读者评论结束】\n` +
-    `4）每处锚点 1～3 条评论；全文合计 4～10 条。★ 为高光向热评（每处尽量 1 条），· 为普通；昵称像真人网友（2～6 字，勿用角色名）；点赞为合理整数；文案短、口语、像追更弹幕。\n` +
+    `</comments>\n` +
+    `4）每处锚点 1～3 条；全文 4～10 条。★ 高光、· 普通；昵称像真人网友。\n` +
     `5）评论块与锚点**不计入**目标正文字数。\n` +
-    `6）输出顺序（同轮一次写完）：剧情正文（含讨论位）→【读者评论】…【读者评论结束】→（若开小剧场）【小剧场】…【小剧场结束】→（VN 时）语音参数块 → 记忆分隔符。` +
-    `【读者评论】须在记忆分隔符**之前**；**禁止**放进 <thinking> 或记忆 markup；**禁止**另开请求补评论。\n`
+    `6）顺序：\`<content>\`（含讨论位）→ \`<comments>\` →（若开小剧场）\`<theater>\` → \`<synopsis>\` → 记忆分隔符。**禁止**另开请求补评论。\n`
   )
 }
 

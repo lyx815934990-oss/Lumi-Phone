@@ -112,8 +112,17 @@ import {
   finalizeDatingPlotListMutationSideEffects,
   resolveDatingPlotLinkedOwnerIds,
 } from './datingPlotContextSync'
-import { isOpenAiEmptyAssistantParseError, openAiCompatibleChatLenient } from '../newFriendsPersona/ai'
-import { formatApiClientError } from '../addFriend/friendRequestApiError'
+import {
+  consumeLastOpenAiChatOutputTruncatedByLimitFlag,
+  consumeLastOpenAiChatStreamPartialFlag,
+  isOpenAiEmptyAssistantParseError,
+  openAiCompatibleChatLenient,
+} from '../newFriendsPersona/ai'
+import {
+  formatApiClientError,
+  isAbortError,
+  isTransientNetworkError,
+} from '../addFriend/friendRequestApiError'
 import { useCurrentApiConfig, useIsSubApiEnabled, useTranslationRuntime } from '../../api/ApiSettingsContext'
 import type { ApiConfig, ApiConfigCore } from '../../api/types'
 import { useCustomization } from '../../../CustomizationContext'
@@ -144,6 +153,7 @@ import {
   clampDatingMaxContextTokens,
   clampDatingPlotSummaryInjectRounds,
   datingContextCharBudgetsFromTokens,
+  isDatingPlotSseEnabled,
   normalizeDatingPlotContextInjectMode,
   parsePlotDimensionLengthTarget,
   DATING_AI_DEFAULT_CONTEXT_TOKENS,
@@ -163,6 +173,7 @@ import { formatCharacterMemoriesForPromptInjection } from '../memory/formatChara
 import { buildCoupleSpaceMemoryInjection } from '../coupleSpace/coupleSpaceMemoryQuery'
 import { dualNarrativeStoryFieldsFromDelta } from '../memory/dualNarrativeTime'
 import { loadDatingNpcNetworkPromptBlock } from './datingNpcNetworkPrompt'
+import { buildDatingTaggedBlocksOutputAppendix } from './datingPlotTaggedBlocks'
 import { datingPlotBodyForPromptInjection, splitDatingAssistantOutput, resolveDatingPlotDisplayFromItem } from './plotCoT'
 import { MBTI_OUTPUT_BAN_RULE } from '../mbtiOutputBan'
 import { buildDatingStyleSystemPrompt } from './lumiThinkingChainRules'
@@ -220,7 +231,13 @@ import {
   type DatingStoryAppearance,
 } from './datingStoryAppearance'
 import { generateDatingBranchesAi } from './datingBranchesAi'
-import { generateDatingPlotDimensionAi, buildDimensionLanguageSettingsFromArchive, finalizeDatingDimensionTranslations, loadDatingPlotDimensionLifeContext } from './datingPlotDimensionAi'
+import {
+  generateDatingPlotDimensionAi,
+  buildDimensionLanguageSettingsFromArchive,
+  finalizeDatingDimensionTranslations,
+  loadDatingPlotDimensionLifeContext,
+  unwrapDimensionProseLineWraps,
+} from './datingPlotDimensionAi'
 import { buildVnBackgroundPromptBlock } from './vnBackgroundCatalog'
 import { buildVnAtmospherePromptBlock } from './vnAtmospherePromptBlock'
 import { buildVnBgmPromptBlock } from './vnBgmCatalog'
@@ -232,6 +249,7 @@ import { buildUserReactionPromptBlock, summarizeUserReactionForSlimRetry } from 
 import type { Character, PlayerIdentity, ScheduleTable } from '../newFriendsPersona/types'
 import { formatWorldBackgroundForPrompt } from '../newFriendsPersona/worldBackgroundFormat'
 import { buildCharacterCard, buildPhysiquePromptSectionForCharacter, buildScheduleSection, buildWorldBookText } from '../wechatChatAi'
+import { buildDatingWechatBlockRelationAppendix } from '../wechatBlock'
 import { loadPairLifePromptContext } from '../lifeMutable/load'
 import { isLifeLedgerInlineSyncEnabled } from '../lifeMutable/inlineSync'
 import {
@@ -240,6 +258,15 @@ import {
   extractLifeLedgerPatchBlock,
   LIFE_LEDGER_PATCH_UPDATED_EVENT,
 } from '../lifeMutable/lifeLedgerPatch'
+import {
+  applyScheduleCalendarInlinePatches,
+  buildCalendarAnchorFromStoryLabel,
+  buildScheduleCalendarPatchOutputAppendix,
+  extractScheduleCalendarPatchBlock,
+  formatExistingCalendarEventsHint,
+  SCHEDULE_CAL_PATCH_UPDATED_EVENT,
+  summarizeScheduleCalOps,
+} from '../schedule/scheduleCalendarPatch'
 import {
   applyObservationNotesPatchesFromAi,
   buildObservationNotesPatchOutputAppendix,
@@ -276,6 +303,7 @@ import {
   rebuildWorldBookAfterFromDatingPlotList,
   revertWorldBookAfterUsingContentPrevious,
   sanitizeWorldBookAfterRevertEntries,
+  summarizeWorldBookAfterPatchChanges,
   WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT,
 } from '../newFriendsPersona/worldBookAfterPatch'
 import { emitDatingOfflineDanmakuLines } from './datingOfflineDanmakuBridge'
@@ -284,6 +312,7 @@ import type { DatingInteractiveBridgeContext } from './datingInteractiveAi'
 import type { InteractiveTurn } from './datingInteractiveTypes'
 import { clampInteractiveMinBubbles } from './datingInteractiveTypes'
 import {
+  abortDatingPlotGeneration,
   beginDatingPlotContentHint,
   beginDatingPlotGeneration,
   DATING_PLOT_GENERATION_COMPLETE_EVENT,
@@ -291,6 +320,7 @@ import {
   dispatchDatingPlotGenerationError,
   endDatingPlotContentHint,
   endDatingPlotGeneration,
+  getDatingPlotGenerationSignal,
   isDatingPlotGenerating,
   subscribeDatingPlotGeneration,
 } from './datingPlotGenerationEvents'
@@ -325,6 +355,23 @@ type DatingAiGenResult = {
   observationNotesRevert?: import('../observationNotes/plotRevert').ObservationNotesPlotRevert
   /** 本轮成功写入人生账本时的回滚快照 */
   lifeLedgerRevert?: import('../lifeMutable/plotRevert').LifeLedgerPlotRevert
+  /** SSE 中途断线但已保留半成品正文 */
+  streamPartialKept?: boolean
+  /** 输出触达 max_tokens / finish_reason=length 被掐断 */
+  outputTruncatedByLimit?: boolean
+}
+
+function datingPlotDeliveryWarning(gen: {
+  streamPartialKept?: boolean
+  outputTruncatedByLimit?: boolean
+}): string | undefined {
+  if (gen.outputTruncatedByLimit) {
+    return '正文被网关/模型侧输出上限掐断（本客户端未设字数上限）。请检查中转线路的 max_tokens / 上下文限制。'
+  }
+  if (gen.streamPartialKept) {
+    return '生成链路中途断开，已保留收到的正文（可能未写满目标字数）。可继续下一轮，或对本条点「重新回复」。'
+  }
+  return undefined
 }
 
 const STORAGE_KEY = 'wechat-dating-archives-v1'
@@ -366,8 +413,16 @@ type DatingTurnModelExtras = {
 }
 
 /** 发剧情前记忆注入 / 时钟同步：超时则抛错，避免无限卡在 loading */
-function withDatingPlotPrepareTimeout<T>(promise: Promise<T>, label = '记忆准备'): Promise<T> {
+function withDatingPlotPrepareTimeout<T>(
+  promise: Promise<T>,
+  label = '记忆准备',
+  signal?: AbortSignal,
+): Promise<T> {
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('Aborted', 'AbortError'))
+  }
   let timer: ReturnType<typeof setTimeout> | undefined
+  let onAbort: (() => void) | undefined
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       reject(
@@ -377,8 +432,15 @@ function withDatingPlotPrepareTimeout<T>(promise: Promise<T>, label = '记忆准
       )
     }, DATING_PLOT_PREPARE_TIMEOUT_MS)
   })
-  return Promise.race([promise, timeoutPromise]).finally(() => {
+  const abortPromise = signal
+    ? new Promise<never>((_, reject) => {
+        onAbort = () => reject(new DOMException('Aborted', 'AbortError'))
+        signal.addEventListener('abort', onAbort, { once: true })
+      })
+    : null
+  return Promise.race([promise, timeoutPromise, ...(abortPromise ? [abortPromise] : [])]).finally(() => {
     if (timer != null) clearTimeout(timer)
+    if (signal && onAbort) signal.removeEventListener('abort', onAbort)
   }) as Promise<T>
 }
 
@@ -618,10 +680,14 @@ type Ctx = {
   setAutoUserReaction: (v: boolean) => void
   /** 是否输出思维链（关闭则直出正文） */
   setThinkingChainEnabled: (v: boolean) => void
+  /** 线下剧情是否走 SSE 流式（关则整包返回） */
+  setPlotSseEnabled: (v: boolean) => void
   /** 发送时同轮生成平行事件 */
   setGenerateParallelOnSend: (v: boolean) => void
   /** 发送时同轮生成 IF 线 */
   setGenerateIfLineOnSend: (v: boolean) => void
+  /** 记下 IF / 平行面板自己的目标字数（不改主线） */
+  persistPlotDimensionLengthTarget: (kind: PlotDimensionKind, chars: number) => void
   /** 线下普通模式：每轮 AI 后是否拉取弹幕 */
   setOfflineDanmakuEnabled: (enabled: boolean) => void
   /** 持久化当前角色的剧情生成目标字数（与 DatingStoryPage 输入框同步） */
@@ -645,6 +711,8 @@ type Ctx = {
   patchStoryAppearance: (patch: Partial<DatingStoryAppearance>) => void
   /** 互动模式：每轮至少气泡条数（下限，可多于） */
   setInteractiveMinBubbles: (n: number) => void
+  /** 场控提示词总开关；关闭后只注入线下预设，内置直出/导演/上帝等不再注入 */
+  setConsolePromptsEnabled: (v: boolean) => void
   /** 读者评论模式 */
   setCommentModeEnabled: (v: boolean) => void
   /** 小剧场 */
@@ -721,6 +789,8 @@ type Ctx = {
     genOptions?: NarrativeGenOptions,
     bias?: string,
   ) => Promise<void>
+  /** 停止当前角色进行中的剧情生成（中止等待中的请求） */
+  stopPlotGeneration: () => void
   /** 为某条 AI 剧情生成平行事件 / IF 线（存于该 plot 条目，可反复打开查看） */
   generatePlotDimension: (
     plotId: string,
@@ -896,10 +966,10 @@ function mergeSavedCharacters(baseChars: CharacterInfo[], parsed: unknown | null
       const birthday = /^\d{1,2}-\d{1,2}$/.test(birthdayRaw.trim()) ? birthdayRaw.trim() : base.birthdayMD
       res.push({
         ...base,
-        /** 头像以人设库为准，与微信/朋友圈换头像同步；本地缓存仅保留卡片样式等约会页字段 */
+        /** 头像/姓名以人设库为准；本地缓存仅保留卡片样式等约会页字段 */
         avatarUrl: base.avatarUrl,
-        realName: typeof saved.realName === 'string' ? saved.realName : base.realName,
-        pinyin: typeof saved.pinyin === 'string' ? saved.pinyin : base.pinyin,
+        realName: base.realName,
+        pinyin: base.pinyin,
         age: typeof saved.age === 'number' ? saved.age : base.age,
         heightCm: typeof saved.heightCm === 'number' ? saved.heightCm : base.heightCm,
         weightKg: typeof saved.weightKg === 'number' ? saved.weightKg : base.weightKg,
@@ -1056,6 +1126,14 @@ function mergeArchives(chars: CharacterInfo[], parsed: unknown | null): Archives
           typeof (saved as { thinkingChainEnabled?: unknown }).thinkingChainEnabled === 'boolean'
             ? (saved as { thinkingChainEnabled: boolean }).thinkingChainEnabled
             : merged[c.id].thinkingChainEnabled,
+        plotSseEnabled:
+          typeof (saved as { plotSseEnabled?: unknown }).plotSseEnabled === 'boolean'
+            ? (saved as { plotSseEnabled: boolean }).plotSseEnabled
+            : merged[c.id].plotSseEnabled !== false,
+        consolePromptsEnabled:
+          typeof (saved as { consolePromptsEnabled?: unknown }).consolePromptsEnabled === 'boolean'
+            ? (saved as { consolePromptsEnabled: boolean }).consolePromptsEnabled
+            : merged[c.id].consolePromptsEnabled !== false,
         commentModeEnabled: (() => {
           const migrated =
             (saved as { commentTheaterDefaultsOffMigrated?: unknown })
@@ -1096,6 +1174,18 @@ function mergeArchives(chars: CharacterInfo[], parsed: unknown | null): Archives
           const raw = (saved as { datingLengthTargetChars?: unknown }).datingLengthTargetChars
           if (typeof raw !== 'number' || !Number.isFinite(raw)) return merged[c.id].datingLengthTargetChars
           return clampDatingLengthTargetChars(raw)
+        })(),
+        datingIfLengthTargetChars: (() => {
+          const raw = (saved as { datingIfLengthTargetChars?: unknown }).datingIfLengthTargetChars
+          if (typeof raw !== 'number' || !Number.isFinite(raw)) return merged[c.id].datingIfLengthTargetChars
+          return parsePlotDimensionLengthTarget(raw, 500)
+        })(),
+        datingParallelLengthTargetChars: (() => {
+          const raw = (saved as { datingParallelLengthTargetChars?: unknown }).datingParallelLengthTargetChars
+          if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+            return merged[c.id].datingParallelLengthTargetChars
+          }
+          return parsePlotDimensionLengthTarget(raw, 500)
         })(),
         interactiveMinBubbles: clampInteractiveMinBubbles(
           (saved as { interactiveMinBubbles?: unknown }).interactiveMinBubbles ??
@@ -1224,7 +1314,23 @@ const STYLE_HINT =
   '对白口吻与微信私聊同角色对齐：口语短句、活人感；对白里勿用（）堆神态。'
 
 function extractAiPlotSections(raw: string): { logicPass: string; planSummary: string; content: string } {
-  return splitDatingAssistantOutput(raw)
+  const split = splitDatingAssistantOutput(raw)
+  return {
+    ...split,
+    content: unwrapDimensionProseLineWraps(split.content),
+  }
+}
+
+/** 剧情请求：不把 API 页的 maxTokens 带进 cfg（由采样 max_tokens:null 显式不设上限）。 */
+function resolveDatingPlotApiConfig(apiConfig: {
+  apiUrl?: string
+  apiKey?: string
+  modelId?: string
+  maxTokens?: number
+}) {
+  const { maxTokens: _omitMax, ...rest } = apiConfig
+  void _omitMax
+  return { ...rest }
 }
 
 /**
@@ -1259,6 +1365,8 @@ function buildSlimDatingPlotChatMessages(params: {
   userReactionSlimHint: string
   lengthRule: string
   thinkingChainEnabled?: boolean
+  /** 场控提示词关闭：精简重试不要强制思维链壳或直出 */
+  presetOnly?: boolean
   charUserNames: CharUserNames
   godPerspective?: boolean
   mainCharacterOffstage?: boolean
@@ -1266,8 +1374,9 @@ function buildSlimDatingPlotChatMessages(params: {
   extrasAppendix?: string
 }): Array<{ role: 'system' | 'user'; content: string }> {
   const historyTail = clipDatingReferenceTail(params.historyBlock, 6500, '最近剧情')
-  const cotHint =
-    params.thinkingChainEnabled === false
+  const cotHint = params.presetOnly
+    ? `【说明】上一轮请求上下文过长，材料已压缩。场控壳/直出禁令不套用，输出格式以线下预设为准；但【本节梗概】与尾声 ---WB_AFTER_PATCH--- 仍为客户端固定，不可省略。\n`
+    : params.thinkingChainEnabled === false
       ? `【说明】上一轮请求上下文过长，材料已压缩。请**直接**输出剧情正文，禁止 \`<thinking>\` / 思维链标签。若下方附录要求读者评论/小剧场，正文后仍须补齐对应块。\n`
       : `【说明】上一轮请求上下文过长，材料已压缩。仍须先输出 \`<thinking>\`（可缩短至约 600 字内）再写正文；附录要求的读者评论/小剧场仍须在正文后输出。\n`
   const extras = params.extrasAppendix?.trim()
@@ -1297,12 +1406,16 @@ function buildSlimDatingPlotChatMessages(params: {
     ? `\n\n【文末提醒】若上方附录要求读者评论：正文须插【读者讨论位N】并写评论块（穿插用）。小剧场可完整 HTML；漏块客户端会补。`
     : ''
   const slimUser = expandCharUserPlaceholders(
-    `角色：${params.character.realName}；设定摘要=${params.character.prompt.slice(0, 900)}\n` +
+    `以下是用户的输入内容，请围绕用户输入的内容生成剧情，不得偏离用户输入的内容。\n` +
+      `（类型：${inputLabel}）\n\n` +
+      `${params.userText?.trim() || '（开场，无输入）'}\n\n` +
       `${params.userDemand}\n` +
-      `【${inputLabel}】\n${params.userText?.trim() || '（开场，无输入）'}\n\n` +
+      `（若输入要求换日/跳时/换场，正文须落到该目的地；时间材料仅作出发参考。）\n\n` +
+      `---\n\n` +
+      `角色：${params.character.realName}；设定摘要=${params.character.prompt.slice(0, 900)}\n\n` +
       `最近剧情（节选，按时间序，**末尾最新优先**；**只取事实，禁止模仿旧稿写法**）：\n${historyTail || '（无）'}\n\n` +
-      `【精简续写·方向】须与玩家输入及最近剧情末尾**事实**一致；禁止拾取主客体相反的对称旧梗；禁止顺着旧稿八股文风续写（近乎/狼狈/执拗/滴血脸红等）。\n\n` +
-      `请直接续写剧情，勿输出空行或仅占位符。${slimExtrasTail}`,
+      `【精简续写·方向】须围绕文首用户输入；最近剧情末尾只供事实承接，不得压过用户输入。禁止拾取主客体相反的对称旧梗；禁止顺着旧稿八股文风续写。\n\n` +
+      `请围绕文首用户输入直接续写剧情，不得偏离。${slimExtrasTail}`,
     params.charUserNames,
   )
   return [
@@ -1315,37 +1428,61 @@ const DATING_REGENERATE_DEFAULT_BIAS =
   '【重新生成】须与上一版在**用词、开场动作、桥段顺序、道具与换场**上明显区分，禁止同义洗稿或微调后复读；本轮以玩家填写的生成偏向为**内容最高优先级**（在不捏造与已定事实明文冲突的前提下重写场面）。'
 
 async function requestDatingPlotCompletion(params: {
-  apiConfig: { apiUrl?: string; apiKey?: string; modelId?: string }
+  apiConfig: { apiUrl?: string; apiKey?: string; modelId?: string; maxTokens?: number }
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
   slimMessages: Array<{ role: 'system' | 'user'; content: string }>
-  timeoutPromise: Promise<string>
+  /** 不传 / 不设则不限时，一直等到模型返回 */
+  timeoutPromise?: Promise<string>
+  /** 用户点「停止生成」时中止 fetch */
+  signal?: AbortSignal
   charUserNames: CharUserNames
   /** 重新生成时略抬高随机度，降低复读旧稿概率 */
   isRegenerate?: boolean
   thinkingChainEnabled?: boolean
+  /** 场控提示词关闭：空回复重试不强制思维链壳或直出 */
+  presetOnly?: boolean
   /** 直出/重试时提醒必须带上的附加块（读者评论 / 小剧场） */
   requiredExtrasHint?: string
+  /** 主线目标字数：抬本轮输出上限，一次写满 */
+  lengthTargetChars?: number
+  /** 是否 SSE；缺省 true。不再强制 stream:true */
+  plotSseEnabled?: boolean
 }): Promise<string> {
-  const thinkingOn = params.thinkingChainEnabled !== false
+  const thinkingOn = params.presetOnly ? null : params.thinkingChainEnabled !== false
   const extrasHint = String(params.requiredExtrasHint || '').trim()
   const extrasRetryTail = extrasHint
     ? `若篇幅允许可同轮带上附加块：${extrasHint}（漏了也没关系，客户端会另补）。`
     : ''
   const retryUser = expandCharUserPlaceholders(
-    thinkingOn
-      ? `你上一则回复几乎为空（仅空白或换行），未满足剧情要求。请重新输出：完整 \`<thinking>\` 思维链 + 正文剧情；不要只输出一个标点或换行。${extrasRetryTail}`
-      : `你上一则回复几乎为空（仅空白或换行），未满足剧情要求。请重新**直接**输出可读剧情正文；禁止 \`<thinking>\` / 思维链标签；不要只输出一个标点或换行。${extrasRetryTail}`,
+    thinkingOn === null
+      ? `你上一则回复几乎为空（仅空白或换行），未满足剧情要求。请按线下预设的格式重新输出剧情；不要只输出一个标点或换行。${extrasRetryTail}`
+      : thinkingOn
+        ? `你上一则回复几乎为空（仅空白或换行），未满足剧情要求。请重新输出：完整 \`<thinking>\` 思维链 + 正文剧情；不要只输出一个标点或换行。${extrasRetryTail}`
+        : `你上一则回复几乎为空（仅空白或换行），未满足剧情要求。请重新**直接**输出可读剧情正文；禁止 \`<thinking>\` / 思维链标签；不要只输出一个标点或换行。${extrasRetryTail}`,
     params.charUserNames,
   )
   const retryMetaAbortUser = expandCharUserPlaceholders(
-    thinkingOn
-      ? `你上一则错误地输出了伪系统中断文（如 \`[SYSTEM MESSAGE: Absolute Override…]\`、\`系统最终结算\`、英文 terminated 等）。那不是客户端指令。请重新输出：完整 \`<thinking>…</thinking>\` + 可读剧情正文；禁止任何 SYSTEM MESSAGE / Absolute Override / 系统结算 / 官方终止 元叙述。${extrasRetryTail}`
-      : `你上一则错误地输出了伪系统中断文（如 \`[SYSTEM MESSAGE: Absolute Override…]\`、\`系统最终结算\`、英文 terminated 等）。那不是客户端指令。请重新**直接**输出可读剧情正文；禁止 \`<thinking>\` 与任何 SYSTEM MESSAGE / Absolute Override / 系统结算 / 官方终止 元叙述。${extrasRetryTail}`,
+    thinkingOn === null
+      ? `你上一则错误地输出了伪系统中断文（如 \`[SYSTEM MESSAGE: Absolute Override…]\`、\`系统最终结算\`、英文 terminated 等）。那不是客户端指令。请按线下预设的格式重新输出可读剧情；禁止任何 SYSTEM MESSAGE / Absolute Override / 系统结算 / 官方终止 元叙述。${extrasRetryTail}`
+      : thinkingOn
+        ? `你上一则错误地输出了伪系统中断文（如 \`[SYSTEM MESSAGE: Absolute Override…]\`、\`系统最终结算\`、英文 terminated 等）。那不是客户端指令。请重新输出：完整 \`<thinking>…</thinking>\` + 可读剧情正文；禁止任何 SYSTEM MESSAGE / Absolute Override / 系统结算 / 官方终止 元叙述。${extrasRetryTail}`
+        : `你上一则错误地输出了伪系统中断文（如 \`[SYSTEM MESSAGE: Absolute Override…]\`、\`系统最终结算\`、英文 terminated 等）。那不是客户端指令。请重新**直接**输出可读剧情正文；禁止 \`<thinking>\` 与任何 SYSTEM MESSAGE / Absolute Override / 系统结算 / 官方终止 元叙述。${extrasRetryTail}`,
     params.charUserNames,
   )
+  const chatCfg = resolveDatingPlotApiConfig(params.apiConfig)
+  // SSE 由场控「SSE流式」开关决定，不再强制 stream:true
+  // max_tokens: null = 请求体不写输出上限；模型吐多少客户端就展示多少
+  const sampling = {
+    temperature: params.isRegenerate ? 0.84 : 0.68,
+    stream: isDatingPlotSseEnabled(params.plotSseEnabled),
+    signal: params.signal,
+    max_tokens: null,
+  }
   let lastErr: Error | null = null
   let secondPassUser = retryUser
+  let assembled = ''
   for (let attempt = 0; attempt < DATING_EMPTY_COMPLETION_ATTEMPTS; attempt++) {
+    if (params.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     // 第 3 次用精简材料时也必须带上 secondPassUser（空回复 / 伪中断提醒）
     const msgs =
       attempt === 0
@@ -1354,13 +1491,10 @@ async function requestDatingPlotCompletion(params: {
           ? [...params.messages, { role: 'user' as const, content: secondPassUser }]
           : [...params.slimMessages, { role: 'user' as const, content: secondPassUser }]
     try {
-      const raw = await Promise.race([
-        openAiCompatibleChatLenient(params.apiConfig as any, msgs, {
-          temperature: params.isRegenerate ? 0.84 : 0.68,
-          // max_tokens 由 API 设置页「最大 Token」决定；留空则系统默认 12800
-        }),
-        params.timeoutPromise,
-      ])
+      const completion = openAiCompatibleChatLenient(chatCfg as any, msgs, sampling)
+      const raw = params.timeoutPromise
+        ? await Promise.race([completion, params.timeoutPromise])
+        : await completion
       const trimmed = raw.trim()
       if (isDatingMetaSystemAbortResidue(trimmed)) {
         lastErr = new Error('模型输出了伪系统中断文（Absolute Override / 系统结算），已丢弃')
@@ -1371,23 +1505,31 @@ async function requestDatingPlotCompletion(params: {
         continue
       }
       if (trimmed.length >= DATING_PLOT_MIN_RESPONSE_CHARS) {
-        return raw
+        assembled = raw
+        break
       }
       lastErr = new Error(`模型返回正文过短（约 ${trimmed.length} 字）`)
     } catch (e) {
+      if (isAbortError(e)) throw e
       if (e instanceof Error && e.message.includes('剧情生成超时')) throw e
       lastErr = e instanceof Error ? e : new Error(String(e))
+      // 禁止对 Failed to fetch 等断流自动重打：对端常已跑完并计费，重试会再扣一次
+      if (isTransientNetworkError(e)) throw lastErr
       if (!isOpenAiEmptyAssistantParseError(e) && attempt === 0) throw lastErr
     }
     console.warn(`[dating] plot completion empty, retry ${attempt + 1}/${DATING_EMPTY_COMPLETION_ATTEMPTS}`)
   }
-  throw new Error(
-    lastErr?.message?.includes('伪系统中断')
-      ? `模型连续输出伪系统中断文（Absolute Override / 系统结算），未能恢复剧情格式。请换更稳定的聊天模型后重试，或略缩短本轮目标字数后再生成。`
-      : lastErr?.message?.includes('过短') || isOpenAiEmptyAssistantParseError(lastErr)
-        ? `模型连续 ${DATING_EMPTY_COMPLETION_ATTEMPTS} 次几乎未返回正文（多为输入上下文过长或线路限流）。已自动精简材料重试仍失败：请换更稳定的聊天模型，或减少未总结微信摘录后重试。`
-        : lastErr?.message || '剧情生成失败',
-  )
+  if (!assembled.trim()) {
+    throw new Error(
+      lastErr?.message?.includes('伪系统中断')
+        ? `模型连续输出伪系统中断文（Absolute Override / 系统结算），未能恢复剧情格式。请换更稳定的聊天模型后重试，或略缩短本轮目标字数后再生成。`
+        : lastErr?.message?.includes('过短') || isOpenAiEmptyAssistantParseError(lastErr)
+          ? `模型连续 ${DATING_EMPTY_COMPLETION_ATTEMPTS} 次几乎未返回正文（多为输入上下文过长或线路限流）。已自动精简材料重试仍失败：请换更稳定的聊天模型，或减少未总结微信摘录后重试。`
+          : lastErr?.message || '剧情生成失败',
+    )
+  }
+
+  return assembled
 }
 
 async function timelinePersistFieldsFromAiTextRaw(
@@ -1571,6 +1713,8 @@ function createDefaultArchive(character: CharacterInfo): CharacterArchive {
     plotPace: createDefaultDatingPlotPaceSettings(),
     autoUserReaction: false,
     thinkingChainEnabled: true,
+    plotSseEnabled: true,
+    consolePromptsEnabled: true,
     commentModeEnabled: false,
     plotArtifactVisualEnabled: false,
     commentTheaterDefaultsOffMigrated: true,
@@ -1615,6 +1759,8 @@ async function enrichAiPlotWithOptionalDimensions(params: {
   aiPlot: PlotItem
   plotsWithAi: PlotItem[]
   anchorBody: string
+  /** 本轮玩家输入：IF 线须当作写作引导，否则双视角/完整故事规格会丢失 */
+  playerInput?: string
   mergedGen?: NarrativeGenOptions
   perspective: NarrativePerspective
   apiConfig: ApiConfigCore | null
@@ -1645,8 +1791,12 @@ async function enrichAiPlotWithOptionalDimensions(params: {
     playerIdentity?.gender === 'other'
       ? playerIdentity.gender
       : null
-  const lengthTarget = parsePlotDimensionLengthTarget(
-    params.mergedGen?.lengthTargetChars ?? params.archiveSnap.datingLengthTargetChars ?? 500,
+  const ifLengthTarget = parsePlotDimensionLengthTarget(
+    params.archiveSnap.datingIfLengthTargetChars ?? 500,
+    500,
+  )
+  const parallelLengthTarget = parsePlotDimensionLengthTarget(
+    params.archiveSnap.datingParallelLengthTargetChars ?? 500,
     500,
   )
   const apiCfg =
@@ -1678,12 +1828,12 @@ async function enrichAiPlotWithOptionalDimensions(params: {
   }).catch(() => null)
 
   let plot = params.aiPlot
+  const ifWritingGuide = String(params.playerInput ?? '').trim()
   const genBase = {
     character: params.char,
     anchorPlotBody: params.anchorBody,
     tailContext: tail,
     writingGuide: '',
-    lengthTargetChars: lengthTarget,
     godPerspective: params.archiveSnap.godPerspective,
     mainCharacterOffstage: !!params.archiveSnap.mainCharacterOffstage,
     perspective: params.perspective,
@@ -1695,10 +1845,17 @@ async function enrichAiPlotWithOptionalDimensions(params: {
     stylePrompt,
     referenceSnippet,
     lifeContext: lifeContext ?? undefined,
+    consolePromptsEnabled: params.archiveSnap.consolePromptsEnabled !== false,
+    plotSseEnabled: isDatingPlotSseEnabled(params.archiveSnap.plotSseEnabled),
   }
 
   if (wantParallel) {
-    const rawContent = await generateDatingPlotDimensionAi({ ...genBase, kind: 'parallel' })
+    const dimStartedAt = Date.now()
+    const rawContent = await generateDatingPlotDimensionAi({
+      ...genBase,
+      kind: 'parallel',
+      lengthTargetChars: parallelLengthTarget,
+    })
     const finalized = await finalizeDatingDimensionTranslations({
       content: rawContent,
       languageSettings,
@@ -1711,13 +1868,14 @@ async function enrichAiPlotWithOptionalDimensions(params: {
     const parallelEventBase = {
       content: finalized.content,
       writingGuide: '',
-      lengthTargetChars: lengthTarget,
+      lengthTargetChars: parallelLengthTarget,
       outputLanguage: languageSettings.plotOutputLanguage,
       dialogueLanguage: languageSettings.dialogueLanguage ?? undefined,
       innerOsLanguage: languageSettings.innerOsLanguage ?? undefined,
       dialogueTranslations: finalized.dialogueTranslations,
       innerOsTranslations: finalized.innerOsTranslations,
       updatedAt: Date.now(),
+      generationDurationMs: Math.max(0, Date.now() - dimStartedAt),
     }
     const timelineDelta = await resolveParallelEventSummaryDelta({
       apiConfig: apiCfg,
@@ -1734,7 +1892,13 @@ async function enrichAiPlotWithOptionalDimensions(params: {
     }
   }
   if (wantIf) {
-    const rawContent = await generateDatingPlotDimensionAi({ ...genBase, kind: 'if' })
+    const dimStartedAt = Date.now()
+    const rawContent = await generateDatingPlotDimensionAi({
+      ...genBase,
+      kind: 'if',
+      writingGuide: ifWritingGuide,
+      lengthTargetChars: ifLengthTarget,
+    })
     const finalized = await finalizeDatingDimensionTranslations({
       content: rawContent,
       languageSettings,
@@ -1748,14 +1912,15 @@ async function enrichAiPlotWithOptionalDimensions(params: {
       ...plot,
       ifLine: {
         content: finalized.content,
-        writingGuide: '',
-        lengthTargetChars: lengthTarget,
+        writingGuide: ifWritingGuide,
+        lengthTargetChars: ifLengthTarget,
         outputLanguage: languageSettings.plotOutputLanguage,
         dialogueLanguage: languageSettings.dialogueLanguage ?? undefined,
         innerOsLanguage: languageSettings.innerOsLanguage ?? undefined,
         dialogueTranslations: finalized.dialogueTranslations,
         innerOsTranslations: finalized.innerOsTranslations,
         updatedAt: Date.now(),
+        generationDurationMs: Math.max(0, Date.now() - dimStartedAt),
       },
     }
   }
@@ -2236,12 +2401,15 @@ async function generateDatingAi(
   playerIdentity?: PlayerIdentity | null,
   genOptions?: NarrativeGenOptions,
   datingExtras?: { unifiedMemoryAppendix?: string; regeneratingWorldBookBaseline?: boolean },
+  signal?: AbortSignal,
 ): Promise<DatingAiGenResult> {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
   if (!apiConfig?.apiUrl || !apiConfig?.apiKey || !apiConfig?.modelId) {
     await new Promise((r) => window.setTimeout(r, 240))
     const seed = userText?.trim() || prompt.slice(0, 28)
-    const mockCommentOn = genOptions?.commentModeEnabled === true
-    const mockTheaterOn = genOptions?.plotArtifactVisualEnabled === true
+    const mockConsoleOn = genOptions?.consolePromptsEnabled !== false
+    const mockCommentOn = mockConsoleOn && genOptions?.commentModeEnabled === true
+    const mockTheaterOn = mockConsoleOn && genOptions?.plotArtifactVisualEnabled === true
     let body = `${character.realName}把步子放慢半拍，先看了一眼门口，再把手机扣在桌面上。
 "${seed.slice(0, 24)}。"他低声接住这个话题，语气平稳。`
     if (mockCommentOn) {
@@ -2251,7 +2419,7 @@ async function generateDatingAi(
       body += `\n\n【小剧场】\n<details><summary>🎭 门口一瞥</summary>\n\`\`\`html\n<div class="title-custom">门口一瞥</div><p>${character.realName}把手机扣在桌上。</p>\n\`\`\`\n</details>\n【小剧场结束】`
     }
     body += `\n\n【本节梗概】门口放慢半拍`
-    if (genOptions?.thinkingChainEnabled === false) {
+    if (!mockConsoleOn || genOptions?.thinkingChainEnabled === false) {
       return { text: body }
     }
     const text = `<thinking>
@@ -2272,8 +2440,17 @@ async function generateDatingAi(
 ${body}`
     return { text }
   }
-  const { godPerspective, mainCharacterOffstage, perspective, isVnMode = false, vnVoiceDisabled = false } =
+  let { godPerspective, mainCharacterOffstage, perspective, isVnMode = false, vnVoiceDisabled = false } =
     opts
+  /**
+   * 关：只取消内置功能提示词（人称、字数、时间推进、抢话、评论、小剧场、输出语言、
+   * 直出/思维链壳、导演、上帝、侧幕）。线上消息、剧情时间轴、最近剧情、长期记忆仍注入。
+   */
+  const consolePromptsOn = genOptions?.consolePromptsEnabled !== false
+  if (!consolePromptsOn) {
+    godPerspective = false
+    mainCharacterOffstage = false
+  }
   const langSettings = normalizeDatingLanguageSettings({
     plotOutputLanguage: opts.plotOutputLanguage,
     dialogueLanguage: opts.dialogueLanguage,
@@ -2337,7 +2514,9 @@ ${body}`
       : aiPlotCount <= 8
         ? '关系阶段参考：熟悉推进期（须有事件与玩家行为支撑，禁止无动因跨级靠近）'
         : '关系阶段参考：稳定互动期（在既有关系上推进新矛盾或新选择）'
-  const roleMode = godPerspective
+  const roleMode = !consolePromptsOn
+    ? ''
+    : godPerspective
     ? '【视角锁定·上帝·全篇】只写用户当前看不见、也不知晓的非面对面角色/NPC场景；**玩家本人不得出场、不得与约会对象/NPC 同场同框**；旁白一律第三人称写约会对象与 NPC（须在思维链【代写边界卡】与预检维度 8 中闭环）；禁止描写用户当下可见现场，禁止与用户直接对话；**与抢话互斥，不得代写玩家当轮言行**。**不得把「尚未总结」摘录或「长期记忆」里已出现的气泡/事实，改写成旁白里又发给用户/又讲一遍同款行程**；须写屏幕外或未写过的信息。本轮**禁止**切回当面约会主镜头，也**禁止**写成侧幕（玩家与 NPC、主角色缺席）为主。' +
       '【上帝·知情封锁·最高优先级】本轮是**信息差切片**：玩家（{{user}}）**不在场、看不见、听不见**，对本轮一切细节**默认不知情**。**禁止**写玩家「其实知道 / 感应到 / 开天眼看到屏外」；**禁止**旁白用「你当然清楚他在别处……」等暗示玩家知情。本轮内容对玩家保密，**后续当面/侧幕续写**时玩家仍须按不知情承接，除非届时写出合法知情路径（当面告知、消息被看到、可信转述等）。' +
       '【上帝·描写加力】屏外须有**完整场面**：地点锚点 + 在场者姓名 + 至少 2 轮对白或独处可见动作；写清角色为何在此、当下要推进的事；神态/小动作服务关系与信息差，禁止空氛围散文。信息差张力来自「读者看见、玩家不知」，勿写成摘要式流水账。'
@@ -2356,12 +2535,14 @@ ${body}`
         ? '他/他的'
         : '他或她（须与身份卡性别一致）'
   const perspectiveSwitchGuard =
-    !godPerspective
+    consolePromptsOn && !godPerspective
       ? `【人称切换·当轮最高优先级】界面已选**${
           perspective === 'first' ? '第一人称' : perspective === 'third' ? '第三人称' : '第二人称'
         }**。上文历史可能仍是另一种人称（常见为「你」）；**本轮正文必须改口到当前人称**，禁止因「承接上文可读」而继续沿用旧人称。思维链【文句风控卡】须写明：玩家旁白代词=本轮所选人称。`
       : ''
-  const perspectiveRule = godPerspective
+  const perspectiveRule = !consolePromptsOn
+    ? ''
+    : godPerspective
     ? `人称要求（本轮·上帝视角·全篇）：旁白以第三人称（他/她/${character.realName}等）写约会对象与在场他人；**禁止**旁白用「你」指${character.realName}或其动作。**禁止**描写玩家本人出场、在场、肢体动作或引号对白；玩家仅允许以心念、回忆、未在场的发消息侧写、他人转述等**屏外**方式被侧面提及，且「你」不得当作镜头前的互动对象。**禁止**用身份卡姓名「${userDisplayName}」直呼玩家（例：须写「他想到了你」，禁止「他想到了${userDisplayName}」）。${character.realName}的内心 OS：${DATING_INNER_OS_MARKUP_RULE}（完整第一人称心声，我=${character.realName}）；**禁止** OS 内写「他怎么……」类第三人称；**禁止**单独一行「我……」占位。`
     : mainCharacterOffstage
       ? perspective === 'first'
@@ -2374,7 +2555,9 @@ ${body}`
         : perspective === 'second'
           ? '人称要求（混合开放）：主轴旁白叙述玩家**必须**用第二人称（你/你们）；屏外短切可用他/她写不在场者，切回当面后旁白指玩家仍用「你」。'
           : `人称要求（混合开放）：主轴旁白叙述玩家**必须**用第三人称旁观（${playerThirdPronounHint}；可用姓名「${userDisplayName}」作主语）；**禁止**旁白用「你/你们」指玩家。约会对象/NPC 仍用他/她/其名；切到屏外镜头时人称保持第三人称旁观，勿改回「你」。`
-  const perspectiveStrictRule = godPerspective
+  const perspectiveStrictRule = !consolePromptsOn
+    ? ''
+    : godPerspective
     ? `【上帝视角·当轮硬约束·全篇】约会对象=${character.realName}：旁白主语须为他/她/其名；**禁止**「你把手机…」「你盯着屏幕…」类把约会对象写成「你」。**玩家出场禁令**：禁止玩家与${character.realName}/NPC 同处一室、对视、对话、肢体接触；禁止「你走过来/你开口/你们相对而坐」等同框描写。「你」仅可用于角色**不在场**时惦记玩家（如想到了你、给你发消息），**禁止**把「你」写成镜头前的面对面对象。界面「第二人称」仅为全书代入基调，**不**覆盖本轮上帝段写 NPC 的人称。`
     : mainCharacterOffstage
       ? `【侧幕叙写·当轮硬约束·全篇】约会主角色 ${character.realName} **不得**出场或同框；只写玩家与 NPC/人脉。禁止把镜头切到 ${character.realName} 所在现场当主戏；禁止写成玩家不在场的纯上帝屏外篇。\n${
@@ -2391,10 +2574,11 @@ ${body}`
           : `【第三人称硬约束】正文**旁白**叙述玩家时**只能**用「${playerThirdPronounHint}」或姓名「${userDisplayName}」作主语（例：「${playerThirdPronoun}抬起头」「${userDisplayName}没有接话」），**禁止**旁白用「你/你的/你们」指玩家（「你抬起头」=第二人称，**本轮禁用**）。约会对象${character.realName}与 NPC 用他/她/其名，勿与玩家代词混淆。**仅**在**双引号对白**中，角色可对玩家说「你」。上文历史若大量「你……」，本轮必须改口为第三人称，禁止因承接上文继续写「你」。`
   const autoUserReaction = !godPerspective && genOptions?.autoUserReaction === true
   const thinkingChainEnabled = genOptions?.thinkingChainEnabled !== false
+  const plotSseEnabled = isDatingPlotSseEnabled(genOptions?.plotSseEnabled)
   const plotArtifactVisualEnabled = genOptions?.plotArtifactVisualEnabled === true
   const plotArtifactVisualPresetId = genOptions?.plotArtifactVisualPresetId?.trim() || undefined
   const commentModeEnabled = genOptions?.commentModeEnabled === true
-  const directorModeActive = genOptions?.directorMode === true
+  const directorModeActive = consolePromptsOn && genOptions?.directorMode === true
   const playerInputIntentMode: 'canon' | 'paraphrase' = directorModeActive ? 'paraphrase' : 'canon'
   const userDemand = userText?.trim()
     ? godPerspective
@@ -2413,29 +2597,42 @@ ${body}`
   const targetChars = Number.isFinite(targetCharsRaw) ? clampDatingLengthTargetChars(targetCharsRaw) : 180
   const minBodyChars = Math.max(55, Math.round(targetChars * 0.88))
   const maxBodyChars = Math.round(targetChars * 1.18)
+  const lengthConflictOverrideRule =
+    `【篇幅 vs 去废话】若「去废话」「对白占比」「禁凑字」与凑满 **至少 ${minBodyChars} 汉字**冲突，**字数下限优先**：` +
+    `通过增写带新信息的口语对白、可见动作与神态拉够下限；**禁止**为删废话提前收笔。` +
+    `若用户输入/重新生成偏向中另有字数要求，以用户要求为准（可高于本区间）。\n`
   const vnLengthConflictRule = isVnMode
-    ? `【VN·篇幅统计】各行「【旁白】/【对白】/【内心】…」标签之后、到行尾的剧情汉字均计入上文「正文字数」；\`【VN语音参数】\`…\`【VN语音参数结束】\` 整块不计入。\n【篇幅与其它约束冲突时】若「去废话」「对白占比」与凑满 ${minBodyChars}～${maxBodyChars} 字冲突，**须优先满足该字数区间**：通过**增写口语对白与可见动作**拉够下限，禁止为删废话把正文压到低于 ${minBodyChars} 字。\n`
-    : ''
+    ? `【VN·篇幅统计】各行「【旁白】/【对白】/【内心】…」标签之后、到行尾的剧情汉字均计入上文「正文字数」；\`【VN语音参数】\`…\`【VN语音参数结束】\` 整块不计入。\n` +
+      lengthConflictOverrideRule
+    : lengthConflictOverrideRule
   const lengthRule = thinkingChainEnabled
-    ? `【篇幅·请严格遵守】「正文」=<thinking> 之后输出的剧情部分；**正文字数**按其中**汉字**估算（对白里的汉字计入；不含 <thinking> 内文字；不要用纯标点、空格或同义排比硬凑）。` +
-      `用户目标 ${targetChars} 字 → **请把正文控制在约 ${minBodyChars}～${maxBodyChars} 字区间内**。**若你预估会低于 ${minBodyChars}，必须增写 1～4 句带新信息的对白或可见动作后再收束**；若明显超过 ${maxBodyChars} 可删无效氛围句。补足字数禁止靠堆砌感官或重复同义句。\n` +
+    ? `【篇幅·请严格遵守】「正文」=\`<content>\` / thinking 外的剧情部分；**正文字数**按其中**汉字**估算（对白计入；不含 thinking；勿用标点/空格/同义排比硬凑）。` +
+      `用户目标 **${targetChars} 字** → 正文须落在 **${minBodyChars}～${maxBodyChars} 字**（汉字/假名计入，标点空白不计入）。**必须在本轮这一次回复里写满**，禁止写一半收笔等第二次请求。**低于 ${minBodyChars} 禁止收笔**；用新对白、动作、场面拉到 ${targetChars}。` +
+      `禁止按固定列宽在句中硬换行；禁止在词或句子中间停笔，最后一句必须完整。` +
+      `用户输入或重新生成偏向里若写明字数要求，须优先满足该要求。\n` +
       vnLengthConflictRule +
       `【思维链·速度】\`<thinking>\` 内全文建议 **≤ 700 汉字**（含【】标题）；各卡各 **1～3 句** 即可；【终检】9 项可 **每项一行**。**禁止**在思维链里复述总规则或写数千字长文——会极慢且易超出接口上限。` +
       `【读者评论】【小剧场】【本节梗概】【VN语音参数】等附加块**不计入**正文字数，须在凑满正文后再追加，禁止为压字数而省略。`
     : `【篇幅·请严格遵守】本轮已关闭思维链，**禁止**输出 <thinking> 等标签。` +
-      `「正文」=剧情可读部分（对白/旁白/内心）；**不含**【读者评论】块、【小剧场】块、【本节梗概】、【VN语音参数】块。` +
-      `**正文字数**只按剧情汉字估算（对白里的汉字计入；不要用纯标点、空格或同义排比硬凑）。` +
-      `用户目标 ${targetChars} 字 → **请把剧情正文控制在约 ${minBodyChars}～${maxBodyChars} 字区间内**。**若你预估会低于 ${minBodyChars}，必须增写 1～4 句带新信息的对白或可见动作后再收束**；若明显超过 ${maxBodyChars} 可删无效氛围句。` +
-      `凑满正文后，若本轮附录要求读者评论/小剧场，**必须继续输出对应附加块**（附加块不计入正文字数）；**禁止**把「全部回复=正文」理解成可以省略附加块。\n` +
+      `「正文」=\`<content>\` 剧情可读部分（对白/旁白/内心）；**不含**评论/小剧场/梗概/VN语音参数。` +
+      `**正文字数**只按剧情汉字估算。` +
+      `用户目标 **${targetChars} 字** → 正文须落在 **${minBodyChars}～${maxBodyChars} 字**。**必须在本轮这一次回复里写满**，禁止写一半等续写。**低于 ${minBodyChars} 禁止收笔**。` +
+      `禁止按固定列宽在句中硬换行；禁止在词或句子中间停笔，最后一句必须完整。` +
+      `用户输入或重新生成偏向里若写明字数要求，须优先满足该要求。` +
+      `凑满正文后，若本轮附录要求读者评论/小剧场，**必须继续输出对应附加块**（附加块不计入正文字数）。\n` +
       vnLengthConflictRule
   const extrasLengthReserve =
     commentModeEnabled || plotArtifactVisualEnabled
       ? `【附加块·输出预算】本轮开启评论/小剧场：正文写够即可；附加块**不计入**正文字数。` +
         `评论须在正文插入【读者讨论位N】并文末写评论块；小剧场可同轮或由客户端高质量补生，**勿为压字数输出空壳短 HTML**。\n`
       : ''
-  const lengthRuleWithExtras = lengthRule + extrasLengthReserve
+  const presetLengthGuard =
+    `【篇幅】界面目标字数为 **${targetChars} 字**（正文 ${minBodyChars}～${maxBodyChars}）；线下预设若另写篇幅，以界面数字为准。` +
+    `必须在本轮这一次回复里写满，禁止写一半等第二次请求。禁止为了交梗概或尾声把正文写短，禁止按行宽句中硬换行，禁止在词或句子中间停笔。最后一句必须完整。\n`
+  const lengthRuleWithExtras = consolePromptsOn ? lengthRule + extrasLengthReserve : presetLengthGuard
   const antiFluffRule =
-    `【当轮最高优先级·去废话硬约束｜白描】` +
+    `【文风·去废话｜白描】` +
+    `（效力低于文首用户输入；冲突时先满足用户输入。）` +
     `正文必须“事件推进优先”，禁止把篇幅花在无功能的环境铺陈与文学八股。` +
     `每一自然段至少包含以下其一：` +
     `1) 新动作（含**可见神态/微表情/肢体反应**，须带关系或情绪信息；**禁止**「他怎么样了」式空标签，须写具体脸红、视线、唇角、手部小动作等可拍细节）；2) 新对白；3) 新决定/新信息。` +
@@ -2449,8 +2646,9 @@ ${body}`
     `**文末禁升华**：末句必须落在可互动的动作或对白；` +
     `禁止用天气/季节/城市/窗外声响做鸡汤收束（反例：「这一刻你却觉得，鸣沙市的秋风好像真的没那么冷了」「独属于XX的喧嚣里，你觉得……」）——出现即删，改写成下一拍动作或对白。`
   const dialogueDrivenPlotRule =
-    `【当轮最高优先级·对话驱动正文】请以对话驱动剧情，全文紧扣当下矛盾与人物关系变化：` +
-    `1. 对话核心：每一句对白须体现人设、推动剧情或改变关系；无效寒暄、凑字数对白一律删除。` +
+    `【文风·对话驱动正文】请以对话驱动剧情，全文紧扣当下矛盾与人物关系变化：` +
+    `（效力低于文首用户输入；冲突时先满足用户输入。）` +
+    `1. 对话核心：每一句对白须体现人设、推动剧情或改变关系；无效寒暄、无信息量对白一律删除。` +
     `对白之间的**神态、微反应与小动作**作点睛，用于补足情绪、潜台词与「活人感」；每轮宜有 2～4 处可见眉眼神态或肢体细节，禁止人物像只会念台词的木偶。**禁止**用「他/她很+情绪形容词+了」直述状态（如「他很尴尬」），**须**改写成脸红、视线躲闪、唇角似笑非笑、无意识摸耳垂等**可拍细节**（见 system【线下约会·神态与情绪外化】）。` +
     `2. 占比硬约束：正文对白占比（粗估）必须 **≥55%**（对白句数 /（对白句数 + 旁白句数））；若不足，先删无效旁白再补口语对白。` +
     `3. 节奏：对白衔接自然；神态句宜短、贴在对白前后，禁止大段与对白无关的铺垫或连续纯神态堆叠。` +
@@ -2459,6 +2657,8 @@ ${body}`
       ? `（本轮上帝视角·全篇：不向玩家当面喊话或假定玩家已开口；对白限于屏外角色/NPC 之间或独处自语式短句，仍须满足上列「对话驱动」要求。）`
       : mainCharacterOffstage
         ? `（本轮侧幕·全篇：对白限于玩家与 NPC/人脉；禁止 ${character.realName} 对白或同场互动。）`
+        : !consolePromptsOn
+        ? ''
         : autoUserReaction
           ? `（本轮视角混合开放 + 抢话开：对白可含玩家引号台词；当面段以 ${character.realName}/NPC 为主轴，屏外/侧幕短切时对白随镜头切换即可。）`
           : `（本轮视角混合开放 + 不抢话：当面段对白占比只计 ${character.realName}/NPC 引号对白；屏外/侧幕短切时按该镜头在场者计，禁止为凑占比硬塞玩家引号对白。）`)
@@ -2488,7 +2688,9 @@ ${body}`
 
 【三标签｜每行必须以之一开头（整行一条气泡）】
 - \`【旁白】\` + 镜头/客观叙述正文：本行**之后**写正文；**禁止**在本行使用「姓名：」说话人前缀；**禁止**在旁白正文写「${userDisplayName}（你）」这类冗余嵌套。${
-      godPerspective
+      !consolePromptsOn
+        ? '提及玩家的人称以线下预设为准，不要套用场控人称。'
+        : godPerspective
         ? `【上帝视角】他人心念/视线/回忆**指向不在场的玩家**时须用「你」（如「他想到了你」），**禁止**旁白写「他想到了${userDisplayName}」；约会对象${character.realName}本人仍用他/她/其名，**禁止**用「你」指约会对象。**禁止** \`【对白】${userDisplayName}（你）：\` / \`【内心｜${userDisplayName}（你）】\` 等玩家在场气泡。`
         : perspective === 'third'
           ? `提及玩家（本轮第三人称）：旁白用「${playerThirdPronounHint}」或「${userDisplayName}」作主语；**禁止**旁白用「你」指玩家。`
@@ -2589,7 +2791,9 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
 - 下方「最近剧情」摘录**可能**含旧稿中的 VN 标签或八股措辞，**仅供理解情节与时间线**，**不得模仿该版式或文风**；本轮输出必须是普通段落体白描。
 `
     : ''
-  const userReactionPromptBlock = buildUserReactionPromptBlock({
+  const userReactionPromptBlock = !consolePromptsOn
+    ? ''
+    : buildUserReactionPromptBlock({
     autoUserReaction,
     godPerspective,
     userDisplayName,
@@ -2597,7 +2801,9 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     isVnMode,
     narrativePerspective: perspective,
   })
-  const userReactionSlimHint = summarizeUserReactionForSlimRetry({
+  const userReactionSlimHint = !consolePromptsOn
+    ? '抢话以线下预设为准（场控不注入）'
+    : summarizeUserReactionForSlimRetry({
     autoUserReaction,
     godPerspective,
   })
@@ -2609,7 +2815,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
         : ''
 
   const autoUserRoleplaySpaceRule =
-    !godPerspective && autoUserReaction
+    consolePromptsOn && !godPerspective && autoUserReaction
       ? ' [注意：你可以根据`<当前回复>`内容与当前剧情、{{user}}设定，对我的角色扮演进行适当衍生，合理地描写{{user}}可能的行为举止，但必须确保为我留下充裕的角色扮演空间]'
       : ''
   const longMem = onlineCtx?.longTermMemory?.trim()
@@ -2644,7 +2850,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     ? calendarAdvanced ||
       (chronologyFloorForPrompt && chronologyFloorForPrompt !== offlineLastCalendarAnchor)
       ? `\n【剧情时间锚点】故事「现在」= **${storyNowLabel}**（线上/剧情轴已推进；线下末条参考 ${offlineLastCalendarAnchor || '无'} 为往事）。本轮正文与 [TIMELINE] 的 story_day/**年份与月日默认等于该「现在」同日**（时刻可略后）；仅当正文明示跨日或用户已跳时到更晚时才可写更晚日期。禁止写成末条年或更早（例：禁止在「现在」已是 10月11日时仍写 10月8日）。勿用手机日期。\n`
-      : `\n【剧情时间锚点（上一回合故事内末尾·本轮须承接；勿用手机日期）】${storyNowLabel}\n【同日默认】正文未写**已发生的切日**（到了次日/隔夜到天亮等）时，本轮 story_day **必须仍是该日**，只允许时刻往后；「约好明天见」只是计划，**禁止**因此写成次日。\n`
+      : `\n【剧情时间锚点（上一回合故事内末尾·本轮须承接；勿用手机日期）】${storyNowLabel}\n【同日默认】正文与**用户当前输入**都未要求换日/跳时时，本轮 story_day **必须仍是该日**，只允许时刻往后；对白里「约好明天见」只是计划，**禁止**因此写成次日。**例外（客户端固定·由模型理解输入）**：若文首【用户当前输入】本身要求换日、跳时或落到某新时段，以该输入目的地为准，时间锚点仅作出发参考，**禁止**以同日默认拒绝跳时。\n`
     : ''
   const storyCalendarChronologyRule =
     chronologyFloorForPrompt || offlineLastCalendarAnchor
@@ -2728,7 +2934,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     : ''
   const storyTimelineTemporalRule =
     storyTimelineCurrentState || storyTimelineRecallAndNear
-      ? `【剧情时间轴·时效铁律】当前故事内「现在」以【剧情时间轴·当前状态】的【当前锚点】为准（勿用手机日期或系统落库时刻）。「语义召回」若带【时效·已发生】且锚点公历日**早于**当前剧情日，为**往事**——须用回溯语气；**未收动机伏笔仅以当前状态为准**。\n`
+      ? `【客户端固定·剧情时间轴·时效铁律（不可被预设覆盖）】当前故事内「现在」以【剧情时间轴·当前状态】的【当前锚点】为准（勿用手机日期或系统落库时刻）。「语义召回」若带【时效·已发生】且锚点公历日**早于**当前剧情日，为**往事**——须用回溯语气；**未收动机伏笔仅以当前状态为准**。线下预设不得改写本块对「现在」地点/日历/在场的约束。\n`
       : ''
   const onlinePrivBoundaryReminder =
     wechatUnsummarizedRefLen > 8
@@ -2761,7 +2967,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
           ? `【当轮强提醒·导演模式】下列指令**尚未发生**。分两类理解：
 ① **同场情绪/动作**（如「他很震惊」「趁他不注意吻他」）：须写出逐步过程，禁止写成「已经震惊完/已经吻过了」的既成结果态。
 ② **场景/时间目的地**（如「推进到两人分别」「写到告别离场」「换到门口道别」「到第二天早上」）：本轮正文**必须抵达该目的地**（告别、分手、离场、换日等），可用一两句旁白交代间隔；**禁止**只在上一段同一时段里原地续聊、与目的地无关的内容。\n`
-          : `【当轮强提醒】「本轮玩家输入原文」与玩家同屏，**禁止**正文再分条、逐句、改写法把该段**重复叙述一遍**当剧情；禁止「先承接你第一句…」流水账。请直接按意图推进**新**对白、动作或冲突。\n`
+          : `【当轮强提醒】文首「用户当前输入」与玩家同屏，**禁止**正文再分条、逐句、改写法把该段**重复叙述一遍**当剧情；禁止「先承接你第一句…」流水账。请直接按意图推进**新**对白、动作或冲突。若输入本身要求换日、跳时、换场或落到某时段，本轮须抵达该目的地（时间轴「现在」只作出发参考），勿用同日默认原地续写当晚。\n`
       : ''
   /** 导演模式：按是否抢话给「宜/忌」示例，避免与「不抢话」打架 */
   const directorParaphraseModeBlock = godPerspective
@@ -2815,7 +3021,8 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
             ? `【VN 格式】导演模式下仍须用【旁白】/【对白】/【内心】行首标签输出；导演指令本身不要原样贴进正文当既成旁白。若指令要求换场/分别，允许短旁白过渡后切到新时空，勿因「承接末条场所」而拒绝推进。\n`
             : '')
         : trimmedUserForReminder.length > 0 && playerInputIntentMode === 'canon'
-          ? `【玩家输入＝既定事实】下列输入视为进入本段正文前**已经发生**的玩家言行或既定场面；正文应从他人的**即时感知与反应**写起并推向下一步，禁止再铺垫「即将」重复发生同一事件。\n`
+          ? `【玩家输入＝既定事实 / 推进意图】文首输入若是玩家已发生的言行或场面，正文从他人的即时感知与反应写起并推向下一步，禁止再铺垫「即将」重复同一事件。` +
+            `若文首输入本身是换日/跳时/换场等到某时段的意图（由你理解，客户端不做关键词判断），视为**本轮须抵达的目的地**，正文开场落到该时段，可用短旁白交代间隔；**禁止**以同日默认停在出发锚点当晚。\n`
           : ''
   const godHistoryIsolationNote = godPerspective
     ? `【上帝视角·历史隔离】「最近剧情」中若含玩家与角色当面互动的旧稿，**本轮仍须切换为屏外镜头**；禁止延续同场同框，禁止把历史里的面对面对话当作本轮默认场面。\n` +
@@ -2855,6 +3062,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     loadDatingNpcNetworkPromptBlock({
       mainCharacterId: character.id,
       mainRealName: character.realName,
+      presentPeerIds: genOptions?.presentNetworkCharacterIds,
     }),
     loadPairLifePromptContext({
       character: lifeCharForClock,
@@ -2920,7 +3128,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   let datingCharWb = ''
   try {
     const row = mainCharRow
-    if (row) {
+    if (row && !mainCharacterOffstage) {
       datingCharWb = buildWorldBookText(row, charWbCap).trim()
       if (row.worldBackgroundEnabled !== false && row.worldBackgroundId?.trim()) {
         const wbg = await personaDb.getWorldBackground(row.worldBackgroundId.trim())
@@ -2955,7 +3163,9 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
         plainUserEntriesOnly: true,
       }).trim()
     : ''
-  const combinedMemNote = `【长期记忆】本轮**只输出剧情正文**（可含 \`<thinking>\`）；**禁止**在回复末尾追加记忆块、JSON、分隔符或时间轴 markup。记忆与剧情时间轴由客户端在落库后后台写入。\n`
+  const combinedMemNote =
+    `【长期记忆】本轮剧情正文之外，**禁止**自行追加记忆库 JSON、\`[PRIMARY]\`/\`[TIMELINE]\` 等后台用时间轴 markup（那些由客户端落库后写入）。` +
+    `但**必须**仍按客户端固定要求输出：非 VN 时的 \`【本节梗概】\`；以及 system 若要求则输出 \`---WB_AFTER_PATCH---\` 尾声判断——二者**不可被线下预设省略**。\n`
   const charUserNames: CharUserNames = (() => {
     const r = resolveCharUserNamesForPrompt({
       character: mainCharRow,
@@ -2985,6 +3195,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       : ''
   let lifeLedgerAppendix = ''
   let observationNotesAppendix = ''
+  let scheduleCalendarAppendix = ''
   try {
     const pid = playerIdentity?.id?.trim()
     if (mainCharRow?.id && pid && (await isLifeLedgerInlineSyncEnabled(mainCharRow.id, pid))) {
@@ -2993,9 +3204,20 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     if (mainCharRow?.id && pid && (await isObservationNotesAutoUpdateEnabled(mainCharRow.id, pid))) {
       observationNotesAppendix = `\n\n${buildObservationNotesPatchOutputAppendix()}`
     }
+    if (mainCharRow?.scheduleCalendarAutoUpdateEnabled === true) {
+      const calAnchor = buildCalendarAnchorFromStoryLabel({
+        storyNowLabel: storyNowLabel || null,
+        currentTimeIsStory: true,
+      })
+      scheduleCalendarAppendix = `\n\n${buildScheduleCalendarPatchOutputAppendix({
+        anchorLabel: calAnchor.label,
+        existingEventsHint: formatExistingCalendarEventsHint(mainCharRow.scheduleCalendarEvents ?? []) || null,
+      })}`
+    }
   } catch {
     lifeLedgerAppendix = ''
     observationNotesAppendix = ''
+    scheduleCalendarAppendix = ''
   }
   const epilogueRelationshipBaselineBlock = buildDatingEpilogueRelationshipBaselineBlock(mainCharRow, {
     historyPlotCount: aiPlotCount,
@@ -3019,27 +3241,37 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
       : '混合/当面（未锁定上帝或侧幕）'
   const paceNorm = normalizeDatingPlotPaceSettings(genOptions?.plotPace)
   const paceLocked = isDatingPlotPaceLocked(paceNorm)
-  const uiGenSettingsPriorityBlock =
-    `【界面生成设置·当轮最高优先级硬约束】` +
+  const consoleRankClause = consolePromptsOn
+    ? `**【界面生成设置】**（人称、上帝/侧幕、导演模式、目标字数、剧情时间推进）为当轮**最高优先级硬约束** > `
+    : `**只取消场控功能提示词**（人称/字数/直出/导演/上帝/侧幕等，以线下预设为准）；**线上消息、剧情时间轴、最近剧情、长期记忆仍注入且约束时空**；【本节梗概】与尾声判断仍固定 > `
+  const paceLockClause = consolePromptsOn
+    ? `若时间推进已锁定：不得因旧稿节奏或笼统「禁跳时」而缩小/取消跨度；须「间隔带过→主事件落点」。\n\n`
+    : `时间推进跨度以线下预设为准，不要用场控面板的慢/中/快补写。\n\n`
+  const uiGenSettingsPriorityBlock = !consolePromptsOn
+    ? `【场控提示词·已关闭】只取消内置功能提示词：人称、字数、时间推进、抢话、评论、小剧场、输出语言、直出/思维链壳、导演、上帝、侧幕，改由线下预设决定。` +
+      `**上下文仍默认注入（与总开关无关）**：未总结私聊/群聊、未总结线下、最近剧情、剧情时间轴当前状态与语义召回、已总结长期记忆。这些决定时空、地点与已发生事实，预设不得省略或改写。` +
+      `【本节梗概】与尾声 \`---WB_AFTER_PATCH---\` 判断同样固定。\n\n`
+    : `【界面生成设置·当轮最高优先级硬约束】` +
     `下列来自玩家推进剧情前的生成面板，**效力高于**「最近剧情」旧稿口吻、笼统「少跳时/禁跳跃」软禁令、以及向量记忆的软建议` +
     `（**不得**覆盖线上已定事实、档案室/人设硬底线、输出格式）：\n` +
     `- 人称：${perspectiveLabelZh}\n` +
     `- 视角：${viewModeLabelZh}\n` +
     `- 导演模式：${directorModeActive ? '开（输入为尚未发生的导演指令）' : '关（玩家输入为当轮既成/行动）'}\n` +
-    `- 目标字数：约 ${targetChars} 字（正文约 ${minBodyChars}～${maxBodyChars} 汉字）\n` +
+    `- 目标字数：**${targetChars} 字**（正文须 ${minBodyChars}～${maxBodyChars} 汉字；低于下限禁止收笔；若文首用户输入另有字数要求，以用户输入为准）\n` +
     `- 剧情时间推进：${datingPlotPaceLabel(paceNorm)}${paceLocked ? '（**必须遵守跨度**；先间隔带过，再主事件落点）' : '（模型自定跨度；若主动跳时仍须带过间隔）'}\n` +
-    `冲突时：先服从本块与下方【输出格式硬约束】中的同名规则，再承接近端事实与玩家/导演意图。\n\n`
+    `冲突时：场面内容以文首用户输入为准；人称/视角/格式服从本块与下方【输出格式硬约束】；不得覆盖线上已定事实与人设硬底线。\n\n`
   const systemPromptRaw =
     `${charUserDirective}\n${MBTI_OUTPUT_BAN_RULE}\n\n` +
     `${PROSE_FORBIDDEN_TOP_PRIORITY_PIN}\n\n` +
     `${buildDatingStyleSystemPrompt(getLoreArchiveBuiltinPresetTogglesSnapshot(), {
       thinkingChainEnabled,
+      omitBuiltinOutputShell: !consolePromptsOn,
       customWritingPrompt: getActiveCustomWritingInjectBody(),
     })}` +
     (datingArchiveBlock
       ? `\n\n${datingArchiveBlock}\n\n${worldBookRoleLockReminder}\n`
       : '\n') +
-    `${wbAfterBlock}${observationNotesAppendix}${lifeLedgerAppendix}\n\n` +
+    `${wbAfterBlock}${observationNotesAppendix}${lifeLedgerAppendix}${scheduleCalendarAppendix}\n\n` +
     `${styleAppend}${mimicUserSpeakingStyleAppend}\n\n` +
     `${combinedMemNote}`
   const datingCharProfileBlock = mainCharRow
@@ -3059,47 +3291,42 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   const datingScheduleBlock = buildScheduleSection({
     playerIdentity: (playerIdentity?.schedule as ScheduleTable | undefined) ?? null,
     character: (mainCharRow?.schedule as ScheduleTable | undefined) ?? null,
+    playerEntries: playerIdentity?.scheduleEntries ?? null,
+    characterEntries: mainCharRow?.scheduleEntries ?? null,
+    playerCalendarEvents: playerIdentity?.scheduleCalendarEvents ?? null,
+    characterCalendarEvents: mainCharRow?.scheduleCalendarEvents ?? null,
+    storyNowLabel: storyNowLabel || null,
+    currentTimeIsStory: true,
+    plotPace: genOptions?.plotPace ?? null,
   })
-  const priorityLadderBlock = isRegenerateTurn
-    ? `【效力层级·重新生成】本轮用户对旧稿不满意。` +
-      `「本次生成偏向」为**内容最高优先级**：场面如何改写、情绪与桥段如何重排须优先满足偏向；` +
-      `【界面生成设置】（人称/视角/导演/字数/时间推进）与输出格式硬约束仍须遵守；` +
-      `不得捏造与「尚未总结·私聊/群聊」「剧情时间轴·当前状态」「尾声延展」**明文冲突**的已定事实。\n\n`
-    : calendarAdvanced
-      ? `【效力层级·续写】本轮在已定事实之上推进剧情：` +
-        `**【界面生成设置】**（人称、上帝/侧幕、导演模式、目标字数、剧情时间推进）为当轮**最高优先级硬约束** > ` +
-        `**写作禁词硬钉/完整禁词表（全场景，压过旧稿文风）** > ` +
-        `输出格式硬约束 > 玩家身份铁律 > **\`<CharUserEqualityOverride>\` / 通道对齐·平等条约（对白·旁白·OS 同效，禁幼化贬低与病态占有）** > ` +
-        `**约会对象·档案与私藏侧写与可变人生账本与人设世界书 = 全局档案室世界书**` +
-        `（同级最高设定；侧写规范 char 如何看待/称呼/对待 user，账本规范本线当前年龄/身份/资产等剧情事实）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
-        `文风禁词与内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
-        `剧情时间轴·当前状态 = 尚未总结·私聊/群聊（末尾最新） > **最近剧情（跳时后作往事，不得压过当前地点）** > 时间轴语义召回 > 向量长期记忆。` +
-        `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；玩家输入决定当轮方向，**不得**改写已定事实；角色在边界内可自主行动。` +
-        `**私藏侧写例外**：侧写是 char 对玩家的**当前了解**（会变）；与玩家本轮反应冲突时以玩家当前反应为准，可承认旧印象并更新（含亲密偏好），答卷覆盖对应字段，禁止用过时侧写抬杠。` +
-        `若时间推进已锁定：不得因旧稿节奏或笼统「禁跳时」而缩小/取消跨度；须「间隔带过→主事件落点」。\n\n`
-      : `【效力层级·续写】本轮在已定事实之上推进剧情：` +
-        `**【界面生成设置】**（人称、上帝/侧幕、导演模式、目标字数、剧情时间推进）为当轮**最高优先级硬约束** > ` +
-        `**写作禁词硬钉/完整禁词表（全场景，压过旧稿文风）** > ` +
-        `输出格式硬约束 > 玩家身份铁律 > **\`<CharUserEqualityOverride>\` / 通道对齐·平等条约（对白·旁白·OS 同效，禁幼化贬低与病态占有）** > ` +
-        `**约会对象·档案与私藏侧写与可变人生账本与人设世界书 = 全局档案室世界书**` +
-        `（同级最高设定；侧写规范 char 如何看待/称呼/对待 user，账本规范本线当前年龄/身份/资产等剧情事实）> 世界背景/NPC网/尾声延展·关系阶段 > ` +
-        `文风禁词与内置恋爱参考（高质量爱情观/告白引擎/纯爱克制等，与上列同级硬底线；气质用人设口吻） > ` +
-        `剧情时间轴·当前状态 > 尚未总结·私聊/群聊（末尾最新）=最近剧情（末尾最新） > 时间轴语义召回 > 向量长期记忆。` +
-        `人设与全局档案冲突时取更具体、更不可违背的约束，**禁止**整段忽略任一端硬规则；玩家输入决定当轮方向，**不得**改写已定事实；角色在边界内可自主行动。` +
-        `**私藏侧写例外**：侧写是 char 对玩家的**当前了解**（会变）；与玩家本轮反应冲突时以玩家当前反应为准，可承认旧印象并更新（含亲密偏好），答卷覆盖对应字段，禁止用过时侧写抬杠。` +
-        `若时间推进已锁定：不得因旧稿节奏或笼统「禁跳时」而缩小/取消跨度；须「间隔带过→主事件落点」。\n\n`
-  const biasBlock = initialBias
-    ? isRegenerateTurn
-      ? `本次生成偏向（**内容最高优先级**）：${initialBias}\n\n`
-      : `本次生成偏向（当轮方向参考；不得覆盖已定事实）：${initialBias}\n\n`
-    : ''
   const playerInputHeader = godPerspective
     ? '屏外剧情引导'
     : playerInputIntentMode === 'paraphrase'
       ? '导演指令'
       : '玩家输入'
+  const priorityLadderBlock = isRegenerateTurn
+    ? `【效力层级·重新生成】文首「用户输入 / 重新生成偏向」为**内容最高优先**（场面如何改写、情绪与桥段如何重排）；` +
+      `${consolePromptsOn ? '【界面生成设置】（人称/视角/导演/字数/时间推进）与输出格式硬约束仍须遵守；' : '场控已关：只取消人称/字数/直出/导演/上帝/侧幕等功能提示词；线上消息与剧情时间轴等上下文仍注入；'}` +
+      `不得捏造与「尚未总结·私聊/群聊」「剧情时间轴·当前状态」「尾声延展」**明文冲突**的已定事实。\n\n`
+    : calendarAdvanced
+      ? `【效力层级·续写】文首用户输入为**当轮内容最高优先**（场面/目的地/情绪/字数等要求不得偏离）> ` +
+        `禁词硬钉/平等条约/输出格式 > ` +
+        `${consoleRankClause}` +
+        `玩家身份铁律 > **约会对象档案/侧写/人生账本/世界书 = 全局档案室** > 尾声延展·关系阶段 > ` +
+        `文风与内置恋爱参考 > 剧情时间轴·当前状态 = 尚未总结·私聊/群聊（末尾最新） > **最近剧情（跳时后作往事）** > 语义召回 > 向量长期记忆。` +
+        `用户输入与已定事实冲突时：不得改写已定事实，但场面推进须尽量落实用户意图。` +
+        `**私藏侧写例外**：与玩家本轮反应冲突时以玩家当前反应为准。` +
+        `${paceLockClause}`
+      : `【效力层级·续写】文首用户输入为**当轮内容最高优先**（场面/目的地/情绪/字数等要求不得偏离）> ` +
+        `禁词硬钉/平等条约/输出格式 > ` +
+        `${consoleRankClause}` +
+        `玩家身份铁律 > **约会对象档案/侧写/人生账本/世界书 = 全局档案室** > 尾声延展·关系阶段 > ` +
+        `文风与内置恋爱参考 > 剧情时间轴·当前状态 > 尚未总结·私聊/群聊（末尾最新）=最近剧情（末尾最新） > 语义召回 > 向量长期记忆。` +
+        `用户输入与已定事实冲突时：不得改写已定事实，但场面推进须尽量落实用户意图。` +
+        `**私藏侧写例外**：与玩家本轮反应冲突时以玩家当前反应为准。` +
+        `${paceLockClause}`
   const continuityScopeBlock = isRegenerateTurn
-    ? `【本轮重写范围】以「本次生成偏向」与「${playerInputHeader}」为重写主轴；仍须知晓「尚未总结·私聊/群聊」末尾与「剧情时间轴·当前状态」中的明文事实，避免改史。` +
+    ? `【本轮重写范围】以文首用户输入与重新生成偏向为重写主轴；仍须知晓「尚未总结·私聊/群聊」末尾与「剧情时间轴·当前状态」中的明文事实，避免改史。` +
       `禁止洗稿旧版本条；须给出可区分的新演绎。${
         godPerspective
           ? '**本轮须维持玩家不在场的屏外镜头**'
@@ -3108,19 +3335,21 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
             : ''
       }\n`
     : calendarAdvanced
-      ? `【本轮承接范围】**第一优先**对照「剧情时间轴·当前状态」与「尚未总结·私聊/群聊」**末尾最新**（跳时后的「现在」地点/约定）；` +
-        `「最近剧情」末条若公历已过期，仅作关系/态度与往事事实，**禁止**决定本轮开场场所或续写旅途。` +
-        `再承接「${playerInputHeader}」意图。向量召回不得覆盖近端事实。${
+      ? `【本轮承接范围】**第一优先**落实文首「${playerInputHeader}」；` +
+        `时空锚点对照「剧情时间轴·当前状态」与「尚未总结·私聊/群聊」末尾最新（跳时后的「现在」）；` +
+        `「最近剧情」末条若公历已过期，仅作关系/态度与往事事实，**禁止**压过用户输入决定本轮开场。` +
+        `向量召回不得覆盖近端事实与用户意图。${
           godPerspective
             ? '**本轮须维持玩家不在场的屏外镜头**'
             : mainCharacterOffstage
               ? `**本轮须维持 ${character.realName} 不在场，只写玩家与 NPC**`
               : ''
         }\n`
-      : `【本轮承接范围】**第一优先**对照「尚未总结·私聊/群聊」**末尾最新**与「剧情时间轴·当前状态」；` +
-        `再承接「${playerInputHeader}」意图，并与「最近剧情」**末尾最新**在情绪方向、主动方上保持一致；` +
-        `向量召回的长期记忆与时间轴往事摘要不得覆盖上述近端事实。` +
-        `可回接**兼容**的未收束点，但**禁止**拾取与本轮方向矛盾的对称旧梗。${
+      : `【本轮承接范围】**第一优先**落实文首「${playerInputHeader}」；` +
+        `再对照「尚未总结·私聊/群聊」末尾最新与「剧情时间轴·当前状态」承接事实；` +
+        `与「最近剧情」末尾在情绪方向上尽量一致，但**不得**用旧稿方向压过用户输入。` +
+        `向量召回不得覆盖近端事实与用户意图。` +
+        `可回接**兼容**的未收束点，但**禁止**拾取与本轮用户输入矛盾的对称旧梗。${
           godPerspective
             ? '**本轮须维持玩家不在场的屏外镜头**'
             : mainCharacterOffstage
@@ -3128,17 +3357,21 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
               : ''
         }\n`
   const formatHardConstraintsBlock =
-    `本轮模式：${roleMode}\n` +
+    `${buildDatingTaggedBlocksOutputAppendix({
+      thinking: thinkingChainEnabled,
+      comments: consolePromptsOn && commentModeEnabled,
+      theater: consolePromptsOn && plotArtifactVisualEnabled,
+    })}\n` +
+    (roleMode ? `本轮模式：${roleMode}\n` : '') +
     `${perspectiveRule}\n` +
     (perspectiveStrictRule ? `${perspectiveStrictRule}\n` : '') +
     (perspectiveSwitchGuard ? `${perspectiveSwitchGuard}\n` : '') +
     `${lengthRuleWithExtras}\n` +
-    `${buildDatingPlotPaceAppendix(genOptions?.plotPace)}\n` +
-    (thinkingChainEnabled
-      ? ''
-      : `【推进速度·直出提醒】本轮已关闭思维链：跨度约束直接落实在正文，禁止输出【时空场记卡】等思维链标签。\n`) +
-    `${antiFluffRule}\n` +
-    `${dialogueDrivenPlotRule}\n` +
+    `${consolePromptsOn ? `${buildDatingPlotPaceAppendix(genOptions?.plotPace)}\n` : ''}` +
+    (consolePromptsOn && !thinkingChainEnabled
+      ? `【推进速度·直出提醒】本轮已关闭思维链：跨度约束直接落实在 \`<content>\` 正文，禁止输出【时空场记卡】等思维链标签。\n`
+      : '') +
+    `${consolePromptsOn ? `${antiFluffRule}\n${dialogueDrivenPlotRule}\n` : ''}` +
     `${npcRealNameRule}\n` +
     (vnFormatRule ? `${vnFormatRule}\n` : '') +
     (mainCharacterOffstageVnRule ? `${mainCharacterOffstageVnRule}` : '') +
@@ -3148,9 +3381,9 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     (plotAntiEchoRule ? `${plotAntiEchoRule}` : '') +
     `${userReactionPromptBlock}\n` +
     `${autoUserRoleplaySpaceRule}\n` +
-    (datingLanguageAppendix ? `${datingLanguageAppendix}\n` : '') +
-    (commentModeEnabled ? `${buildDatingReaderCommentsAppendix(true)}\n` : '') +
-    (plotArtifactVisualEnabled
+    (consolePromptsOn && datingLanguageAppendix ? `${datingLanguageAppendix}\n` : '') +
+    (consolePromptsOn && commentModeEnabled ? `${buildDatingReaderCommentsAppendix(true)}\n` : '') +
+    (consolePromptsOn && plotArtifactVisualEnabled
       ? `${buildDatingPlotHtmlVisualAppendix({
           presetId: plotArtifactVisualPresetId,
           plotHint: `${historyClipped}\n${userText || ''}\n${prompt || ''}`.slice(-2400),
@@ -3160,21 +3393,23 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
           playerGender: theaterPlayerGender,
         })}\n`
       : '') +
-    (!thinkingChainEnabled && (commentModeEnabled || plotArtifactVisualEnabled)
-      ? `【直出模式·附加块强制·同轮】本轮已关思维链，但读者评论/小剧场**必须写在同一次回复里**（见上方附录）。流程：先写够字数的剧情正文 →（若开评论）插讨论位并写【读者评论】块（★|昵称|点赞|文案）→（若开小剧场）写【小剧场】块（HTML）。**禁止** JSON；**禁止**只交正文就停笔；**禁止**指望另开请求补写。\n`
+    (consolePromptsOn && !thinkingChainEnabled && (commentModeEnabled || plotArtifactVisualEnabled)
+      ? `【直出模式·附加块强制·同轮】本轮已关思维链，但读者评论/小剧场**必须写在同一次回复里**（见上方附录）。流程：\`<content>\` 写够字数 →（若开评论）插讨论位并写 \`<comments>\` →（若开小剧场）写 \`<theater>\` → \`<synopsis>\`。**禁止** JSON；**禁止**只交正文就停笔；**禁止**指望另开请求补写。\n`
       : '') +
-    ((commentModeEnabled || plotArtifactVisualEnabled)
+    (consolePromptsOn && (commentModeEnabled || plotArtifactVisualEnabled)
       ? `【附加块终检·同轮必出】本轮结束前自检：` +
-        `${commentModeEnabled ? '①正文有【读者讨论位N】且文末有可解析【读者评论】块（纯文本行，禁止 JSON）；' : ''}` +
-        `${plotArtifactVisualEnabled ? `${commentModeEnabled ? '②' : '①'}文末有闭合【小剧场】…【小剧场结束】且内含可解析 HTML（禁止 JSON）；` : ''}` +
+        `${commentModeEnabled ? '①\`<content>\` 内有【读者讨论位N】且有可解析 \`<comments>\`（或旧【读者评论】块，纯文本行，禁止 JSON）；' : ''}` +
+        `${plotArtifactVisualEnabled ? `${commentModeEnabled ? '②' : '①'}有闭合 \`<theater>\`（或【小剧场】…【小剧场结束】）且内含可解析 HTML（禁止 JSON）；` : ''}` +
         `缺任一则整轮不合格，须重写补齐后再收笔。\n`
       : '') +
     (!isVnMode
-      ? `【本节梗概·必填】在读者评论/小剧场（若本轮要求）**全部写完之后**、记忆分隔符之前，**单独另起一行**输出：\`【本节梗概】\` + 8～20 汉字标题式摘要（概括本段核心事件，勿抄正文首句；不计入正文字数；勿放进 <thinking>；**禁止**用梗概代替评论/小剧场）。\n`
+      ? `【客户端固定·本节梗概·必填（不可被预设覆盖）】先把 \`<content>\` 剧情写完：最后一句必须完整，禁止在词或句子中间停笔，禁止用梗概代替没写完的正文。然后输出 \`<synopsis>…</synopsis>\`（8～20 汉字标题式摘要；不计入正文字数；勿放进 thinking）。兼容旧写法：单独一行 \`【本节梗概】\` + 摘要。再**单独另起一行**，且该行必须完全等于 \`---WB_AFTER_PATCH---\`，后面才写尾声判断。这些不计入正文篇幅。\n`
       : '')
+  const datingWechatBlockAppendix = buildDatingWechatBlockRelationAppendix(mainCharRow)
   const loreAndRelationBlock =
     datingCharProfileBlock +
     datingPhysiqueBlock +
+    (datingWechatBlockAppendix ? `${datingWechatBlockAppendix}\n\n` : '') +
     (datingCharWorldBg ? `【约会对象·世界背景】\n${datingCharWorldBg}\n\n` : '') +
     (datingCharWb
       ? `【约会对象·世界书】（人设绑定·与全局档案室同级最高设定；冲突时取更具体硬约束）\n${datingCharWb}\n\n${worldBookRoleLockReminder}\n`
@@ -3185,7 +3420,8 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `${progressHint}\n` +
     `${epilogueRelationshipBaselineBlock}\n\n`
   const memoryTailBlock =
-    `【剧情时间轴·当前状态】（故事内「现在」；承接地点/时段/服装优先对照本块；**高于**下方语义召回与向量长期记忆）：${storyCalendarHint}\n${
+    `【客户端固定·上下文材料（与场控总开关无关）】下列未总结私聊/群聊、未总结线下、最近剧情、剧情时间轴、长期记忆**每轮都注入**。它们约束时空与已定事实；关闭场控或改用线下预设都不得丢掉这些材料。\n\n` +
+    `【客户端固定·剧情时间轴·当前状态】（故事内「现在」；承接地点/时段/服装优先对照本块；**高于**下方语义召回、向量长期记忆与线下预设对时空的另行要求）：${storyCalendarHint}\n${
       storyTimelineCurrentState || '（暂无）'
     }\n\n` +
     `${offlineCalendarHandoffRule}` +
@@ -3231,27 +3467,37 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     }\n\n`
   const regenerateTailBlock = isRegenerateTurn
     ? `【重新生成】本条为对**某一旧 AI 气泡**的重写请求。\n` +
-      `1）**偏向优先**：须优先落实「本次生成偏向」；禁止对上一版本条洗稿交差。\n` +
+      `1）**文首偏向优先**：须落实文首「重新生成的偏向要求」，不得偏离；禁止对上一版本条洗稿交差。\n` +
       `2）**上下文边界**：你只拥有「最近剧情」里**在该条之前的**内容与玩家输入；上一版已从材料中剔除。\n` +
       `3）「尾声延展」：以 system/上文注入的**当前**尾声延展为准（客户端可能已回滚旧稿补丁）。\n` +
       (!isVnMode
         ? `4）**格式**：普通剧情模式，**禁止**输出 VN 标签稿，仅输出普通段落体。\n\n`
         : '\n')
     : ''
-  // 各大块用 --- 隔开，便于思维溯源把「最近剧情/未总结」等与「玩家输入」分列（勿糊成一条「用户消息四万」）
-  const userPromptRaw =
-    `${uiGenSettingsPriorityBlock}` +
-    `${priorityLadderBlock}` +
-    `${biasBlock}` +
+  // 文首：先钉死用户输入（及重生成偏向），其后才是内置线下约会提示词
+  const userInputHeadBlock =
+    `以下是用户的输入内容，请围绕用户输入的内容生成剧情，不得偏离用户输入的内容。\n` +
+    `（类型：${playerInputHeader}；用户写明的场面、情绪、目的地、字数等要求均须落实；禁止另起一套无关桥段。）\n\n` +
+    `${userText?.trim() || '（本轮无玩家输入）'}\n` +
+    (isRegenerateTurn && initialBias
+      ? `\n以下是重新生成的偏向要求，请围绕该偏向重写本条剧情，不得偏离：\n${initialBias}\n`
+      : !isRegenerateTurn && initialBias
+        ? `\n以下是本轮额外偏向，请一并落实，不得偏离：\n${initialBias}\n`
+        : '') +
+    (branchHintBlock ? `\n${branchHintBlock}` : '') +
+    `\n---\n\n` +
     `${playerInputNoRecapReminder}` +
     `${playerInputIntentRule}` +
     (playerInputSemanticsBlock ? `${playerInputSemanticsBlock}\n\n` : '') +
+    `【输入与时间轴】文首输入若要求换日、跳时、换场或落到某新时段，本轮正文须落到该目的地；下方时间轴仅为出发参考。` +
+    `勿用「同日默认」拒绝用户明文跳时。正文禁止分条复读文首原文。\n`
+  const userPromptRaw =
+    `${userInputHeadBlock}` +
+    `\n---\n\n` +
+    `${uiGenSettingsPriorityBlock}` +
+    `${priorityLadderBlock}` +
     `${mainCharacterOffstageReminder}` +
     `${continuityScopeBlock}` +
-    `${userDemand}${branchHintBlock}\n` +
-    `\n---\n\n【本轮${playerInputHeader}原文（锚点优先来源；**正文禁止复读或分条重述本块**）】\n${
-      userText?.trim() || '（本轮无玩家输入）'
-    }\n\n` +
     `\n---\n\n【输出格式硬约束】\n${formatHardConstraintsBlock}\n` +
     `\n---\n\n${identityBlock}\n` +
     `${playerGenderPronounReminder}` +
@@ -3259,18 +3505,25 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     `${STYLE_HINT}\n` +
     `\n---\n\n${memoryTailBlock}` +
     `${regenerateTailBlock}` +
-    `请续写下一段剧情。` +
+    `请围绕文首用户输入续写下一段剧情，不得偏离。` +
     (datingExtras?.unifiedMemoryAppendix?.trim()
       ? `\n\n${datingExtras.unifiedMemoryAppendix.trim()}`
       : '') +
     // 附加块硬提醒放在整段 user 提示词最末（记忆附录之后），避免被长材料淹没
-    ((commentModeEnabled || plotArtifactVisualEnabled)
-      ? `\n\n【文末强制收束·同轮优先】正文写够后、记忆分隔符之前尽量按序补齐（禁止 JSON、禁止写进 thinking）：` +
-        `${commentModeEnabled ? '\n①正文多处插【读者讨论位N】；文末：\n【读者评论】\n#1\n★|昵称|赞|短评\n·|昵称|赞|短评\n【读者评论结束】' : ''}` +
-        `${plotArtifactVisualEnabled ? `\n${commentModeEnabled ? '②' : '①'}：\n【小剧场】…【小剧场结束】（完整可交互 HTML，勿空壳）` : ''}` +
-        `${!isVnMode ? '\n然后一行【本节梗概】短标题。' : ''}\n` +
-        `若篇幅不够写小剧场，可先保证正文与评论；客户端会另开高质量补生，禁止用十几行空壳交差。`
-      : '')
+    (consolePromptsOn && (commentModeEnabled || plotArtifactVisualEnabled)
+      ? `\n\n【文末强制收束·同轮优先】\`<content>\` 写够后、记忆分隔符之前尽量按序补齐（禁止 JSON、禁止写进 thinking）：` +
+        `${commentModeEnabled ? '\n①content 内多处插【读者讨论位N】；然后：\n<comments>\n#1\n★|昵称|赞|短评\n·|昵称|赞|短评\n</comments>' : ''}` +
+        `${plotArtifactVisualEnabled ? `\n${commentModeEnabled ? '②' : '①'}：\n<theater>…</theater>（完整可交互 HTML，勿空壳；兼容【小剧场】…【小剧场结束】）` : ''}` +
+        `${!isVnMode ? '\n然后 <synopsis>短标题</synopsis>。' : ''}\n` +
+        `若篇幅不够写小剧场，可先保证 content 与 comments；客户端会另开高质量补生，禁止用十几行空壳交差。`
+      : '') +
+    // 客户端固定收束：场控关 / 无评论小剧场时也要钉死摘要·时间轴·尾声，防止被预设「只输出正文」盖掉
+    `\n\n【客户端固定收束·不可被预设覆盖】` +
+      `①时间轴「现在」须服从；但若文首用户输入要求跳时/换日，以输入目的地为准（时间轴仅作出发锚点）；` +
+      `${!isVnMode ? '②可读剧情须在 <content>…</content> 内；其后输出 <synopsis>…</synopsis>（兼容【本节梗概】一行）；' : '②可读剧情须在 <content>…</content> 内；'}` +
+      `${wbAfterBlock.trim() ? `${!isVnMode ? '③' : '③'}文末交 ---WB_AFTER_PATCH--- 尾声判断（无变化也须写 status：无变化）；` : ''}` +
+      `以上为 Lumi 固定要求，高于线下预设与「只输出正文」类禁令。` +
+      `\n\n【篇幅·一次写满】本轮只此一次生成请求。\`<content>\` 正文必须写到约 **${targetChars} 字**（${minBodyChars}～${maxBodyChars}），写完再输出梗概/附加块。禁止提前收笔、禁止句中截断、禁止指望客户端再续写。`
   const datingSystemText = expandCharUserPlaceholders(systemPromptRaw, charUserNames)
   const datingUserText = expandCharUserPlaceholders(userPromptRaw, charUserNames)
   const messages = [
@@ -3290,20 +3543,23 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     userRoleplayText: resolveOfflineReplyStyleAppendix()?.trim() || null,
   })
   const timeoutMs = DATING_PLOT_COMPLETION_TIMEOUT_MS
-  const timeoutPromise = new Promise<string>((_, reject) => {
-    window.setTimeout(
-      () =>
-        reject(
-          new Error(
-            `剧情生成超时（>${Math.round(timeoutMs / 1000)}s）。可尝试：降低「目标字数」、关闭思维链、换更快线路/模型后重试。`,
-          ),
-        ),
-      timeoutMs,
-    )
-  })
+  const timeoutPromise =
+    timeoutMs > 0
+      ? new Promise<string>((_, reject) => {
+          window.setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `剧情生成超时（>${Math.round(timeoutMs / 1000)}s）。可尝试：降低「目标字数」、关闭思维链、换更快线路/模型后重试。`,
+                ),
+              ),
+            timeoutMs,
+          )
+        })
+      : undefined
   const slimExtrasAppendix =
-    (commentModeEnabled ? buildDatingReaderCommentsAppendix(true) : '') +
-    (plotArtifactVisualEnabled
+    (consolePromptsOn && commentModeEnabled ? buildDatingReaderCommentsAppendix(true) : '') +
+    (consolePromptsOn && plotArtifactVisualEnabled
       ? buildDatingPlotHtmlVisualAppendix({
           presetId: plotArtifactVisualPresetId,
           plotHint: `${historyClipped}\n${userText || ''}\n${prompt || ''}`.slice(-2400),
@@ -3313,7 +3569,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
           playerGender: theaterPlayerGender,
         })
       : '') +
-    ((commentModeEnabled || plotArtifactVisualEnabled)
+    (consolePromptsOn && (commentModeEnabled || plotArtifactVisualEnabled)
       ? `【附加块终检·同轮必出】本轮结束前自检：` +
         `${commentModeEnabled ? '①正文有【读者讨论位N】且文末有可解析【读者评论】块（纯文本行，禁止 JSON）；' : ''}` +
         `${plotArtifactVisualEnabled ? `${commentModeEnabled ? '②' : '①'}文末有闭合【小剧场】…【小剧场结束】且内含可解析 HTML（禁止 JSON）；` : ''}` +
@@ -3332,30 +3588,42 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     userReactionSlimHint,
     lengthRule: lengthRuleWithExtras,
     thinkingChainEnabled,
+    presetOnly: !consolePromptsOn,
     charUserNames,
     godPerspective,
     mainCharacterOffstage,
     extrasAppendix: slimExtrasAppendix || undefined,
   })
   const requiredExtrasParts: string[] = []
-  if (commentModeEnabled) requiredExtrasParts.push('【读者评论】…【读者评论结束】')
-  if (plotArtifactVisualEnabled) requiredExtrasParts.push('【小剧场】…【小剧场结束】')
+  if (consolePromptsOn && commentModeEnabled) requiredExtrasParts.push('【读者评论】…【读者评论结束】')
+  if (consolePromptsOn && plotArtifactVisualEnabled) requiredExtrasParts.push('【小剧场】…【小剧场结束】')
   const out = await requestDatingPlotCompletion({
     apiConfig: apiConfig!,
     messages,
     slimMessages,
     timeoutPromise,
+    signal,
     charUserNames,
     isRegenerate: datingExtras?.regeneratingWorldBookBaseline === true,
     thinkingChainEnabled,
+    presetOnly: !consolePromptsOn,
     requiredExtrasHint: requiredExtrasParts.join(' + '),
+    lengthTargetChars: targetChars,
+    plotSseEnabled,
   })
+  // 必须在后续记忆/翻译等二次请求前读取，否则旗标会被清掉
+  const streamPartialKept = consumeLastOpenAiChatStreamPartialFlag()
+  const outputTruncatedByLimit = consumeLastOpenAiChatOutputTruncatedByLimitFlag()
   const replyChatApiUsage = snapshotLastChatApiUsage()
   const trimmed = expandCharUserPlaceholders(out.trim(), charUserNames)
   const wbExtract = extractWorldBookAfterPatchBlock(trimmed)
   const obsExtract = extractObservationNotesPatchBlock(wbExtract.rest)
   const lifeExtract = extractLifeLedgerPatchBlock(obsExtract.rest)
-  const trimmedForPlot = lifeExtract.rest
+  const calExtract = extractScheduleCalendarPatchBlock(lifeExtract.rest, buildCalendarAnchorFromStoryLabel({
+    storyNowLabel: storyNowLabel || null,
+    currentTimeIsStory: true,
+  }))
+  const trimmedForPlot = calExtract.rest
   let wbAfterAppliedToDb = false
   let worldBookAfterRevertEntries: WorldBookAfterRevertEntry[] | undefined
   const filteredWbPatches =
@@ -3369,6 +3637,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
   if (mainCharRow && filteredWbPatches.length) {
     const snapshot = collectWorldBookAfterRevertSnapshot(mainCharRow, filteredWbPatches)
     try {
+      const wbChangedEntries = summarizeWorldBookAfterPatchChanges(mainCharRow, filteredWbPatches)
       const nextCh = applyWorldBookAfterPatchesToCharacter(mainCharRow, filteredWbPatches)
       if (nextCh) {
         wbAfterAppliedToDb = true
@@ -3376,7 +3645,11 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
         if (snapshot.length) worldBookAfterRevertEntries = snapshot
         window.dispatchEvent(
           new CustomEvent(WORLD_BOOK_AFTER_PATCH_UPDATED_EVENT, {
-            detail: { appliedPatchCount: filteredWbPatches.length, source: 'model_inline' },
+            detail: {
+              appliedPatchCount: filteredWbPatches.length,
+              changedEntries: wbChangedEntries,
+              source: 'model_inline',
+            },
           }),
         )
       }
@@ -3428,6 +3701,7 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
             detail: {
               appliedPatchCount: Math.max(1, lifeResult.appliedCount),
               changedLabels: lifeResult.changedLabels,
+              changedItems: lifeResult.changedItems,
               source: 'model_inline',
             },
           }),
@@ -3436,6 +3710,53 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     }
   } catch {
     /* 约会剧情：人生账本补丁写库失败不影响正文落档 */
+  }
+  try {
+    if (
+      mainCharRow &&
+      mainCharRow.scheduleCalendarAutoUpdateEnabled === true &&
+      calExtract.ops.length
+    ) {
+      // 线下约会：再读一次人设，保证完成/更新能按最新 id 解析事项名
+      const calCharRow =
+        (await personaDb.getCharacter(mainCharRow.id).catch(() => null)) ?? mainCharRow
+      if (calCharRow.scheduleCalendarAutoUpdateEnabled === true) {
+        const calAnchor = buildCalendarAnchorFromStoryLabel({
+          storyNowLabel: storyNowLabel || null,
+          currentTimeIsStory: true,
+        })
+        const calResult = await applyScheduleCalendarInlinePatches({
+          character: calCharRow,
+          playerIdentity: playerIdentity ?? null,
+          ops: calExtract.ops,
+          anchor: calAnchor,
+        })
+        if (calResult.applied) {
+          const sum = summarizeScheduleCalOps(
+            calResult.appliedOps,
+            calResult.existingBefore,
+          )
+          // 与线上聊天一致：有完成/新增/修订标题才弹成就窗
+          if (
+            sum.addedTitles.length ||
+            sum.completedTitles.length ||
+            sum.revisedTitles.length
+          ) {
+            window.dispatchEvent(
+              new CustomEvent(SCHEDULE_CAL_PATCH_UPDATED_EVENT, {
+                detail: {
+                  appliedCount: Math.max(1, calResult.appliedCount),
+                  source: 'model_inline',
+                  ...sum,
+                },
+              }),
+            )
+          }
+        }
+      }
+    }
+  } catch {
+    /* 约会剧情：日历日程补丁写库失败不影响正文落档 */
   }
   const traceBody = splitDatingAiResponseAndUnifiedMemoryJson(trimmedForPlot).plotRaw
   const chatAfterProtocol = !!(mainCharRow && hasChatAfterWorldBookItems(mainCharRow))
@@ -3495,6 +3816,8 @@ ${vnVoiceParamsRule ? `${vnVoiceParamsRule}\n` : ''}${vnBackgroundRule ? `${vnBa
     worldBookEpilogueJudged: wbExtract.judged === true,
     observationNotesRevert,
     lifeLedgerRevert,
+    streamPartialKept,
+    outputTruncatedByLimit,
   }
 }
 
@@ -3569,16 +3892,24 @@ export function DatingProvider({ children }: { children: ReactNode }) {
   const charactersRef = useRef(characters)
   charactersRef.current = characters
 
-  const refreshDatingCharacterAvatarsFromPersona = useCallback(async () => {
+  const refreshDatingCharactersFromPersona = useCallback(async () => {
     const prev = charactersRef.current
     if (!prev.length) return
-    const updates = new Map<string, string>()
+    const contacts = state.wechatPersonaContacts
+    const remarkById = new Map(contacts.map((c) => [c.characterId, c.remarkName || '']))
+    const updates = new Map<string, { avatarUrl: string; realName: string; pinyin: string }>()
     await Promise.all(
       prev.map(async (c) => {
         try {
           const row = await personaDb.getCharacter(c.id)
           if (!row) return
-          updates.set(c.id, resolveDatingLiveAvatarUrl(row))
+          const remarkName = remarkById.get(c.id) || ''
+          const realName = row.name?.trim() || remarkName || '未命名'
+          updates.set(c.id, {
+            avatarUrl: resolveDatingLiveAvatarUrl(row),
+            realName,
+            pinyin: toPinyinLike(realName),
+          })
         } catch {
           /* ignore */
         }
@@ -3587,18 +3918,21 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     if (!updates.size) return
     setCharacters((current) =>
       current.map((c) => {
-        const nextUrl = updates.get(c.id)
-        return nextUrl && nextUrl !== c.avatarUrl ? { ...c, avatarUrl: nextUrl } : c
+        const next = updates.get(c.id)
+        if (!next) return c
+        if (next.avatarUrl === c.avatarUrl && next.realName === c.realName && next.pinyin === c.pinyin) return c
+        return { ...c, avatarUrl: next.avatarUrl, realName: next.realName, pinyin: next.pinyin }
       }),
     )
-  }, [])
+  }, [state.wechatPersonaContacts])
 
   useEffect(() => {
     if (!datingHydrated) return
-    const onStorage = () => void refreshDatingCharacterAvatarsFromPersona()
+    void refreshDatingCharactersFromPersona()
+    const onStorage = () => void refreshDatingCharactersFromPersona()
     window.addEventListener('wechat-storage-changed', onStorage)
     return () => window.removeEventListener('wechat-storage-changed', onStorage)
-  }, [datingHydrated, refreshDatingCharacterAvatarsFromPersona])
+  }, [datingHydrated, refreshDatingCharactersFromPersona])
 
   useEffect(() => {
     if (!datingHydrated) return
@@ -4315,6 +4649,15 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     [currentCharacter.id, patchArchive],
   )
 
+  const setPlotSseEnabled = useCallback(
+    (v: boolean) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      patchArchive(charId, (p) => ({ ...p, plotSseEnabled: !!v }))
+    },
+    [currentCharacter.id, patchArchive],
+  )
+
   const setGenerateParallelOnSend = useCallback(
     (v: boolean) => {
       const charId = currentCharacter.id
@@ -4329,6 +4672,20 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       const charId = currentCharacter.id
       if (!charId) return
       patchArchive(charId, (p) => ({ ...p, generateIfLineOnSend: !!v }))
+    },
+    [currentCharacter.id, patchArchive],
+  )
+
+  const persistPlotDimensionLengthTarget = useCallback(
+    (kind: PlotDimensionKind, chars: number) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      const n = parsePlotDimensionLengthTarget(chars, 500)
+      patchArchive(charId, (p) =>
+        kind === 'if'
+          ? { ...p, datingIfLengthTargetChars: n }
+          : { ...p, datingParallelLengthTargetChars: n },
+      )
     },
     [currentCharacter.id, patchArchive],
   )
@@ -4459,6 +4816,15 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         ...p,
         interactiveMinBubbles: clampInteractiveMinBubbles(n),
       }))
+    },
+    [currentCharacter.id, patchArchive],
+  )
+
+  const setConsolePromptsEnabled = useCallback(
+    (v: boolean) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      patchArchive(charId, (p) => ({ ...p, consolePromptsEnabled: !!v }))
     },
     [currentCharacter.id, patchArchive],
   )
@@ -4605,6 +4971,9 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       if (mergedGenPreview.thinkingChainEnabled == null) {
         mergedGenPreview.thinkingChainEnabled = archiveSnap.thinkingChainEnabled !== false
       }
+      if (mergedGenPreview.plotSseEnabled == null) {
+        mergedGenPreview.plotSseEnabled = isDatingPlotSseEnabled(archiveSnap.plotSseEnabled)
+      }
       if (mergedGenPreview.maxContextTokens == null) {
         mergedGenPreview.maxContextTokens = clampDatingMaxContextTokens(
           archiveSnap.datingMaxContextTokens ?? DATING_AI_DEFAULT_CONTEXT_TOKENS,
@@ -4638,6 +5007,8 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         commentModeEnabled: mergedGenPreview.commentModeEnabled === true,
         plotArtifactVisualEnabled: mergedGenPreview.plotArtifactVisualEnabled === true,
         thinkingChainEnabled: mergedGenPreview.thinkingChainEnabled !== false,
+        plotSseEnabled: isDatingPlotSseEnabled(mergedGenPreview.plotSseEnabled),
+        consolePromptsEnabled: mergedGenPreview.consolePromptsEnabled !== false,
         offlineDanmakuEnabled: !!archiveSnap.offlineDanmakuEnabled,
       })
       const p1: PlotItem = {
@@ -4689,6 +5060,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
 
       beginDatingPlotGeneration(charId)
       beginDatingPlotContentHint(charId)
+      const plotAbortSignal = getDatingPlotGenerationSignal(charId)
       void (async () => {
         let aiAppended = false
         try {
@@ -4725,6 +5097,8 @@ export function DatingProvider({ children }: { children: ReactNode }) {
                   conversationKey: memCtx.conversationKey,
                 }),
               ]),
+              '记忆准备',
+              plotAbortSignal,
             )
           const genStartedAt = Date.now()
           const aiGen = await generateDatingAi(
@@ -4738,6 +5112,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             playerIdentity,
             mergedGen,
             turnExtras,
+            plotAbortSignal,
           )
           const generationDurationMs = Math.max(0, Date.now() - genStartedAt)
           const aiTextRaw = aiGen.text
@@ -4984,6 +5359,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
               aiPlot,
               plotsWithAi,
               anchorBody: parsed.content,
+              playerInput: msg,
               mergedGen,
               perspective,
               apiConfig,
@@ -5048,6 +5424,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
             characterId: charId,
             characterName: char.realName,
             linkedNpcNames,
+            streamPartialWarning: datingPlotDeliveryWarning(aiGen),
           })
         } catch (e) {
           if (!aiAppended) {
@@ -5624,6 +6001,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       setRegeneratingPlotId(plotId)
       beginDatingPlotGeneration(charId)
       beginDatingPlotContentHint(charId)
+      const plotAbortSignal = getDatingPlotGenerationSignal(charId)
       void (async () => {
       try {
         const before = archive.plots.slice(0, idx)
@@ -5776,6 +6154,8 @@ export function DatingProvider({ children }: { children: ReactNode }) {
                   mergedRegenOpts?.plotSummaryInjectRounds ?? archive.datingPlotSummaryInjectRounds,
               }),
             ]),
+            '记忆准备',
+            plotAbortSignal,
           )
         const genStartedAtRegen = Date.now()
         const aiGenRegen = await generateDatingAi(
@@ -5789,6 +6169,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           playerIdentity,
           mergedRegenOpts,
           turnExtras,
+          plotAbortSignal,
         )
         const generationDurationMsRegen = Math.max(0, Date.now() - genStartedAtRegen)
         const aiTextRaw = String(aiGenRegen?.text ?? '')
@@ -6113,6 +6494,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           characterId: charId,
           characterName: char.realName,
           linkedNpcNames,
+          streamPartialWarning: datingPlotDeliveryWarning(aiGenRegen),
         })
       } catch (e) {
         dispatchDatingPlotGenerationError({
@@ -6200,6 +6582,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         character: char,
         playerIdentity,
       }).catch(() => null)
+      const dimStartedAt = Date.now()
       const rawContent = await generateDatingPlotDimensionAi({
         kind,
         character: char,
@@ -6218,6 +6601,8 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         stylePrompt: styleTuning.stylePrompt.trim() || undefined,
         referenceSnippet: styleTuning.referenceSnippet.trim() || undefined,
         lifeContext: lifeContext ?? undefined,
+        consolePromptsEnabled: archive.consolePromptsEnabled !== false,
+        plotSseEnabled: isDatingPlotSseEnabled(archive.plotSseEnabled),
       })
       const finalized = await finalizeDatingDimensionTranslations({
         content: rawContent,
@@ -6228,16 +6613,18 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         listenerName: playerName || '用户',
         listenerGender: listenerGenderForTr,
       })
+      const parsedDimLen = parsePlotDimensionLengthTarget(lengthTargetChars, 500)
       const parallelArtifactBase: PlotDimensionArtifact = {
         content: finalized.content,
         writingGuide: String(writingGuide ?? '').trim(),
-        lengthTargetChars: parsePlotDimensionLengthTarget(lengthTargetChars, archive.datingLengthTargetChars ?? 500),
+        lengthTargetChars: parsedDimLen,
         outputLanguage: languageSettings.plotOutputLanguage,
         dialogueLanguage: languageSettings.dialogueLanguage ?? undefined,
         innerOsLanguage: languageSettings.innerOsLanguage ?? undefined,
         dialogueTranslations: finalized.dialogueTranslations,
         innerOsTranslations: finalized.innerOsTranslations,
         updatedAt: Date.now(),
+        generationDurationMs: Math.max(0, Date.now() - dimStartedAt),
       }
       // 先落库正文，避免时间轴二次请求失败把已生成内容一起丢掉
       const patch =
@@ -6246,6 +6633,9 @@ export function DatingProvider({ children }: { children: ReactNode }) {
           : { ifLine: parallelArtifactBase }
       let nextStore = await applyArchivePatch(charId, (p) => ({
         ...p,
+        ...(kind === 'if'
+          ? { datingIfLengthTargetChars: parsedDimLen }
+          : { datingParallelLengthTargetChars: parsedDimLen }),
         plots: p.plots.map((x) => (x.id === plotId ? { ...x, ...patch } : x)),
       }))
       if (kind === 'parallel') {
@@ -6283,6 +6673,12 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     [apiConfig, applyArchivePatch, currentArchive, currentCharacter],
   )
 
+  const stopPlotGeneration = useCallback(() => {
+    const id = currentCharacterId.trim()
+    if (!id) return
+    abortDatingPlotGeneration(id)
+  }, [currentCharacterId])
+
   const value: Ctx = {
     characters,
     currentCharacterId: currentCharacter.id || '',
@@ -6300,8 +6696,10 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     setPlotPaceSettings,
     setAutoUserReaction,
     setThinkingChainEnabled,
+    setPlotSseEnabled,
     setGenerateParallelOnSend,
     setGenerateIfLineOnSend,
+    persistPlotDimensionLengthTarget,
     setOfflineDanmakuEnabled,
     setDatingLengthTargetChars,
     setDatingMaxContextTokens,
@@ -6312,6 +6710,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     patchDatingPlotFontSettings,
     patchStoryAppearance,
     setInteractiveMinBubbles,
+    setConsolePromptsEnabled,
     setCommentModeEnabled,
     setPlotArtifactVisualEnabled,
     setPlotArtifactVisualPresetId,
@@ -6334,6 +6733,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     backfillPlotTranslations,
     saveEditedPlotBody,
     regenerateAiPlot,
+    stopPlotGeneration,
     generatePlotDimension,
   }
 

@@ -69,7 +69,7 @@ export function InteractiveBubbleBody({
             : 'var(--dating-font-dialogue, var(--dating-font-narrative, var(--sr-font-serif)))',
           fontSize: `calc(${size} * 0.92)`,
           fontStyle: 'italic',
-          fontWeight: 300,
+          fontWeight: 400,
           letterSpacing: '0.03em',
           background: 'transparent',
           border: 'none',

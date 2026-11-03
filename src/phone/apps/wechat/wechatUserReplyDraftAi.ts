@@ -66,13 +66,24 @@ function clipBlock(text: string | undefined, maxChars: number): string {
   return `${t.slice(0, Math.max(0, maxChars - 1))}…`
 }
 
-/** 将输入框草稿按换行拆成多条待发气泡（空行忽略） */
+/** 「生成回复」等：模型按换行给出多条草稿时，拆成待发气泡（空行忽略） */
 export function splitWeChatComposerIntoBubbles(raw: string): string[] {
   return String(raw ?? '')
     .replace(/\r\n/g, '\n')
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean)
+}
+
+/**
+ * 用户点发送 / 回车：整段作为**一条**气泡。
+ * 粘贴或 Shift+Enter 产生的换行保留在气泡内展示，不自动拆条。
+ */
+export function normalizeWeChatComposerSendAsSingleBubble(raw: string): string {
+  return String(raw ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/^\n+|\n+$/g, '')
+    .trim()
 }
 
 export async function requestWeChatUserReplyDraftBubbles(params: {

@@ -1,6 +1,18 @@
 /** 可变人生表单：角色本线 / 玩家本线两套账本。 */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import { useCurrentApiConfig } from '../../api/ApiSettingsContext'
 import type { Character, Gender, PlayerIdentity } from '../newFriendsPersona/types'
 import { genderLabelZh, uid } from '../newFriendsPersona/utils'
@@ -12,7 +24,11 @@ import {
   setLifeLedgerInlineSyncEnabled,
   LIFE_LEDGER_INLINE_SYNC_CHANGED_EVENT,
 } from './inlineSync'
-import { LIFE_LEDGER_PATCH_UPDATED_EVENT } from './lifeLedgerPatch'
+import {
+  LIFE_LEDGER_PATCH_UPDATED_EVENT,
+  lifeFieldDiffsToChangedItems,
+  type LifeLedgerChangedItem,
+} from './lifeLedgerPatch'
 import {
   alignLifeSheetToTimeline,
   approxElapsedStoryYears,
@@ -37,13 +53,33 @@ import {
   LIFE_LEDGER_COACH_TARGET_ATTR,
 } from './lifeLedgerCoach'
 import { LIFE_LEDGER_TUTORIAL_SECTIONS } from './lifeLedgerTutorialCopy'
-import { BookOpen, ChevronDown, History } from 'lucide-react'
+import {
+  Anchor,
+  BookOpen,
+  Car,
+  ChevronDown,
+  History,
+  Home,
+  ImagePlus,
+  PawPrint,
+  Shield,
+  StickyNote,
+  Users,
+  UsersRound,
+  type LucideIcon,
+} from 'lucide-react'
+import { ImageCropperModal } from '../../../components/ImageCropperModal'
+import { resolveCharacterAvatarUrl } from '../../../utils/characterAvatarUrl'
+import { DEFAULT_PUBLIC_AVATAR_PATH } from '../../../types'
+import { compressAvatarDataUrl, MAX_AVATAR_DATA_URL_LEN } from '../avatarCompress'
+import { resolveLifeLedgerAvatarSrc } from './ledgerAvatar'
 import { MemoryCoachPortal } from '../memory/MemoryCoachPortal'
 import { MemoryTutorialModal } from '../memory/MemoryTutorialModal'
 import { readMemoryCoachSeen, writeMemoryCoachSeen } from '../memory/memoryCoachTypes'
 import {
   appendLifeChangeHistory,
   appendOrCoalesceManualHistory,
+  buildLifeSheetDiffs,
   formatLifeHistoryDiffPair,
   lifeChangeSourceLabel,
   lifeSheetContentEqual,
@@ -62,31 +98,223 @@ import type {
   LifeVehicle,
 } from './types'
 
-/** Classified Dossier · 美式复古机密档案 */
-const STAMP = '#8B1A1A'
-const INK = '#2C2C2E'
-const MIST = '#8E8E93'
-const PAPER = '#F9F8F6'
-const PAGE = '#F9F8F6'
-const LINE = 'rgba(44,44,46,0.12)'
-const RULE = 'rgba(44,44,46,0.1)'
+/**
+ * 人生账本 · 锐利漫画杂志风
+ * 全页一个强焦点（LIFE DOSSIER 头）；2px 深墨描边；印章红仅 STATUS/关系标签。
+ */
+const BG = '#F3ECDD'
+const CARD = '#FFFFFF'
+const INK = '#2E271C'
+const DARK = '#2E271C'
+const MIST = '#9C8D6C'
+const LINE = '#2E271C'
+const RULE = 'rgba(46,39,28,0.18)'
+const STAMP = '#C9574F'
+const BORDER = '2px solid #2E271C'
+const BORDER_SOFT = '1.5px solid #2E271C'
+const RADIUS = 10
+const PAPER = BG
+const PAGE = CARD
 const MONO = '"SF Mono", "Courier New", ui-monospace, monospace'
-const SERIF = '"Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif'
+/** 档案正文：仿宋（Windows 仿宋 / macOS 华文仿宋） */
+const FANGSONG =
+  '"FangSong", "仿宋", "STFangsong", "FangSong_GB2312", "Songti SC", "Noto Serif SC", "SimSun", serif'
+const SERIF = FANGSONG
 const SANS = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif'
+/** 签名：草书（站内已载 Zhi Mang Xing） */
+const SIGNATURE_STACK = '"Zhi Mang Xing", "Long Cang", "STXingkai", "华文行楷", cursive'
+const HEX_CLIP = 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+const HALFTONE_BG =
+  'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'10\' viewBox=\'0 0 10 10\'%3E%3Ccircle cx=\'1.5\' cy=\'1.5\' r=\'0.9\' fill=\'%232E271C\' fill-opacity=\'0.12\'/%3E%3C/svg%3E")'
+/** 名片纸张底：偏白 + 淡灰纤维（不要米色） */
+const CARD_PAPER = '#FAFAF8'
+const CARD_PAPER_BG = [
+  'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'160\' height=\'160\' viewBox=\'0 0 160 160\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'3\' stitchTiles=\'stitch\'/%3E%3CfeColorMatrix values=\'0 0 0 0 0.12 0 0 0 0 0.12 0 0 0 0 0.12 0 0 0 0.14 0\'/%3E%3C/filter%3E%3Crect width=\'160\' height=\'160\' filter=\'url(%23n)\'/%3E%3C/svg%3E")',
+  'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'6\' height=\'6\' viewBox=\'0 0 6 6\'%3E%3Cpath d=\'M0 3h6\' stroke=\'%232E271C\' stroke-opacity=\'0.028\' stroke-width=\'0.55\'/%3E%3C/svg%3E")',
+  'linear-gradient(165deg, #FFFFFF 0%, #FAFAF8 55%, #F3F3F0 100%)',
+].join(', ')
+const cardPaperStyle: CSSProperties = {
+  backgroundColor: CARD_PAPER,
+  backgroundImage: CARD_PAPER_BG,
+  backgroundSize: '160px 160px, 6px 6px, auto',
+}
 
-const NOISE_BG =
-  'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.85\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'0.045\'/%3E%3C/svg%3E")'
+/** 编辑态：当前区块 / 当前字段的焦点底色 */
+const EDIT_FOCUS_TINT = 'rgba(201,87,79,0.08)'
+const EDIT_FOCUS_EDGE = 'rgba(201,87,79,0.55)'
+const EDIT_IDLE_TINT = 'rgba(255,255,255,0.42)'
+const EDIT_OPEN_BODY = 'rgba(255,252,247,0.98)'
 
 const inputCls =
-  'w-full bg-transparent px-0 py-1.5 text-[13px] outline-none'
+  'life-ledger-input w-full bg-transparent px-0 py-1.5 text-[13px] outline-none transition-[border-color,box-shadow] duration-150'
 const inputStyle: CSSProperties = {
   color: INK,
-  borderBottom: `1px solid ${RULE}`,
+  borderBottom: '1.5px solid rgba(46,39,28,0.22)',
   fontFamily: SANS,
   caretColor: STAMP,
 }
 const labelCls = 'font-mono text-[9px] font-medium uppercase tracking-[0.16em]'
 const labelStyle: CSSProperties = { color: MIST, fontFamily: MONO }
+
+/** 编辑态手风琴：同一时刻只展开一块，其余弱化 */
+const LedgerAccordionCtx = createContext<{
+  openId: string | null
+  toggle: (id: string) => void
+  registerDefault: (id: string) => void
+} | null>(null)
+
+function LedgerAccordionProvider({ children }: { children: ReactNode }) {
+  const [openId, setOpenId] = useState<string | null>(null)
+  const defaultLocked = useRef(false)
+  const toggle = useCallback((id: string) => {
+    setOpenId((cur) => (cur === id ? null : id))
+  }, [])
+  const registerDefault = useCallback((id: string) => {
+    if (defaultLocked.current) return
+    defaultLocked.current = true
+    setOpenId(id)
+  }, [])
+  const value = useMemo(() => ({ openId, toggle, registerDefault }), [openId, toggle, registerDefault])
+  return <LedgerAccordionCtx.Provider value={value}>{children}</LedgerAccordionCtx.Provider>
+}
+
+/** 编辑态输入焦点：下划线加粗变印章红（inline style 无法被 Tailwind focus 覆盖） */
+function LifeLedgerEditFocusStyles() {
+  return (
+    <style>{`
+      .life-ledger-input:focus {
+        border-bottom-color: ${STAMP} !important;
+        border-bottom-width: 2px !important;
+        box-shadow: 0 1px 0 0 ${STAMP};
+      }
+      .life-ledger-field:focus-within {
+        background: ${EDIT_FOCUS_TINT};
+        box-shadow: inset 3px 0 0 0 ${STAMP};
+      }
+      .life-ledger-field:focus-within .life-ledger-field-label {
+        color: ${STAMP} !important;
+      }
+      .life-ledger-item:focus-within {
+        background: ${EDIT_FOCUS_TINT};
+        border-color: ${EDIT_FOCUS_EDGE} !important;
+        box-shadow: inset 3px 0 0 0 ${STAMP};
+      }
+      textarea.life-ledger-input:focus {
+        box-shadow: none;
+        outline: none;
+      }
+    `}</style>
+  )
+}
+
+function LedgerAvatarPicker({
+  ledgerAvatar,
+  wechatAvatarUrl,
+  onChange,
+  size = 56,
+}: {
+  ledgerAvatar: string
+  wechatAvatarUrl?: string | null
+  onChange: (next: string) => void
+  size?: number
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [cropSrc, setCropSrc] = useState('')
+  const hasCustom = Boolean(ledgerAvatar.trim())
+  const src = resolveLifeLedgerAvatarSrc(ledgerAvatar, wechatAvatarUrl)
+
+  const onPickFile = (file: File | null) => {
+    if (!file || !file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const next = typeof reader.result === 'string' ? reader.result : ''
+      if (next) setCropSrc(next)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  return (
+    <>
+      <ImageCropperModal
+        open={!!cropSrc}
+        imageSrc={cropSrc}
+        title="裁剪账本头像"
+        aspect={1}
+        maxSide={1080}
+        objectFit="horizontal-cover"
+        onCancel={() => setCropSrc('')}
+        onConfirm={async (dataUrl) => {
+          const next = await compressAvatarDataUrl(dataUrl, MAX_AVATAR_DATA_URL_LEN)
+          if (next.length > MAX_AVATAR_DATA_URL_LEN) {
+            window.alert('图片过大，请选择较小的图片。')
+            return
+          }
+          onChange(next)
+          setCropSrc('')
+        }}
+      />
+      <div className="flex shrink-0 flex-col items-center gap-1">
+        <button
+          type="button"
+          className="relative overflow-hidden active:opacity-90"
+          style={{
+            width: size,
+            height: size,
+            border: BORDER,
+            borderRadius: 2,
+            background: CARD,
+          }}
+          onClick={() => inputRef.current?.click()}
+          aria-label={hasCustom ? '更换账本头像' : '上传账本头像'}
+          title={hasCustom ? '更换账本头像' : '默认微信头像 · 点按上传账本专属'}
+        >
+          <img
+            src={src}
+            alt=""
+            className="size-full object-cover"
+            onError={(e) => {
+              e.currentTarget.src =
+                resolveCharacterAvatarUrl({ avatarUrl: DEFAULT_PUBLIC_AVATAR_PATH }) || src
+            }}
+          />
+          <span
+            className="pointer-events-none absolute bottom-0 inset-x-0 flex items-center justify-center gap-0.5 py-0.5"
+            style={{ background: 'rgba(46,39,28,0.72)' }}
+            aria-hidden
+          >
+            <ImagePlus className="size-2.5" style={{ color: CARD }} strokeWidth={2} />
+          </span>
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          onChange={(e) => {
+            onPickFile(e.target.files?.[0] ?? null)
+            e.currentTarget.value = ''
+          }}
+        />
+        <p
+          className="max-w-[4.5rem] text-center font-mono text-[8px] leading-tight tracking-[0.06em]"
+          style={{ color: MIST, fontFamily: MONO }}
+        >
+          {hasCustom ? '专属' : '微信'}
+        </p>
+        {hasCustom ? (
+          <button
+            type="button"
+            className="font-mono text-[8px] tracking-[0.08em] underline-offset-2 hover:underline"
+            style={{ color: MIST, fontFamily: MONO }}
+            onClick={() => onChange('')}
+          >
+            恢复微信
+          </button>
+        ) : null}
+      </div>
+    </>
+  )
+}
 
 const PLACE_KINDS: { id: LifePlaceKind; zh: string }[] = [
   { id: '', zh: '类型未填' },
@@ -117,8 +345,11 @@ function Field({
   children: ReactNode
 }) {
   return (
-    <label className="block py-1.5">
-      <span className={labelCls} style={labelStyle}>
+    <label
+      className="life-ledger-field block rounded-sm px-2.5 py-2 transition-[background,box-shadow] duration-150"
+      style={{ background: 'transparent' }}
+    >
+      <span className={`life-ledger-field-label ${labelCls}`} style={labelStyle}>
         {label}
       </span>
       <div className="mt-0.5">{children}</div>
@@ -139,19 +370,36 @@ function Chip({
     <button
       type="button"
       onClick={onClick}
-      className="px-2.5 py-1 text-[11px] tracking-wide"
+      className="inline-flex items-center gap-1.5 px-2 py-1 text-[11px] tracking-wide transition-colors"
       style={{
-        border: on ? `1px solid ${STAMP}` : `1px solid ${LINE}`,
-        background: on ? STAMP : 'transparent',
-          color: on ? '#F9F8F6' : INK,
-          fontFamily: SANS,
+        border: on ? `1.5px solid ${STAMP}` : BORDER_SOFT,
+        background: on ? EDIT_FOCUS_TINT : CARD,
+        color: INK,
+        fontFamily: SANS,
+        borderRadius: 2,
       }}
     >
+      <span
+        className="relative flex size-[12px] shrink-0 items-center justify-center"
+        style={{
+          border: on ? `1.5px solid ${STAMP}` : BORDER_SOFT,
+          background: on ? STAMP : 'transparent',
+          borderRadius: 0,
+        }}
+        aria-hidden
+      >
+        {on ? (
+          <span className="text-[9px] font-bold leading-none" style={{ color: CARD }}>
+            ✓
+          </span>
+        ) : null}
+      </span>
       {children}
     </button>
   )
 }
 
+/** 关系/状态标签：唯一允许印章红 + 微倾 */
 function Stamp({
   children,
   rotate = -2,
@@ -161,13 +409,14 @@ function Stamp({
 }) {
   return (
     <span
-      className="inline-block max-w-[8.5rem] shrink-0 truncate px-1.5 py-0.5 font-mono text-[9px] tracking-[0.08em]"
+      className="inline-block max-w-[8.5rem] shrink-0 truncate px-1.5 py-0.5 font-mono text-[9px] tracking-[0.06em]"
       style={{
-        border: `1px solid ${STAMP}`,
+        border: `1.5px solid ${STAMP}`,
         color: STAMP,
-        background: 'transparent',
+        background: CARD,
         fontFamily: MONO,
         transform: `rotate(${rotate}deg)`,
+        borderRadius: 2,
       }}
       title={typeof children === 'string' ? children : undefined}
     >
@@ -177,7 +426,80 @@ function Stamp({
 }
 
 function LaneBadge({ lane }: { lane: 'now' | 'start' }) {
-  return <Stamp rotate={lane === 'now' ? -3 : 2}>{lane === 'now' ? 'NOW' : 'START'}</Stamp>
+  return (
+    <span
+      className="inline-block px-1.5 py-0.5 font-mono text-[8px] tracking-[0.14em]"
+      style={{
+        border: BORDER_SOFT,
+        color: MIST,
+        background: CARD,
+        fontFamily: MONO,
+        borderRadius: 2,
+      }}
+    >
+      {lane === 'now' ? 'NOW' : 'START'}
+    </span>
+  )
+}
+
+/** 整页最多 1–2 处点睛，固定探出卡片左上角 */
+function Paperclip({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`pointer-events-none absolute z-[2] ${className}`}
+      width="16"
+      height="24"
+      viewBox="0 0 18 28"
+      fill="none"
+      aria-hidden
+    >
+      <path
+        d="M5.5 10.5V19a3.5 3.5 0 007 0V8.5a2.5 2.5 0 00-5 0V18a1.5 1.5 0 003 0V10"
+        stroke={DARK}
+        strokeWidth="1.35"
+        strokeLinecap="round"
+        opacity="0.45"
+      />
+    </svg>
+  )
+}
+
+function SignatureLine({ name }: { name: string }) {
+  const label = name.trim() || '—'
+  return (
+    <div className="mt-5 flex flex-col items-end pr-1">
+      <p
+        className="max-w-[90%] truncate text-right leading-none"
+        style={{
+          color: INK,
+          fontFamily: SIGNATURE_STACK,
+          fontSize: 30,
+          fontWeight: 400,
+          letterSpacing: '0.04em',
+          transform: 'rotate(-5deg)',
+          transformOrigin: 'right bottom',
+          opacity: 0.94,
+          textShadow: '0.5px 0.7px 0 rgba(46,39,28,0.16)',
+        }}
+      >
+        {label}
+      </p>
+      <div className="mt-2 h-px w-[min(58%,11rem)]" style={{ background: DARK }} />
+      <p
+        className="mt-1 text-right text-[10px] font-bold leading-none"
+        style={{ color: MIST, fontFamily: FANGSONG }}
+      >
+        签名
+      </p>
+      <p
+        className="mt-0.5 font-mono text-[7px] uppercase tracking-[0.22em]"
+        style={{ color: MIST, fontFamily: MONO }}
+        aria-hidden
+      >
+        SIGNATURE
+      </p>
+    </div>
+  )
 }
 
 function LedgerCard({
@@ -195,53 +517,96 @@ function LedgerCard({
   hint?: string
   lane?: 'now' | 'start'
   extra?: ReactNode
-  /** 折叠时右侧摘要，如「03」条 */
   summary?: string
-  /** 默认展开 */
   defaultOpen?: boolean
+  /** @deprecated 装饰已收敛，忽略 */
+  tape?: boolean
+  /** @deprecated 装饰已收敛，忽略 */
+  clip?: boolean
   children: ReactNode
 }) {
-  const [open, setOpen] = useState(defaultOpen)
+  const id = useId()
+  const accordion = useContext(LedgerAccordionCtx)
+  const [localOpen, setLocalOpen] = useState(defaultOpen)
+
+  useLayoutEffect(() => {
+    if (defaultOpen && accordion) accordion.registerDefault(id)
+    // 仅挂载时登记默认展开块
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const open = accordion ? accordion.openId === id : localOpen
+  /** 手风琴尚未选定时，暂不弱化，避免首帧闪暗 */
+  const dimOthers = Boolean(accordion && accordion.openId && !open)
+  const onToggle = () => {
+    if (accordion) accordion.toggle(id)
+    else setLocalOpen((v) => !v)
+  }
+
   return (
-    <section className="relative py-3">
+    <section
+      className="relative overflow-hidden transition-[opacity,box-shadow,background,border-color] duration-200"
+      style={{
+        marginTop: 10,
+        border: open ? BORDER : `1.5px solid rgba(46,39,28,0.2)`,
+        borderRadius: RADIUS,
+        background: open ? CARD : EDIT_IDLE_TINT,
+        boxShadow: open
+          ? `inset 4px 0 0 0 ${STAMP}, 0 2px 8px rgba(46,39,28,0.08)`
+          : 'none',
+        opacity: dimOthers ? 0.58 : 1,
+      }}
+    >
       <div
-        className="flex items-start justify-between gap-2 border-b pb-2"
-        style={{ borderColor: LINE }}
+        className="flex items-start justify-between gap-2 px-3 py-2.5"
+        style={{
+          borderBottom: open ? `1px dashed ${RULE}` : 'none',
+          background: open ? EDIT_FOCUS_TINT : 'transparent',
+        }}
       >
         <button
           type="button"
           className="min-w-0 flex-1 text-left"
           aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
+          onClick={onToggle}
         >
           <div className="flex flex-wrap items-center gap-2">
             <p
-              className="font-mono text-[9px] uppercase tracking-[0.22em]"
-              style={{ color: lane === 'start' ? MIST : STAMP, fontFamily: MONO }}
+              className="font-mono text-[9px] uppercase tracking-[0.18em]"
+              style={{ color: open ? STAMP : MIST, fontFamily: MONO }}
             >
-              {kicker}
+              {open ? `EDIT · ${kicker}` : kicker}
             </p>
             {lane ? <LaneBadge lane={lane} /> : null}
           </div>
           <div className="mt-1 flex items-center gap-2">
             <p
               className="min-w-0 flex-1 text-[15px] font-semibold tracking-tight"
-              style={{ color: INK, fontFamily: SERIF }}
+              style={{ color: INK, fontFamily: SANS }}
             >
               {title}
             </p>
-            <ChevronDown
-              className="size-4 shrink-0 transition-transform"
+            <span
+              className="flex size-6 shrink-0 items-center justify-center"
               style={{
-                color: MIST,
-                transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+                border: BORDER_SOFT,
+                borderRadius: 2,
+                background: open ? INK : CARD,
               }}
-              strokeWidth={1.75}
               aria-hidden
-            />
+            >
+              <ChevronDown
+                className="size-3.5 transition-transform"
+                style={{
+                  color: open ? CARD : MIST,
+                  transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+                }}
+                strokeWidth={2}
+              />
+            </span>
           </div>
           {open && hint ? (
-            <p className="mt-1 text-[11px] leading-relaxed" style={{ color: MIST, fontFamily: SANS }}>
+            <p className="mt-1.5 text-[11px] leading-relaxed" style={{ color: MIST, fontFamily: SANS }}>
               {hint}
             </p>
           ) : null}
@@ -251,16 +616,27 @@ function LedgerCard({
             </p>
           ) : null}
         </button>
-        {open && extra ? <div className="shrink-0 pt-0.5">{extra}</div> : null}
+        {open && extra ? <div className="shrink-0 pt-5">{extra}</div> : null}
       </div>
-      {open ? <div className="mt-2.5">{children}</div> : null}
+      {open ? (
+        <div className="space-y-2.5 px-3 pb-3.5 pt-2.5" style={{ background: EDIT_OPEN_BODY }}>
+          {children}
+        </div>
+      ) : null}
     </section>
   )
 }
 
 function InnerPad({ children }: { children: ReactNode }) {
   return (
-    <div className="space-y-1.5 py-2.5" style={{ borderTop: `0.5px solid ${LINE}` }}>
+    <div
+      className="life-ledger-item space-y-1.5 rounded-sm px-2.5 py-2.5 transition-[background,box-shadow,border-color] duration-150"
+      style={{
+        border: `1.5px solid rgba(46,39,28,0.18)`,
+        background: 'rgba(255,255,255,0.85)',
+        borderRadius: 6,
+      }}
+    >
       {children}
     </div>
   )
@@ -277,33 +653,31 @@ function DossierShell({
 }) {
   return (
     <div
-      className="relative overflow-hidden"
+      className="relative"
       style={{
-        background: PAPER,
-        backgroundImage: NOISE_BG,
-        border: `1px solid ${LINE}`,
-        boxShadow: '0 10px 40px rgba(44,44,46,0.06)',
+        background: BG,
         fontFamily: SANS,
       }}
       {...{ [LIFE_LEDGER_COACH_ROOT_ATTR]: LIFE_LEDGER_COACH_SCOPE }}
     >
+      <LifeLedgerEditFocusStyles />
       <div
         className="sticky top-0 z-10 flex items-center justify-between gap-2 px-4 py-2"
         style={{
-          background: 'rgba(249,248,246,0.92)',
-          backdropFilter: 'blur(6px)',
-          borderBottom: `0.5px solid ${LINE}`,
+          background: 'rgba(243,236,221,0.96)',
+          backdropFilter: 'blur(8px)',
+          borderBottom: BORDER,
         }}
       >
         <span
-          className="min-w-0 truncate font-mono text-[9px] tracking-[0.18em]"
-          style={{ color: STAMP, fontFamily: MONO, transform: 'rotate(-1.5deg)' }}
+          className="min-w-0 truncate font-mono text-[9px] tracking-[0.16em]"
+          style={{ color: MIST, fontFamily: MONO }}
         >
-          CONF. CH-{fileNo}
+          FORM W-01 · LL-{fileNo}
         </span>
         <div className="flex shrink-0 items-center gap-1.5">{tutorialSlot}</div>
       </div>
-      <div className="px-5 pb-6 pt-4">{children}</div>
+      <div className="px-3 pb-5 pt-3 sm:px-4">{children}</div>
     </div>
   )
 }
@@ -316,14 +690,11 @@ function ModeToggle({
   onChange: (m: 'preview' | 'edit') => void
 }) {
   return (
-    <div
-      className="flex overflow-hidden"
-      style={{ border: `1.5px solid ${STAMP}`, background: PAPER }}
-    >
+    <div className="flex" style={{ borderBottom: BORDER }}>
       {(
         [
-          { id: 'preview' as const, label: '预览', en: 'VIEW' },
-          { id: 'edit' as const, label: '编辑', en: 'EDIT' },
+          { id: 'preview' as const, label: '预览', en: '01 VIEW' },
+          { id: 'edit' as const, label: '编辑', en: '02 EDIT' },
         ] as const
       ).map((t) => {
         const on = mode === t.id
@@ -331,22 +702,32 @@ function ModeToggle({
           <button
             key={t.id}
             type="button"
-            className="min-w-0 flex-1 py-2.5 text-center"
+            className="relative min-w-0 flex-1 truncate px-3 py-2.5 text-center"
             style={{
-              background: on ? STAMP : 'transparent',
-              color: on ? '#F9F8F6' : STAMP,
+              background: 'transparent',
+              color: on ? INK : MIST,
             }}
             onClick={() => onChange(t.id)}
           >
             <span
-              className="block font-mono text-[9px] tracking-[0.18em]"
-              style={{ fontFamily: MONO, opacity: 0.85 }}
+              className="block font-mono text-[9px] tracking-[0.14em]"
+              style={{ fontFamily: MONO, fontWeight: on ? 800 : 500 }}
             >
               {t.en}
             </span>
-            <span className="mt-0.5 block text-[14px] font-semibold" style={{ fontFamily: SANS }}>
+            <span
+              className="mt-0.5 block text-[13px]"
+              style={{ fontFamily: SANS, fontWeight: on ? 700 : 500 }}
+            >
               {t.label}
             </span>
+            {on ? (
+              <span
+                className="pointer-events-none absolute inset-x-3 bottom-0"
+                style={{ height: 2, background: INK }}
+                aria-hidden
+              />
+            ) : null}
           </button>
         )
       })}
@@ -355,26 +736,39 @@ function ModeToggle({
 }
 
 function FactLine({
+  zh,
   code,
   value,
   empty = '—',
 }: {
+  /** 主标签：粗体中文，可读 */
+  zh: string
+  /** 英文装饰码，弱化展示 */
   code: string
   value?: string | null
   empty?: string
 }) {
   const text = (value ?? '').trim()
   return (
-    <div className="flex min-w-0 items-baseline gap-2 py-0.5">
-      <span
-        className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em]"
-        style={{ color: MIST, fontFamily: MONO, minWidth: 72 }}
-      >
-        {code}.
-      </span>
+    <div className="flex min-w-0 items-start gap-2.5 py-1">
+      <div className="w-[3.25rem] shrink-0 pt-0.5">
+        <span
+          className="block text-[13px] font-bold leading-none tracking-wide"
+          style={{ color: INK, fontFamily: FANGSONG }}
+        >
+          {zh}
+        </span>
+        <span
+          className="mt-0.5 block font-mono text-[7.5px] uppercase leading-none tracking-[0.12em]"
+          style={{ color: MIST, fontFamily: MONO }}
+          aria-hidden
+        >
+          {code}
+        </span>
+      </div>
       <span
         className="min-w-0 flex-1 text-[13px] leading-snug"
-        style={{ color: text ? INK : 'rgba(44,44,46,0.28)', fontFamily: SANS }}
+        style={{ color: text ? INK : 'rgba(42,38,32,0.28)', fontFamily: FANGSONG }}
       >
         {text || empty}
       </span>
@@ -382,10 +776,12 @@ function FactLine({
   )
 }
 
+/** 档案袋文件夹：点击封面展开内页 */
 function PreviewSection({
   title,
   en,
   count,
+  icon: Icon,
   children,
   empty,
   defaultOpen = false,
@@ -393,149 +789,251 @@ function PreviewSection({
   title: string
   en?: string
   count?: number
+  icon?: LucideIcon
   children: ReactNode
   empty?: string
-  /** 默认展开 */
   defaultOpen?: boolean
+  /** @deprecated */
+  tape?: boolean
+  /** @deprecated */
+  clip?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const hasKids = !(empty && count === 0)
   return (
-    <section className="pt-4">
-      <button
-        type="button"
-        className="mb-1 flex w-full items-baseline justify-between gap-2 border-b pb-2 text-left"
-        style={{ borderColor: LINE }}
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <div className="flex min-w-0 items-baseline gap-2">
-          {en ? (
-            <span
-              className="font-mono text-[9px] uppercase tracking-[0.2em]"
-              style={{ color: STAMP, fontFamily: MONO }}
-            >
-              {en}
-            </span>
-          ) : null}
-          <p className="text-[14px] font-semibold" style={{ color: INK, fontFamily: SERIF }}>
-            {title}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {typeof count === 'number' ? (
-            <span className="font-mono text-[10px] tabular-nums" style={{ color: MIST, fontFamily: MONO }}>
-              {String(count).padStart(2, '0')}
-            </span>
-          ) : null}
-          <ChevronDown
-            className="size-3.5 transition-transform"
-            style={{
-              color: MIST,
-              transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
-            }}
-            strokeWidth={1.75}
+    <section className="relative pt-3">
+      {/* 叠纸厚度（收起时更明显） */}
+      <div
+        className="pointer-events-none absolute inset-x-[5px] top-[14px] bottom-[-3px]"
+        style={{
+          background: '#E8E8E4',
+          border: BORDER_SOFT,
+          borderRadius: RADIUS,
+          opacity: open ? 0.35 : 0.9,
+        }}
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute inset-x-[2px] top-[13px] bottom-[-1.5px]"
+        style={{
+          background: '#F2F2EF',
+          border: BORDER_SOFT,
+          borderRadius: RADIUS,
+          opacity: open ? 0.45 : 1,
+        }}
+        aria-hidden
+      />
+
+      <div className="relative z-[1]">
+        {/* 吊耳标签 */}
+        <div
+          className="pointer-events-none absolute -top-[2px] left-3 z-[2] h-[13px] w-[72px]"
+          style={{
+            backgroundColor: CARD_PAPER,
+            backgroundImage: CARD_PAPER_BG,
+            backgroundSize: '160px 160px, 6px 6px, auto',
+            border: BORDER,
+            borderBottom: 'none',
+            borderRadius: '3px 10px 0 0',
+            clipPath: 'polygon(0 100%, 0 22%, 10% 0, 88% 0, 100% 28%, 100% 100%)',
+          }}
+          aria-hidden
+        />
+
+        <button
+          type="button"
+          className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left active:opacity-95"
+          style={{
+            ...cardPaperStyle,
+            border: BORDER,
+            borderRadius: open ? `${RADIUS}px ${RADIUS}px 0 0` : RADIUS,
+          }}
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {/* 左侧文件夹色条 */}
+          <span
+            className="h-9 w-[3px] shrink-0 self-stretch"
+            style={{ background: open ? STAMP : INK, minHeight: 28 }}
             aria-hidden
           />
-        </div>
-      </button>
-      {open ? (
-        hasKids ? (
-          children
-        ) : (
-          <p className="py-3 text-[11px]" style={{ color: MIST, fontFamily: SANS }}>
-            {empty}
-          </p>
-        )
-      ) : null}
+          {Icon ? (
+            <span
+              className="flex size-8 shrink-0 items-center justify-center"
+              style={{
+                border: BORDER_SOFT,
+                borderRadius: 2,
+                background: open ? 'rgba(46,39,28,0.06)' : 'rgba(255,255,255,0.7)',
+              }}
+              aria-hidden
+            >
+              <Icon className="size-[15px]" style={{ color: INK }} strokeWidth={1.75} />
+            </span>
+          ) : null}
+          <div className="min-w-0 flex-1">
+            {en ? (
+              <span
+                className="block font-mono text-[8px] uppercase tracking-[0.16em]"
+                style={{ color: MIST, fontFamily: MONO }}
+              >
+                {en}
+              </span>
+            ) : null}
+            <p
+              className="mt-0.5 truncate text-[14px] font-bold leading-tight"
+              style={{ color: INK, fontFamily: FANGSONG }}
+            >
+              {title}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {typeof count === 'number' ? (
+              <span
+                className="px-1.5 py-0.5 font-mono text-[10px] tabular-nums"
+                style={{
+                  color: INK,
+                  fontFamily: MONO,
+                  border: BORDER_SOFT,
+                  borderRadius: 2,
+                  background: 'rgba(255,255,255,0.55)',
+                }}
+              >
+                {String(count).padStart(2, '0')}
+              </span>
+            ) : (
+              <span
+                className="font-mono text-[8px] tracking-[0.12em]"
+                style={{ color: MIST, fontFamily: MONO }}
+              >
+                FILE
+              </span>
+            )}
+            <span
+              className="flex size-6 items-center justify-center"
+              style={{
+                border: BORDER_SOFT,
+                borderRadius: 2,
+                background: open ? INK : 'rgba(255,255,255,0.6)',
+              }}
+              aria-hidden
+            >
+              <ChevronDown
+                className="size-3.5 transition-transform"
+                style={{
+                  color: open ? CARD : INK,
+                  transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+                }}
+                strokeWidth={2}
+              />
+            </span>
+          </div>
+        </button>
+
+        {open ? (
+          <div
+            className="overflow-hidden px-3 pb-3 pt-2.5"
+            style={{
+              ...cardPaperStyle,
+              border: BORDER,
+              borderTop: `1px dashed ${RULE}`,
+              borderRadius: `0 0 ${RADIUS}px ${RADIUS}px`,
+            }}
+          >
+            <p
+              className="mb-2 font-mono text-[7.5px] uppercase tracking-[0.18em]"
+              style={{ color: MIST, fontFamily: MONO }}
+            >
+              {open ? 'OPEN · 袋内档案' : ''}
+            </p>
+            {hasKids ? (
+              <div className="space-y-2.5">{children}</div>
+            ) : (
+              <p className="py-2 text-[12px]" style={{ color: MIST, fontFamily: FANGSONG }}>
+                {empty || '（空袋）'}
+              </p>
+            )}
+          </div>
+        ) : null}
+      </div>
     </section>
   )
 }
 
+/** 统一数据卡片：白底 + 金棕描边 + 倾斜印章标签 + MEMO 行 */
 function DossierRow({
-  mark,
   title,
   sub,
   stamp,
   stamps,
   meta,
   memo,
+  clip,
 }: {
   mark?: string
   title: string
   sub?: string
   stamp?: string
-  /** 右上角多个印章（含价值标签等） */
   stamps?: string[]
   meta: string[]
   memo?: string
+  /** 整页点睛：仅少数卡片传 true */
+  clip?: boolean
 }) {
   const stampList = [...(stamps ?? []), ...(stamp ? [stamp] : [])].filter(Boolean)
+  const primaryStamp = stampList[0]
+  const extraStamps = stampList.slice(1)
   return (
-    <div className="py-3" style={{ borderBottom: `0.5px solid ${LINE}` }}>
-      <div className="flex items-start gap-2.5">
-        {mark ? (
-          <span
-            className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full font-mono text-[10px]"
-            style={{
-              border: `1px solid ${LINE}`,
-              color: INK,
-              fontFamily: MONO,
-              background: 'rgba(44,44,46,0.03)',
-            }}
-          >
-            {mark.slice(0, 1)}
-          </span>
-        ) : null}
+    <div
+      className="relative overflow-hidden"
+      style={{
+        ...cardPaperStyle,
+        border: BORDER,
+        borderRadius: RADIUS,
+        padding: '13px 14px',
+      }}
+    >
+      {clip ? <Paperclip className="-left-1.5 -top-2" /> : null}
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p
-                className="truncate text-[15px] font-semibold leading-tight"
-                style={{ color: INK, fontFamily: SERIF }}
-              >
-                {title}
-              </p>
-              {sub ? (
-                <p
-                  className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.12em]"
-                  style={{ color: MIST, fontFamily: MONO }}
-                >
-                  {sub}
-                </p>
-              ) : null}
-            </div>
-            {stampList.length ? (
-              <div className="flex max-w-[55%] shrink-0 flex-wrap justify-end gap-1">
-                {stampList.map((s, i) => (
-                  <Stamp key={`${s}-${i}`} rotate={-2.5 + i * 1.5}>
-                    {s}
-                  </Stamp>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          {meta.length ? (
-            <p
-              className="mt-1.5 font-mono text-[10px] leading-relaxed tracking-[0.04em]"
-              style={{ color: INK, fontFamily: MONO, opacity: 0.78 }}
-            >
-              {meta.join('   |   ')}
-            </p>
-          ) : null}
-          {memo ? (
-            <p
-              className="mt-1.5 text-[11.5px] leading-relaxed"
-              style={{ color: MIST, fontFamily: SANS }}
-            >
-              <span className="font-mono text-[9px] tracking-[0.12em]" style={{ fontFamily: MONO }}>
-                MEMO.{' '}
-              </span>
-              {memo}
+          <p className="truncate text-[14px] font-bold leading-tight" style={{ color: INK, fontFamily: FANGSONG }}>
+            {title}
+          </p>
+          {sub ? (
+            <p className="mt-0.5 font-mono text-[9px] tracking-[0.1em]" style={{ color: MIST, fontFamily: MONO }}>
+              {sub}
             </p>
           ) : null}
         </div>
+        {primaryStamp ? <Stamp rotate={-2}>{primaryStamp}</Stamp> : null}
       </div>
+      {extraStamps.length ? (
+        <div className="mt-1.5 flex flex-wrap justify-end gap-1">
+          {extraStamps.map((s, i) => (
+            <Stamp key={`${s}-${i}`} rotate={-1.5 + i}>
+              {s}
+            </Stamp>
+          ))}
+        </div>
+      ) : null}
+      {meta.length ? (
+        <p
+          className="mt-2 font-mono text-[10px] leading-[1.7] tracking-[0.02em]"
+          style={{ color: MIST, fontFamily: MONO }}
+        >
+          {meta.join('  ·  ')}
+        </p>
+      ) : null}
+      {memo ? (
+        <>
+          <div className="my-2.5 h-px w-full" style={{ background: RULE }} />
+          <p className="text-[12px] leading-relaxed" style={{ color: MIST, fontFamily: FANGSONG }}>
+            <span className="font-semibold" style={{ color: DARK }}>
+              MEMO ·{' '}
+            </span>
+            {memo}
+          </p>
+        </>
+      ) : null}
     </div>
   )
 }
@@ -553,10 +1051,10 @@ function SystemOverride({
 }) {
   if (!onAlign) return null
   return (
-    <section className="mt-2.5" {...{ [LIFE_LEDGER_COACH_TARGET_ATTR]: 'ledger-align' }}>
+    <section className="mt-3" {...{ [LIFE_LEDGER_COACH_TARGET_ATTR]: 'ledger-align' }}>
       <div className="flex items-baseline justify-between gap-2">
         <p
-          className="font-mono text-[8px] uppercase tracking-[0.2em]"
+          className="font-mono text-[8px] uppercase tracking-[0.18em]"
           style={{ color: MIST, fontFamily: MONO }}
         >
           MEMORY ALIGN
@@ -567,12 +1065,13 @@ function SystemOverride({
       </div>
       <button
         type="button"
-        className="mt-2 flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left disabled:opacity-55"
+        className="mt-2 flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left disabled:opacity-55"
         disabled={busy}
         style={{
-          border: `1.5px solid ${STAMP}`,
-          background: busy ? 'rgba(139,26,26,0.06)' : PAPER,
-          color: STAMP,
+          border: BORDER,
+          background: CARD,
+          color: INK,
+          borderRadius: RADIUS,
         }}
         onClick={onAlign}
       >
@@ -582,8 +1081,8 @@ function SystemOverride({
           </span>
           <span className="mt-0.5 block text-[10.5px] leading-relaxed" style={{ color: MIST, fontFamily: SANS }}>
             {hasPlayer
-              ? '一次补齐双方职业、住所、家庭、社交圈。不读长期记忆。'
-              : '补齐职业 / 住所 / 车产 / 家庭 / 社交圈。不读长期记忆。'}
+              ? '一次补齐双方；可填对齐要求；删掉的条目会按证据尽量补回。不读长期记忆。'
+              : '可填对齐要求；补齐职业/住所/车产/家庭/社交圈；删项会按证据补回。不读长期记忆。'}
           </span>
         </span>
         <span
@@ -597,7 +1096,7 @@ function SystemOverride({
       {feedback || busy ? (
         <p
           className="mt-2 font-mono text-[11px] leading-relaxed"
-          style={{ color: STAMP, fontFamily: MONO }}
+          style={{ color: DARK, fontFamily: MONO }}
         >
           {busy ? `› ${feedback || 'PROCESSING…'}` : `› ${feedback}`}
         </p>
@@ -613,6 +1112,7 @@ function SheetPreview({
   spanText,
   elapsedYears,
   cardAge,
+  wechatAvatarUrl,
 }: {
   sheet: LifeMutableSheet
   currentAge: number | null
@@ -620,11 +1120,13 @@ function SheetPreview({
   spanText: string
   elapsedYears: number | null
   cardAge: number | null
+  wechatAvatarUrl?: string | null
 }) {
   const genderText =
     sheet.gender === '' ? '沿用人设卡' : genderLabelZh(sheet.gender as Gender)
   const trackZh = TRACKS.find((t) => t.id === sheet.educationTrack)?.zh || '未设定'
   const displayName = sheet.name.trim() || '（沿用人设卡姓名）'
+  const avatarSrc = resolveLifeLedgerAvatarSrc(sheet.ledgerAvatar, wechatAvatarUrl)
   const job =
     [sheet.occupationMain.trim(), sheet.occupationSide.trim()].filter(Boolean).join(' / ') || '职业未填'
   const heart = sheet.relationshipStatus.trim() || '感情未填'
@@ -656,72 +1158,150 @@ function SheetPreview({
     : '住所未填'
 
   return (
-    <div className="space-y-1">
-      {/* 护照式身份头 */}
-      <section className="relative pb-4 pt-1">
+    <div>
+      {/* 概览焦点：一张身份卡 + 签名；纸张纹理底 */}
+      <section
+        className="relative overflow-hidden pb-1"
+        style={{
+          ...cardPaperStyle,
+          border: BORDER,
+          borderRadius: RADIUS,
+          padding: '16px 14px 14px',
+        }}
+      >
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p
-              className="truncate text-[28px] font-bold leading-none tracking-tight"
-              style={{ color: INK, fontFamily: SERIF }}
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <div
+              className="shrink-0 overflow-hidden"
+              style={{ width: 52, height: 52, border: BORDER, borderRadius: 2 }}
             >
-              {displayName}
-            </p>
-            <p className="mt-1.5 text-[12px]" style={{ color: MIST, fontFamily: SANS }}>
-              {genderText}
-              {sheet.genderChangeNote.trim() ? ` · ${sheet.genderChangeNote.trim()}` : ''}
-            </p>
+              <img
+                src={avatarSrc}
+                alt=""
+                className="size-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.src =
+                    resolveCharacterAvatarUrl({ avatarUrl: DEFAULT_PUBLIC_AVATAR_PATH }) || avatarSrc
+                }}
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p
+                className="truncate text-[22px] font-bold leading-none tracking-tight"
+                style={{ color: INK, fontFamily: FANGSONG }}
+              >
+                {displayName}
+              </p>
+              <p className="mt-1.5 text-[12px]" style={{ color: MIST, fontFamily: FANGSONG }}>
+                {genderText}
+                {sheet.genderChangeNote.trim() ? ` · ${sheet.genderChangeNote.trim()}` : ''}
+              </p>
+            </div>
           </div>
-          <div className="relative shrink-0 pr-1 text-right">
-            <span
-              className="pointer-events-none absolute -right-1 -top-3 select-none font-mono text-[56px] font-bold leading-none"
-              style={{ color: STAMP, opacity: 0.1, fontFamily: MONO }}
+          <div className="shrink-0 text-right">
+            <p
+              className="font-mono text-[26px] font-semibold tabular-nums leading-none"
+              style={{ color: DARK, fontFamily: MONO }}
+            >
+              {currentAge != null ? currentAge : '—'}
+            </p>
+            <p
+              className="mt-1 text-[10px] font-bold leading-none"
+              style={{ color: MIST, fontFamily: FANGSONG }}
+            >
+              现在年龄
+            </p>
+            <p
+              className="mt-0.5 font-mono text-[7px] tracking-[0.14em]"
+              style={{ color: MIST, fontFamily: MONO }}
               aria-hidden
             >
-              {currentAge != null ? currentAge : '—'}
-            </span>
-            <p
-              className="relative font-mono text-[28px] font-semibold tabular-nums leading-none"
-              style={{ color: STAMP, fontFamily: MONO }}
-            >
-              {currentAge != null ? currentAge : '—'}
-            </p>
-            <p className="relative mt-1 font-mono text-[8px] tracking-[0.16em]" style={{ color: MIST, fontFamily: MONO }}>
               AGE · NOW
             </p>
           </div>
         </div>
 
-        <div className="mt-4 space-y-1 border-t pt-3" style={{ borderColor: LINE }}>
-          <FactLine code="OCCUPATION" value={job} />
-          <FactLine code="RELATION" value={heart} />
-          <FactLine code="EDU" value={edu || sheet.educationNote || '未填'} />
-          <FactLine code="RESIDENCE" value={primaryPlaceText} empty="住所未填" />
-          <FactLine code="SAVINGS" value={money} />
+        <div className="mt-3 space-y-0.5" style={{ borderTop: `1px solid ${RULE}`, paddingTop: 10 }}>
+          <FactLine zh="职业" code="OCCUPATION" value={job} />
+          <FactLine zh="感情" code="RELATION" value={heart} />
+          <FactLine zh="学历" code="EDU" value={edu || sheet.educationNote || '未填'} />
+          <FactLine zh="住所" code="RESIDENCE" value={primaryPlaceText} empty="住所未填" />
+          <FactLine zh="存款" code="SAVINGS" value={money} />
+          <div className="flex min-w-0 items-start gap-2.5 py-1">
+            <div className="w-[3.25rem] shrink-0 pt-0.5">
+              <span
+                className="block text-[13px] font-bold leading-none tracking-wide"
+                style={{ color: INK, fontFamily: FANGSONG }}
+              >
+                跨度
+              </span>
+              <span
+                className="mt-0.5 block font-mono text-[7.5px] uppercase leading-none tracking-[0.12em]"
+                style={{ color: MIST, fontFamily: MONO }}
+                aria-hidden
+              >
+                TIMELINE
+              </span>
+            </div>
+            <span
+              className="min-w-0 flex-1 text-[13px] leading-snug tabular-nums"
+              style={{ color: INK, fontFamily: FANGSONG }}
+            >
+              {spanText}
+              {elapsedYears != null ? ` · +${elapsedYears}年` : ''}
+            </span>
+          </div>
         </div>
-        <p
-          className="mt-3 font-mono text-[10px] tabular-nums tracking-[0.04em]"
-          style={{ color: MIST, fontFamily: MONO }}
-        >
-          TIMELINE. {spanText}
-          {elapsedYears != null ? ` · +${elapsedYears}Y` : ''}
-        </p>
+        <SignatureLine name={displayName} />
       </section>
 
-      {/* 开篇锚点 */}
-      <PreviewSection title="开篇锚点" en="START ANCHOR">
-        <div className="mb-2">
-          <LaneBadge lane="start" />
+      <div className="mb-1 mt-5 flex items-end justify-between gap-2 px-0.5">
+        <div>
+          <p
+            className="text-[13px] font-bold leading-none"
+            style={{ color: INK, fontFamily: FANGSONG }}
+          >
+            档案袋
+          </p>
+          <p
+            className="mt-1 font-mono text-[8px] uppercase tracking-[0.16em]"
+            style={{ color: MIST, fontFamily: MONO }}
+          >
+            FILE FOLDERS · TAP TO OPEN
+          </p>
         </div>
-        <FactLine code="START DAY" value={sheet.storyStartDay.trim() || '未填（用人设/记忆最早日）'} />
-        <FactLine code="AGE @START" value={startAgeText} />
-        <FactLine code="EDU TRACK" value={trackZh} />
-        {sheet.educationGradeAtStart != null ? (
-          <FactLine code="GRADE @START" value={`第 ${sheet.educationGradeAtStart} 档`} />
-        ) : null}
+        <p className="font-mono text-[8px] tracking-[0.12em]" style={{ color: MIST, fontFamily: MONO }}>
+          点击展开
+        </p>
+      </div>
+
+      <PreviewSection title="开篇锚点" en="START ANCHOR" icon={Anchor}>
+        <div
+          className="overflow-hidden"
+          style={{
+            ...cardPaperStyle,
+            border: BORDER,
+            borderRadius: RADIUS,
+            padding: '13px 14px',
+          }}
+        >
+          <div className="mb-2">
+            <LaneBadge lane="start" />
+          </div>
+          <FactLine
+            zh="开篇日"
+            code="START DAY"
+            value={sheet.storyStartDay.trim() || '未填（用人设/记忆最早日）'}
+          />
+          <FactLine zh="开篇岁" code="AGE@START" value={startAgeText} />
+          <FactLine zh="学历轨" code="EDU TRACK" value={trackZh} />
+          {sheet.educationGradeAtStart != null ? (
+            <FactLine zh="开篇档" code="GRADE" value={`第 ${sheet.educationGradeAtStart} 档`} />
+          ) : null}
+        </div>
       </PreviewSection>
 
-      <PreviewSection title="可去住所" en="PLACES" count={sheet.realEstates.length} empty="暂无（学生可列宿舍+自家）">
+      <PreviewSection title="可去住所" en="PLACES" icon={Home} count={sheet.realEstates.length} empty="暂无（学生可列宿舍+自家）">
         {sheet.realEstates.map((h) => {
           const kind = lifePlaceKindLabel(h.placeKind)
           const title = h.label.trim() || kind || '未命名地点'
@@ -729,7 +1309,6 @@ function SheetPreview({
           return (
             <DossierRow
               key={h.id}
-              mark={title}
               title={title}
               sub={kind && title !== kind ? kind : undefined}
               stamps={[valueLabel, h.ownedBySubject ? 'OWNED' : 'NOT OWNED'].filter(Boolean)}
@@ -746,11 +1325,10 @@ function SheetPreview({
         })}
       </PreviewSection>
 
-      <PreviewSection title="车产" en="VEHICLE" count={sheet.vehicles.length} empty="暂无车产">
+      <PreviewSection title="车产" en="VEHICLE" icon={Car} count={sheet.vehicles.length} empty="暂无车产">
         {sheet.vehicles.map((v) => (
           <DossierRow
             key={v.id}
-            mark={v.model}
             title={v.model.trim() || '型号未填'}
             stamps={v.valueWan.trim() ? [`价值 ${v.valueWan.trim()} 万`] : undefined}
             meta={
@@ -764,7 +1342,7 @@ function SheetPreview({
         ))}
       </PreviewSection>
 
-      <PreviewSection title="家庭成员" en="FAMILY" count={sheet.family.length} empty="暂无家庭成员">
+      <PreviewSection title="家庭成员" en="FAMILY" icon={Users} count={sheet.family.length} empty="暂无家庭成员">
         {sheet.family.map((f) => {
           const ageNow = f.age.trim()
           const ageStart = f.ageAtStart.trim()
@@ -779,7 +1357,6 @@ function SheetPreview({
           return (
             <DossierRow
               key={f.id}
-              mark={f.name || relation}
               title={f.name.trim() || relation || '未命名'}
               stamp={stamp}
               meta={[
@@ -798,7 +1375,7 @@ function SheetPreview({
         })}
       </PreviewSection>
 
-      <PreviewSection title="社交圈" en="SOCIAL" count={sheet.socialCircle.length} empty="暂无社交圈">
+      <PreviewSection title="社交圈" en="SOCIAL" icon={UsersRound} count={sheet.socialCircle.length} empty="暂无社交圈">
         {sheet.socialCircle.map((c) => {
           const ageNow = c.age.trim()
           const ageStart = c.ageAtStart.trim()
@@ -806,7 +1383,6 @@ function SheetPreview({
           const attitude = c.attitude.trim()
           const note = c.note.trim()
           const relLen = [...relation].length
-          // 印章：仅短关系称呼（≤8字，如「恋人」「大学同学」）；整句态度绝不盖章
           const stamp = relation && relLen <= 8 ? relation : undefined
           const memo = [
             attitude ? `关系补充：${attitude}` : '',
@@ -819,7 +1395,6 @@ function SheetPreview({
           return (
             <DossierRow
               key={c.id}
-              mark={c.name}
               title={c.name.trim() || '未命名'}
               stamp={stamp}
               meta={[
@@ -836,11 +1411,10 @@ function SheetPreview({
         })}
       </PreviewSection>
 
-      <PreviewSection title="宠物" en="PETS" count={sheet.pets.length} empty="暂无宠物">
+      <PreviewSection title="宠物" en="PETS" icon={PawPrint} count={sheet.pets.length} empty="暂无宠物">
         {sheet.pets.map((p) => (
           <DossierRow
             key={p.id}
-            mark={p.name}
             title={p.name.trim() || '未命名'}
             sub={p.species.trim() || undefined}
             meta={
@@ -853,13 +1427,23 @@ function SheetPreview({
       </PreviewSection>
 
       {sheet.extraNote.trim() ? (
-        <PreviewSection title="其他补充" en="NOTES">
-          <p
-            className="whitespace-pre-wrap py-3 text-[12.5px] leading-relaxed"
-            style={{ color: INK, fontFamily: SANS }}
+        <PreviewSection title="其他补充" en="NOTES" icon={StickyNote}>
+          <div
+            className="overflow-hidden"
+            style={{
+              ...cardPaperStyle,
+              border: BORDER,
+              borderRadius: RADIUS,
+              padding: '13px 14px',
+            }}
           >
-            {sheet.extraNote}
-          </p>
+            <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed" style={{ color: MIST, fontFamily: FANGSONG }}>
+              <span className="font-semibold" style={{ color: DARK }}>
+                MEMO ·{' '}
+              </span>
+              {sheet.extraNote}
+            </p>
+          </div>
         </PreviewSection>
       ) : null}
     </div>
@@ -873,6 +1457,7 @@ function SheetFields({
   birthdayMD,
   startDay,
   nowDay,
+  wechatAvatarUrl,
 }: {
   sheet: LifeMutableSheet
   onChange: (next: LifeMutableSheet) => void
@@ -880,6 +1465,7 @@ function SheetFields({
   birthdayMD: string
   startDay: string | null
   nowDay: string | null
+  wechatAvatarUrl?: string | null
 }) {
   const patch = (p: Partial<LifeMutableSheet>) => onChange({ ...sheet, ...p })
   const ageAtStart = sheet.ageAtStart ?? cardAge
@@ -955,6 +1541,7 @@ function SheetFields({
           spanText={spanText}
           elapsedYears={elapsedYears}
           cardAge={cardAge}
+          wechatAvatarUrl={wechatAvatarUrl}
         />
       </div>
     )
@@ -972,12 +1559,15 @@ function SheetFields({
         <span style={{ color: LINE }}>·</span>
         <LaneBadge lane="start" />
         <span>故事开头锚点，用来推算现在几岁/学历</span>
-        </div>
+      </div>
 
+      <LedgerAccordionProvider>
       <LedgerCard
         kicker="COVER"
         title="封面速览 · 年龄对齐"
         lane="now"
+        tape
+        defaultOpen
         hint="现在几岁、学历进度与时间跨度；可用下方按钮把人设卡年龄对齐到开篇或现在。"
         summary={
           currentAge != null
@@ -987,26 +1577,33 @@ function SheetFields({
       >
         <div className="flex items-end justify-between gap-3">
           <div>
-            <p className="font-mono text-[8px] tracking-[0.16em]" style={{ color: MIST, fontFamily: MONO }}>
-              AGE · NOW
+            <p className="text-[11px] font-bold" style={{ color: MIST, fontFamily: FANGSONG }}>
+              现在年龄
             </p>
             <p
               className="mt-0.5 font-mono text-[28px] font-semibold tabular-nums tracking-tight"
-              style={{ color: STAMP, fontFamily: MONO }}
+              style={{ color: DARK, fontFamily: MONO }}
             >
               {currentAge != null ? `${currentAge}` : '—'}
             </p>
+            <p
+              className="mt-0.5 font-mono text-[7px] tracking-[0.14em]"
+              style={{ color: MIST, fontFamily: MONO }}
+              aria-hidden
+            >
+              AGE · NOW
+            </p>
           </div>
           <div className="min-w-0 text-right">
-            <p className="truncate text-[12px] font-medium" style={{ color: INK, fontFamily: SANS }}>
+            <p className="truncate text-[12px] font-medium" style={{ color: INK, fontFamily: FANGSONG }}>
               {edu || (currentAge == null ? '填开篇年龄后显示' : '学历进度未填')}
             </p>
             <p
-              className="mt-0.5 truncate font-mono text-[10px] tabular-nums"
-              style={{ color: MIST, fontFamily: MONO }}
+              className="mt-0.5 truncate text-[10px] tabular-nums"
+              style={{ color: MIST, fontFamily: FANGSONG }}
             >
               {spanText}
-              {elapsedYears != null ? ` · +${elapsedYears}Y` : ''}
+              {elapsedYears != null ? ` · +${elapsedYears}年` : ''}
             </p>
           </div>
         </div>
@@ -1015,7 +1612,7 @@ function SheetFields({
             <button
               type="button"
               className="px-2.5 py-2.5 text-left disabled:opacity-55"
-              style={{ background: STAMP, color: '#F9F8F6' }}
+              style={{ background: INK, color: CARD, borderRadius: RADIUS }}
               onClick={() =>
                 onChange(
                   alignLifeSheetToTimeline({
@@ -1040,7 +1637,7 @@ function SheetFields({
             <button
               type="button"
               className="px-2.5 py-2.5 text-left disabled:opacity-55"
-              style={{ border: `1.5px solid ${STAMP}`, background: PAPER, color: STAMP }}
+              style={{ border: BORDER, background: CARD, color: INK, borderRadius: RADIUS }}
               onClick={() =>
                 onChange(
                   alignLifeSheetToTimeline({
@@ -1070,6 +1667,7 @@ function SheetFields({
         kicker="00 · START ANCHOR"
         title="开篇锚点"
         lane="start"
+        tape
         hint="只改故事开头。改这里才会重算上方「现在几岁」与学历进度；不是当前职业资产。"
       >
         <Field label="开篇剧情日">
@@ -1190,6 +1788,7 @@ function SheetFields({
         kicker="01 · IDENTITY NOW"
         title="当前身份"
         lane="now"
+        tape
         hint="现在叫什么、什么性别。空姓名/沿用性别 = 用人设卡。"
       >
           <Field label="当前姓名">
@@ -1298,6 +1897,7 @@ function SheetFields({
         title="可去住所"
         hint="列出本人可去/可住的全部地点（宿舍、自家、租房…）；可标是否归本人名下。"
         lane="now"
+        tape
         count={sheet.realEstates.length}
         onAdd={() =>
           patch({
@@ -1381,6 +1981,8 @@ function SheetFields({
         title="家庭成员"
         hint="姓名写真人名，关系写父亲/母亲等；开篇年龄随剧情日增长；职业写具体岗位。"
         lane="now"
+        tape
+        clip
         count={sheet.family.length}
         onAdd={() =>
           patch({
@@ -1426,6 +2028,7 @@ function SheetFields({
         title="社交圈"
         hint="同学/同事/朋友；年龄随剧情日增长，职业写具体岗位/年级。"
         lane="now"
+        clip
         count={sheet.socialCircle.length}
         onAdd={() =>
           patch({
@@ -1499,14 +2102,32 @@ function SheetFields({
       </ListBlock>
 
       <LedgerCard kicker="09 · NOTES" title="其他补充" lane="now" hint="当前补充说明，写入本线账本。">
-        <textarea
-          className="w-full resize-none bg-transparent px-0 py-1.5 text-[13px] outline-none"
-          style={{ ...inputStyle, minHeight: 72, borderBottom: `1px solid ${RULE}` }}
-          value={sheet.extraNote}
-          onChange={(e) => patch({ extraNote: e.target.value })}
-          placeholder="其他会变的人生事实…"
-        />
+        <div
+          className="life-ledger-field"
+          style={{
+            background: CARD,
+            border: BORDER,
+            borderRadius: RADIUS,
+            padding: '10px 12px',
+          }}
+        >
+          <textarea
+            className={`${inputCls} resize-none`}
+            style={{
+              color: INK,
+              fontFamily: SANS,
+              caretColor: STAMP,
+              minHeight: 72,
+              border: 'none',
+              borderBottom: 'none',
+            }}
+            value={sheet.extraNote}
+            onChange={(e) => patch({ extraNote: e.target.value })}
+            placeholder="其他会变的人生事实…"
+          />
+        </div>
       </LedgerCard>
+      </LedgerAccordionProvider>
     </div>
   )
 }
@@ -1519,6 +2140,8 @@ function ListBlock({
   lane = 'now',
   count,
   onAdd,
+  tape,
+  clip,
   children,
 }: {
   kicker: string
@@ -1527,6 +2150,8 @@ function ListBlock({
   lane?: 'now' | 'start'
   count?: number
   onAdd: () => void
+  tape?: boolean
+  clip?: boolean
   children: ReactNode
 }) {
   return (
@@ -1535,6 +2160,8 @@ function ListBlock({
       title={title}
       hint={hint}
       lane={lane}
+      tape={tape}
+      clip={clip}
       summary={typeof count === 'number' ? `${String(count).padStart(2, '0')} 项` : undefined}
       extra={
         <button
@@ -1545,9 +2172,10 @@ function ListBlock({
           }}
           className="px-2.5 py-1.5 font-mono text-[11px] font-semibold tracking-[0.12em]"
           style={{
-            background: STAMP,
-            color: '#F9F8F6',
+            background: INK,
+            color: CARD,
             fontFamily: MONO,
+            borderRadius: 2,
           }}
         >
           添加
@@ -2244,15 +2872,15 @@ function LifeHistoryDiffLine({ diff }: { diff: LifeFieldDiff }) {
   const pair = formatLifeHistoryDiffPair(diff.previousText || '（空）', diff.currentText || '（空）')
   return (
     <div
-      className="overflow-hidden rounded-[8px]"
-      style={{ border: `1px solid ${LINE}`, background: PAPER }}
+      className="overflow-hidden"
+      style={{ border: BORDER, background: CARD, borderRadius: RADIUS }}
     >
-      <div className="px-2.5 py-1.5" style={{ borderBottom: `1px solid ${LINE}`, background: 'rgba(255,255,255,0.7)' }}>
+      <div className="px-2.5 py-1.5" style={{ borderBottom: BORDER_SOFT, background: 'rgba(255,255,255,0.7)' }}>
         <p className="text-[12px] font-semibold" style={{ color: STAMP, fontFamily: SANS }}>
           {diff.label}
         </p>
       </div>
-      <div className="px-2.5 py-2" style={{ borderBottom: `1px solid ${LINE}` }}>
+      <div className="px-2.5 py-2" style={{ borderBottom: BORDER_SOFT }}>
         <p className="mb-0.5 font-mono text-[8px] tracking-[0.14em]" style={{ color: MIST, fontFamily: MONO }}>
           原先
         </p>
@@ -2260,7 +2888,7 @@ function LifeHistoryDiffLine({ diff }: { diff: LifeFieldDiff }) {
           {pair.previousText}
         </p>
       </div>
-      <div className="px-2.5 py-2" style={{ background: 'rgba(139,26,26,0.06)' }}>
+      <div className="px-2.5 py-2" style={{ background: 'rgba(201,87,79,0.06)' }}>
         <p className="mb-0.5 font-mono text-[8px] tracking-[0.14em]" style={{ color: STAMP, fontFamily: MONO }}>
           现在
         </p>
@@ -2297,10 +2925,11 @@ function LifeHistoryPanel({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[86vh] w-full max-w-[420px] flex-col overflow-hidden rounded-t-[16px] sm:rounded-[16px]"
+        className="flex max-h-[86vh] w-full max-w-[420px] flex-col overflow-hidden"
         style={{
           background: PAPER,
-          border: `1px solid ${LINE}`,
+          border: BORDER,
+          borderRadius: RADIUS,
           boxShadow: '0 12px 40px rgba(18,20,26,0.18)',
         }}
         role="dialog"
@@ -2310,9 +2939,9 @@ function LifeHistoryPanel({
       >
         <div
           className="flex shrink-0 items-center gap-2 px-4 py-3"
-          style={{ borderBottom: `1px solid ${LINE}` }}
+          style={{ borderBottom: BORDER }}
         >
-          <History className="size-4 shrink-0" style={{ color: STAMP }} strokeWidth={1.6} />
+          <History className="size-4 shrink-0" style={{ color: INK }} strokeWidth={1.6} />
           <div className="min-w-0 flex-1">
             <p
               id="life-history-title"
@@ -2327,8 +2956,8 @@ function LifeHistoryPanel({
           </div>
           <button
             type="button"
-            className="rounded-full px-3 py-1.5 text-[12px] font-medium active:opacity-80"
-            style={{ color: INK, border: `1px solid ${LINE}` }}
+            className="px-3 py-1.5 text-[12px] font-medium active:opacity-80"
+            style={{ color: INK, border: BORDER, borderRadius: 2 }}
             onClick={onClose}
           >
             关闭
@@ -2352,8 +2981,8 @@ function LifeHistoryPanel({
                 return (
                   <li
                     key={ev.id}
-                    className="overflow-hidden rounded-[10px]"
-                    style={{ border: `1px solid ${LINE}`, background: PAPER }}
+                    className="overflow-hidden"
+                    style={{ border: BORDER, background: CARD, borderRadius: RADIUS }}
                   >
                     <button
                       type="button"
@@ -2364,19 +2993,25 @@ function LifeHistoryPanel({
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span
-                            className="rounded-full px-2 py-0.5 text-[10px] font-medium tabular-nums"
+                            className="px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums"
                             style={{
-                              color: STAMP,
-                              background: 'rgba(139,26,26,0.08)',
-                              border: `1px solid rgba(139,26,26,0.18)`,
+                              color: INK,
+                              background: CARD,
+                              border: BORDER_SOFT,
+                              borderRadius: 2,
                               fontFamily: MONO,
                             }}
                           >
                             {formatLifeHistoryTime(ev.at)}
                           </span>
                           <span
-                            className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wide"
-                            style={{ color: STAMP, border: `1px solid ${STAMP}` }}
+                            className="px-1.5 py-0.5 text-[9px] font-semibold tracking-wide"
+                            style={{
+                              color: STAMP,
+                              border: `1.5px solid ${STAMP}`,
+                              borderRadius: 2,
+                              fontFamily: MONO,
+                            }}
                           >
                             {lifeChangeSourceLabel(ev.source)}
                           </span>
@@ -2396,14 +3031,14 @@ function LifeHistoryPanel({
                       <ChevronDown
                         className="mt-1 size-4 shrink-0 transition-transform"
                         style={{
-                          color: STAMP,
+                          color: INK,
                           transform: openRow ? 'rotate(180deg)' : undefined,
                         }}
                         strokeWidth={1.8}
                       />
                     </button>
                     {openRow && ev.diffs.length > 0 ? (
-                      <div className="space-y-2 px-3 pb-3" style={{ borderTop: `1px solid ${LINE}` }}>
+                      <div className="space-y-2 px-3 pb-3" style={{ borderTop: BORDER_SOFT }}>
                         <p className="pt-2.5 font-mono text-[9px] tracking-[0.14em]" style={{ color: MIST, fontFamily: MONO }}>
                           FIELD DIFF
                         </p>
@@ -2442,6 +3077,8 @@ export function LifeMutableEditor(props: {
   const [alignBusy, setAlignBusy] = useState(false)
   const [alignFeedback, setAlignFeedback] = useState('')
   const [alignConfirmOpen, setAlignConfirmOpen] = useState(false)
+  /** 对齐弹窗：用户额外要求（本会话内保留，便于删改后再次对齐） */
+  const [alignUserNotes, setAlignUserNotes] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
   const [inlineSyncOn, setInlineSyncOn] = useState(false)
   const [tutorialOpen, setTutorialOpen] = useState(false)
@@ -2575,6 +3212,7 @@ export function LifeMutableEditor(props: {
     setAlignFeedback(jobs.length > 1 ? '正在对齐角色本线与玩家身份…' : '正在准备对齐…')
     const parts: string[] = []
     const changedLabels: string[] = []
+    const changedItems: LifeLedgerChangedItem[] = []
     let anyUpdated = false
     try {
       // 手改剧情年后必须重读跨度，避免仍按错误的 2029「现在」对齐
@@ -2597,8 +3235,21 @@ export function LifeMutableEditor(props: {
       const applyAlignJobResult = (
         label: string,
         result: Awaited<ReturnType<typeof runLifeAlignFromMemory>>,
+        beforeSheet: LifeMutableSheet | null | undefined,
       ) => {
         if (result.status === 'updated') {
+          if (beforeSheet) {
+            const items = lifeFieldDiffsToChangedItems(
+              buildLifeSheetDiffs(beforeSheet, result.sheet),
+              label,
+            )
+            for (const it of items) {
+              if (!changedItems.some((x) => x.label === it.label && x.currentText === it.currentText)) {
+                changedItems.push(it)
+              }
+              if (!changedLabels.includes(it.label)) changedLabels.push(it.label)
+            }
+          }
           if (label === '玩家') {
             workingPlayer = result.sheet
             setPlayerSheet(result.sheet)
@@ -2626,6 +3277,8 @@ export function LifeMutableEditor(props: {
           /* skip */
         } else {
           setAlignFeedback('正在一次请求对齐角色与玩家…')
+          const beforeChar = workingChar
+          const beforePlayer = workingPlayer
           const pairResult = await runLifeAlignPairFromMemory({
             character,
             boundPlayer: freshBound,
@@ -2633,11 +3286,12 @@ export function LifeMutableEditor(props: {
             playerSheet: workingPlayer,
             span: freshSpan,
             apiConfig,
+            userAlignNotes: alignUserNotes,
             signal: ctrl.signal,
             onProgress: (_stage, detail) => setAlignFeedback(detail),
           })
-          applyAlignJobResult('角色', pairResult.character)
-          applyAlignJobResult('玩家', pairResult.player)
+          applyAlignJobResult('角色', pairResult.character, beforeChar)
+          applyAlignJobResult('玩家', pairResult.player, beforePlayer)
         }
       } else {
         for (const job of jobs) {
@@ -2645,6 +3299,8 @@ export function LifeMutableEditor(props: {
           setAlignFeedback(`正在对齐${job.label}…`)
           const counterpart =
             job.subject === 'character' ? workingPlayer : workingChar
+          const beforeSheet =
+            job.subject === 'character' ? workingChar : workingPlayer
           const result = await runLifeAlignFromMemory({
             character,
             boundPlayer: freshBound,
@@ -2653,23 +3309,26 @@ export function LifeMutableEditor(props: {
             span: freshSpan,
             counterpartSheet: counterpart,
             apiConfig,
+            userAlignNotes: alignUserNotes,
             signal: ctrl.signal,
             onProgress: (_stage, detail) => setAlignFeedback(`${job.label}：${detail}`),
           })
-          applyAlignJobResult(job.label, result)
+          applyAlignJobResult(job.label, result, beforeSheet)
         }
       }
       // 双方都有账本时：强制同步同名共同好友的学校/职业/住址等客观事实
       if (workingChar && workingPlayer && freshBound?.id) {
+        const beforeChar = workingChar
+        const beforePlayer = workingPlayer
         const synced = syncSharedSocialCircleBetweenSheets(workingChar, workingPlayer)
         if (synced.syncedNames.length) {
           workingChar = appendLifeChangeHistory(synced.character, {
-            before: workingChar,
+            before: beforeChar,
             summary: `共同社交圈 · ${synced.syncedNames.slice(0, 6).join('、')}`,
             source: 'sync_circle',
           })
           workingPlayer = appendLifeChangeHistory(synced.player, {
-            before: workingPlayer,
+            before: beforePlayer,
             summary: `共同社交圈 · ${synced.syncedNames.slice(0, 6).join('、')}`,
             source: 'sync_circle',
           })
@@ -2678,6 +3337,16 @@ export function LifeMutableEditor(props: {
           await personaDb.putCharacterLifeMutable(character.id, workingChar)
           await personaDb.putPlayerLifeMutable(freshBound.id, character.id, workingPlayer)
           anyUpdated = true
+          const circleItems = [
+            ...lifeFieldDiffsToChangedItems(buildLifeSheetDiffs(beforeChar, synced.character), '角色'),
+            ...lifeFieldDiffsToChangedItems(buildLifeSheetDiffs(beforePlayer, synced.player), '玩家'),
+          ]
+          for (const it of circleItems) {
+            if (!changedItems.some((x) => x.label === it.label && x.currentText === it.currentText)) {
+              changedItems.push(it)
+            }
+            if (!changedLabels.includes(it.label)) changedLabels.push(it.label)
+          }
           const circleLabel = `共同社交圈·${synced.syncedNames.slice(0, 6).join('、')}`
           if (!changedLabels.includes(circleLabel)) changedLabels.push(circleLabel)
           parts.push(`共同社交圈已对齐：${synced.syncedNames.slice(0, 6).join('、')}`)
@@ -2692,8 +3361,9 @@ export function LifeMutableEditor(props: {
           window.dispatchEvent(
             new CustomEvent(LIFE_LEDGER_PATCH_UPDATED_EVENT, {
               detail: {
-                appliedPatchCount: Math.max(1, changedLabels.length || (anyUpdated ? 1 : 0)),
+                appliedPatchCount: Math.max(1, changedItems.length || changedLabels.length || (anyUpdated ? 1 : 0)),
                 changedLabels: anyUpdated ? changedLabels : [],
+                changedItems: anyUpdated ? changedItems : [],
                 source: 'align',
               },
             }),
@@ -2709,7 +3379,7 @@ export function LifeMutableEditor(props: {
       setAlignBusy(false)
       if (alignAbortRef.current === ctrl) alignAbortRef.current = null
     }
-  }, [alignBusy, apiConfig, boundPlayer, character, charSheet, playerSheet])
+  }, [alignBusy, alignUserNotes, apiConfig, boundPlayer, character, charSheet, playerSheet])
 
   const confirmAlign = useCallback(() => {
     if (alignBusy) return
@@ -2719,157 +3389,262 @@ export function LifeMutableEditor(props: {
 
   useEffect(() => {
     setAlignFeedback('')
+    setAlignUserNotes('')
   }, [character.id])
 
   const pidName = boundPlayer
     ? formatPlayerIdentityDisplayName(boundPlayer, boundPlayer.id)
     : '未绑定身份卡'
   const fileNo = character.id.slice(0, 8).toUpperCase()
+  const activeSheet = panel === 'char' ? charSheet : playerSheet
+  const activeWechatAvatar =
+    panel === 'char' ? character.avatarUrl : boundPlayer?.avatarUrl
+  const patchActiveAvatar = (next: string) => {
+    if (panel === 'char') {
+      if (!charSheet) return
+      setCharSheet({ ...charSheet, ledgerAvatar: next })
+      return
+    }
+    if (!playerSheet) return
+    setPlayerSheet({ ...playerSheet, ledgerAvatar: next })
+  }
 
   const body = (
     <>
-      <header className="mb-4 pb-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <p
-              className="text-center font-mono text-[10px] uppercase tracking-[0.42em]"
-              style={{ color: STAMP, fontFamily: MONO }}
-            >
-              LIFE DOSSIER
-            </p>
-            <h2
-              className="mt-2 text-center text-[22px] font-bold tracking-tight"
-              style={{ color: INK, fontFamily: SERIF }}
-            >
-              人生档案本
-            </h2>
-            <div className="mx-auto mt-2.5 h-[2px] w-full max-w-[220px]" style={{ background: STAMP }} />
-            <p className="mt-2.5 text-center text-[11px] leading-relaxed" style={{ color: MIST, fontFamily: SANS }}>
-              {passport
-                ? '本线当前生理与资产登记。与建档卡分离；每轮对话注入，与世界书同级。'
-                : '基础信息仍是开篇固定设定。这里记本线会变的生理与资产。'}
-            </p>
-            <button
-              type="button"
-              className="mt-3 flex w-full items-center justify-between gap-3 py-2 text-left"
-              style={{
-                borderTop: `0.5px solid ${LINE}`,
-                color: INK,
-              }}
-              onClick={() => void toggleInlineSync()}
-              {...{ [LIFE_LEDGER_COACH_TARGET_ATTR]: 'ledger-inline-sync' }}
-            >
-              <span className="min-w-0">
-                <span className="block font-mono text-[9px] tracking-[0.16em]" style={{ color: MIST, fontFamily: MONO }}>
-                  INLINE SYNC
-                </span>
-                <span className="mt-0.5 block text-[11px] leading-relaxed" style={{ color: MIST }}>
-                  同请求更新账本：本轮新事实才改。老角色用下方「按记忆对齐」一次补齐角色+玩家。
-                </span>
-              </span>
-              <span
-                className="relative h-5 w-9 shrink-0 rounded-full transition-colors"
-                style={{ background: inlineSyncOn ? STAMP : 'rgba(44,44,46,0.18)' }}
+      {/* 全页唯一强焦点：头像 + LIFE DOSSIER + 档案表 */}
+      <header className="mb-4">
+        <div className="relative">
+          <div
+            className="pointer-events-none absolute right-0 top-0 h-[70px] w-[40%]"
+            style={{ backgroundImage: HALFTONE_BG, backgroundSize: '10px 10px' }}
+            aria-hidden
+          />
+          <div className="relative flex items-start gap-3">
+            {activeSheet ? (
+              <LedgerAvatarPicker
+                ledgerAvatar={activeSheet.ledgerAvatar}
+                wechatAvatarUrl={activeWechatAvatar}
+                onChange={patchActiveAvatar}
+                size={56}
+              />
+            ) : (
+              <div
+                className="flex size-[56px] shrink-0 items-center justify-center"
+                style={{ background: INK, clipPath: HEX_CLIP }}
                 aria-hidden
               >
-                <span
-                  className="absolute top-0.5 size-4 rounded-full bg-white transition-[left]"
-                  style={{ left: inlineSyncOn ? 18 : 2 }}
-                />
-              </span>
-            </button>
-            <SystemOverride
-              busy={alignBusy}
-              feedback={alignFeedback}
-              onAlign={requestAlign}
-              hasPlayer={Boolean(boundPlayer?.id)}
-            />
-            <section className="mt-2.5">
-              <div className="flex items-baseline justify-between gap-2">
-                <p
-                  className="font-mono text-[8px] uppercase tracking-[0.2em]"
-                  style={{ color: MIST, fontFamily: MONO }}
-                >
-                  REVISION LOG
-                </p>
-                <p className="font-mono text-[8px] tracking-[0.12em]" style={{ color: MIST, fontFamily: MONO }}>
-                  {panel === 'char' ? 'CHAR' : 'USER'}
-                </p>
+                <Shield className="size-[18px]" style={{ color: CARD }} strokeWidth={1.7} />
               </div>
-              <button
-                type="button"
-                className="mt-2 flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left active:opacity-90"
-                style={{
-                  border: `1.5px solid ${LINE}`,
-                  background: PAPER,
-                  color: INK,
-                }}
-                onClick={() => setHistoryOpen(true)}
-                {...{ [LIFE_LEDGER_COACH_TARGET_ATTR]: 'ledger-history' }}
+            )}
+            <div className="min-w-0 flex-1">
+              <h2
+                className="text-[16px] font-extrabold uppercase leading-[1.15] tracking-[0.02em]"
+                style={{ color: INK, fontFamily: SANS }}
               >
-                <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ fontFamily: SANS }}>
-                    <History className="size-3.5 shrink-0" style={{ color: STAMP }} strokeWidth={1.7} />
-                    变更历史
-                  </span>
-                  <span className="mt-0.5 block text-[10.5px] leading-relaxed" style={{ color: MIST, fontFamily: SANS }}>
-                    {(() => {
-                      const n =
-                        (panel === 'char' ? charSheet?.changeHistory : playerSheet?.changeHistory)?.length ?? 0
-                      return n > 0
-                        ? `当前页签 ${n} 条记录 · 对齐 / 同步 / 手改`
-                        : '对齐、同步或手改后会出现新旧对照'
-                    })()}
-                  </span>
+                LIFE
+                <br />
+                DOSSIER
+              </h2>
+              <p className="mt-0.5 text-[10px] tracking-[0.1em]" style={{ color: MIST, fontFamily: SANS }}>
+                人生档案本 · 可变现状登记
+              </p>
+            </div>
+            <div
+              className="relative z-[1] shrink-0 overflow-hidden font-mono text-[10px]"
+              style={{ border: BORDER, fontFamily: MONO, minWidth: 108 }}
+            >
+              <div className="grid grid-cols-[auto_1fr]" style={{ borderBottom: BORDER_SOFT }}>
+                <span className="px-1.5 py-1" style={{ color: MIST }}>
+                  FILE NO.
                 </span>
                 <span
-                  className="shrink-0 font-mono text-[10px] tracking-[0.14em]"
-                  style={{ fontFamily: MONO, color: STAMP }}
-                  aria-hidden
+                  className="px-1.5 py-1 text-right font-semibold"
+                  style={{ color: INK, borderLeft: BORDER_SOFT }}
                 >
-                  →
+                  LL-{fileNo.slice(0, 4)}
                 </span>
-              </button>
-            </section>
+              </div>
+              <div className="grid grid-cols-[auto_1fr]">
+                <span
+                  className="px-1.5 py-1"
+                  style={{ color: MIST, background: 'rgba(46,39,28,0.06)' }}
+                >
+                  STATUS
+                </span>
+                <span
+                  className="px-1.5 py-1 text-right font-semibold"
+                  style={{
+                    color: STAMP,
+                    borderLeft: BORDER_SOFT,
+                    fontFamily: SERIF,
+                  }}
+                >
+                  {inlineSyncOn ? '同步' : '在档'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {(
+              [
+                { label: 'LIFE LEDGER', solid: false },
+                { label: 'CONFIDENTIAL', solid: true },
+                { label: 'INTERNAL', solid: false },
+              ] as const
+            ).map((tag) => (
+              <span
+                key={tag.label}
+                className="px-2 py-0.5 font-mono text-[9px] font-semibold tracking-[0.1em]"
+                style={{
+                  fontFamily: MONO,
+                  border: BORDER_SOFT,
+                  background: tag.solid ? INK : 'transparent',
+                  color: tag.solid ? CARD : INK,
+                  borderRadius: 2,
+                }}
+              >
+                {tag.label}
+              </span>
+            ))}
           </div>
         </div>
+
+        <div className="mt-3" style={{ height: 3, background: INK }} aria-hidden />
+
+        <p className="mt-2.5 text-[11px] leading-relaxed" style={{ color: MIST, fontFamily: SANS }}>
+          {passport
+            ? '本线当前生理与资产登记。与建档卡分离；每轮对话注入，与世界书同级。'
+            : '基础信息仍是开篇固定设定。这里记本线会变的生理与资产。'}
+        </p>
+
+        <button
+          type="button"
+          className="mt-3 flex w-full items-center justify-between gap-3 py-2.5 text-left"
+          style={{ borderTop: BORDER_SOFT, color: INK }}
+          onClick={() => void toggleInlineSync()}
+          {...{ [LIFE_LEDGER_COACH_TARGET_ATTR]: 'ledger-inline-sync' }}
+        >
+          <span className="min-w-0">
+            <span className="block font-mono text-[9px] tracking-[0.16em]" style={{ color: MIST, fontFamily: MONO }}>
+              INLINE SYNC
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-relaxed" style={{ color: MIST }}>
+              同请求更新账本：本轮新事实才改。老角色用下方「按记忆对齐」一次补齐角色+玩家。
+            </span>
+          </span>
+          <span
+            className="relative h-5 w-9 shrink-0 transition-colors"
+            style={{ background: inlineSyncOn ? INK : 'rgba(46,39,28,0.2)', borderRadius: 2 }}
+            aria-hidden
+          >
+            <span
+              className="absolute top-0.5 size-4 transition-[left]"
+              style={{ left: inlineSyncOn ? 18 : 2, background: CARD, borderRadius: 1 }}
+            />
+          </span>
+        </button>
+
+        <SystemOverride
+          busy={alignBusy}
+          feedback={alignFeedback}
+          onAlign={requestAlign}
+          hasPlayer={Boolean(boundPlayer?.id)}
+        />
+
+        <section className="mt-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="font-mono text-[8px] uppercase tracking-[0.18em]" style={{ color: MIST, fontFamily: MONO }}>
+              REVISION LOG
+            </p>
+            <p className="font-mono text-[8px] tracking-[0.12em]" style={{ color: MIST, fontFamily: MONO }}>
+              {panel === 'char' ? 'CHAR' : 'USER'}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="mt-2 flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left active:opacity-90"
+            style={{
+              border: BORDER,
+              background: CARD,
+              color: INK,
+              borderRadius: RADIUS,
+            }}
+            onClick={() => setHistoryOpen(true)}
+            {...{ [LIFE_LEDGER_COACH_TARGET_ATTR]: 'ledger-history' }}
+          >
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ fontFamily: SANS }}>
+                <History className="size-3.5 shrink-0" style={{ color: INK }} strokeWidth={1.7} />
+                变更历史
+              </span>
+              <span className="mt-0.5 block text-[10.5px] leading-relaxed" style={{ color: MIST, fontFamily: SANS }}>
+                {(() => {
+                  const n =
+                    (panel === 'char' ? charSheet?.changeHistory : playerSheet?.changeHistory)?.length ?? 0
+                  return n > 0
+                    ? `当前页签 ${n} 条记录 · 对齐 / 同步 / 手改`
+                    : '对齐、同步或手改后会出现新旧对照'
+                })()}
+              </span>
+            </span>
+            <span
+              className="shrink-0 font-mono text-[10px] tracking-[0.14em]"
+              style={{ fontFamily: MONO, color: INK }}
+              aria-hidden
+            >
+              →
+            </span>
+          </button>
+        </section>
       </header>
 
-      <div
-        className="mb-4 flex overflow-hidden"
-        style={{ border: `1.5px solid ${STAMP}`, background: PAPER }}
-        {...{ [LIFE_LEDGER_COACH_TARGET_ATTR]: 'ledger-tabs' }}
-      >
-        {(
-          [
-            { id: 'char' as const, label: '角色本线', en: 'CHAR' },
-            { id: 'player' as const, label: `玩家 · ${pidName}`, en: 'USER' },
-          ] as const
-        ).map((tab) => {
-          const on = panel === tab.id
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              className="min-w-0 flex-1 truncate px-2 py-2.5 text-center"
-              style={{
-                background: on ? STAMP : 'transparent',
-                color: on ? '#F9F8F6' : STAMP,
-              }}
-              onClick={() => setPanel(tab.id)}
-            >
-              <span
-                className="block font-mono text-[8px] tracking-[0.18em]"
-                style={{ fontFamily: MONO, opacity: 0.85 }}
+      <div className="mb-1" {...{ [LIFE_LEDGER_COACH_TARGET_ATTR]: 'ledger-tabs' }}>
+        <p
+          className="mb-1 font-mono text-[11px] font-semibold tracking-[0.12em]"
+          style={{ color: INK, fontFamily: MONO }}
+        >
+          FILED CONTENTS
+        </p>
+        <div className="flex" style={{ borderBottom: BORDER }}>
+          {(
+            [
+              { id: 'char' as const, label: '角色本线', en: '01 CHAR' },
+              { id: 'player' as const, label: `玩家 · ${pidName}`, en: '02 USER' },
+            ] as const
+          ).map((tab) => {
+            const on = panel === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                className="relative min-w-0 flex-1 truncate px-2 py-2.5 text-center"
+                style={{ color: on ? INK : MIST }}
+                onClick={() => setPanel(tab.id)}
               >
-                {tab.en}
-              </span>
-              <span className="mt-0.5 block truncate text-[12px] font-semibold" style={{ fontFamily: SANS }}>
-                {tab.label}
-              </span>
-            </button>
-          )
-        })}
+                <span
+                  className="block font-mono text-[10px] tracking-[0.08em]"
+                  style={{ fontFamily: MONO, fontWeight: on ? 800 : 500 }}
+                >
+                  {tab.en}
+                </span>
+                <span
+                  className="mt-0.5 block truncate text-[12px]"
+                  style={{ fontFamily: SANS, fontWeight: on ? 700 : 500 }}
+                >
+                  {tab.label}
+                </span>
+                {on ? (
+                  <span
+                    className="pointer-events-none absolute inset-x-2 bottom-0"
+                    style={{ height: 2, background: INK }}
+                    aria-hidden
+                  />
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {panel === 'char' && charSheet ? (
@@ -2880,6 +3655,7 @@ export function LifeMutableEditor(props: {
           birthdayMD={character.birthdayMD}
           startDay={span.startDay}
           nowDay={span.nowDay}
+          wechatAvatarUrl={character.avatarUrl}
         />
       ) : null}
 
@@ -2892,6 +3668,7 @@ export function LifeMutableEditor(props: {
             birthdayMD={boundPlayer.birthdayMD}
             startDay={span.startDay}
             nowDay={span.nowDay}
+            wechatAvatarUrl={boundPlayer.avatarUrl}
           />
         ) : (
           <div
@@ -2917,11 +3694,12 @@ export function LifeMutableEditor(props: {
           <button
             type="button"
             onClick={() => setTutorialOpen(true)}
-            className="flex h-8 items-center gap-1 rounded-full px-2.5 transition-colors"
+            className="flex h-8 items-center gap-1 px-2.5 transition-colors"
             style={{
-              background: 'rgba(139,26,26,0.08)',
-              color: STAMP,
-              border: `1px solid rgba(139,26,26,0.22)`,
+              background: CARD,
+              color: INK,
+              border: BORDER,
+              borderRadius: 2,
             }}
             aria-label="人生账本教程"
             {...{ [LIFE_LEDGER_COACH_TARGET_ATTR]: 'ledger-tutorial' }}
@@ -2948,9 +3726,10 @@ export function LifeMutableEditor(props: {
           <div
             className="w-full max-w-[320px] px-5 pb-5 pt-5"
             style={{
-              background: PAPER,
-              border: `1.5px solid ${STAMP}`,
-              boxShadow: '0 12px 40px rgba(44,44,46,0.18)',
+              background: CARD,
+              border: BORDER,
+              borderRadius: RADIUS,
+              boxShadow: '0 12px 40px rgba(46,39,28,0.14)',
             }}
             role="dialog"
             aria-modal="true"
@@ -2960,7 +3739,7 @@ export function LifeMutableEditor(props: {
             <p
               id="life-ledger-align-confirm-title"
               className="text-center text-[16px] font-semibold tracking-wide"
-              style={{ color: INK, fontFamily: SERIF }}
+              style={{ color: INK, fontFamily: SANS }}
             >
               确认按记忆对齐？
             </p>
@@ -2969,9 +3748,33 @@ export function LifeMutableEditor(props: {
               style={{ color: MIST, fontFamily: SANS }}
             >
               {boundPlayer?.id
-                ? '将按人设世界书、身份卡与线上私聊/线下剧情近端各 10 轮，一次补齐角色 + 玩家两边账本。近端聊过的感情/住址/升学，以及新家人/人脉/住所/车产等「现在」事实优先写入（可追加）。不读向量与长期记忆。'
-                : '将按人设世界书、身份卡与线上私聊/线下剧情近端各 10 轮，补齐当前账本。近端「现在」事实优先于旧账本，允许追加新人新房新车。不读向量与长期记忆。'}
+                ? '将按人设世界书、身份卡与线上私聊/线下剧情近端各 10 轮，一次补齐角色 + 玩家两边账本。近端聊过的感情/住址/升学，以及新家人/人脉/住所/车产等「现在」事实优先写入（可追加）。你删掉的条目会按证据尽量补回。不读向量与长期记忆。'
+                : '将按人设世界书、身份卡与线上私聊/线下剧情近端各 10 轮，补齐当前账本。近端「现在」事实优先于旧账本，允许追加新人新房新车；你删掉的条目会按证据尽量补回。不读向量与长期记忆。'}
             </p>
+            <label className="mt-4 block">
+              <span
+                className="block text-[11px] font-medium tracking-wide"
+                style={{ color: DARK, fontFamily: SANS }}
+              >
+                对齐要求（可选）
+              </span>
+              <textarea
+                value={alignUserNotes}
+                onChange={(e) => setAlignUserNotes(e.target.value)}
+                rows={3}
+                maxLength={1200}
+                disabled={alignBusy}
+                placeholder="例：人设没写的家庭/社交也可合理补全；把我删掉的同学补回来；现居再写细一点…"
+                className="mt-1.5 w-full resize-none px-3 py-2 text-[12px] leading-relaxed outline-none disabled:opacity-55"
+                style={{
+                  color: INK,
+                  border: BORDER,
+                  background: BG,
+                  borderRadius: 2,
+                  fontFamily: SANS,
+                }}
+              />
+            </label>
             <div className="mt-5 flex gap-2.5">
               <button
                 type="button"
@@ -2980,8 +3783,9 @@ export function LifeMutableEditor(props: {
                 className="flex-1 py-2.5 text-[13px] font-medium disabled:opacity-55"
                 style={{
                   color: MIST,
-                  border: `1px solid ${LINE}`,
-                  background: PAGE,
+                  border: BORDER,
+                  background: BG,
+                  borderRadius: 2,
                   fontFamily: SANS,
                 }}
               >
@@ -2993,8 +3797,9 @@ export function LifeMutableEditor(props: {
                 onClick={confirmAlign}
                 className="flex-1 py-2.5 text-[13px] font-semibold disabled:opacity-55"
                 style={{
-                  background: STAMP,
-                  color: '#F9F8F6',
+                  background: INK,
+                  color: CARD,
+                  borderRadius: 2,
                   fontFamily: SANS,
                 }}
               >

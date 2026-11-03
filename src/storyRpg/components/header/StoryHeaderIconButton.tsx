@@ -19,10 +19,10 @@ export const StoryHeaderIconButton = forwardRef<HTMLButtonElement, Props>(
         onClick={onClick}
         title={title}
         aria-label={ariaLabel}
-        className={`inline-flex h-8 min-w-8 items-center justify-center rounded-full border px-2.5 font-[family-name:var(--sr-font-serif)] text-[12px] tracking-wide transition-all duration-200 ${
+        className={`inline-flex h-8 min-w-8 items-center justify-center rounded-[8px] border px-2.5 font-[family-name:var(--sr-font-serif)] text-[12px] tracking-wide transition-all duration-200 ${
           active
-            ? 'border-[var(--sr-gold)]/50 bg-[var(--sr-gold)]/15 text-[var(--sr-gold)] shadow-[0_0_12px_var(--sr-gold-glow)]'
-            : 'border-[var(--sr-border)] bg-[var(--sr-panel)] text-[var(--sr-text-muted)] hover:border-[var(--sr-gold)]/35 hover:text-[var(--sr-text)]'
+            ? 'border-[var(--sr-text)] bg-[var(--sr-text)] text-[var(--sr-panel-elevated)]'
+            : 'border-[var(--sr-border)] bg-[var(--sr-panel-elevated)] text-[var(--sr-text-muted)] hover:border-[var(--sr-text-soft)] hover:text-[var(--sr-text)]'
         } ${className}`}
         {...rest}
       >

@@ -67,8 +67,8 @@ const AutoGrowTextarea = forwardRef<
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       rows={10}
-      className="w-full resize-none bg-transparent text-[15px] outline-none"
-      style={{ color: LA.ink, lineHeight: 1.7 }}
+      className="w-full resize-none whitespace-pre-wrap bg-transparent text-[15px] outline-none"
+      style={{ color: LA.ink, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}
     />
   )
 })

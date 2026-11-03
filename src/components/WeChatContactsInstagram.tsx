@@ -17,6 +17,7 @@ import {
   LUMI_THREAD_CAPSULE,
   lumiThreadCapsuleStyle,
 } from '../phone/apps/wechat/lumiShellTheme'
+import { WeChatBlockedContactBadge } from '../phone/apps/wechat/WeChatBlockedContactBadge'
 import { DEFAULT_PUBLIC_AVATAR_URL } from '../phone/types'
 import { resolveCharacterAvatarUrl } from '../phone/utils/characterAvatarUrl'
 
@@ -69,6 +70,8 @@ export type WeChatContactRow = {
   /** 高亮标签，如「小助手」 */
   tag?: string
   isStarred?: boolean
+  /** 拉黑关系：备注旁红色感叹号 */
+  blockedMark?: boolean
 }
 
 type Contact = WeChatContactRow
@@ -205,6 +208,7 @@ function ContactCapsuleRow({
         <span className="truncate text-[15px] font-semibold" style={{ color: LUMI_SHELL.ink }}>
           {contact.remarkName}
         </span>
+        {contact.blockedMark ? <WeChatBlockedContactBadge /> : null}
         {contact.tag ? (
           <span
             className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium leading-tight"

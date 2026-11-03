@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { parseMomentsImageModelId } from './momentsImageModelCatalog'
 import {
@@ -22,6 +22,108 @@ import type { MomentsImageGenSettings } from './useMomentsSettingsStore'
 type Props = {
   imageGen: MomentsImageGenSettings
   onPatch: (patch: Partial<MomentsImageGenSettings>) => void
+}
+
+function formatPromptNumber(n: number, step?: number): string {
+  if (!Number.isFinite(n)) return ''
+  if (step && step > 0 && step < 1) {
+    const decimals = Math.min(6, (String(step).split('.')[1] ?? '').length || 1)
+    return String(Number(n.toFixed(decimals)))
+  }
+  return String(Math.round(n))
+}
+
+function snapPromptNumber(n: number, step?: number): number {
+  if (!Number.isFinite(n)) return n
+  if (step && step > 0) {
+    const snapped = Math.round(n / step) * step
+    if (step < 1) {
+      const decimals = Math.min(6, (String(step).split('.')[1] ?? '').length || 1)
+      return Number(snapped.toFixed(decimals))
+    }
+    return Math.round(snapped)
+  }
+  return Math.round(n)
+}
+
+/** 数字框允许清空后重输；失焦时再按 min/max/step 落盘（采样步数、CFG 等共用） */
+function NumberPromptField({
+  field,
+  value,
+  onChange,
+}: {
+  field: ImageGenPromptFieldMeta
+  value: string | number | boolean
+  onChange: (value: string | number | boolean) => void
+}) {
+  const committed =
+    typeof value === 'number' && Number.isFinite(value)
+      ? value
+      : Number(value)
+  const committedSafe = Number.isFinite(committed) ? committed : (field.min ?? 0)
+  const [draft, setDraft] = useState(formatPromptNumber(committedSafe, field.step))
+  const [focused, setFocused] = useState(false)
+
+  useEffect(() => {
+    if (!focused) setDraft(formatPromptNumber(committedSafe, field.step))
+  }, [committedSafe, field.step, focused])
+
+  const commit = (raw: string) => {
+    const n = Number(String(raw).trim())
+    if (!Number.isFinite(n)) {
+      onChange(committedSafe)
+      setDraft(formatPromptNumber(committedSafe, field.step))
+      return
+    }
+    const min = field.min ?? n
+    const max = field.max ?? n
+    const clamped = Math.min(max, Math.max(min, snapPromptNumber(n, field.step)))
+    onChange(clamped)
+    setDraft(formatPromptNumber(clamped, field.step))
+  }
+
+  return (
+    <label className="block">
+      <span className="text-[11px] font-medium text-[#6B7280]">{field.label}</span>
+      {field.description ? (
+        <p className="mt-0.5 text-[11px] text-[#9CA3AF]">{field.description}</p>
+      ) : null}
+      <input
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        spellCheck={false}
+        value={draft}
+        onFocus={(e) => {
+          setFocused(true)
+          e.currentTarget.select()
+        }}
+        onChange={(e) => {
+          const next = e.target.value.replace(/[^\d.-]/g, '')
+          setDraft(next)
+          // 输入过程中若已是合法数字则同步；空串/未完成小数不写回，避免被钳成 min
+          if (next.trim() === '' || next === '-' || next === '.' || next === '-.') return
+          if (next.endsWith('.')) return
+          const n = Number(next)
+          if (!Number.isFinite(n)) return
+          const min = field.min ?? n
+          const max = field.max ?? n
+          if (n < min || n > max) return
+          onChange(n)
+        }}
+        onBlur={() => {
+          setFocused(false)
+          commit(draft)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.currentTarget.blur()
+          }
+        }}
+        className="mt-1.5 w-full rounded-xl border border-[#F3F4F6] bg-white px-3 py-2.5 text-[13px] text-[#111827] outline-none"
+      />
+    </label>
+  )
 }
 
 function PromptField({
@@ -86,21 +188,7 @@ function PromptField({
 
   if (field.type === 'number') {
     return (
-      <label className="block">
-        <span className="text-[11px] font-medium text-[#6B7280]">{field.label}</span>
-        {field.description ? (
-          <p className="mt-0.5 text-[11px] text-[#9CA3AF]">{field.description}</p>
-        ) : null}
-        <input
-          type="number"
-          value={typeof value === 'number' ? value : Number(value) || 0}
-          min={field.min}
-          max={field.max}
-          step={field.step ?? 1}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="mt-1.5 w-full rounded-xl border border-[#F3F4F6] bg-white px-3 py-2.5 text-[13px] text-[#111827] outline-none"
-        />
-      </label>
+      <NumberPromptField field={field} value={value} onChange={onChange} />
     )
   }
 

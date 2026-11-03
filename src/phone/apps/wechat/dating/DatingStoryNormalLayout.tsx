@@ -269,6 +269,8 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
       mode: currentArchive.modePreference,
       danmakuEnabled: !!currentArchive.offlineDanmakuEnabled,
       thinkingChainEnabled: actions.thinkingChainEnabled,
+      plotSseEnabled: actions.plotSseEnabled !== false,
+      consolePromptsEnabled: currentArchive.consolePromptsEnabled !== false,
       autoUserReaction: currentArchive.godPerspective ? false : actions.autoUserReaction,
       commentModeEnabled: currentArchive.commentModeEnabled === true,
       plotArtifactVisualEnabled: currentArchive.plotArtifactVisualEnabled === true,
@@ -292,6 +294,8 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
       actions.languageSettingsValue.plotOutputLanguage,
       actions.perspective,
       actions.thinkingChainEnabled,
+      actions.plotSseEnabled,
+      currentArchive.consolePromptsEnabled,
       actions.lengthTargetChars,
       actions.maxContextTokens,
       actions.plotContextInjectMode,
@@ -313,8 +317,10 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
       side: !!currentArchive.mainCharacterOffstage,
       parallel: !!currentArchive.generateParallelOnSend,
       'if-line': !!currentArchive.generateIfLineOnSend,
+      sse: actions.plotSseEnabled !== false,
     }),
     [
+      actions.plotSseEnabled,
       currentArchive.directorMode,
       currentArchive.generateIfLineOnSend,
       currentArchive.generateParallelOnSend,
@@ -337,6 +343,8 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
         commentModeEnabled: currentArchive.commentModeEnabled === true,
         plotArtifactVisualEnabled: currentArchive.plotArtifactVisualEnabled === true,
         thinkingChainEnabled: actions.thinkingChainEnabled !== false,
+        plotSseEnabled: actions.plotSseEnabled !== false,
+        consolePromptsEnabled: currentArchive.consolePromptsEnabled !== false,
         offlineDanmakuEnabled: !!currentArchive.offlineDanmakuEnabled,
       }),
     [
@@ -344,7 +352,9 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
       actions.lengthTargetChars,
       actions.perspective,
       actions.thinkingChainEnabled,
+      actions.plotSseEnabled,
       currentArchive.commentModeEnabled,
+      currentArchive.consolePromptsEnabled,
       currentArchive.directorMode,
       currentArchive.generateIfLineOnSend,
       currentArchive.generateParallelOnSend,
@@ -362,11 +372,17 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
       if (patch.thinkingChainEnabled !== undefined && patch.thinkingChainEnabled !== actions.thinkingChainEnabled) {
         actions.toggleThinkingChain()
       }
+      if (patch.plotSseEnabled !== undefined) {
+        actions.setPlotSseEnabled(patch.plotSseEnabled)
+      }
       if (patch.autoUserReaction !== undefined) {
         // 上帝视角下禁止打开抢话
         if (!(patch.autoUserReaction && currentArchive.godPerspective)) {
           actions.setAutoUserReaction(patch.autoUserReaction)
         }
+      }
+      if (patch.consolePromptsEnabled !== undefined) {
+        actions.setConsolePromptsEnabled(patch.consolePromptsEnabled)
       }
       if (patch.commentModeEnabled !== undefined) actions.setCommentModeEnabled(patch.commentModeEnabled)
       if (patch.plotArtifactVisualEnabled !== undefined) {
@@ -430,6 +446,9 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
           break
         case 'if-line':
           actions.setGenerateIfLineOnSend(!currentArchive.generateIfLineOnSend)
+          break
+        case 'sse':
+          actions.setPlotSseEnabled(!(actions.plotSseEnabled !== false))
           break
         case 'continue':
           actions.openContinueProbe('normal')
@@ -774,8 +793,16 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
         plot={dimensionPlot}
         kind={dimensionTarget?.kind ?? 'parallel'}
         perspective={actions.perspective}
-        defaultLengthTarget={Number(actions.lengthTargetChars) || 500}
+        defaultLengthTarget={
+          dimensionTarget?.kind === 'if'
+            ? currentArchive.datingIfLengthTargetChars || 500
+            : currentArchive.datingParallelLengthTargetChars || 500
+        }
         onGenerate={handleGenerateDimension}
+        onPersistLengthTarget={(chars) => {
+          if (!dimensionTarget) return
+          actions.persistPlotDimensionLengthTarget(dimensionTarget.kind, chars)
+        }}
         busy={dimensionBusy || actions.loading}
         themeStyle={themeStyle}
       />

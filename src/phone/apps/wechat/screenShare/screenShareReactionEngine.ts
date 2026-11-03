@@ -62,10 +62,11 @@ function storedMessagesToTranscript(messages: WeChatChatMessage[]): ChatTranscri
     .map((m) => {
       const from = m.type === 'player' ? ('self' as const) : ('other' as const)
       if (m.voice) {
-        const txt = m.voice.transcriptText?.trim() || m.content?.trim() || '（语音）'
+        const body = m.voice.transcriptText?.trim() || m.content?.trim() || '…'
         const emo = m.voice.emotionLabel?.trim()
-        const who = m.type === 'player' ? '用户语音' : '对方语音'
-        const voiceText = emo ? `（${who}，情绪：${emo}）${txt}` : `（${who}）${txt}`
+        const voiceText = emo
+          ? `【语音】${body}\n（系统注·勿写入气泡或译文：语音情绪倾向 ${emo}）`
+          : `【语音】${body}`
         return { id: m.id, from, text: voiceText, replyTo: m.replyTo }
       }
       const stickerLine = stickerTranscriptTextFromFields(m.content, m.stickerRef)

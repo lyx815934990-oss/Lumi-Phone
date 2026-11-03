@@ -59,6 +59,12 @@ function normalizePost(raw: unknown): ForumPost | null {
       ? { publicContextDigest: r.publicContextDigest.trim() }
       : {}),
     ...(Array.isArray(r.customPicks) ? { customPicks: r.customPicks } : {}),
+    ...(typeof r.likeCount === 'number' && Number.isFinite(r.likeCount) && r.likeCount >= 0
+      ? { likeCount: Math.min(99999, Math.floor(r.likeCount)) }
+      : {}),
+    ...(typeof r.authorNote === 'string' && r.authorNote.trim()
+      ? { authorNote: r.authorNote.trim().slice(0, 400) }
+      : {}),
   }
 }
 

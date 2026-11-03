@@ -123,6 +123,11 @@ export type LifeMutableSheet = {
   socialCircle: LifeSocialContact[]
   pets: LifePet[]
   extraNote: string
+  /**
+   * 人生账本专属头像（dataURL / url）。
+   * 空则展示对应微信头像（角色卡 / 玩家身份卡 avatarUrl）。
+   */
+  ledgerAvatar: string
   /** 本线开篇公历日（如 2023年9月1日）；空则用时间轴最早日 */
   storyStartDay: string
   /** 开篇年龄；空则用人设卡 age */

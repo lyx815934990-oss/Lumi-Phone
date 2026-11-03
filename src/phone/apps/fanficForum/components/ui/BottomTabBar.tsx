@@ -1,6 +1,7 @@
-import { Bell, Compass, Home, Plus, User } from 'lucide-react'
+import { Compass, Home, Mail, User } from 'lucide-react'
 
 import { Pressable } from '../../../../components/Pressable'
+import { FORUM_COACH_TARGET_ATTR } from '../../forumCoach'
 import { FORUM } from '../../forumTheme'
 
 export type ForumTabId = 'plaza' | 'discover' | 'messages' | 'me'
@@ -10,62 +11,45 @@ const TABS: Array<{
   label: string
   Icon: typeof Home
 }> = [
-  { id: 'plaza', label: '广场', Icon: Home },
-  { id: 'discover', label: '发现', Icon: Compass },
-  { id: 'messages', label: '消息', Icon: Bell },
-  { id: 'me', label: '我的', Icon: User },
+  { id: 'plaza', label: '首页', Icon: Home },
+  { id: 'discover', label: '探索', Icon: Compass },
+  { id: 'messages', label: '私信', Icon: Mail },
+  { id: 'me', label: '个人', Icon: User },
 ]
 
 export function BottomTabBar({
   active,
   onChange,
-  onPublish,
+  messageBadge,
 }: {
   active: ForumTabId
   onChange: (id: ForumTabId) => void
-  onPublish: () => void
+  /** 私信未读角标 */
+  messageBadge?: number
 }) {
-  const left = TABS.slice(0, 2)
-  const right = TABS.slice(2)
-
   return (
     <nav
       className="relative shrink-0"
       style={{
         borderTop: `0.5px solid ${FORUM.hairline}`,
-        backgroundColor: FORUM.surface1,
-        paddingTop: 12,
-        paddingBottom: 'calc(18px + env(safe-area-inset-bottom, 0px))',
+        backgroundColor: FORUM.surface2,
+        paddingTop: 10,
+        paddingBottom: 'calc(14px + env(safe-area-inset-bottom, 0px))',
       }}
-      aria-label="同人论坛导航"
+      aria-label="同人通讯社导航"
+      {...{ [FORUM_COACH_TARGET_ATTR]: 'forum-tabs' }}
     >
-      <div className="relative flex items-end justify-between px-2">
-        {left.map((t) => (
-          <TabItem key={t.id} {...t} active={active === t.id} onClick={() => onChange(t.id)} />
+      <div className="flex items-end justify-between px-1">
+        {TABS.map((t) => (
+          <TabItem
+            key={t.id}
+            {...t}
+            active={active === t.id}
+            onClick={() => onChange(t.id)}
+            badge={t.id === 'messages' ? messageBadge : undefined}
+            coachId={t.id === 'messages' ? 'forum-tab-messages' : undefined}
+          />
         ))}
-
-        {/* 中间占位，给悬浮按钮留空 */}
-        <div className="w-[42px] shrink-0" aria-hidden />
-
-        {right.map((t) => (
-          <TabItem key={t.id} {...t} active={active === t.id} onClick={() => onChange(t.id)} />
-        ))}
-
-        <Pressable
-          type="button"
-          onClick={onPublish}
-          className="absolute left-1/2 top-0 flex items-center justify-center rounded-full"
-          style={{
-            width: 42,
-            height: 42,
-            marginLeft: -21,
-            marginTop: -18,
-            backgroundColor: FORUM.accent,
-          }}
-          aria-label="发布"
-        >
-          <Plus className="size-5" strokeWidth={2.25} color="#FFFDF8" />
-        </Pressable>
       </div>
     </nav>
   )
@@ -76,22 +60,46 @@ function TabItem({
   Icon,
   active,
   onClick,
+  badge,
+  coachId,
 }: {
   label: string
   Icon: typeof Home
   active: boolean
   onClick: () => void
+  badge?: number
+  coachId?: string
 }) {
-  const color = active ? FORUM.textAccent : FORUM.textMuted
+  const color = active ? FORUM.accent : FORUM.textMuted
   return (
     <Pressable
       type="button"
       onClick={onClick}
-      className="flex min-w-0 flex-1 flex-col items-center gap-0.5 py-0.5"
+      className="relative flex min-w-0 flex-1 flex-col items-center gap-0.5 py-0.5"
       aria-current={active ? 'page' : undefined}
+      {...(coachId ? { [FORUM_COACH_TARGET_ATTR]: coachId } : {})}
     >
-      <Icon className="size-[19px]" strokeWidth={active ? 2 : 1.75} color={color} />
-      <span style={{ fontSize: FORUM.font.tabLabel, color, lineHeight: 1.2 }}>{label}</span>
+      <span className="relative inline-flex">
+        <Icon className="size-[19px]" strokeWidth={active ? 2 : 1.75} color={color} />
+        {badge && badge > 0 ? (
+          <span
+            className="absolute -right-2.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 font-bold"
+            style={{ fontSize: 9, backgroundColor: FORUM.accent, color: '#FFFDF8', lineHeight: 1 }}
+          >
+            {badge > 9 ? '9+' : badge}
+          </span>
+        ) : null}
+      </span>
+      <span
+        style={{
+          fontSize: FORUM.font.tabLabel,
+          color: active ? FORUM.text : FORUM.textMuted,
+          fontWeight: active ? 700 : 500,
+          lineHeight: 1.2,
+        }}
+      >
+        {label}
+      </span>
     </Pressable>
   )
 }

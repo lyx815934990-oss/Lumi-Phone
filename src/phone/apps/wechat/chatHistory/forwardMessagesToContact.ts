@@ -50,6 +50,7 @@ function cloneMessageForForward(m: WeChatChatMessage, peerId: string, playerIden
     listenProfileShare: m.listenProfileShare,
     listenTrackShare: m.listenTrackShare,
     pulseShare: m.pulseShare,
+    forumShare: m.forumShare,
     sharedRecord: m.sharedRecord,
     chatHistory: m.chatHistory,
     timestamp,

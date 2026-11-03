@@ -32,15 +32,46 @@ function indexOfClosingCorner(t: string, from: number): number {
   return -1
 }
 
+/**
+ * 句中拟声/强调引号（「啪」「咔哒」）不当对白。
+ * 有句末标点、或去标点后超过 2 字，一律当对白（避免「嗯。」「我知道了」漏富文本）。
+ */
+function looksLikeQuotedSpeech(inner: string): boolean {
+  const raw = String(inner || '').trim()
+  if (!raw) return false
+  if (/[。！？!?…]/.test(raw)) return true
+  const core = raw
+    .replace(/\s+/g, '')
+    .replace(/[（）()【】\[\]「」""''『』]/g, '')
+    .replace(/[。！？!?…、，,.·〜~]/g, '')
+  if (!core) return false
+  if (core.length <= 2) return false
+  return true
+}
+
+/** 闭合双直角引号『…』：支持对白内嵌套 */
+function indexOfClosingDoubleCorner(t: string, from: number): number {
+  let depth = 0
+  for (let i = from; i < t.length; i += 1) {
+    const ch = t[i]
+    if (ch === '『') depth += 1
+    else if (ch === '』') {
+      if (depth === 0) return i
+      depth -= 1
+    }
+  }
+  return -1
+}
+
 const osCls =
-  'sr-plot-inner-os inline text-[length:var(--dating-font-size,15px)] font-light italic leading-[1.75] tracking-[0.03em] text-[color:var(--plot-inner-os-fg,#a89eb0)] [font-family:var(--dating-font-inner-os,var(--dating-font-narrative,var(--sr-font-serif,inherit)))]'
+  'sr-plot-inner-os inline text-[length:var(--dating-font-size,15px)] font-normal italic leading-[1.75] tracking-[0.02em] text-[color:var(--plot-inner-os-fg,#a35a68)] [font-family:var(--dating-font-inner-os,var(--dating-font-narrative,var(--sr-font-serif,inherit)))]'
 
 const dialogueCls =
-  'sr-plot-dialogue inline text-[length:var(--dating-font-size,15px)] font-normal italic leading-[1.75] text-[color:var(--plot-dialogue-fg,#b8b8bc)] [font-family:var(--dating-font-dialogue,var(--dating-font-narrative,var(--sr-font-serif,inherit)))]'
+  'sr-plot-dialogue inline text-[length:var(--dating-font-size,15px)] font-medium not-italic leading-[1.75] text-[color:var(--plot-dialogue-fg,#3d5f7a)] [font-family:var(--dating-font-dialogue,var(--dating-font-narrative,var(--sr-font-serif,inherit)))]'
 
-const dialogueClickableCls = `${dialogueCls} cursor-pointer underline decoration-dotted decoration-[color:var(--plot-dialogue-fg,#c8c8cc)] underline-offset-2`
+const dialogueClickableCls = `${dialogueCls} cursor-pointer`
 
-const osClickableCls = `${osCls} cursor-pointer underline decoration-dotted decoration-[color:var(--plot-inner-os-fg,#c8c8cc)] underline-offset-2`
+const osClickableCls = `${osCls} cursor-pointer`
 
 function normalizeRichTextSource(s: string): string {
   return String(s || '')
@@ -57,6 +88,8 @@ type Match = { end: number; node: ReactNode }
 
 export type ParsePlotRichTextOpts = {
   plainDialogue?: boolean
+  /** @deprecated 对白/内心一律行内，不再隔行档案条 */
+  voiceLayout?: 'inline' | 'dossier'
   /** 对白点击（index 为正文中对白出现顺序） */
   onDialogueClick?: (index: number, sourceText: string, el: HTMLElement) => void
   /** 可点对白时从 0 递增的计数器（由调用方持有 ref 对象） */
@@ -67,9 +100,9 @@ export type ParsePlotRichTextOpts = {
 }
 
 /**
- * 三种语义：**内心**、对白（「」/弯引号/英文引号）、其余为旁白。
- * 对白：柔和轻奢底纹 + 细描边区分旁白（非 VN 气泡卡片）。
- * 优先级：** → * → 「」 → “” / ‟ → 半角 ""
+ * 三种语义：**内心**、对白（「」/『』/弯引号/英文引号）、其余为旁白。
+ * 对白 / 内心：简约字色区分旁白（无色条底纹）；非 VN 气泡卡片。
+ * 优先级：** → * → 「」 → 『』 → “” / ‟ → 半角 ""
  * 半角直引号对白在展示层映射为弯引号并套用 dialogueCls；顶层将全角＊规范为半角 * 以便 **内心** 命中。
  */
 export function parsePlotRichText(
@@ -107,71 +140,67 @@ export function parsePlotRichText(
     }
     const canClick = typeof opts?.onDialogueClick === 'function'
     const idx = opts?.dialogueIndexRef ? opts.dialogueIndexRef.current++ : -1
-    if (!canClick || idx < 0) {
-      return (
-        <span key={k} className={dialogueCls} style={{ fontFamily: 'var(--dating-font-dialogue)' }}>
+    const inner =
+      !canClick || idx < 0 ? (
+        <span className={dialogueCls} style={{ fontFamily: 'var(--dating-font-dialogue)' }}>
+          {children}
+        </span>
+      ) : (
+        <span
+          role="button"
+          tabIndex={0}
+          className={dialogueClickableCls}
+          style={{ fontFamily: 'var(--dating-font-dialogue)' }}
+          title="点击查看译文"
+          onClick={(e) => {
+            e.stopPropagation()
+            opts.onDialogueClick?.(idx, sourceText, e.currentTarget)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              e.stopPropagation()
+              opts.onDialogueClick?.(idx, sourceText, e.currentTarget)
+            }
+          }}
+        >
           {children}
         </span>
       )
-    }
-    return (
-      <span
-        key={k}
-        role="button"
-        tabIndex={0}
-        className={dialogueClickableCls}
-        style={{ fontFamily: 'var(--dating-font-dialogue)' }}
-        title="点击查看译文"
-        onClick={(e) => {
-          e.stopPropagation()
-          opts.onDialogueClick?.(idx, sourceText, e.currentTarget)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            e.stopPropagation()
-            opts.onDialogueClick?.(idx, sourceText, e.currentTarget)
-          }
-        }}
-      >
-        {children}
-      </span>
-    )
+    return <Fragment key={k}>{inner}</Fragment>
   }
 
   const wrapInnerOs = (k: string, children: ReactNode, sourceText: string) => {
     const canClick = typeof opts?.onInnerOsClick === 'function'
     const idx = opts?.innerOsIndexRef ? opts.innerOsIndexRef.current++ : -1
-    if (!canClick || idx < 0) {
-      return (
-        <span key={k} className={osCls} style={{ fontFamily: 'var(--dating-font-inner-os)' }}>
+    const inner =
+      !canClick || idx < 0 ? (
+        <span className={osCls} style={{ fontFamily: 'var(--dating-font-inner-os)' }}>
+          {children}
+        </span>
+      ) : (
+        <span
+          role="button"
+          tabIndex={0}
+          className={osClickableCls}
+          style={{ fontFamily: 'var(--dating-font-inner-os)' }}
+          title="点击查看译文"
+          onClick={(e) => {
+            e.stopPropagation()
+            opts.onInnerOsClick?.(idx, sourceText, e.currentTarget)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              e.stopPropagation()
+              opts.onInnerOsClick?.(idx, sourceText, e.currentTarget)
+            }
+          }}
+        >
           {children}
         </span>
       )
-    }
-    return (
-      <span
-        key={k}
-        role="button"
-        tabIndex={0}
-        className={osClickableCls}
-        style={{ fontFamily: 'var(--dating-font-inner-os)' }}
-        title="点击查看译文"
-        onClick={(e) => {
-          e.stopPropagation()
-          opts.onInnerOsClick?.(idx, sourceText, e.currentTarget)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            e.stopPropagation()
-            opts.onInnerOsClick?.(idx, sourceText, e.currentTarget)
-          }
-        }}
-      >
-        {children}
-      </span>
-    )
+    return <Fragment key={k}>{inner}</Fragment>
   }
 
   const tryOs = (): Match | null => {
@@ -222,6 +251,7 @@ export function parsePlotRichText(
     const end = indexOfClosingCorner(t, i + 1)
     if (end === -1) return null
     const inner = t.slice(i + 1, end)
+    if (!looksLikeQuotedSpeech(inner)) return null
     const k = nextKey()
     return {
       end: end + 1,
@@ -243,11 +273,31 @@ export function parsePlotRichText(
     }
   }
 
+  const tryDoubleCorner = (): Match | null => {
+    if (t[i] !== '『') return null
+    const end = indexOfClosingDoubleCorner(t, i + 1)
+    if (end === -1) return null
+    const inner = t.slice(i + 1, end)
+    if (!looksLikeQuotedSpeech(inner)) return null
+    const k = nextKey()
+    return {
+      end: end + 1,
+      node: wrapDialogue(
+        k,
+        <>
+          『{parsePlotRichText(inner, depth + 1, { ...opts, onDialogueClick: undefined })}』
+        </>,
+        inner,
+      ),
+    }
+  }
+
   const tryCurve = (): Match | null => {
     if (t[i] !== QL && t[i] !== Q_OPEN_ALT) return null
     const end = indexOfClosingCurve(t, i + 1)
     if (end === -1) return null
     const inner = t.slice(i + 1, end)
+    if (!looksLikeQuotedSpeech(inner)) return null
     const k = nextKey()
     return {
       end: end + 1,
@@ -268,6 +318,7 @@ export function parsePlotRichText(
     const end = t.indexOf('"', i + 1)
     if (end === -1 || end === i + 1) return null
     const inner = t.slice(i + 1, end)
+    if (!looksLikeQuotedSpeech(inner)) return null
     const k = nextKey()
     return {
       end: end + 1,
@@ -286,7 +337,7 @@ export function parsePlotRichText(
   while (i < t.length) {
     const m = opts?.plainDialogue
       ? tryOs() ?? trySingleOs()
-      : tryOs() ?? trySingleOs() ?? tryCorner() ?? tryCurve() ?? tryAscii()
+      : tryOs() ?? trySingleOs() ?? tryCorner() ?? tryDoubleCorner() ?? tryCurve() ?? tryAscii()
     if (m) {
       emitPlain(plainStart, i)
       out.push(m.node)
@@ -443,6 +494,7 @@ export function PlotRichParagraph({
       <span className={merged} style={rootStyle}>
         {parsePlotRichText(content, 0, {
           plainDialogue,
+          voiceLayout: 'inline',
           onDialogueClick: enableDialogueClick ? onDialogueClick : undefined,
           dialogueIndexRef: enableDialogueClick ? indexRef : undefined,
           onInnerOsClick: enableOsClick ? onInnerOsClick : undefined,

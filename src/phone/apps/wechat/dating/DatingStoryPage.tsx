@@ -673,6 +673,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     setPlotPaceSettings,
     setAutoUserReaction,
     setThinkingChainEnabled,
+    setPlotSseEnabled,
     setGenerateParallelOnSend,
     setGenerateIfLineOnSend,
     setDatingLengthTargetChars,
@@ -682,6 +683,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     patchPlotImageSettings,
     patchDatingLanguageSettings,
     patchDatingPlotFontSettings,
+    setConsolePromptsEnabled,
     setCommentModeEnabled,
     setPlotArtifactVisualEnabled,
     setPlotArtifactVisualPresetId,
@@ -694,10 +696,12 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     updatePlotItem,
     updatePlotStoryTime,
     generatePlotDimension,
+    persistPlotDimensionLengthTarget,
     setPlotVersionIndex,
     deletePlotItem,
     saveEditedPlotBody,
     regenerateAiPlot,
+    stopPlotGeneration,
     vnRollbackLastRound,
   } = useDating()
   const [input, setInput] = useState('')
@@ -781,6 +785,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
   const godLocksNoInterrupt = currentArchive.godPerspective
   const autoUserReaction = !!currentArchive.autoUserReaction
   const thinkingChainEnabled = currentArchive.thinkingChainEnabled !== false
+  const plotSseEnabled = currentArchive.plotSseEnabled !== false
   const plotImageGenEnabled = !!currentArchive.plotImageGenEnabled
   const plotImageCountNode = useMemo(() => {
     const range = parseDatingPlotImageCountRange(
@@ -3085,6 +3090,8 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
       generateParallelOnSend: !!currentArchive.generateParallelOnSend,
       generateIfLineOnSend: !!currentArchive.generateIfLineOnSend,
       thinkingChainEnabled: currentArchive.thinkingChainEnabled !== false,
+      plotSseEnabled: currentArchive.plotSseEnabled !== false,
+      consolePromptsEnabled: currentArchive.consolePromptsEnabled !== false,
       commentModeEnabled: currentArchive.commentModeEnabled === true,
       plotArtifactVisualEnabled: currentArchive.plotArtifactVisualEnabled === true,
       plotArtifactVisualPresetId: currentArchive.plotArtifactVisualPresetId?.trim() || 'random',
@@ -3103,6 +3110,8 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
       currentArchive.generateParallelOnSend,
       currentArchive.generateIfLineOnSend,
       currentArchive.thinkingChainEnabled,
+      currentArchive.plotSseEnabled,
+      currentArchive.consolePromptsEnabled,
       currentArchive.commentModeEnabled,
       currentArchive.plotArtifactVisualEnabled,
       currentArchive.plotArtifactVisualPresetId,
@@ -3301,6 +3310,8 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     plotPace,
     toggleThinkingChain,
     thinkingChainEnabled,
+    setPlotSseEnabled,
+    plotSseEnabled,
     godLocksNoInterrupt,
     autoUserReaction,
     composerCollapsed,
@@ -3326,6 +3337,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     setMainCharacterOffstage,
     setGenerateParallelOnSend,
     setGenerateIfLineOnSend,
+    setConsolePromptsEnabled,
     setCommentModeEnabled,
     setPlotArtifactVisualEnabled,
     setPlotArtifactVisualPresetId,
@@ -3355,6 +3367,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     updatePlotItem,
     updatePlotStoryTime,
     generatePlotDimension,
+    persistPlotDimensionLengthTarget,
     setPlotVersionIndex,
     deletePlotItem,
     saveEditedPlotBody,
@@ -3382,6 +3395,7 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     displayAvatarUrl,
     floorsMax,
     generatePlotDimension,
+    persistPlotDimensionLengthTarget,
     godLocksNoInterrupt,
     handleBranchPick,
     handleNormalSend,
@@ -3449,6 +3463,8 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
     storyAppearance,
     thinkingChainEnabled,
     toggleThinkingChain,
+    plotSseEnabled,
+    setPlotSseEnabled,
     updatePlotItem,
     updatePlotStoryTime,
   ])
@@ -3608,6 +3624,15 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                 />
               </div>
               <div className="flex items-center justify-between rounded-lg px-3 py-2 text-[13px] text-[#262626] hover:bg-stone-50">
+                <span>SSE 流式</span>
+                <DatingCapsuleSwitch
+                  checked={plotSseEnabled}
+                  onToggle={() => {
+                    setPlotSseEnabled(!plotSseEnabled)
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-lg px-3 py-2 text-[13px] text-[#262626] hover:bg-stone-50">
                 <span>弹幕模型</span>
                 <DatingCapsuleSwitch
                   checked={vnDanmakuModelOn}
@@ -3763,8 +3788,17 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                       {currentArchive.directorMode ? '自定义输入（导演模式）' : '自定义输入'}
                     </button>
                     {vnUiLoading ? (
-                      <div className="rounded-xl border border-white/60 bg-white/70 px-3 py-2 text-center text-[13px] text-[#4b5563]">
-                        剧情正在生成中...
+                      <div className="flex items-center justify-center gap-2 rounded-xl border border-white/60 bg-white/70 px-3 py-2 text-[13px] text-[#4b5563]">
+                        <span>剧情正在生成中...</span>
+                        {loading ? (
+                          <button
+                            type="button"
+                            className="rounded-lg border border-stone-300/80 bg-white/90 px-2 py-0.5 text-[12px] font-medium text-stone-700 hover:bg-white"
+                            onClick={() => stopPlotGeneration()}
+                          >
+                            停止
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
@@ -3846,6 +3880,13 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                 <p className="mt-1.5 text-center text-[12px] leading-relaxed text-neutral-500">
                   请稍候，当前无法操作；完成后将从本轮<strong className="font-medium text-neutral-700">第一句对白</strong>开始显示。
                 </p>
+                <button
+                  type="button"
+                  className="mt-4 rounded-xl border border-stone-200 bg-white px-4 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50"
+                  onClick={() => stopPlotGeneration()}
+                >
+                  停止生成
+                </button>
               </div>
             </div>
           ) : null}
@@ -4028,6 +4069,30 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
                     <span
                       className={`block h-6 w-6 rounded-full bg-white transition-transform ${
                         thinkingChainEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2">
+                  <div className="min-w-0 pr-2">
+                    <p className="text-[13px] text-[#262626]">SSE 流式</p>
+                    <p className="mt-0.5 text-[10px] leading-snug text-[#8e8e8e]">
+                      开：边收边拼（断线可保半成品）；关：整包返回。仅本角色约会，不改 API 设置页。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={plotSseEnabled}
+                    aria-label="SSE 流式"
+                    onClick={() => setPlotSseEnabled(!plotSseEnabled)}
+                    className={`relative h-8 w-[52px] shrink-0 rounded-full p-1 transition-colors ${
+                      plotSseEnabled ? 'bg-black' : 'bg-[#cccccc]'
+                    }`}
+                  >
+                    <span
+                      className={`block h-6 w-6 rounded-full bg-white transition-transform ${
+                        plotSseEnabled ? 'translate-x-5' : 'translate-x-0'
                       }`}
                     />
                   </button>
@@ -4714,6 +4779,15 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
             <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-[#c7ced9] border-t-[#111827]" />
             <p className="text-[15px] font-medium text-[#111827]">剧情正在生成中</p>
             <p className="mt-1 text-[12px] text-[#4b5563]">请稍候，生成完成后将自动继续</p>
+            {loading ? (
+              <button
+                type="button"
+                className="mt-3 rounded-xl border border-stone-200 bg-white px-4 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50"
+                onClick={() => stopPlotGeneration()}
+              >
+                停止生成
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -5044,14 +5118,21 @@ function DatingStoryPageInner({ onBackToSelect }: Props) {
       {plotGenBackgroundHint
         ? createPortal(
             <div
-              className="pointer-events-none fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-1/2 z-[9400] flex -translate-x-1/2 items-center gap-2 rounded-full border border-stone-200/90 bg-white/95 px-4 py-2.5 shadow-lg backdrop-blur-sm"
+              className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-1/2 z-[9400] flex -translate-x-1/2 items-center gap-2 rounded-full border border-stone-200/90 bg-white/95 px-3 py-2 shadow-lg backdrop-blur-sm"
               role="status"
               aria-live="polite"
             >
               <Loader2 className="size-4 shrink-0 animate-spin text-stone-600" strokeWidth={2} aria-hidden />
               <span className="text-[13px] font-medium text-stone-800">
-                「{currentCharacter.realName}」剧情后台生成中…可切换页面
+                「{currentCharacter.realName}」剧情生成中…
               </span>
+              <button
+                type="button"
+                className="ml-0.5 shrink-0 rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[12px] font-medium text-stone-700 hover:bg-stone-100"
+                onClick={() => stopPlotGeneration()}
+              >
+                停止
+              </button>
             </div>,
             document.body,
           )

@@ -34,6 +34,11 @@ import {
   type PersonaAiGenerateResult,
 } from './personaAiGenerateRecovery'
 import { generatePersonaAiLifeLedgers } from './personaAiGenerateLifeLedger'
+import {
+  pickRandomPersonaCharacterAvatar,
+  rememberPersonaAvatarUsed,
+} from './personaCharacterAvatarPool'
+import { personaDb } from './idb'
 
 export type { PersonaAiGenerateIssue, PersonaAiGenerateResult }
 export { PersonaAiGenerateFailure, pickPersonaAiRepairIssues } from './personaAiGenerateRecovery'
@@ -105,6 +110,23 @@ type AssembleParams = {
   form: PersonaAiGenerateForm
   draft: Character
   playerDisplayName?: string
+  /** 已占用头像（同账号名册 / 同卡成员），抽新图时避开 */
+  usedAvatarUrls?: Set<string>
+}
+
+async function collectUsedPersonaAvatarUrls(excludeCharacterId?: string): Promise<Set<string>> {
+  const used = new Set<string>()
+  try {
+    const rows = await personaDb.listCharacters()
+    for (const c of rows) {
+      if (excludeCharacterId && c.id === excludeCharacterId) continue
+      const u = c.avatarUrl?.trim()
+      if (u) rememberPersonaAvatarUsed(used, u)
+    }
+  } catch {
+    /* ignore */
+  }
+  return used
 }
 
 function assemblePersonaCharacter(parsed: Record<string, unknown>, params: AssembleParams): Character {
@@ -182,19 +204,24 @@ function assemblePersonaCharacter(parsed: Record<string, unknown>, params: Assem
     comprehensive.base.wechatSignature.trim()
   const wechatSignature = coerceWechatSignature(sigRaw, sigSeed, WECHAT_SIGNATURE_GENERATE_MAX)
 
-  const avatarUrl = params.form.avatarUrl.trim()
+  const gender = parseGenderFromAi(parsed.gender, params.form.gender)
+  const avatarUrl =
+    params.form.avatarUrl.trim() ||
+    params.draft.avatarUrl?.trim() ||
+    // 未上传时从长辈/抽象/EI/可爱/清冷人物池抽，并避开已占用；禁止随机网友同学脸
+    pickRandomPersonaCharacterAvatar(gender, params.usedAvatarUrls, age)
 
   return {
     ...params.draft,
     updatedAt: now,
     name: realName,
-    gender: parseGenderFromAi(parsed.gender, params.form.gender),
+    gender,
     age,
     height: formatHeightFromCm(heightCm),
     weight: formatWeightFromKg(weightKg),
     birthdayMD,
     zodiac,
-    identity: pickStr(parsed.occupation, 48) || '学生',
+    identity: pickStr(parsed.occupation, 48) || params.form.occupationHint?.trim() || '',
     mbti,
     bio,
     motto: pickStr(parsed.motto, 40),
@@ -202,7 +229,12 @@ function assemblePersonaCharacter(parsed: Record<string, unknown>, params: Assem
     wechatNickname,
     wechatId,
     wechatSignature,
-    ...(avatarUrl ? { avatarUrl, originalAvatarUrl: avatarUrl } : {}),
+    ...(avatarUrl
+      ? {
+          avatarUrl,
+          originalAvatarUrl: params.draft.originalAvatarUrl?.trim() || avatarUrl,
+        }
+      : {}),
     interests: interests.length ? interests : undefined,
     painPoints: painPoints.length ? painPoints : undefined,
     worldBooks,
@@ -217,6 +249,7 @@ export function buildPersonaAiFromModelText(
     form: PersonaAiGenerateForm
     draft: Character
     playerDisplayName?: string
+    usedAvatarUrls?: Set<string>
   },
 ): PersonaAiGenerateResult {
   const { parsed, parseRecovered } = parseModelOutput(rawText)
@@ -308,6 +341,8 @@ export async function generatePersonaWithAi(params: {
   playerDisplayName?: string
   worldBackgroundPrompt?: string
   signal?: AbortSignal
+  /** 多人卡批量补档时跳过账本，少一轮请求 */
+  skipLifeLedger?: boolean
 }): Promise<PersonaAiGenerateResult> {
   const cfg = params.apiConfig
   if (!cfg?.apiUrl?.trim() || !cfg?.apiKey?.trim() || !cfg?.modelId?.trim()) {
@@ -331,11 +366,13 @@ export async function generatePersonaWithAi(params: {
     worldBackgroundPrompt: params.worldBackgroundPrompt,
   })
 
+  const usedAvatarUrls = await collectUsedPersonaAvatarUrls(params.draft.id)
   const raw = await callPersonaAiText(cfg, system, user, params.signal)
   let result = buildPersonaAiFromModelText(raw, {
     form: params.form,
     draft: params.draft,
     playerDisplayName: params.playerDisplayName,
+    usedAvatarUrls,
   })
 
   // 首轮写不完时自动补缺条 / 重写未闭合的条目，最多两轮，不再让用户手动点补全
@@ -365,6 +402,7 @@ export async function generatePersonaWithAi(params: {
     }
   }
 
+  if (params.skipLifeLedger) return result
   return attachLifeLedgers(result, {
     apiConfig: cfg,
     form: params.form,
@@ -434,10 +472,12 @@ export async function repairPersonaAiWithAi(params: {
     allowlist,
     forceEntryPatch: params.mode === 'fix',
   })
+  const usedAvatarUrls = await collectUsedPersonaAvatarUrls(params.draft.id)
   const character = assemblePersonaCharacter(merged, {
     form: params.form,
     draft: params.draft,
     playerDisplayName: params.playerDisplayName,
+    usedAvatarUrls,
   })
   syncWorldBookEntriesInParsedSnapshot(merged, character)
   const mergedIssues = auditPersonaAiGenerateResult(character, params.form, {
@@ -598,10 +638,12 @@ export async function regeneratePersonaAiSelectedParts(params: {
     allowlist,
     forceEntryPatch: true,
   })
+  const usedAvatarUrls = await collectUsedPersonaAvatarUrls(params.draft.id)
   const character = assemblePersonaCharacter(merged, {
     form: params.form,
     draft: params.draft,
     playerDisplayName: params.playerDisplayName,
+    usedAvatarUrls,
   })
   // 局部重写也不写入开场白
   character.openingLines = ''

@@ -1008,11 +1008,16 @@ function parseOpenAiChoiceMessage(data: unknown): string {
   }
 
   const diag = describeChatCompletionParseFailure(data)
+  if (/finish_reason=content_filter/i.test(diag)) {
+    throw new Error(
+      `生成被接口内容安全过滤拦截（content_filter），模型没有返回正文。多半是需求/正文触及死亡、血腥、未成年等敏感点——请改写生成要求后重试，或换一条不过滤这么严的线路/模型。`,
+    )
+  }
   const emptyHint = /content长度=0|content长度=[1-9][^0-9]|仅为空白/.test(diag)
     ? ' 常见原因：思考/推理模型把额度耗在内部推理、上下文过长被截断、线路限流，或 API 配错。'
     : ''
   throw new Error(
-    `模型没有返回可用正文。${diag ? `（${diag}）` : ''}${emptyHint} 约会剧情只需纯文本正文，不必也不应输出记忆 JSON。请换稳定聊天模型，或检查是否为非流式 chat/completions 地址。`,
+    `模型没有返回可用正文。${diag ? `（${diag}）` : ''}${emptyHint} 请换稳定聊天模型，或检查是否为非流式 chat/completions 地址。`,
   )
 }
 
@@ -1043,6 +1048,140 @@ async function readFetchJsonBody(resp: Response): Promise<{ data: unknown; trace
   }
 }
 
+type OpenAiSseAccum = {
+  content: string
+  reasoning: string
+  usage: unknown
+  model: string | undefined
+  id: string | undefined
+  finishReason: string | undefined
+}
+
+function createOpenAiSseAccum(): OpenAiSseAccum {
+  return {
+    content: '',
+    reasoning: '',
+    usage: undefined,
+    model: undefined,
+    id: undefined,
+    finishReason: undefined,
+  }
+}
+
+function openAiSseAccumHasText(accum: OpenAiSseAccum): boolean {
+  return Boolean(accum.content.trim() || accum.reasoning.trim())
+}
+
+function openAiSseAccumToCompletion(accum: OpenAiSseAccum, finishReason?: string): unknown {
+  const fr = finishReason || accum.finishReason || 'stop'
+  const message: Record<string, unknown> = { role: 'assistant', content: accum.content }
+  if (accum.reasoning.trim()) message.reasoning_content = accum.reasoning
+  return {
+    id: accum.id ?? 'stream-accumulated',
+    object: 'chat.completion',
+    model: accum.model ?? '',
+    choices: [{ index: 0, message, finish_reason: fr }],
+    ...(accum.usage ? { usage: accum.usage } : {}),
+  }
+}
+
+function feedOpenAiSseDataPayload(accum: OpenAiSseAccum, payload: string): void {
+  if (!payload || payload === '[DONE]') return
+  let obj: Record<string, unknown>
+  try {
+    obj = JSON.parse(payload) as Record<string, unknown>
+  } catch {
+    return
+  }
+  if (typeof obj.id === 'string' && obj.id) accum.id = obj.id
+  if (typeof obj.model === 'string' && obj.model) accum.model = obj.model
+  if (obj.usage && typeof obj.usage === 'object') accum.usage = obj.usage
+  const choices = Array.isArray(obj.choices) ? obj.choices : []
+  for (const ch of choices) {
+    const choice = ch && typeof ch === 'object' ? (ch as Record<string, unknown>) : null
+    if (!choice) continue
+    if (typeof choice.finish_reason === 'string' && choice.finish_reason.trim()) {
+      accum.finishReason = choice.finish_reason.trim()
+    }
+    const delta =
+      choice.delta && typeof choice.delta === 'object'
+        ? (choice.delta as Record<string, unknown>)
+        : null
+    const message =
+      choice.message && typeof choice.message === 'object'
+        ? (choice.message as Record<string, unknown>)
+        : null
+    const piece =
+      (delta && typeof delta.content === 'string' ? delta.content : '') ||
+      (message && typeof message.content === 'string' ? message.content : '')
+    if (piece) accum.content += piece
+    const thinkPiece =
+      (delta && typeof delta.reasoning_content === 'string' ? delta.reasoning_content : '') ||
+      (message && typeof message.reasoning_content === 'string' ? message.reasoning_content : '')
+    if (thinkPiece) accum.reasoning += thinkPiece
+  }
+}
+
+/** 将 chunk 按行喂入 SSE；跨 chunk 的半行留在 lineBuf */
+function feedOpenAiSseTextChunk(
+  accum: OpenAiSseAccum,
+  lineBuf: { value: string },
+  chunk: string,
+): void {
+  lineBuf.value += chunk
+  const parts = lineBuf.value.split(/\r?\n/)
+  lineBuf.value = parts.pop() ?? ''
+  for (const line of parts) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('data:')) continue
+    feedOpenAiSseDataPayload(accum, trimmed.slice(5).trim())
+  }
+}
+
+function flushOpenAiSseLineBuf(accum: OpenAiSseAccum, lineBuf: { value: string }): void {
+  const trimmed = lineBuf.value.trim()
+  lineBuf.value = ''
+  if (!trimmed.startsWith('data:')) return
+  feedOpenAiSseDataPayload(accum, trimmed.slice(5).trim())
+}
+
+function isChatFetchAbortError(err: unknown): boolean {
+  if (err == null) return false
+  if (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError') {
+    return true
+  }
+  if (err instanceof Error && err.name === 'AbortError') return true
+  const lower = String((err as { message?: unknown })?.message ?? err).toLowerCase()
+  return lower.includes('aborted') || (lower.includes('bodystream') && lower.includes('abort'))
+}
+
+/** 上一轮流式是否因断线保留了半成品（供约会等 UI 提示一次后清掉） */
+let lastOpenAiChatStreamWasPartial = false
+/** 上一轮是否因 max_tokens / 输出上限被掐断（finish_reason=length） */
+let lastOpenAiChatOutputTruncatedByLimit = false
+
+export function consumeLastOpenAiChatStreamPartialFlag(): boolean {
+  const v = lastOpenAiChatStreamWasPartial
+  lastOpenAiChatStreamWasPartial = false
+  return v
+}
+
+export function consumeLastOpenAiChatOutputTruncatedByLimitFlag(): boolean {
+  const v = lastOpenAiChatOutputTruncatedByLimit
+  lastOpenAiChatOutputTruncatedByLimit = false
+  return v
+}
+
+function noteOpenAiChatFinishReason(data: unknown): void {
+  const root = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
+  const choices = root && Array.isArray(root.choices) ? root.choices : []
+  const c0 = choices[0] && typeof choices[0] === 'object' ? (choices[0] as Record<string, unknown>) : null
+  const fr = typeof c0?.finish_reason === 'string' ? c0.finish_reason.trim().toLowerCase() : ''
+  if (fr === 'length' || fr === 'max_tokens') {
+    lastOpenAiChatOutputTruncatedByLimit = true
+  }
+}
+
 /** 将 OpenAI chat/completions SSE 文本拼成可被 parseOpenAiChoiceMessage 消费的完整 JSON */
 function parseOpenAiChatCompletionSseText(textRaw: string, httpStatus: number): unknown {
   const text = textRaw.trim()
@@ -1059,74 +1198,34 @@ function parseOpenAiChatCompletionSseText(textRaw: string, httpStatus: number): 
     }
   }
 
-  let content = ''
-  let reasoning = ''
-  let usage: unknown
-  let model: string | undefined
-  let id: string | undefined
-  for (const line of text.split(/\r?\n/)) {
-    const trimmed = line.trim()
-    if (!trimmed.startsWith('data:')) continue
-    const payload = trimmed.slice(5).trim()
-    if (!payload || payload === '[DONE]') continue
-    let obj: Record<string, unknown>
-    try {
-      obj = JSON.parse(payload) as Record<string, unknown>
-    } catch {
-      continue
-    }
-    if (typeof obj.id === 'string' && obj.id) id = obj.id
-    if (typeof obj.model === 'string' && obj.model) model = obj.model
-    if (obj.usage && typeof obj.usage === 'object') usage = obj.usage
-    const choices = Array.isArray(obj.choices) ? obj.choices : []
-    for (const ch of choices) {
-      const choice = ch && typeof ch === 'object' ? (ch as Record<string, unknown>) : null
-      if (!choice) continue
-      const delta =
-        choice.delta && typeof choice.delta === 'object'
-          ? (choice.delta as Record<string, unknown>)
-          : null
-      const message =
-        choice.message && typeof choice.message === 'object'
-          ? (choice.message as Record<string, unknown>)
-          : null
-      const piece =
-        (delta && typeof delta.content === 'string' ? delta.content : '') ||
-        (message && typeof message.content === 'string' ? message.content : '')
-      if (piece) content += piece
-      const thinkPiece =
-        (delta && typeof delta.reasoning_content === 'string' ? delta.reasoning_content : '') ||
-        (message && typeof message.reasoning_content === 'string' ? message.reasoning_content : '')
-      if (thinkPiece) reasoning += thinkPiece
-    }
-  }
+  const accum = createOpenAiSseAccum()
+  const lineBuf = { value: '' }
+  feedOpenAiSseTextChunk(accum, lineBuf, text)
+  flushOpenAiSseLineBuf(accum, lineBuf)
 
-  if (!content.trim() && !reasoning.trim()) {
+  if (!openAiSseAccumHasText(accum)) {
     const head = text.slice(0, 240).replace(/\s+/g, ' ')
     throw new Error(
       `流式响应未解析到正文（HTTP ${httpStatus}）。请确认网关支持 OpenAI SSE，或关闭「流式输出」。响应开头：${head}${text.length > 240 ? '…' : ''}`,
     )
   }
 
-  const message: Record<string, unknown> = { role: 'assistant', content }
-  if (reasoning.trim()) message.reasoning_content = reasoning
-  return {
-    id: id ?? 'stream-accumulated',
-    object: 'chat.completion',
-    model: model ?? '',
-    choices: [{ index: 0, message, finish_reason: 'stop' }],
-    ...(usage ? { usage } : {}),
-  }
+  return openAiSseAccumToCompletion(accum)
 }
 
+/**
+ * 读 chat/completions 响应体。
+ * 流式：用 ReadableStream 逐段解析 SSE；中途断网时若已有正文则保留半成品，避免白等后整段作废。
+ */
 async function readOpenAiChatCompletionBody(
   resp: Response,
   stream: boolean,
 ): Promise<{ data: unknown; traceId?: string }> {
   if (!stream) return readFetchJsonBody(resp)
-  const raw = await resp.text()
+
   // 错误响应优先按 JSON 错误体解析，便于上层取 message
   if (!resp.ok) {
+    const raw = await resp.text()
     const t = raw.trim()
     if (t.startsWith('{') || t.startsWith('[')) {
       try {
@@ -1142,7 +1241,119 @@ async function readOpenAiChatCompletionBody(
       traceId,
     }
   }
-  return { data: parseOpenAiChatCompletionSseText(raw, resp.status) }
+
+  if (!resp.body) {
+    const raw = await resp.text()
+    const data = parseOpenAiChatCompletionSseText(raw, resp.status)
+    noteOpenAiChatFinishReason(data)
+    return { data }
+  }
+
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  const accum = createOpenAiSseAccum()
+  const lineBuf = { value: '' }
+  let rawBuf = ''
+  let mode: 'unknown' | 'sse' | 'json' = 'unknown'
+  const JSON_RAW_CAP = 8_000_000
+
+  const seedSseBuffer = (seed: string) => {
+    rawBuf = ''
+    lineBuf.value = ''
+    if (seed) feedOpenAiSseTextChunk(accum, lineBuf, seed)
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const chunk = decoder.decode(value, { stream: true })
+      if (!chunk) continue
+
+      if (mode === 'unknown') {
+        rawBuf += chunk
+        const peek = rawBuf.trimStart()
+        if (peek.startsWith('data:') || /\r?\ndata:/.test(rawBuf)) {
+          // mode 须在本作用域赋值，嵌套函数赋值时 TS CFA 认不出 'sse'
+          mode = 'sse'
+          seedSseBuffer(rawBuf)
+        } else if (peek.startsWith('{') || peek.startsWith('[')) {
+          mode = 'json'
+        } else if (rawBuf.length >= 96) {
+          // 前缀空白/网关杂质：按 SSE 继续，避免整包缓冲撑爆内存
+          mode = 'sse'
+          seedSseBuffer(rawBuf)
+        }
+        continue
+      }
+
+      if (mode === 'sse') {
+        feedOpenAiSseTextChunk(accum, lineBuf, chunk)
+        continue
+      }
+
+      rawBuf += chunk
+      if (rawBuf.length > JSON_RAW_CAP) {
+        throw new Error('网关返回的非流式 JSON 过大，无法解析。')
+      }
+    }
+
+    const tail = decoder.decode()
+    if (mode === 'sse') {
+      if (tail) feedOpenAiSseTextChunk(accum, lineBuf, tail)
+      flushOpenAiSseLineBuf(accum, lineBuf)
+      if (!openAiSseAccumHasText(accum)) {
+        throw new Error(`流式响应未解析到正文（HTTP ${resp.status}）。`)
+      }
+      lastOpenAiChatStreamWasPartial = false
+      const data = openAiSseAccumToCompletion(accum)
+      noteOpenAiChatFinishReason(data)
+      return { data }
+    }
+
+    rawBuf += tail
+    if (mode === 'unknown' && rawBuf.trim()) {
+      // 极短响应：走统一解析（JSON 或 SSE）
+      lastOpenAiChatStreamWasPartial = false
+      const data = parseOpenAiChatCompletionSseText(rawBuf, resp.status)
+      noteOpenAiChatFinishReason(data)
+      return { data }
+    }
+    if (mode === 'json') {
+      lastOpenAiChatStreamWasPartial = false
+      const data = parseOpenAiChatCompletionSseText(rawBuf, resp.status)
+      noteOpenAiChatFinishReason(data)
+      return { data }
+    }
+    throw new Error(`网关返回空流式响应（HTTP ${resp.status}）。`)
+  } catch (e) {
+    if (isChatFetchAbortError(e)) throw e
+
+    // 断流：已拼出的 delta 尽量落库，对齐酒馆「长输出中途抖一下也不整段作废」
+    if (mode === 'sse' && openAiSseAccumHasText(accum)) {
+      flushOpenAiSseLineBuf(accum, lineBuf)
+      lastOpenAiChatStreamWasPartial = true
+      console.warn(
+        `[chat] SSE 中断，保留已收到正文约 ${accum.content.length} 字 / reasoning ${accum.reasoning.length} 字`,
+        e,
+      )
+      const data = openAiSseAccumToCompletion(accum, accum.finishReason || 'stop')
+      noteOpenAiChatFinishReason(data)
+      return { data }
+    }
+    if ((mode === 'json' || mode === 'unknown') && rawBuf.trim()) {
+      try {
+        const data = parseOpenAiChatCompletionSseText(rawBuf, resp.status)
+        lastOpenAiChatStreamWasPartial = true
+        noteOpenAiChatFinishReason(data)
+        console.warn('[chat] 响应体中断，尝试解析已收到片段', e)
+        return { data }
+      } catch {
+        /* fall through */
+      }
+    }
+    throw e instanceof Error ? e : new Error(String(e))
+  }
 }
 
 function parseGeminiText(data: unknown): string {
@@ -1373,8 +1584,10 @@ export async function openAiCompatibleChatAny(
 export async function openAiCompatibleChatLenient(
   cfg: ApiConfig,
   messages: OpenAiCompatibleMessage[],
-  options?: ChatSamplingOptions,
+  options?: ChatSamplingOptions & { signal?: AbortSignal },
 ): Promise<string> {
+  lastOpenAiChatStreamWasPartial = false
+  lastOpenAiChatOutputTruncatedByLimit = false
   if (isGeminiGenerateContentUrl(cfg.apiUrl)) {
     try {
       return await openAiCompatibleChat(cfg, messages, options)
@@ -1401,6 +1614,7 @@ export async function openAiCompatibleChatLenient(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
+    signal: options?.signal,
   })
   const { data, traceId } = await readOpenAiChatCompletionBody(resp, sampling.stream)
   if (!resp.ok) {
@@ -1414,6 +1628,7 @@ export async function openAiCompatibleChatLenient(
     })
   }
   bumpLumiSysTokensFromChatResponse(data)
+  noteOpenAiChatFinishReason(data)
   return tryParseOpenAiChoiceMessageSafe(data)
 }
 
@@ -1426,6 +1641,8 @@ export async function openAiCompatibleChat(
     diagAttemptLabel?: string
   },
 ): Promise<string> {
+  lastOpenAiChatStreamWasPartial = false
+  lastOpenAiChatOutputTruncatedByLimit = false
   const sampling = resolveChatSampling(cfg, options)
   const attemptLabel = options?.diagAttemptLabel
   // 文本链路也兼容 Gemini 原生 generateContent（避免 `contents is required`）
@@ -1510,6 +1727,7 @@ export async function openAiCompatibleChat(
     })
   }
   bumpLumiSysTokensFromChatResponse(data)
+  noteOpenAiChatFinishReason(data)
   return parseOpenAiChoiceMessage(data)
 }
 

@@ -39,6 +39,7 @@ export function emptyLifeMutableSheet(): LifeMutableSheet {
     socialCircle: [],
     pets: [],
     extraNote: '',
+    ledgerAvatar: '',
     storyStartDay: '',
     ageAtStart: null,
     changeHistory: [],
@@ -1040,6 +1041,12 @@ export function normalizeLifeMutableSheet(raw: unknown): LifeMutableSheet {
           .slice(0, 12)
       : [],
     extraNote: asStr(o.extraNote, 800),
+    ledgerAvatar: (() => {
+      const t = typeof o.ledgerAvatar === 'string' ? o.ledgerAvatar.trim() : ''
+      if (!t) return ''
+      if (t.startsWith('data:') || t.startsWith('blob:')) return t.slice(0, 350_000)
+      return asStr(t, 2000)
+    })(),
     storyStartDay: asStr(o.storyStartDay, 40),
     ageAtStart:
       typeof ageAtStart === 'number' && Number.isFinite(ageAtStart) ? Math.round(ageAtStart) : null,

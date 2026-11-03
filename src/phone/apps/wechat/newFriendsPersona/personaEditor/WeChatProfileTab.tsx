@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { INK_KICKER, INK_SECTION, INK_TITLE } from './personaEditorTabs'
 import { ChevronRight } from 'lucide-react'
 import type { Character } from '../types'
 import { PlaceholderAwareTextarea } from '../characterFieldPlaceholderPreview'
@@ -25,16 +26,16 @@ export function WeChatProfileTab({
   const subId = String(data.wechatId ?? '').trim() || '微信号未设置'
 
   return (
-    <section className="rounded-[14px] border border-neutral-200/90 bg-white px-3 pb-8 pt-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-      <header className="mb-5 border-b border-neutral-100 pb-4">
-        <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-neutral-400">04 WX · 名片仿真</p>
-        <h2 className="mt-2 text-[17px] font-semibold tracking-tight text-[#1C1C1E]">微信资料</h2>
+    <section className={`${INK_SECTION} px-3 pb-8 pt-5`}>
+      <header className="mb-5 border-b border-[#D2D0CB] pb-4">
+        <p className={INK_KICKER}>06 WX · 名片仿真</p>
+        <h2 className={INK_TITLE}>微信资料</h2>
       </header>
 
       <div
         ref={scrollRef}
         onScroll={(e) => setCoverScroll((e.target as HTMLDivElement).scrollTop)}
-        className="mx-auto max-w-md overflow-y-auto rounded-[16px] border border-neutral-200/80 bg-[#F7F7F7]"
+        className="mx-auto max-w-md overflow-y-auto rounded-[16px] border border-[#D2D0CB] bg-[#EDEBE7]"
         style={{ maxHeight: 'min(72vh, 560px)' }}
       >
         <div
@@ -101,31 +102,31 @@ export function WeChatProfileTab({
 
       <div className="mt-8 space-y-5 border-t border-neutral-100 pt-6">
         <label className="block">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-400">Nickname · 微信昵称</span>
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-[#5A6574]">Nickname · 微信昵称</span>
           <input
             value={data.wechatNickname ?? ''}
             onChange={(e) => setField('wechatNickname', e.target.value)}
             maxLength={32}
-            className="mt-2 w-full border-0 border-b border-neutral-200 bg-transparent py-2 text-[15px] text-[#1C1C1E] outline-none ring-0 transition-colors focus:border-[#D4AF37]"
+            className="mt-2 w-full border-0 border-b border-[#D2D0CB] bg-transparent py-2 text-[15px] text-[#1E2024] outline-none ring-0 transition-colors focus:border-[#5A6574]"
           />
         </label>
         <label className="block">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-400">WX ID · 微信号</span>
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-[#5A6574]">WX ID · 微信号</span>
           <input
             value={data.wechatId ?? ''}
             onChange={(e) => setField('wechatId', e.target.value)}
             maxLength={32}
-            className="mt-2 w-full border-0 border-b border-neutral-200 bg-transparent py-2 text-[15px] outline-none ring-0 transition-colors focus:border-[#D4AF37]"
-            style={{ color: '#1C1C1E' }}
+            className="mt-2 w-full border-0 border-b border-[#D2D0CB] bg-transparent py-2 text-[15px] outline-none ring-0 transition-colors focus:border-[#5A6574]"
+            style={{ color: '#1E2024' }}
           />
         </label>
         <label className="block">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-400">Region · 地区</span>
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-[#5A6574]">Region · 地区</span>
           <input
             value={data.wechatRegion ?? ''}
             onChange={(e) => setField('wechatRegion', e.target.value)}
             maxLength={32}
-            className="mt-2 w-full border-0 border-b border-neutral-200 bg-transparent py-2 text-[15px] outline-none ring-0 transition-colors focus:border-[#D4AF37]"
+            className="mt-2 w-full border-0 border-b border-[#D2D0CB] bg-transparent py-2 text-[15px] outline-none ring-0 transition-colors focus:border-[#5A6574]"
             style={{ color: '#1C1C1E' }}
           />
         </label>
@@ -135,7 +136,7 @@ export function WeChatProfileTab({
             value={data.wechatSignature ?? ''}
             onChange={(v) => setField('wechatSignature', v)}
             characterId={editorId}
-            className="mt-2 w-full border-0 border-b border-neutral-200 bg-transparent py-2 text-[14px] leading-relaxed outline-none ring-0 transition-colors focus:border-[#D4AF37]"
+            className="mt-2 w-full border-0 border-b border-[#D2D0CB] bg-transparent py-2 text-[14px] leading-relaxed outline-none ring-0 transition-colors focus:border-[#5A6574]"
             rows={3}
             maxLength={120}
             placeholder="展示在名片下方的一行简介"
@@ -148,7 +149,7 @@ export function WeChatProfileTab({
             value={data.momentsCoverUrl?.startsWith('data:') ? '' : (data.momentsCoverUrl ?? '')}
             onChange={(e) => setField('momentsCoverUrl', e.target.value)}
             placeholder="https://…"
-            className="mt-3 w-full border-0 border-b border-neutral-200 bg-transparent py-2 text-[13px] outline-none ring-0 transition-colors focus:border-[#D4AF37]"
+            className="mt-3 w-full border-0 border-b border-[#D2D0CB] bg-transparent py-2 text-[13px] outline-none ring-0 transition-colors focus:border-[#5A6574]"
             style={{ color: '#1C1C1E' }}
           />
           <div className="mt-3 flex flex-wrap items-center gap-2">

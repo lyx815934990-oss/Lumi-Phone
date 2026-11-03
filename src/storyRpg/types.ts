@@ -7,13 +7,14 @@ export type StoryDisplayMode = 'normal' | 'vn'
 export type NarrativePerspective = 'first' | 'second' | 'third'
 
 export type DirectorActionId =
-  | 'god'
-  | 'director'
-  | 'side'
-  | 'parallel'
-  | 'if-line'
-  | 'continue'
-  | 'npc'
+    | 'god'
+    | 'director'
+    | 'side'
+    | 'parallel'
+    | 'if-line'
+    | 'sse'
+    | 'continue'
+    | 'npc'
 
 export type DirectorAction = {
   id: DirectorActionId
@@ -63,6 +64,10 @@ export type StoryNode = {
   hasParallelEvent?: boolean
   /** 是否已有 IF 线正文 */
   hasIfLine?: boolean
+  /** IF 线纯文本（复制用） */
+  ifLineContent?: string
+  /** 平行事件纯文本（复制用） */
+  parallelEventContent?: string
   /** 是否为高光节点 */
   isHighlight?: boolean
   /** Lumi / CoT 思维链原文 */
@@ -105,6 +110,8 @@ export type StoryRpgSettings = {
   mode: StoryDisplayMode
   danmakuEnabled: boolean
   thinkingChainEnabled: boolean
+  /** 线下剧情 SSE 流式；关则整包返回 */
+  plotSseEnabled: boolean
   autoUserReaction: boolean
   commentModeEnabled: boolean
   /** 小剧场：HTML 剧情可视化 */
@@ -112,6 +119,12 @@ export type StoryRpgSettings = {
   /** 小剧场类型：random 或预设 id */
   plotArtifactVisualPresetId: string
   perspective: NarrativePerspective
+  /**
+   * 场控提示词总开关。缺省开。
+   * 关闭后人称、字数、时间推进、抢话、评论、小剧场、输出语言、直出/思维链壳、导演、上帝、侧幕不注入，只保留线下预设。
+   * 【本节梗概】、剧情时间轴、尾声判断仍为客户端固定注入。
+   */
+  consolePromptsEnabled?: boolean
   lengthTargetChars: number
   /** 上下文注入最大 token（8k～200k）；仅 full_text 模式主控「最近剧情」 */
   maxContextTokens: number
@@ -142,6 +155,7 @@ export const DIRECTOR_ACTIONS: DirectorAction[] = [
   { id: 'side', label: '侧面叙写', description: '主角色不在场的侧幕' },
   { id: 'parallel', label: '平行事件', description: '同刻异场景切片' },
   { id: 'if-line', label: 'IF线', description: '从锚点分歧的假设分支' },
+  { id: 'sse', label: 'SSE流式', description: '开=流式收字（断线可保半成品）；关=整包返回' },
   { id: 'continue', label: '续写方向', description: '指定剧情推进走向' },
   { id: 'npc', label: '人脉NPC插入', description: '@ 指定人脉角色出场' },
 ]
@@ -150,12 +164,14 @@ export const DEFAULT_STORY_RPG_SETTINGS: StoryRpgSettings = {
   mode: 'normal',
   danmakuEnabled: false,
   thinkingChainEnabled: true,
+  plotSseEnabled: true,
   autoUserReaction: false,
   commentModeEnabled: false,
   /** 小剧场：HTML 剧情可视化 */
   plotArtifactVisualEnabled: false,
   plotArtifactVisualPresetId: 'random',
   perspective: 'second',
+  consolePromptsEnabled: true,
   lengthTargetChars: 500,
   maxContextTokens: 200_000,
   plotContextInjectMode: 'full_text',

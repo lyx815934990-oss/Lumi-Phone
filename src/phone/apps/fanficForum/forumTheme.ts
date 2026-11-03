@@ -1,35 +1,37 @@
 /**
- * 同人论坛设计 token：三级表面色阶 + 字号/间距/圆角。
+ * 同人通讯社设计 token：新闻纸色阶 + 朱砂强调色。
  * 层次靠色阶，不靠边框与阴影。
  */
 
 export const FORUM = {
-  /** 页面背景 · surface-1（最浅） */
-  surface1: '#F6F4F1',
-  /** 卡片背景 · surface-2（略深） */
-  surface2: '#EEEBE6',
+  /** 页面背景 · surface-1（新闻纸） */
+  surface1: '#F2EFE6',
+  /** 卡片背景 · surface-2 */
+  surface2: '#FFFdf6',
   /** 强调浅底 */
-  bgAccent: '#E8DFD4',
+  bgAccent: '#E8E2D4',
   /** 主文字 */
-  text: '#2C2825',
+  text: '#1A1A18',
   /** 次要文字 */
-  textSecondary: '#6B6560',
+  textSecondary: '#7A766C',
   /** 辅助信息（最淡） */
   textMuted: '#9A948C',
   /** 强调文字 / 选中态 */
-  textAccent: '#8B6914',
-  /** 强调实色（小面积点缀 / 悬浮按钮） */
-  accent: '#C4A35A',
+  textAccent: '#8B2E22',
+  /** 强调实色（小面积点缀 / 悬浮按钮）· 通讯社朱砂 */
+  accent: '#B33A2B',
   /** 分隔线（0.5px 用，极淡） */
-  hairline: 'rgba(44, 40, 37, 0.08)',
+  hairline: 'rgba(26, 26, 24, 0.1)',
   /** 危险操作 */
   danger: '#C45C5C',
   /** 封面渐变起止 */
-  coverFrom: '#E8DFD4',
-  coverTo: '#D9CFC2',
+  coverFrom: '#E8E2D4',
+  coverTo: '#D8D2C4',
+  /** 报头深色条 */
+  masthead: '#1A1A18',
 
   radiusPage: 28,
-  radiusCard: 17,
+  radiusCard: 14,
   radiusPill: 999,
 
   pagePadX: 19,
@@ -67,7 +69,7 @@ export const FORUM = {
 
 /** 人格/角色语义色变体（浅底 + 深字） */
 export const FORUM_ACCENT_VARIANTS = [
-  { bg: '#E8DFD4', fg: '#8B6914' },
+  { bg: '#E8E2D4', fg: '#8B2E22' },
   { bg: '#E2E6EF', fg: '#4A5A7A' },
   { bg: '#E6E9E2', fg: '#4F6348' },
   { bg: '#EFE4E6', fg: '#7A4A55' },

@@ -14,20 +14,42 @@ import {
 import { loadCharacterStorySpan } from './load'
 import { syncSharedSocialCircleBetweenSheets } from './sharedSocialCircle'
 import { finalizeLifeMutableSheetForStore } from './promptRules'
-import { appendLifeChangeHistory } from './lifeChangeHistory'
+import { appendLifeChangeHistory, buildLifeSheetDiffs } from './lifeChangeHistory'
 import { parseLifeListSectionsFromText } from './alignTextFormat'
 import { buildLifeRelationStatusHardRule } from './lifeRelationSync'
-import type { LifeMutableSheet, LifeStorySpan } from './types'
+import type { LifeFieldDiff, LifeMutableSheet, LifeStorySpan } from './types'
 
 export const LIFE_LEDGER_PATCH_MARKER = '---LIFE_LEDGER_PATCH---'
 
 export const LIFE_LEDGER_PATCH_UPDATED_EVENT = 'phone:life-ledger-patch-updated'
 
+/** 弹窗展示用：字段名 + 原先 → 现在 */
+export type LifeLedgerChangedItem = {
+  label: string
+  previousText: string
+  currentText: string
+}
+
 export type LifeLedgerPatchUpdatedEventDetail = {
   appliedPatchCount: number
+  /** @deprecated 兼容旧监听；优先用 changedItems */
   changedLabels?: string[]
+  /** 具体变更：原先值 → 现在值 */
+  changedItems?: LifeLedgerChangedItem[]
   /** model_inline=主回复同请求；align=编辑器「按记忆对齐」 */
   source?: 'model_inline' | 'align'
+}
+
+export function lifeFieldDiffsToChangedItems(
+  diffs: LifeFieldDiff[],
+  prefix?: string,
+): LifeLedgerChangedItem[] {
+  const p = (prefix || '').trim()
+  return diffs.map((d) => ({
+    label: p ? `${p}·${d.label}` : d.label,
+    previousText: d.previousText || '（空）',
+    currentText: d.currentText || '（空）',
+  }))
 }
 
 export type LifeLedgerSubject = 'character' | 'player'
@@ -174,34 +196,6 @@ function mergeSheetFromAiObject(prev: LifeMutableSheet, obj: Record<string, unkn
   if (keys.has('storyStartDay') && parsed.storyStartDay.trim()) next.storyStartDay = parsed.storyStartDay
   if (keys.has('ageAtStart') && parsed.ageAtStart != null) next.ageAtStart = parsed.ageAtStart
   return next
-}
-
-function describeSheetDiff(before: LifeMutableSheet, after: LifeMutableSheet): string[] {
-  const labels: [keyof LifeMutableSheet, string][] = [
-    ['name', '姓名'],
-    ['gender', '性别'],
-    ['genderChangeNote', '性别说明'],
-    ['occupationMain', '主业'],
-    ['occupationSide', '副业'],
-    ['savings', '存款'],
-    ['relationshipStatus', '感情'],
-    ['educationTrack', '学历轨道'],
-    ['educationGradeAtStart', '开篇学年'],
-    ['educationNote', '学历备注'],
-    ['extraNote', '补充'],
-    ['ageAtStart', '开篇岁数'],
-    ['storyStartDay', '开篇日'],
-  ]
-  const out: string[] = []
-  for (const [k, zh] of labels) {
-    if (JSON.stringify(before[k]) !== JSON.stringify(after[k])) out.push(zh)
-  }
-  if (JSON.stringify(before.realEstates) !== JSON.stringify(after.realEstates)) out.push('住所')
-  if (JSON.stringify(before.vehicles) !== JSON.stringify(after.vehicles)) out.push('车产')
-  if (JSON.stringify(before.family) !== JSON.stringify(after.family)) out.push('家庭')
-  if (JSON.stringify(before.socialCircle) !== JSON.stringify(after.socialCircle)) out.push('社交圈')
-  if (JSON.stringify(before.pets) !== JSON.stringify(after.pets)) out.push('宠物')
-  return out
 }
 
 function applyCurrentAgeToSheet(params: {
@@ -431,6 +425,7 @@ export function extractLifeLedgerPatchBlock(raw: string): {
     '<<<DATING_UNIFIED_MEMORY>>>',
     '<<<DATING_UNIFIED_MEMORY_JSON>>>',
     '---LIFE_LEDGER_PATCH---',
+    '---SCHEDULE_CAL_PATCH---',
   ]
   let cut = tail.length
   for (const m of cutMarkers) {
@@ -532,17 +527,19 @@ export async function applyLifeLedgerInlinePatches(params: {
 }): Promise<{
   applied: boolean
   changedLabels: string[]
+  changedItems: LifeLedgerChangedItem[]
   appliedCount: number
   revert?: LifeLedgerPlotRevert
 }> {
   const character = params.character
   const cid = character.id?.trim()
   if (!cid || !params.patches.length) {
-    return { applied: false, changedLabels: [], appliedCount: 0 }
+    return { applied: false, changedLabels: [], changedItems: [], appliedCount: 0 }
   }
 
   const span = await loadCharacterStorySpan(cid)
   const changedLabels: string[] = []
+  const changedItems: LifeLedgerChangedItem[] = []
   let appliedCount = 0
 
   const charPatches = params.patches.filter((p) => p.subject === 'character')
@@ -571,16 +568,18 @@ export async function applyLifeLedgerInlinePatches(params: {
     })
     sheet = merged.characterSheet
     latestChar = sheet
-    const diff = describeSheetDiff(before, sheet)
-    if (diff.length) {
+    const fieldDiffs = buildLifeSheetDiffs(before, sheet)
+    if (fieldDiffs.length) {
       sheet = appendLifeChangeHistory(sheet, {
         before,
-        summary: `同请求同步 · ${diff.join('、')}`,
+        summary: `同请求同步 · ${fieldDiffs.map((d) => d.label).join('、')}`,
         source: 'inline',
       })
       latestChar = sheet
       await personaDb.putCharacterLifeMutable(cid, sheet)
-      changedLabels.push(...diff.map((x) => `角色·${x}`))
+      const items = lifeFieldDiffsToChangedItems(fieldDiffs, '角色')
+      changedItems.push(...items)
+      changedLabels.push(...items.map((x) => x.label))
       appliedCount += 1
     }
   }
@@ -598,16 +597,18 @@ export async function applyLifeLedgerInlinePatches(params: {
     })
     sheet = merged.playerSheet
     latestPlayer = sheet
-    const diff = describeSheetDiff(before, sheet)
-    if (diff.length) {
+    const fieldDiffs = buildLifeSheetDiffs(before, sheet)
+    if (fieldDiffs.length) {
       sheet = appendLifeChangeHistory(sheet, {
         before,
-        summary: `同请求同步 · ${diff.join('、')}`,
+        summary: `同请求同步 · ${fieldDiffs.map((d) => d.label).join('、')}`,
         source: 'inline',
       })
       latestPlayer = sheet
       await personaDb.putPlayerLifeMutable(pid, cid, sheet)
-      changedLabels.push(...diff.map((x) => `玩家·${x}`))
+      const items = lifeFieldDiffsToChangedItems(fieldDiffs, '玩家')
+      changedItems.push(...items)
+      changedLabels.push(...items.map((x) => x.label))
       appliedCount += 1
     }
   }
@@ -641,7 +642,22 @@ export async function applyLifeLedgerInlinePatches(params: {
           })
           await personaDb.putCharacterLifeMutable(cid, nextChar)
           await personaDb.putPlayerLifeMutable(pid, cid, nextPlayer)
-          changedLabels.push(`共同社交圈·${synced.syncedNames.slice(0, 4).join('/')}`)
+          const circleDiffs = [
+            ...lifeFieldDiffsToChangedItems(buildLifeSheetDiffs(beforeChar, synced.character), '角色'),
+            ...lifeFieldDiffsToChangedItems(buildLifeSheetDiffs(beforePlayer, synced.player), '玩家'),
+          ]
+          if (circleDiffs.length) {
+            changedItems.push(...circleDiffs)
+            changedLabels.push(...circleDiffs.map((x) => x.label))
+          } else {
+            const fallback: LifeLedgerChangedItem = {
+              label: '共同社交圈',
+              previousText: '（未同步）',
+              currentText: synced.syncedNames.slice(0, 6).join('、'),
+            }
+            changedItems.push(fallback)
+            changedLabels.push(`共同社交圈·${synced.syncedNames.slice(0, 4).join('/')}`)
+          }
           appliedCount += 1
         }
       }
@@ -670,6 +686,7 @@ export async function applyLifeLedgerInlinePatches(params: {
   return {
     applied: appliedCount > 0,
     changedLabels: [...new Set(changedLabels)],
+    changedItems,
     appliedCount,
     revert,
   }
