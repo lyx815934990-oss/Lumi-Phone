@@ -28,6 +28,21 @@ export function parsePlotDimensionLengthTarget(raw: number | string, fallback = 
   if (!Number.isFinite(n)) return fallback
   return Math.max(1, Math.min(DATING_PLOT_DIMENSION_LENGTH_MAX, Math.round(n)))
 }
+
+/**
+ * IF / 平行请求的输出 max_tokens。
+ * 必须显式写入：中转在缺省时常套过小默认，导致 finish_reason=length 截断。
+ * 中文约 1.5～2 token/字，另留推理与格式开销。
+ */
+export function datingPlotDimensionOutputMaxTokens(
+  targetChars: number,
+  opts?: { html?: boolean },
+): number {
+  if (opts?.html) return 48_000
+  const chars = Math.max(1, Math.round(Number(targetChars) || 500))
+  const estimated = Math.floor(chars * 2.8) + 2048
+  return Math.max(4_096, Math.min(65_535, estimated))
+}
 /** 送入约会剧情模型的上下文预算上限（词符/token；仍受 API/模型实际上限） */
 export const DATING_AI_MAX_CONTEXT_TOKENS = 200_000
 /** 滑杆下限：过小会导致几乎无记忆可注入 */
@@ -380,11 +395,16 @@ export type PlotItem = {
 /** 剧情卡片「平行事件 / IF 线」生成结果 */
 export type PlotDimensionKind = 'parallel' | 'if'
 
+/** IF 线输出形态：纯文本剧情 / 完整 HTML 网页 */
+export type PlotDimensionOutputFormat = 'prose' | 'html'
+
 export type PlotDimensionArtifact = {
   content: string
   writingGuide: string
   lengthTargetChars: number
   updatedAt: number
+  /** IF：生成时选择的输出格式；缺省按正文推断或 prose */
+  outputFormat?: PlotDimensionOutputFormat
   /** 生成时旁白语言（如 zh-CN / ja）；缺省跟随档案旁白语言 */
   outputLanguage?: string
   /** 生成时对白语言；缺省跟随档案对白语言 */
@@ -480,6 +500,8 @@ export type CharacterArchive = {
   datingLengthTargetChars?: number
   /** IF 线面板「目标字数」；与主线 datingLengthTargetChars 独立 */
   datingIfLengthTargetChars?: number
+  /** IF 线面板输出格式：纯文本 / HTML（HTML 不限字数） */
+  datingIfOutputFormat?: PlotDimensionOutputFormat
   /** 平行事件面板「目标字数」；与主线独立 */
   datingParallelLengthTargetChars?: number
   /**

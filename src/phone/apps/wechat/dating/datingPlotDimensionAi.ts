@@ -46,6 +46,18 @@ import {
   inferDatingRelationHintForTranslation,
 } from './datingLanguagePrompt'
 import {
+  diagnoseIfHtmlRejectReason,
+  extractCssClassNames,
+  hasEmptyOrMissingStyleBlock,
+  hasFullHtmlDocumentShell,
+  isEmojiHeavyHtmlShell,
+  isHollowInteractiveHtml,
+  isIncompleteHtmlDocument,
+  tryNormalizeRenderablePlotHtml,
+  wrapIfHtmlFragmentWithDocumentShell,
+} from './datingPlotHtmlVisual'
+import {
+  datingPlotDimensionOutputMaxTokens,
   type CharacterInfo,
   type NarrativeGenOptions,
   type NarrativePerspective,
@@ -200,6 +212,8 @@ function buildDimensionSystemPrompt(
     unrelatedToMain?: boolean
     /** 用户写作引导原文（用于抽出硬检） */
     writingGuideText?: string | null
+    /** IF：面板「输出格式」显式选了 HTML（不靠引导词语嗅探） */
+    wantsHtml?: boolean
   },
 ): string {
   const charName = character.realName.trim() || '对方'
@@ -209,6 +223,7 @@ function buildDimensionSystemPrompt(
   const standalone = kind === 'if' && hasGuide && opts.standaloneSideStory === true
   const unrelated = standalone && opts.unrelatedToMain === true
   const guideText = String(opts.writingGuideText ?? '').trim()
+  const guideWantsHtml = kind === 'if' && opts.wantsHtml === true
   const guideHardRules =
     standalone && guideText ? buildStandaloneGuideHardRules(guideText, charName, userName) : ''
   const forceThird = standalone && /第三人称/.test(guideText)
@@ -371,6 +386,25 @@ ${guideHardRules}`
       ? `【IF·称呼与平等硬补】对白/旁白/内心 OS **一律禁止**「小混蛋 / 小没良心的 / 小家伙 / 小朋友 / 小野猫 / 小妖精 / 小祖宗」等幼化贬低宠溺称；须与主线「${OFFLINE_DATING_CREATIVE_RULES_TITLE}」及通道对齐同效，不得因是假设分支放宽。`
       : ''
 
+  // HTML 模式：交互界面规范 + 人设/账本参考；不拼散文格式铁律/文风/对白排版等杂质
+  if (guideWantsHtml) {
+    const personaBits = [
+      archiveBlock ? `【人设世界书 / 档案室】\n${archiveBlock}` : '',
+      lifeDuty,
+      lifeBlocks.length ? lifeBlocks.join('\n\n') : '',
+      `【人设锚定】页面文案、互动语气须贴合 {{char}} 与 {{user}} 的人设气质，禁止 OOC；姓名嵌入界面，勿另写散文剧情正文。`,
+    ]
+      .map((x) => String(x || '').trim())
+      .filter(Boolean)
+      .join('\n\n')
+    return expandCharUserPlaceholders(
+      `${IF_HTML_ROLEPLAY_DESIGN_PROMPT}\n\n${personaBits}`,
+      { charName, userName },
+    )
+  }
+
+  const roleLine = `你是线下约会「${PLOT_DIMENSION_LABELS[kind]}」写手：与主线约会**同一文风管线、同一档案室约束**，不是另一套模板腔助手。`
+
   const raw = `${cuDirective}${MBTI_OUTPUT_BAN_RULE}
 
 ${archiveBlock ? `${archiveBlock}\n\n` : ''}${worldbookDuty}
@@ -379,7 +413,7 @@ ${richOsBlock ? `\n\n${richOsBlock}` : ''}
 ${fashionBlock ? `\n\n${fashionBlock}` : ''}
 ${intimacyPoseBlock ? `\n\n${intimacyPoseBlock}` : ''}
 
-你是线下约会「${PLOT_DIMENSION_LABELS[kind]}」写手：与主线约会**同一文风管线、同一档案室约束**，不是另一套模板腔助手。
+${roleLine}
 
 ${slimMustInject}
 ${equalityHard ? `\n${equalityHard}\n` : ''}
@@ -387,18 +421,26 @@ ${modeNote}
 ${styleDuty}
 ${perspectiveRule}
 ${consolePromptsOn ? languageRule : '【输出语言】以线下预设为准，不要套用场控语言。'}
-${hasGuide ? `【格式服从用户】用户写作引导若要求「某角色说日语、后接括号中文」等行内格式，以引导为准；场控 \`[译]\` 不得替代或挤掉该格式。\n` : ''}
+${hasGuide ? `【格式服从用户】用户写作引导若要求「某角色说日语、后接括号中文」等行内格式，或以 HTML/小游戏规格书交付，一律以引导为准；场控 \`[译]\` 不得替代或挤掉该格式。\n` : ''}
 ${consolePromptsOn && languageAppendix ? `\n${languageAppendix}\n` : ''}
 ${taskBlock}
 ${metaBan}
 ${styleAppend}${mimicAppend}${proseTail}
 
 【输出铁律】
-${consolePromptsOn ? '- **禁止**输出 <thinking>、思维链、JSON、Markdown 围栏或任何解释性前后缀。' : '- 输出格式以线下预设为准；不要套用场控的直出禁令或思维链壳。'}
-- **只输出**一段可直接阅读的剧情正文。
+${consolePromptsOn ? '- **禁止**输出 <thinking>、思维链、JSON 或任何解释性前后缀。' : '- 输出格式以线下预设为准；不要套用场控的直出禁令或思维链壳。'}
+${
+  kind === 'if'
+    ? `- **默认**只输出一段可直接阅读的剧情正文。
+- 面板未选 HTML 时：禁止输出 HTML / 代码块。
+- 散文模式下：对白用弯引号 “…” 或半角直引号 "..."；**禁止**日式直角引号「…」；禁止 PlotDirectionOptions / 选项串。
+- **排版（散文）**：段落之间空一行。禁止按固定列宽在句中插入换行。
+- **收笔（散文）**：最后一句必须写完整，禁止半截动词收束。`
+    : `- **只输出**一段可直接阅读的剧情正文。
 - 对白用弯引号 “…” 或半角直引号 "..." 写在段落内；**禁止**日式直角引号「…」；禁止 PlotDirectionOptions / HTML / 选项串。
 - **排版**：段落之间空一行。禁止按固定列宽/手机宽度在句中插入换行（禁止「窗」下一行才接「外的天色」，禁止把「2026」拆成两行）。
 - **收笔**：最后一句必须写完整，禁止停在半个动词/半个词上（如「仰起头靠」这种断句一律不合格）。`
+}`
 
   return expandCharUserPlaceholders(raw, { charName, userName })
 }
@@ -503,14 +545,267 @@ export function buildDimensionLanguageSettingsFromArchive(params: {
   }
 }
 
-/** 用户写作引导上限：完整故事规格书往往远超旧 480 字截断 */
-const DIMENSION_WRITING_GUIDE_MAX = 16_000
+/** 用户写作引导上限：完整故事规格书 / HTML 玩法说明书往往很长 */
+const DIMENSION_WRITING_GUIDE_MAX = 48_000
 
 export function clipDimensionWritingGuide(raw: string): string {
   const g = String(raw ?? '').trim()
   if (g.length <= DIMENSION_WRITING_GUIDE_MAX) return g
   return `${g.slice(0, DIMENSION_WRITING_GUIDE_MAX)}\n…（写作引导过长已截断）`
 }
+
+/**
+ * 强制文档骨架：必须整段出现在输出里（填空，禁止只交 .container 碎片）。
+ */
+const IF_HTML_MANDATORY_SKELETON = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{overflow:auto;height:auto;background:transparent;margin:0;font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif;color:#222}
+.container{max-width:720px;width:92%;margin:0 auto;box-shadow:0 4px 6px rgba(0,0,0,.25);border-radius:12px;overflow:hidden}
+.title-custom{margin:0;padding:12px 14px;font-size:18px;font-weight:700;color:#111}
+.page{display:none}
+.page.active{display:block}
+button:active,.nav-btn:active{transform:scale(0.95)}
+/* 在此继续写本页用到的全部 class 真实规则；禁止空注释占位；严禁 transition */
+</style>
+</head>
+<body>
+<div class="container">
+<!-- 在此写全部预渲染 DOM（含隐藏页/弹窗） -->
+</div>
+<script>
+/* 在此写交互：只用 classList 切换显示；禁止 innerHTML/createElement */
+</script>
+</body>
+</html>`
+
+/**
+ * 生成时预填 assistant 前缀：逼模型从 <style> 内部续写，而不是从 <div class="container"> 起笔。
+ * （不是事后合成 CSS；只是锁死起笔格式）
+ */
+const IF_HTML_ASSISTANT_PREFILL = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+`
+
+/** 把「仅续写」或「整份重打」拼成完整源码（不把 <div> 碎片硬塞进 <style>） */
+function stitchIfHtmlPrefill(raw: string, prefill: string = IF_HTML_ASSISTANT_PREFILL): string {
+  let t = String(raw || '').trim()
+  if (!t) return prefill
+  t = t
+    .replace(/^```(?:html|HTML)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim()
+  if (/^<!DOCTYPE\s+html/i.test(t)) return t
+  // 仍是 body 碎片：原样交门闸/返工，禁止拼进 style 造成更脏的半成品
+  if (/^<(?:div|p|section|main|article|ul|ol|table|header|footer|nav)\b/i.test(t)) return t
+  if (/^<html\b/i.test(t)) return `<!DOCTYPE html>\n${t}`
+  if (/^<head\b/i.test(t)) return `<!DOCTYPE html>\n<html>\n${t}`
+  if (/^<style\b/i.test(t)) {
+    return `<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n${t}`
+  }
+  // 典型续写：直接从 CSS 规则 / 注释开始
+  return `${prefill}${t}`
+}
+
+/** HTML 生成消息：assistant 预填起笔；再跟一句 user 收尾（兼容 Gemini 等要求末条为 user） */
+function buildIfHtmlChatMessages(
+  system: string,
+  user: string,
+): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+    { role: 'assistant', content: IF_HTML_ASSISTANT_PREFILL },
+    {
+      role: 'user',
+      content:
+        '请从上一助手消息已经写出的 <style> 标签内部继续写完整 CSS，然后按顺序输出 </style></head><body><div class="container">…</div><script>…</script></body></html>。禁止重新以 <div 起笔，禁止省略 style。',
+    },
+  ]
+}
+
+function stripHtmlToPlainTextForRepair(html: string): string {
+  return String(html || '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 2200)
+}
+
+/**
+ * IF·HTML 角色扮演式深度交互界面规范（面板选「HTML」时注入 system）。
+ * 结构骨架置顶——模型常忽略文末第 4 节，只吐 <div class="container">。
+ */
+const IF_HTML_ROLEPLAY_DESIGN_PROMPT = `【输出铁律·最高优先·违反即失败】
+你会根据故事或上下文嵌入一个 HTML+CSS+JavaScript 深度交互界面。这不仅是文本的载体，更是一个迷你的、可玩的互动装置或伪应用程序。
+
+你的回复必须是**完整 HTML 文件**。第一个非空白内容必须是 <!DOCTYPE html>（若用 \`\`\`html 围栏，则围栏下一行必须是 <!DOCTYPE html>）。
+禁止以 <div 起笔。禁止只输出 .container 内部碎片。禁止省略 <head> 与 <style>。禁止围栏外解释。
+
+必须按下列骨架填空输出（可增删 style/body 内规则与节点，但不可删掉 DOCTYPE/html/head/style/body/container/script 壳层）：
+${IF_HTML_MANDATORY_SKELETON}
+
+顺序固定：DOCTYPE → html → head → style → /head → body → div.container → script → /body → /html。
+所有代码左对齐，不含缩进。DOM 全部预渲染，默认隐藏，用 JS 切 class；禁止 innerHTML 与 createElement。
+
+遵循以下进阶设计规范：
+1. 布局与样式 (高性能/高兼容)
+- 设计必须是响应式的，UI需无缝适配手机、平板与桌面端
+  - 使用 @media 查询、百分比宽度和 max-width（推荐值: 500px-800px）来实现
+- body 标签禁止使用 vh 单位。确保 body 设置 overflow: auto; height: auto
+- body 背景必须设为 transparent，不要设置颜色，以便融入聊天窗口。所有的视觉背景（颜色/纹理/渐变）必须应用在内部的 .container 容器上
+- 必须定制沉浸式滚动条样式 (::-webkit-scrollbar)，使其与UI风格统一；或者在无需滚动提示时直接隐藏滚动条 (scrollbar-width: none) 以保持界面整洁
+- 严禁使用 transition 属性，所有动态效果必须通过 @keyframes 动画或 JS 切换 class 实现
+- 模块必须是单个居中的容器，内部可包含复杂的嵌套结构
+- 样式:
+  - 标题强制使用 <p class="title-custom">，严禁使用 h1-h4 标签
+  - 使用清晰易读的无衬线字体（古风除外），并明确设置 color
+  - 主容器投影大小统一为 0 4px 6px
+  - 视觉风格锚定: 根据内容类型选择最佳 UI 范式
+    - 社交/应用类: 采用 Card Layout (卡片式)、Sticky Header (粘性头部)、Bottom Nav (底部导航)
+    - 剧情/物品类: 采用拟物化
+    - 通用库: Flat UI, Cyber/Terminal, Paper/Handwritten, Pixel Art
+
+2. 动态交互与逻辑模式
+- 根据剧场类型，从以下两种交互逻辑中选择一种，严禁生搬硬套：
+  - 模式A：聚合应用流 -> 适用于论坛/朋友圈/系统/手机
+    - 特征: 单屏展示，多点交互。无需封面和结算页
+    - 必须包含: 状态切换、内容切换、或列表追加
+    - 细节: 模拟真实APP的反馈，如按钮点击的缩放、红点提示、Toast弹窗
+  - 模式B：线性叙事流 -> 适用于拆礼物/小游戏/解谜
+    - 特征: 分阶段推进 (封面 -> 互动 -> 结果)
+    - 必须包含: 完整的状态机逻辑，用户操作后界面发生不可逆变化
+- 防偷懒禁令:
+  - 不能用下面的图像指令覆盖所有元素，加入充分的emoji交互效果
+  - 严禁“点击即结束”的伪交互
+  - 对于论坛/社交类：必须模拟真实的互动数据
+- 触感反馈: 所有可点击元素必须有 :active 伪类缩放效果 (transform: scale(0.95))；允许各种有趣的交互弹窗
+
+3. 内容与资源
+- 禁止引用外部CSS、JS文件或API。所有资源必须按规定生成或声明
+- 角色与叙事:
+  - 头像: 用文本、符号、下列生图规则在绝对圆形的框内表示角色头像
+  - 相关性: 内容必须与 {{char}} 和 {{user}} 高度相关
+  - NPC客串: 可包含第三方NPC的客串
+- 语言与语调:
+  - 主要语言: 输出语言遵循用户写作引导与核心语言
+  - 用户名: 在论坛式交互中，创建诙谐的匿名用户名，绝不透露真实角色名
+- 资源:
+  - 图标：可以从外部网站引入 svg 图标加强真实性，如 Font Awesome
+  - 视觉表现策略:
+    - 每次生成前，必须随机决定视觉重心，严禁单一依赖 AI 生图：
+    - CSS/SVG 绘图: 适用于物品、食物、像素风、UI组件。
+      - 利用 border-radius, box-shadow (像素画/投影), linear-gradient, clip-path 绘制图形。
+      - 优势: 可交互、可动画化。
+    - AI 图像生成: 适用于氛围背景、复杂风景、照片质感。
+      - 格式: https://gen.pollinations.ai/image/这里是提示词?width=1920&height=1080&model=zimage&key=sk_J4QOO1aRAS3avP9yr0YbaA6z9mgMjtpM
+      - 禁令: 严禁描述人类/类人形象/身体部位。
+  - 音频:
+    - 在合适的模块生成符合要求的交互音效
+    - 生成方式: 所有音频必须使用 Web Audio API 动态生成。严禁使用任何外部音频文件、第三方音频生成服务或 Base64 编码的音频
+    - 可以自由为音频添加效果器，使其符合场景`
+
+function buildIfHtmlFileContractAppendix(_guide: string): string {
+  return `
+【本回合·必须按骨架填空】模式 A 或 B 择一。题材只看下方用户写作引导。
+你的输出必须以 <!DOCTYPE html> 开头（或 \`\`\`html 后紧跟它）。下面骨架不可拆成「只交 container」：
+
+${IF_HTML_MANDATORY_SKELETON}
+
+自检：前 200 字内必须同时出现 <!DOCTYPE html>、<style>、</style>；否则失败。
+`
+}
+
+function buildIfHtmlRepairUserAppendix(prevDraft: string, reason: string): string {
+  const draft = String(prevDraft || '').trim()
+  const classes = extractCssClassNames(draft)
+  const classList =
+    classes.length > 0
+      ? classes.map((c) => `.${c}`).join(', ')
+      : '.container, .title-custom, .page, .page.active, .nav-btn'
+  // 只给纯文本，避免模型又照抄无 style 的 <div> 碎片
+  const plain = stripHtmlToPlainTextForRepair(draft)
+  return `【返工·上一版不合格】原因：${reason || '以 <div 起笔 / 无 <style> / 非完整文件'}。
+禁止再输出以 <div 开头的碎片。请从已预填的 <!DOCTYPE html>…<style> 继续写完 CSS，再写 </style></head><body>…。
+
+<style> 内须覆盖这些 class：${classList}
+并含 body{overflow:auto;height:auto;background:transparent}、.container{box-shadow:0 4px 6px …}、.page{display:none}、.page.active{display:block}、:active{transform:scale(0.95)}；严禁 transition。
+
+【上一版纯文本文案·只许复用文字】
+${plain || '（无）'}
+`
+}
+
+/**
+ * IF HTML 展示门闸（可进网页预览）：
+ * - 必须有完整文档壳（DOCTYPE/html/head/body/闭合 html），与本地 .html 一致
+ * - 拒截断半成品（未闭合 style → 裸文字）
+ * - 拒纯表情壳
+ * 生成侧另用 needsIfHtmlRepair 返工。
+ */
+export function isPlayableIfHtml(html: string, _writingGuide?: string | null): boolean {
+  const s = String(html || '').trim()
+  if (s.length < 24) return false
+  if (!hasFullHtmlDocumentShell(s)) return false
+  if (isIncompleteHtmlDocument(s)) return false
+  if (hasEmptyOrMissingStyleBlock(s)) return false
+  if (isEmojiHeavyHtmlShell(s)) return false
+  return true
+}
+
+/** 生成质检：展示不合格 → 需要返工（不做玩法关键词分支） */
+export function needsIfHtmlRepair(html: string, writingGuide?: string | null): boolean {
+  return !isPlayableIfHtml(html, writingGuide)
+}
+
+const IF_HTML_SANITIZE = { browserPreview: true as const }
+
+/** 展示 / 落库：仅消毒与门闸；不补文档壳、不合成 CSS——缺啥就判不合格 */
+export function normalizePlotDimensionHtmlContent(
+  raw: string,
+  writingGuide?: string | null,
+): string | null {
+  const html = tryNormalizeRenderablePlotHtml(raw, IF_HTML_SANITIZE)
+  if (!html) return null
+  if (!isPlayableIfHtml(html, writingGuide)) return null
+  return html
+}
+
+/** 粗判是否像 HTML（含可能被门闸拒的空壳）；供旧档提示 / 源码对照 */
+export function peekPlotDimensionHtmlShell(raw: string): string | null {
+  const s = String(raw || '').trim()
+  if (!s) return null
+  const html = tryNormalizeRenderablePlotHtml(s, IF_HTML_SANITIZE)
+  if (html) {
+    if (isPlayableIfHtml(html)) return null
+    return html
+  }
+  // 消毒失败但仍像标签页（如空 head + 大段 DOM）：也要给源码面板看
+  if (s.length >= 40 && /<[a-zA-Z!][\s\S]*>/.test(s)) return s
+  return null
+}
+
+export function looksLikePlotDimensionHtml(
+  raw: string,
+  writingGuide?: string | null,
+): boolean {
+  return normalizePlotDimensionHtmlContent(raw, writingGuide) != null
+}
+
+export { isHollowInteractiveHtml }
 
 /** 写作引导是否要求另起番外 / 独立故事（禁止接着锚点正文续写） */
 export function isStandaloneSideStoryWritingGuide(raw: string): boolean {
@@ -635,17 +930,101 @@ export function unwrapDimensionProseLineWraps(text: string): string {
     .join('\n\n')
 }
 
-function extractDimensionBody(raw: string): string {
+function extractDimensionBody(
+  raw: string,
+  writingGuide?: string | null,
+  preferHtml?: boolean,
+): string {
   const split = splitDatingAssistantOutput(raw)
-  return unwrapDimensionProseLineWraps(split.content || split.logicPass || raw)
+  const candidate = String(split.content || split.logicPass || raw || '')
+  // HTML 不可走散文折行拼合；浏览器预览级消毒
+  const asHtml =
+    tryNormalizeRenderablePlotHtml(candidate, IF_HTML_SANITIZE) ||
+    tryNormalizeRenderablePlotHtml(raw, IF_HTML_SANITIZE)
+  if (asHtml) {
+    if (isPlayableIfHtml(asHtml, writingGuide)) return asHtml
+    // 面板选了 HTML：不合格稿也先当 HTML 交上层返工，勿折成散文
+    if (preferHtml) return asHtml
+  }
+  return unwrapDimensionProseLineWraps(candidate)
 }
 
-/** 流式跟场控 SSE；去掉 API 页 maxTokens，由采样 max_tokens:null 显式不设上限。 */
+/**
+ * 流式跟场控 SSE；去掉 API 页 maxTokens，改由本轮按目标字数显式写入 max_tokens，
+ * 避免中转在「不传上限」时套过小默认导致 length 截断。
+ */
 function resolveDimensionChatConfig(apiConfig: ApiConfigCore, plotSseEnabled: boolean): ApiConfig {
   const base = apiConfig as ApiConfig
   const { maxTokens: _omitMax, ...rest } = base
   void _omitMax
   return { ...rest, streamEnabled: plotSseEnabled }
+}
+
+/** 把「被掐断后的续写」接到半成品末尾；尽量去掉重叠复读 */
+function stitchDimensionContinuation(prev: string, next: string): string {
+  const a = prev.trimEnd()
+  const b = next.trimStart()
+  if (!b) return a
+  if (!a) return b
+  if (b.includes(a) && b.length >= a.length) return b
+  const maxOverlap = Math.min(480, a.length, b.length)
+  for (let n = maxOverlap; n >= 16; n--) {
+    if (a.slice(-n) === b.slice(0, n)) return a + b.slice(n)
+  }
+  return `${a}\n\n${b}`
+}
+
+export type DimensionTruncateContinueAskInfo = {
+  kind: PlotDimensionKind
+  charsSoFar: number
+  targetChars: number
+  reason: 'length' | 'stream_partial'
+  /** 已写正文末尾预览，便于用户确认是「接着写」 */
+  previewTail: string
+}
+
+/** 返回 true = 用户确认从断点无缝续写；false = 保留半成品、不再请求 */
+export type DimensionTruncateContinueAsk = (
+  info: DimensionTruncateContinueAskInfo,
+) => Promise<boolean>
+
+function buildDimensionSeamlessContinueUser(params: {
+  target: number
+  prevBody: string
+  html: boolean
+  charName: string
+  userName: string
+}): string {
+  const tail = [...params.prevBody].slice(-160).join('')
+  if (params.html) {
+    return expandCharUserPlaceholders(
+      `【续写硬规则·最高优先·必须遵守】
+上一则 HTML 因输出上限或断流被掐断，文档尚未写完/未闭合。
+断点附近原文末尾（必须紧接其后，禁止重开）：
+<<<CUT>>>
+${tail}
+<<<CUT>>>
+你的任务是**从断点无缝接着写**剩余源码，不是重写整页：
+1. 禁止再次输出 <!DOCTYPE、重新开 <html>/<head>，禁止复读已写完的 style/结构。
+2. 禁止「如下是完整页面」「重新生成」；只输出接到 <<<CUT>>> 之后的续写片段。
+3. 写到标签齐全并闭合 </html>。`,
+      { charName: params.charName, userName: params.userName },
+    )
+  }
+  return expandCharUserPlaceholders(
+    `【续写硬规则·最高优先·必须遵守】
+上一则剧情正文因输出上限或断流被掐断，尚未写完。
+已写正文的断点锚点（你的第一句必须能无缝接在这段之后）：
+<<<CUT>>>
+${tail}
+<<<CUT>>>
+你现在只做一件事：**接着断点往下写**。这是续写，不是重写、不是改写、不是开新篇。
+1. 若 <<<CUT>>> 末尾是半截句子，先补全该句，再继续情节；禁止另起炉灶重讲开场。
+2. 禁止复述、扩写或改写已出现的段落、设定与对白；禁止重新交代开篇。
+3. 禁止输出「接上文」「续写如下」「上一章」「重新开始」等元叙述或标题。
+4. 只输出续写正文；写到完整收束，并尽量使全文（含已写部分）达到约 ${params.target} 字。`,
+    { charName: params.charName, userName: params.userName },
+  )
 }
 
 export async function generateDatingPlotDimensionAi(params: {
@@ -673,6 +1052,17 @@ export async function generateDatingPlotDimensionAi(params: {
   consolePromptsEnabled?: boolean
   /** 缺省开。关则整包非流式 */
   plotSseEnabled?: boolean
+  /**
+   * IF 输出格式（面板开关，不做引导词语嗅探）：
+   * - `html`：强制完整 HTML，不限字数；题材只看用户写作引导
+   * - `prose` / 缺省：纯文本，不走 HTML
+   */
+  outputFormat?: import('./types').PlotDimensionOutputFormat | null
+  /**
+   * 正文被掐断时询问是否续写。返回 true 才发起无缝续写请求。
+   * 未传入时默认不自动续写（避免静默扣费）。
+   */
+  askContinueAfterTruncate?: DimensionTruncateContinueAsk | null
 }): Promise<string> {
   const {
     kind,
@@ -695,9 +1085,41 @@ export async function generateDatingPlotDimensionAi(params: {
   } = params
   const consolePromptsOn = params.consolePromptsEnabled !== false
   const plotSseEnabled = params.plotSseEnabled !== false
+  const askContinueAfterTruncate = params.askContinueAfterTruncate ?? null
   const target = Math.max(1, Math.round(Number(lengthTargetChars) || 500))
   const guide = clipDimensionWritingGuide(String(writingGuide ?? '').trim())
   const hasGuide = Boolean(guide)
+  const guideWantsHtml = kind === 'if' && params.outputFormat === 'html'
+  const outputMaxTokens = datingPlotDimensionOutputMaxTokens(target, { html: guideWantsHtml })
+  const charNameForContinue = character.realName.trim() || '对方'
+  const userNameForContinue = String(playerIdentityCardName ?? '').trim() || '用户'
+
+  const maybeContinueAfterTruncate = async (opts: {
+    draft: string
+    truncated: boolean
+    partial: boolean
+    html: boolean
+  }): Promise<string | null> => {
+    if ((!opts.truncated && !opts.partial) || opts.draft.trim().length < 80) return null
+    if (!askContinueAfterTruncate) return null
+    const charsSoFar = [...opts.draft].length
+    const previewTail = [...opts.draft].slice(-80).join('')
+    const ok = await askContinueAfterTruncate({
+      kind,
+      charsSoFar,
+      targetChars: target,
+      reason: opts.truncated ? 'length' : 'stream_partial',
+      previewTail,
+    })
+    if (!ok) return null
+    return buildDimensionSeamlessContinueUser({
+      target,
+      prevBody: opts.draft,
+      html: opts.html,
+      charName: charNameForContinue,
+      userName: userNameForContinue,
+    })
+  }
   const standaloneSideStory = kind === 'if' && hasGuide && isStandaloneSideStoryWritingGuide(guide)
   const unrelatedToMain = standaloneSideStory && isUnrelatedToMainWritingGuide(guide)
   const langCode = normalizeWeChatChatLanguageCode(outputLanguage, WECHAT_CHAT_DEFAULT_REPLY_LANGUAGE)
@@ -718,6 +1140,124 @@ export async function generateDatingPlotDimensionAi(params: {
     return `[占位·${label}]${hint}\n\n与此同时，另一栋楼的走廊里，几个与此无关的工作人员正压低声音交换着只属于他们那一角的讯息。`
   }
 
+  const charNameForRules = character.realName.trim() || '对方'
+  const userNameForRules = String(playerIdentityCardName ?? '').trim() || '用户'
+  const chatCfg = resolveDimensionChatConfig(apiConfig, plotSseEnabled)
+
+  // —— HTML 专用通道：界面规范 + 人设；不掺散文格式/对白排版/字数铁律 ——
+  if (guideWantsHtml) {
+    const system = buildDimensionSystemPrompt(kind, character, {
+      godPerspective,
+      mainCharacterOffstage,
+      perspective,
+      playerIdentityCardName,
+      outputLanguage: langCode,
+      isVnMode: isVnMode === true,
+      languageSettings,
+      styleGenOptions: null,
+      mimicUserSpeakingStyleEnabled: false,
+      lifeContext,
+      consolePromptsEnabled: consolePromptsOn,
+      hasWritingGuide: hasGuide,
+      standaloneSideStory: false,
+      unrelatedToMain: false,
+      writingGuideText: guide,
+      wantsHtml: true,
+    })
+    const profileBlock =
+      lifeContext?.characterProfileBlock?.trim() ||
+      `角色：${character.realName}\n标签：${character.identityTags.join('、') || '无'}\n人设摘要：${character.prompt.slice(0, 900)}`
+    const lifeExtra = [lifeContext?.characterLifeBlock, lifeContext?.playerLifeBlock]
+      .map((b) => String(b ?? '').trim())
+      .filter(Boolean)
+      .join('\n\n')
+    const user = expandCharUserPlaceholders(
+      `${buildIfHtmlFileContractAppendix(guide)}\n` +
+        (hasGuide
+          ? `【用户写作引导·题材与玩法须逐条落实】\n${guide}\n\n`
+          : `【用户写作引导】（未填写；仍须输出完整可运行 HTML）\n\n`) +
+        `【约会对象·人设（文案须贴合，勿 OOC）】\n${profileBlock}\n\n` +
+        (lifeExtra ? `【可变人生账本·当前事实】\n${lifeExtra}\n\n` : '') +
+        `现在开始填空输出：第一个字符起必须是 <!DOCTYPE html>（或 \`\`\`html 换行后立刻是它）。先写完 <style>…</style>，再写 .container 与 <script>，最后 </html>。页面与 {{char}}/{{user}} 高度相关。以 <div 起笔 = 失败。`,
+      { charName: charNameForRules, userName: userNameForRules },
+    )
+
+    const completeOnce = async (
+      messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+      maxTokens = outputMaxTokens,
+    ) => {
+      const sampling = {
+        temperature: 0.25,
+        stream: plotSseEnabled,
+        max_tokens: maxTokens,
+      }
+      const raw = await openAiCompatibleChat(chatCfg, messages, sampling)
+      const partial = consumeLastOpenAiChatStreamPartialFlag()
+      const truncated = consumeLastOpenAiChatOutputTruncatedByLimitFlag()
+      if (partial) {
+        console.warn(`[dating-dimension] SSE 中断，已保留约 ${raw.trim().length} 字半成品`)
+      }
+      if (truncated) {
+        console.warn(`[dating-dimension] 输出触达 Token 上限被截断（约 ${raw.trim().length} 字）`)
+      }
+      return { raw, partial, truncated }
+    }
+
+    const messages = buildIfHtmlChatMessages(system, user)
+    const first = await completeOnce(messages)
+    let raw = stitchIfHtmlPrefill(first.raw)
+    // HTML 被掐断：先问用户，确认后再无缝续写一次
+    const htmlContinueUser = await maybeContinueAfterTruncate({
+      draft: raw,
+      truncated: first.truncated,
+      partial: first.partial,
+      html: true,
+    })
+    if (htmlContinueUser) {
+      console.warn('[dating-dimension] IF HTML 截断，用户确认后无缝续写一次')
+      const cont = await completeOnce(
+        [
+          ...buildIfHtmlChatMessages(system, user),
+          { role: 'assistant', content: raw },
+          { role: 'user', content: htmlContinueUser },
+        ],
+        Math.max(8192, Math.floor(outputMaxTokens * 0.55)),
+      )
+      raw = stitchIfHtmlPrefill(stitchDimensionContinuation(raw, cont.raw))
+    }
+    let body = extractDimensionBody(raw, guide, true)
+    if (!body) throw new Error(`${PLOT_DIMENSION_LABELS[kind]}生成失败：模型未返回正文`)
+
+    const tryDisplay = (candidate: string): string | null => {
+      const direct = normalizePlotDimensionHtmlContent(candidate, guide)
+      if (direct) return direct
+      // 模型死活只交 DOM 碎片时：外层套完整文档壳 + 真实 CSS（非空 /* auto */）
+      const wrapped = wrapIfHtmlFragmentWithDocumentShell(candidate)
+      return normalizePlotDimensionHtmlContent(wrapped, guide)
+    }
+
+    let displayable = tryDisplay(body)
+    if (!displayable || needsIfHtmlRepair(displayable, guide)) {
+      const reason = diagnoseIfHtmlRejectReason(displayable || body) || '无法归一化为可显示 HTML'
+      console.warn('[dating-dimension] IF HTML 质检未过，自动返工一次', reason)
+      const repair = await completeOnce(
+        buildIfHtmlChatMessages(
+          system,
+          `${user}\n\n${buildIfHtmlRepairUserAppendix(displayable || body, reason)}`,
+        ),
+      )
+      body = extractDimensionBody(stitchIfHtmlPrefill(repair.raw), guide, true)
+      displayable = tryDisplay(body)
+    }
+    if (displayable) return displayable
+    const draft = String(body || '').trim()
+    console.warn(
+      '[dating-dimension] IF HTML 仍不合格，返回草稿供源码检查',
+      diagnoseIfHtmlRejectReason(draft),
+    )
+    return draft || body
+  }
+
   const system = buildDimensionSystemPrompt(kind, character, {
     godPerspective,
     mainCharacterOffstage,
@@ -734,14 +1274,13 @@ export async function generateDatingPlotDimensionAi(params: {
     standaloneSideStory,
     unrelatedToMain,
     writingGuideText: guide,
+    wantsHtml: false,
   })
 
   const profileBlock =
     lifeContext?.characterProfileBlock?.trim() ||
     `角色：${character.realName}\n标签：${character.identityTags.join('、') || '无'}\n人设摘要：${character.prompt.slice(0, 900)}`
 
-  const charNameForRules = character.realName.trim() || '对方'
-  const userNameForRules = String(playerIdentityCardName ?? '').trim() || '用户'
   const guideHardRulesUser =
     standaloneSideStory && hasGuide
       ? `${buildStandaloneGuideHardRules(guide, charNameForRules, userNameForRules)}\n`
@@ -811,12 +1350,15 @@ export async function generateDatingPlotDimensionAi(params: {
       ? `【输出语言】旁白 / 对白 / 内心 OS 一律用 **${langLabel}（${langNative}）**。\n`
       : `【输出语言】旁白 **${langLabel}（${langNative}）**；对白 **${weChatChatLanguageLabel(dialogueCode)}（${weChatChatLanguageNativeName(dialogueCode)}）**；内心 OS **${weChatChatLanguageLabel(osCode)}（${weChatChatLanguageNativeName(osCode)}）**。\n`
   const lengthHint =
-    `【目标字数·与用户输入同级】面板设定约 **${target} 字**（汉字/假名计入）。` +
-    `与上方写作引导同属最高优先：须尽量写到约 ${target} 字并写完整；禁止写到一半因「差不多了」提前收笔，也禁止为凑字注水堆结局。` +
-    `最后一句须写完整。客户端只请求一次、原样展示全文，不会按字数裁切或二次续写。\n`
+    `【目标字数·最高优先级硬约束·不可讨价还价】\n` +
+    `用户要求的字数为：${target}\n` +
+    `计数：汉字 / 假名 / 拉丁字母均计入；标点与空白不计入。正文落笔前先按场景拆段规划，确保交付字数 ≥ ${target}。\n` +
+    `硬规则：写不满 ${target} 字 = 不合格；禁止因「差不多了 / 情节够了 / 篇幅太长」提前收笔；禁止注水复读、空转抒情、重复对白凑字。\n` +
+    `违约后果：若不符合字数要求则会被罚款 10 亿美元！！\n` +
+    `最后一句须写完整。客户端会抬高本轮输出上限；若仍被线路掐断，会询问用户是否从断点无缝续写。禁止主动提前收笔。\n`
   const userLead = hasGuide
-    ? `以下是用户的输入内容与目标字数，二者同级最高优先，请围绕它们生成剧情，不得偏离。\n\n【用户写作引导·须逐条落实】\n${guide}\n\n`
-    : `【用户写作引导】（未填写，按锚点自然延伸即可）\n\n`
+    ? `以下是用户的输入内容与目标字数，二者同级最高优先，请围绕它们生成剧情，不得偏离。用户要求的字数为：${target}；若不符合字数要求则会被罚款 10 亿美元！！\n\n【用户写作引导·须逐条落实】\n${guide}\n\n`
+    : `【用户写作引导】（未填写，按锚点自然延伸即可；用户要求的字数为：${target}，若不符合字数要求则会被罚款 10 亿美元！！）\n\n`
   const anchorBlock = unrelatedToMain
     ? `【主线锚点】本番外与正文无关：**不提供**锚点正文。禁止自行搬用主线正在进行的场景与冲突。\n\n`
     : standaloneSideStory
@@ -828,8 +1370,8 @@ export async function generateDatingPlotDimensionAi(params: {
       ? `【近端剧情摘录（仅供文风参考，禁止整段复述或接着写）】\n${tailContext.slice(0, 1200)}\n\n`
       : `【近端剧情摘录（仅供承接语气与文风，勿整段复述）】\n${tailContext.slice(0, 2400)}\n\n`
   const closeHint = standaloneSideStory
-    ? `请${consolePromptsOn ? '直接输出正文' : '按线下预设的格式输出'}。按用户引导与目标字数另起番外，一次写完；不会二次请求续写。`
-    : `请${consolePromptsOn ? '直接输出正文' : '按线下预设的格式输出'}。按用户要求与目标字数一次写完；不会二次请求续写。`
+    ? `请${consolePromptsOn ? '直接输出正文' : '按线下预设的格式输出'}。按用户引导另起番外，尽量一次写完；用户要求的字数为：${target}，正文必须 ≥ ${target} 字，若不符合字数要求则会被罚款 10 亿美元！！`
+    : `请${consolePromptsOn ? '直接输出正文' : '按线下预设的格式输出'}。尽量一次写完；用户要求的字数为：${target}，正文必须 ≥ ${target} 字，若不符合字数要求则会被罚款 10 亿美元！！`
   const guideFormatOverride =
     standaloneSideStory && /日[语語].*中|中日|日语优先|括号.*(?:内)?翻译/.test(guide)
       ? `【对白格式·覆盖场控】${charNameForRules} 对白须日语优先并括号中文翻译；不要因为场控「输出语言」改成整段中文。\n`
@@ -852,19 +1394,17 @@ export async function generateDatingPlotDimensionAi(params: {
     userName: String(playerIdentityCardName ?? '').trim() || '用户',
   })
 
-  const chatCfg = resolveDimensionChatConfig(apiConfig, plotSseEnabled)
-
   const completeOnce = async (
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    maxTokens = outputMaxTokens,
   ) => {
     // 温度按 IF/平行微调；SSE 跟场控开关
-    // max_tokens: null = 不设客户端输出上限，模型吐多少就展示多少
+    // 显式 max_tokens：按目标字数抬高，避免中转缺省过小导致 length 截断
     const sampling = {
       temperature: kind === 'if' ? 0.7 : 0.68,
       stream: plotSseEnabled,
-      max_tokens: null,
+      max_tokens: maxTokens,
     }
-    // 只请求一次：断流不自动重打（对端常已生成并计费，重试会双倍扣费）
     const raw = await openAiCompatibleChat(chatCfg, messages, sampling)
     const partial = consumeLastOpenAiChatStreamPartialFlag()
     const truncated = consumeLastOpenAiChatOutputTruncatedByLimitFlag()
@@ -875,19 +1415,45 @@ export async function generateDatingPlotDimensionAi(params: {
     }
     if (truncated) {
       console.warn(
-        `[dating-dimension] 输出触达 Token 上限被截断（约 ${raw.trim().length} 字）`,
+        `[dating-dimension] 输出触达 Token 上限被截断（约 ${raw.trim().length} 字；本轮上限 ${maxTokens}）`,
       )
     }
-    return raw
+    return { raw, partial, truncated }
   }
 
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: system },
     { role: 'user', content: user },
   ]
-  const raw = await completeOnce(messages)
-  const body = extractDimensionBody(raw)
+  const first = await completeOnce(messages)
+  let body = extractDimensionBody(first.raw, guide, false)
   if (!body) throw new Error(`${PLOT_DIMENSION_LABELS[kind]}生成失败：模型未返回正文`)
-  // 只请求一次：不自动续写；模型吐多少就展示多少
+
+  // 被 length / 断流掐断：先弹窗确认，用户同意后才无缝续写一次
+  const continueUser = await maybeContinueAfterTruncate({
+    draft: body,
+    truncated: first.truncated,
+    partial: first.partial,
+    html: false,
+  })
+  if (continueUser) {
+    console.warn(
+      `[dating-dimension] ${PLOT_DIMENSION_LABELS[kind]}截断，用户确认后无缝续写（已有约 ${[...body].length} 字）`,
+    )
+    const cont = await completeOnce(
+      [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+        { role: 'assistant', content: body },
+        { role: 'user', content: continueUser },
+      ],
+      Math.max(4096, Math.floor(outputMaxTokens * 0.6)),
+    )
+    const contBody = extractDimensionBody(cont.raw, guide, false)
+    if (contBody?.trim()) {
+      body = stitchDimensionContinuation(body, contBody)
+    }
+  }
+
   return body
 }

@@ -565,7 +565,12 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
   )
 
   const handleGenerateDimension = useCallback(
-    async (params: { writingGuide: string; lengthTargetChars: number }) => {
+    async (params: {
+      writingGuide: string
+      lengthTargetChars: number
+      outputFormat?: import('./types').PlotDimensionOutputFormat
+      askContinueAfterTruncate?: import('./datingPlotDimensionAi').DimensionTruncateContinueAsk
+    }) => {
       if (!dimensionTarget) return
       setDimensionBusy(true)
       try {
@@ -575,6 +580,9 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
           params.writingGuide,
           params.lengthTargetChars,
           actions.perspective,
+          undefined,
+          params.outputFormat,
+          params.askContinueAfterTruncate,
         )
       } finally {
         setDimensionBusy(false)
@@ -798,10 +806,16 @@ export function DatingStoryNormalLayout({ actions, danmakuBullets = [] }: Props)
             ? currentArchive.datingIfLengthTargetChars || 500
             : currentArchive.datingParallelLengthTargetChars || 500
         }
+        defaultOutputFormat={
+          currentArchive.datingIfOutputFormat === 'html' ? 'html' : 'prose'
+        }
         onGenerate={handleGenerateDimension}
         onPersistLengthTarget={(chars) => {
           if (!dimensionTarget) return
           actions.persistPlotDimensionLengthTarget(dimensionTarget.kind, chars)
+        }}
+        onPersistOutputFormat={(fmt) => {
+          actions.persistIfOutputFormat(fmt)
         }}
         busy={dimensionBusy || actions.loading}
         themeStyle={themeStyle}

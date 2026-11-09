@@ -236,8 +236,10 @@ import {
   buildDimensionLanguageSettingsFromArchive,
   finalizeDatingDimensionTranslations,
   loadDatingPlotDimensionLifeContext,
+  normalizePlotDimensionHtmlContent,
   unwrapDimensionProseLineWraps,
 } from './datingPlotDimensionAi'
+import { diagnoseIfHtmlRejectReason } from './datingPlotHtmlVisual'
 import { buildVnBackgroundPromptBlock } from './vnBackgroundCatalog'
 import { buildVnAtmospherePromptBlock } from './vnAtmospherePromptBlock'
 import { buildVnBgmPromptBlock } from './vnBgmCatalog'
@@ -688,6 +690,8 @@ type Ctx = {
   setGenerateIfLineOnSend: (v: boolean) => void
   /** 记下 IF / 平行面板自己的目标字数（不改主线） */
   persistPlotDimensionLengthTarget: (kind: PlotDimensionKind, chars: number) => void
+  /** 记住 IF 面板默认输出格式（纯文本 / HTML） */
+  persistIfOutputFormat: (format: import('./types').PlotDimensionOutputFormat) => void
   /** 线下普通模式：每轮 AI 后是否拉取弹幕 */
   setOfflineDanmakuEnabled: (enabled: boolean) => void
   /** 持久化当前角色的剧情生成目标字数（与 DatingStoryPage 输入框同步） */
@@ -799,6 +803,10 @@ type Ctx = {
     lengthTargetChars: number,
     perspective?: NarrativePerspective,
     languages?: import('./types').PlotDimensionLanguageBundle,
+    /** IF：纯文本 / HTML；HTML 时不限字数 */
+    outputFormat?: import('./types').PlotDimensionOutputFormat,
+    /** 被掐断时询问是否从断点无缝续写 */
+    askContinueAfterTruncate?: import('./datingPlotDimensionAi').DimensionTruncateContinueAsk,
   ) => Promise<void>
 }
 
@@ -1179,6 +1187,11 @@ function mergeArchives(chars: CharacterInfo[], parsed: unknown | null): Archives
           const raw = (saved as { datingIfLengthTargetChars?: unknown }).datingIfLengthTargetChars
           if (typeof raw !== 'number' || !Number.isFinite(raw)) return merged[c.id].datingIfLengthTargetChars
           return parsePlotDimensionLengthTarget(raw, 500)
+        })(),
+        datingIfOutputFormat: (() => {
+          const raw = (saved as { datingIfOutputFormat?: unknown }).datingIfOutputFormat
+          if (raw === 'html' || raw === 'prose') return raw
+          return merged[c.id].datingIfOutputFormat ?? 'prose'
         })(),
         datingParallelLengthTargetChars: (() => {
           const raw = (saved as { datingParallelLengthTargetChars?: unknown }).datingParallelLengthTargetChars
@@ -1893,35 +1906,43 @@ async function enrichAiPlotWithOptionalDimensions(params: {
   }
   if (wantIf) {
     const dimStartedAt = Date.now()
-    const rawContent = await generateDatingPlotDimensionAi({
-      ...genBase,
-      kind: 'if',
-      writingGuide: ifWritingGuide,
-      lengthTargetChars: ifLengthTarget,
-    })
-    const finalized = await finalizeDatingDimensionTranslations({
-      content: rawContent,
-      languageSettings,
-      apiConfig: apiCfg as import('../../api/types').ApiConfig | null,
-      translationRuntime: params.translationRuntime,
-      speakerName: params.char.realName,
-      listenerName,
-      listenerGender: listenerGenderForTr,
-    })
-    plot = {
-      ...plot,
-      ifLine: {
-        content: finalized.content,
+    try {
+      const rawContent = await generateDatingPlotDimensionAi({
+        ...genBase,
+        kind: 'if',
         writingGuide: ifWritingGuide,
         lengthTargetChars: ifLengthTarget,
-        outputLanguage: languageSettings.plotOutputLanguage,
-        dialogueLanguage: languageSettings.dialogueLanguage ?? undefined,
-        innerOsLanguage: languageSettings.innerOsLanguage ?? undefined,
-        dialogueTranslations: finalized.dialogueTranslations,
-        innerOsTranslations: finalized.innerOsTranslations,
-        updatedAt: Date.now(),
-        generationDurationMs: Math.max(0, Date.now() - dimStartedAt),
-      },
+      })
+      const ifHtml = normalizePlotDimensionHtmlContent(rawContent, ifWritingGuide)
+      const finalized = ifHtml
+        ? { content: ifHtml, dialogueTranslations: undefined, innerOsTranslations: undefined }
+        : await finalizeDatingDimensionTranslations({
+            content: rawContent,
+            languageSettings,
+            apiConfig: apiCfg as import('../../api/types').ApiConfig | null,
+            translationRuntime: params.translationRuntime,
+            speakerName: params.char.realName,
+            listenerName,
+            listenerGender: listenerGenderForTr,
+          })
+      plot = {
+        ...plot,
+        ifLine: {
+          content: finalized.content,
+          writingGuide: ifWritingGuide,
+          lengthTargetChars: ifLengthTarget,
+          outputLanguage: languageSettings.plotOutputLanguage,
+          dialogueLanguage: languageSettings.dialogueLanguage ?? undefined,
+          innerOsLanguage: languageSettings.innerOsLanguage ?? undefined,
+          dialogueTranslations: finalized.dialogueTranslations,
+          innerOsTranslations: finalized.innerOsTranslations,
+          updatedAt: Date.now(),
+          generationDurationMs: Math.max(0, Date.now() - dimStartedAt),
+        },
+      }
+    } catch (e) {
+      // 主线剧情已落库；IF 可玩门闸失败不拖垮整轮发送
+      console.warn('[dating] IF line skipped (playable HTML gate)', e)
     }
   }
   return plot
@@ -4690,6 +4711,16 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     [currentCharacter.id, patchArchive],
   )
 
+  const persistIfOutputFormat = useCallback(
+    (format: import('./types').PlotDimensionOutputFormat) => {
+      const charId = currentCharacter.id
+      if (!charId) return
+      const next = format === 'html' ? 'html' : 'prose'
+      patchArchive(charId, (p) => ({ ...p, datingIfOutputFormat: next }))
+    },
+    [currentCharacter.id, patchArchive],
+  )
+
   const setOfflineDanmakuEnabled = useCallback(
     (enabled: boolean) => {
       const charId = currentCharacter.id
@@ -6530,6 +6561,8 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       lengthTargetChars: number,
       perspective: NarrativePerspective = 'second',
       languages?: import('./types').PlotDimensionLanguageBundle,
+      outputFormat?: import('./types').PlotDimensionOutputFormat,
+      askContinueAfterTruncate?: import('./datingPlotDimensionAi').DimensionTruncateContinueAsk,
     ) => {
       const charId = currentCharacter.id
       if (!charId) throw new Error('未选择角色')
@@ -6583,6 +6616,14 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         playerIdentity,
       }).catch(() => null)
       const dimStartedAt = Date.now()
+      const resolvedFormat: import('./types').PlotDimensionOutputFormat | undefined =
+        kind === 'if'
+          ? outputFormat === 'html' || outputFormat === 'prose'
+            ? outputFormat
+            : archive.datingIfOutputFormat === 'html'
+              ? 'html'
+              : 'prose'
+          : undefined
       const rawContent = await generateDatingPlotDimensionAi({
         kind,
         character: char,
@@ -6603,20 +6644,57 @@ export function DatingProvider({ children }: { children: ReactNode }) {
         lifeContext: lifeContext ?? undefined,
         consolePromptsEnabled: archive.consolePromptsEnabled !== false,
         plotSseEnabled: isDatingPlotSseEnabled(archive.plotSseEnabled),
+        outputFormat: resolvedFormat,
+        askContinueAfterTruncate: askContinueAfterTruncate ?? null,
       })
-      const finalized = await finalizeDatingDimensionTranslations({
-        content: rawContent,
-        languageSettings,
-        apiConfig: apiCfg as import('../../api/types').ApiConfig | null,
-        translationRuntime: translationRuntimeRef.current,
-        speakerName: char.realName,
-        listenerName: playerName || '用户',
-        listenerGender: listenerGenderForTr,
-      })
+      const guideTrim = String(writingGuide ?? '').trim()
+      const dimHtml =
+        kind === 'if' && resolvedFormat === 'html'
+          ? normalizePlotDimensionHtmlContent(rawContent, guideTrim)
+          : null
       const parsedDimLen = parsePlotDimensionLengthTarget(lengthTargetChars, 500)
+      // HTML 模式未过门闸：仍落库原文，方便点「源码」复制排查（不丢模型输出）
+      if (kind === 'if' && resolvedFormat === 'html' && !dimHtml) {
+        const draft = String(rawContent || '').trim()
+        if (!draft) {
+          throw new Error('未得到完整可显示的 HTML（模型未返回正文）。请重试。')
+        }
+        const rejectReason =
+          diagnoseIfHtmlRejectReason(draft) || '输出不是可显示的完整 HTML'
+        const rejectedArtifact: PlotDimensionArtifact = {
+          content: draft,
+          writingGuide: guideTrim,
+          outputFormat: 'html',
+          lengthTargetChars: parsedDimLen,
+          outputLanguage: languageSettings.plotOutputLanguage,
+          updatedAt: Date.now(),
+          generationDurationMs: Math.max(0, Date.now() - dimStartedAt),
+        }
+        await applyArchivePatch(charId, (p) => ({
+          ...p,
+          datingIfLengthTargetChars: parsedDimLen,
+          datingIfOutputFormat: 'html',
+          plots: p.plots.map((x) => (x.id === plotId ? { ...x, ifLine: rejectedArtifact } : x)),
+        }))
+        throw new Error(
+          `${rejectReason}。已保存源码，请点「源码」复制后发给我；也可缩短引导后重试。`,
+        )
+      }
+      const finalized = dimHtml
+        ? { content: dimHtml, dialogueTranslations: undefined, innerOsTranslations: undefined }
+        : await finalizeDatingDimensionTranslations({
+            content: rawContent,
+            languageSettings,
+            apiConfig: apiCfg as import('../../api/types').ApiConfig | null,
+            translationRuntime: translationRuntimeRef.current,
+            speakerName: char.realName,
+            listenerName: playerName || '用户',
+            listenerGender: listenerGenderForTr,
+          })
       const parallelArtifactBase: PlotDimensionArtifact = {
         content: finalized.content,
-        writingGuide: String(writingGuide ?? '').trim(),
+        writingGuide: guideTrim,
+        ...(resolvedFormat ? { outputFormat: resolvedFormat } : {}),
         lengthTargetChars: parsedDimLen,
         outputLanguage: languageSettings.plotOutputLanguage,
         dialogueLanguage: languageSettings.dialogueLanguage ?? undefined,
@@ -6634,7 +6712,10 @@ export function DatingProvider({ children }: { children: ReactNode }) {
       let nextStore = await applyArchivePatch(charId, (p) => ({
         ...p,
         ...(kind === 'if'
-          ? { datingIfLengthTargetChars: parsedDimLen }
+          ? {
+              datingIfLengthTargetChars: parsedDimLen,
+              ...(resolvedFormat ? { datingIfOutputFormat: resolvedFormat } : {}),
+            }
           : { datingParallelLengthTargetChars: parsedDimLen }),
         plots: p.plots.map((x) => (x.id === plotId ? { ...x, ...patch } : x)),
       }))
@@ -6700,6 +6781,7 @@ export function DatingProvider({ children }: { children: ReactNode }) {
     setGenerateParallelOnSend,
     setGenerateIfLineOnSend,
     persistPlotDimensionLengthTarget,
+    persistIfOutputFormat,
     setOfflineDanmakuEnabled,
     setDatingLengthTargetChars,
     setDatingMaxContextTokens,

@@ -16,6 +16,14 @@ type Props = {
   /** 无障碍标题 */
   title?: string
   minHeight?: number
+  /**
+   * IF 线等：按「本地打开 .html」——始终 iframe、浏览器预览级消毒、不注入酒馆库。
+   */
+  playableSandbox?: boolean
+  /**
+   * 固定视口高度（像浏览器窗口），页内自己滚动；不传则按内容自动撑高。
+   */
+  viewportHeight?: number | string
 }
 
 /**
@@ -108,6 +116,42 @@ function buildIframeSrcDoc(html: string): string {
 }
 
 /**
+ * IF 线：按「本地打开 .html」——不注入任何观感兜底/抢救 CSS/DOM 包装。
+ * 完整文档几乎原样；仅碎片时补最薄文档壳（charset+viewport，无样式）。
+ * 高度桥只用于 iframe 测高，不改页面长相。
+ */
+function buildPlayableHtmlSrcDoc(html: string): string {
+  let raw = String(html || '').trim()
+  if (!raw) return ''
+
+  const embedded =
+    raw.match(/<!DOCTYPE\s+html[\s\S]*?<\/html\s*>/i)?.[0] ||
+    raw.match(/<html\b[\s\S]*?<\/html\s*>/i)?.[0]
+  if (embedded) raw = embedded
+
+  if (!isCompleteHtmlDocument(raw)) {
+    const { styles, body } = hoistStyleTags(raw)
+    if (!body) return ''
+    raw =
+      `<!DOCTYPE html><html lang="zh-CN"><head>` +
+      `<meta charset="utf-8">` +
+      `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+      `${styles}</head><body>${body}</body></html>`
+  }
+
+  // 预览壳透明：避免手机端 iframe 默认白底盖过 .container 主题色
+  if (!/data-lumi-playable-canvas/i.test(raw)) {
+    const canvasCss =
+      `<style data-lumi-playable-canvas="1">html,body{background:transparent!important;}</style>`
+    raw = /<\/head>/i.test(raw)
+      ? raw.replace(/<\/head>/i, `${canvasCss}</head>`)
+      : `${canvasCss}${raw}`
+  }
+
+  return injectHeightBridge(raw)
+}
+
+/**
  * 酒馆式美化 HTML：
  * - 碎片 → 同页内联（对齐酒馆楼层）
  * - 助手前端 / 完整文档 → sandbox iframe + TH 全局库
@@ -117,9 +161,20 @@ export function SandboxedHtmlFrame({
   className,
   title = '美化内容',
   minHeight = 36,
+  playableSandbox = false,
+  viewportHeight,
 }: Props) {
-  const cleaned = useMemo(() => sanitizePlotHtmlVisualHtml(html), [html])
-  const useIframe = Boolean(cleaned && needsScriptIframe(cleaned))
+  const cleaned = useMemo(
+    () =>
+      sanitizePlotHtmlVisualHtml(
+        html,
+        playableSandbox ? { browserPreview: true } : undefined,
+      ),
+    [html, playableSandbox],
+  )
+  const useIframe = Boolean(
+    cleaned && (playableSandbox || needsScriptIframe(cleaned)),
+  )
 
   if (!cleaned || isStyleOnlyBeautifyHtml(cleaned)) return null
 
@@ -130,6 +185,9 @@ export function SandboxedHtmlFrame({
         className={className}
         title={title}
         minHeight={minHeight}
+        rawDocument={playableSandbox}
+        browserSandbox={playableSandbox}
+        viewportHeight={viewportHeight}
       />
     )
   }
@@ -178,18 +236,31 @@ function BeautifyIframeFrame({
   className,
   title,
   minHeight,
+  rawDocument = false,
+  browserSandbox = false,
+  viewportHeight,
 }: {
   html: string
   className?: string
   title: string
   minHeight: number
+  /** true = 当本地 HTML 文件跑，不注入助手库 */
+  rawDocument?: boolean
+  /** 更接近浏览器：允许 forms / modals */
+  browserSandbox?: boolean
+  viewportHeight?: number | string
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const fixedViewport = viewportHeight != null && viewportHeight !== ''
   const [frameHeight, setFrameHeight] = useState(Math.max(minHeight, 48))
-  const srcDoc = useMemo(() => buildIframeSrcDoc(html), [html])
+  const srcDoc = useMemo(
+    () => (rawDocument ? buildPlayableHtmlSrcDoc(html) : buildIframeSrcDoc(html)),
+    [html, rawDocument],
+  )
 
   const onMessage = useCallback(
     (ev: MessageEvent) => {
+      if (fixedViewport) return
       const data = ev.data
       if (!data || typeof data !== 'object') return
       const d = data as { source?: string; type?: string; height?: number }
@@ -199,7 +270,7 @@ function BeautifyIframeFrame({
       if (!Number.isFinite(h) || h < 8) return
       setFrameHeight(Math.max(Math.ceil(h) + 6, minHeight))
     },
-    [minHeight],
+    [minHeight, fixedViewport],
   )
 
   useEffect(() => {
@@ -208,21 +279,43 @@ function BeautifyIframeFrame({
   }, [onMessage])
 
   useEffect(() => {
-    if (!srcDoc) return
+    if (!srcDoc || fixedViewport) return
     setFrameHeight(Math.max(minHeight, 48))
-  }, [srcDoc, minHeight])
+  }, [srcDoc, minHeight, fixedViewport])
 
   if (!srcDoc) return null
+
+  // playable：允许脚本+表单；加 same-origin 以便部分 WebView/移动端正确跑 onclick
+  // （内容为本机生成的 IF HTML，等同打开本地文件预览）
+  const sandbox = browserSandbox
+    ? 'allow-scripts allow-forms allow-modals allow-same-origin'
+    : 'allow-scripts'
+
+  // IF HTML 规范要求 body 透明、视觉落在 .container——宿主必须透明，
+  // 否则会露出一大块强制白底（手机端尤其明显）。
+  const hostCanvas = 'transparent'
 
   return (
     <iframe
       ref={iframeRef}
-      sandbox="allow-scripts"
+      sandbox={sandbox}
       referrerPolicy="no-referrer"
       title={title}
       srcDoc={srcDoc}
-      className={className ?? 'my-1.5 block w-full border-0 bg-transparent'}
-      style={{ height: frameHeight, maxWidth: '100%', background: 'transparent' }}
+      className={
+        className ??
+        (fixedViewport
+          ? 'block w-full border-0'
+          : 'my-1.5 block w-full border-0')
+      }
+      style={{
+        height: fixedViewport ? viewportHeight : frameHeight,
+        width: '100%',
+        maxWidth: '100%',
+        background: hostCanvas,
+        pointerEvents: 'auto',
+        touchAction: 'manipulation',
+      }}
     />
   )
 }

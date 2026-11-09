@@ -143,8 +143,12 @@ export type DatingStoryNormalActions = {
     writingGuide: string,
     lengthTargetChars: number,
     perspective?: NarrativePerspective,
+    languages?: import('./types').PlotDimensionLanguageBundle,
+    outputFormat?: import('./types').PlotDimensionOutputFormat,
+    askContinueAfterTruncate?: import('./datingPlotDimensionAi').DimensionTruncateContinueAsk,
   ) => Promise<void>
   persistPlotDimensionLengthTarget: (kind: PlotDimensionKind, chars: number) => void
+  persistIfOutputFormat: (format: import('./types').PlotDimensionOutputFormat) => void
   setPlotVersionIndex: (plotId: string, index: number) => void
   deletePlotItem: (plotId: string) => void
   saveEditedPlotBody: (
