@@ -274,7 +274,11 @@ export function DatingPlotDimensionSheet({
   }, [open])
 
   const continueReasonLabel =
-    continueAsk?.info.reason === 'stream_partial' ? '生成中途断流' : '输出触达上限被掐断'
+    continueAsk?.info.reason === 'stream_partial'
+      ? '生成中途断流'
+      : continueAsk?.info.reason === 'under_delivered'
+        ? '正文远短于目标字数（模型提前收笔）'
+        : '输出触达上限被掐断'
 
   return (
     <>

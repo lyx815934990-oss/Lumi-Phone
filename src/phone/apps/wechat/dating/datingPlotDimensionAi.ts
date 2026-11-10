@@ -978,9 +978,26 @@ export type DimensionTruncateContinueAskInfo = {
   kind: PlotDimensionKind
   charsSoFar: number
   targetChars: number
-  reason: 'length' | 'stream_partial'
+  reason: 'length' | 'stream_partial' | 'under_delivered'
   /** 已写正文末尾预览，便于用户确认是「接着写」 */
   previewTail: string
+}
+
+/** 统计目标字数口径：去掉空白后的码点长度（标点仍计入，避免过严） */
+function countDimensionDeliveryChars(text: string): number {
+  return [...String(text ?? '').replace(/\s+/g, '')].length
+}
+
+/**
+ * 网关/模型常在 finish_reason=stop 时提前收笔（可见正文只有几百字），
+ * 客户端若只认 length 就不会弹续写。远低于目标时按「欠交付」处理。
+ */
+function isDimensionUnderDelivered(body: string, targetChars: number): boolean {
+  const target = Math.max(1, Math.round(Number(targetChars) || 0))
+  if (target < 280) return false
+  const n = countDimensionDeliveryChars(body)
+  if (n >= Math.ceil(target * 0.68)) return false
+  return target - n >= 160
 }
 
 /** 返回 true = 用户确认从断点无缝续写；false = 保留半成品、不再请求 */
@@ -1098,17 +1115,24 @@ export async function generateDatingPlotDimensionAi(params: {
     draft: string
     truncated: boolean
     partial: boolean
+    underDelivered?: boolean
     html: boolean
   }): Promise<string | null> => {
-    if ((!opts.truncated && !opts.partial) || opts.draft.trim().length < 80) return null
+    const shouldAsk = opts.truncated || opts.partial || opts.underDelivered === true
+    if (!shouldAsk || opts.draft.trim().length < 80) return null
     if (!askContinueAfterTruncate) return null
-    const charsSoFar = [...opts.draft].length
+    const charsSoFar = countDimensionDeliveryChars(opts.draft)
     const previewTail = [...opts.draft].slice(-80).join('')
+    const reason: DimensionTruncateContinueAskInfo['reason'] = opts.truncated
+      ? 'length'
+      : opts.partial
+        ? 'stream_partial'
+        : 'under_delivered'
     const ok = await askContinueAfterTruncate({
       kind,
       charsSoFar,
       targetChars: target,
-      reason: opts.truncated ? 'length' : 'stream_partial',
+      reason,
       previewTail,
     })
     if (!ok) return null
@@ -1206,7 +1230,7 @@ export async function generateDatingPlotDimensionAi(params: {
     const messages = buildIfHtmlChatMessages(system, user)
     const first = await completeOnce(messages)
     let raw = stitchIfHtmlPrefill(first.raw)
-    // HTML 被掐断：先问用户，确认后再无缝续写一次
+    // HTML 被掐断 / 断流：先问用户，确认后再无缝续写一次
     const htmlContinueUser = await maybeContinueAfterTruncate({
       draft: raw,
       truncated: first.truncated,
@@ -1221,7 +1245,7 @@ export async function generateDatingPlotDimensionAi(params: {
           { role: 'assistant', content: raw },
           { role: 'user', content: htmlContinueUser },
         ],
-        Math.max(8192, Math.floor(outputMaxTokens * 0.55)),
+        Math.max(16_384, Math.floor(outputMaxTokens * 0.7)),
       )
       raw = stitchIfHtmlPrefill(stitchDimensionContinuation(raw, cont.raw))
     }
@@ -1425,20 +1449,32 @@ export async function generateDatingPlotDimensionAi(params: {
     { role: 'system', content: system },
     { role: 'user', content: user },
   ]
+  console.info(
+    `[dating-dimension] ${PLOT_DIMENSION_LABELS[kind]} 请求 max_tokens=${outputMaxTokens} · 目标 ${target} 字 · SSE=${plotSseEnabled ? 'on' : 'off'}`,
+  )
   const first = await completeOnce(messages)
   let body = extractDimensionBody(first.raw, guide, false)
   if (!body) throw new Error(`${PLOT_DIMENSION_LABELS[kind]}生成失败：模型未返回正文`)
 
-  // 被 length / 断流掐断：先弹窗确认，用户同意后才无缝续写一次
+  const underDelivered =
+    !first.truncated && !first.partial && isDimensionUnderDelivered(body, target)
+  if (underDelivered) {
+    console.warn(
+      `[dating-dimension] ${PLOT_DIMENSION_LABELS[kind]}远低于目标字数（约 ${countDimensionDeliveryChars(body)}/${target}；本轮上限 ${outputMaxTokens}；finish 未必是 length）`,
+    )
+  }
+
+  // 被 length / 断流 / 明显欠交付掐断：先弹窗确认，用户同意后才无缝续写一次
   const continueUser = await maybeContinueAfterTruncate({
     draft: body,
     truncated: first.truncated,
     partial: first.partial,
+    underDelivered,
     html: false,
   })
   if (continueUser) {
     console.warn(
-      `[dating-dimension] ${PLOT_DIMENSION_LABELS[kind]}截断，用户确认后无缝续写（已有约 ${[...body].length} 字）`,
+      `[dating-dimension] ${PLOT_DIMENSION_LABELS[kind]}截断，用户确认后无缝续写（已有约 ${countDimensionDeliveryChars(body)} 字）`,
     )
     const cont = await completeOnce(
       [
@@ -1447,7 +1483,7 @@ export async function generateDatingPlotDimensionAi(params: {
         { role: 'assistant', content: body },
         { role: 'user', content: continueUser },
       ],
-      Math.max(4096, Math.floor(outputMaxTokens * 0.6)),
+      Math.max(12_288, Math.floor(outputMaxTokens * 0.7)),
     )
     const contBody = extractDimensionBody(cont.raw, guide, false)
     if (contBody?.trim()) {

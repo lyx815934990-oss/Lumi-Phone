@@ -32,7 +32,7 @@ export function parsePlotDimensionLengthTarget(raw: number | string, fallback = 
 /**
  * IF / 平行请求的输出 max_tokens。
  * 必须显式写入：中转在缺省时常套过小默认，导致 finish_reason=length 截断。
- * 中文约 1.5～2 token/字，另留推理与格式开销。
+ * 预算偏松：中文约 1.5～2 token/字，再叠加推理模型思考占用与中转硬砍余量。
  */
 export function datingPlotDimensionOutputMaxTokens(
   targetChars: number,
@@ -40,8 +40,8 @@ export function datingPlotDimensionOutputMaxTokens(
 ): number {
   if (opts?.html) return 48_000
   const chars = Math.max(1, Math.round(Number(targetChars) || 500))
-  const estimated = Math.floor(chars * 2.8) + 2048
-  return Math.max(4_096, Math.min(65_535, estimated))
+  const estimated = Math.floor(chars * 4) + 8192
+  return Math.max(16_384, Math.min(65_535, estimated))
 }
 /** 送入约会剧情模型的上下文预算上限（词符/token；仍受 API/模型实际上限） */
 export const DATING_AI_MAX_CONTEXT_TOKENS = 200_000
